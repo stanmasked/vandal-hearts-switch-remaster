@@ -1,0 +1,846 @@
+"""Asset-free synthetic C11 ELF smoke tests for one-shot private GPU audit."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from test_map02_joint_native_capture_c11 import PRODUCER
+from tools import run_map02_private_joint_capture_audit as joint_runner
+from tools import compare_map02_private_bgr555_frames as frame_compare
+from tools import bridge_map02_private_frame_native as native_bridge
+
+
+class PrivateJointOneShotAuditTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if sys.platform != "linux" or not Path("/proc/self/fd").is_dir():
+            raise unittest.SkipTest("strict Linux ELF and procfs needed")
+        cls.workspace = tempfile.TemporaryDirectory(prefix="vh-map02-one-shot-c-")
+        root = Path(cls.workspace.name)
+        cls.executable = root / "producer"
+        source = root / "producer.c"
+        source.write_text(PRODUCER, encoding="utf-8")
+        cc = os.environ.get("CC", "cc")
+        if not shutil.which(cc):
+            raise RuntimeError("C compiler missing for native GPU capture")
+        subprocess.run(
+            [cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
+             "-DVH_MAP02_PRIVATE_FRAME_PIPE_TRACE=1",
+             "-Itools", str(source), "tools/map02_native_frame_pipe.c",
+             "-o", str(cls.executable)],
+            check=True)
+        cls.digest = hashlib.sha256(cls.executable.read_bytes()).hexdigest()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.workspace.cleanup()
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="vh-map02-one-shot-test-")
+        self.addCleanup(self.temp.cleanup)
+        root = Path(self.temp.name)
+        self.output = root / "private-frame"
+        self.journal = root / "private-journal"
+        self.output.mkdir(mode=0o700)
+        self.journal.mkdir(mode=0o700)
+
+    def run_capture(self, *args, **kwargs):
+        return joint_runner.run(
+            self.executable, self.output, self.journal, frame=123,
+            executable_sha256=kwargs.pop("sha", self.digest),
+            timeout=kwargs.pop("timeout", 4), args=args, **kwargs)
+
+    def make_claimed_private_frame_pair(self, *, different_reference=False,
+                                        different_candidate=False,
+                                        frame=123):
+        pair = Path(self.temp.name) / "private-claimed-frame-pair"
+        pair.mkdir(mode=0o700)
+        # The source-pinned C11 synthetic producer writes 0x7fff at
+        # VRAM pixel (0,0) and zero into all other words. This local
+        # fixture makes no claims of PS1 provenance or real game capture.
+        raw = b"\xff\x7f" + b"\x00" * (1024 * 512 * 2 - 2)
+        reference = ((b"\x00\x80" + raw[2:]) if different_reference else raw)
+        candidate = ((b"\x11\x22" + raw[2:]) if different_candidate else raw)
+        images = {}
+        for name, pixels, origin in (
+            ("reference.bgr555", reference, "ps1_reference_claimed"),
+            ("candidate.bgr555", candidate, "pc_port_candidate_claimed"),
+        ):
+            (pair / name).write_bytes(pixels)
+            (pair / name).chmod(0o600)
+            images[name] = {
+                "sha256": hashlib.sha256(pixels).hexdigest(),
+                "frame": frame, "origin": origin}
+        (pair / "frames.json").write_text(json.dumps({
+            "schema": frame_compare.SCHEMA,
+            "frame": frame, "width": 1024, "height": 512,
+            "pixel_format": "bgr555_le", "images": images
+        }, sort_keys=True), encoding="utf-8")
+        (pair / "frames.json").chmod(0o600)
+        return pair
+
+    def test_claimed_reference_and_same_launch_candidate_byte_equal(self):
+        pair = self.make_claimed_private_frame_pair()
+        result = self.run_capture(frame_pair_dir=pair)
+        self.assertTrue(result["claimed_reference_raw_bgr555_equal_to_live_candidate"])
+        self.assertFalse(result["claimed_reference_ps1_hardware_authenticated"])
+        self.assertEqual(result["claimed_reference_different_bgr555_pixels"], 0)
+        self.assertEqual(result["claimed_reference_exact_pixel_matches"], 1024 * 512)
+        self.assertNotIn(str(pair), json.dumps(result))
+
+    def test_claimed_reference_has_one_pixel_stp_and_color_mismatch(self):
+        pair = self.make_claimed_private_frame_pair(different_reference=True)
+        result = self.run_capture(frame_pair_dir=pair)
+        self.assertFalse(result["claimed_reference_raw_bgr555_equal_to_live_candidate"])
+        self.assertEqual(result["claimed_reference_different_bgr555_pixels"], 1)
+        self.assertEqual(result["claimed_reference_stp_bit_differences"], 1)
+        self.assertEqual(result["claimed_reference_changed_scanlines"], 1)
+        self.assertFalse(result["claimed_reference_ps1_hardware_authenticated"])
+
+    def test_self_consistent_forged_claimed_candidate_rejected(self):
+        pair = self.make_claimed_private_frame_pair(different_candidate=True)
+        with self.assertRaisesRegex(ValueError, "claimed candidate differs"):
+            self.run_capture(frame_pair_dir=pair)
+
+    def test_same_byte_claimed_reference_inode_swap_during_capture_rejected(self):
+        pair = self.make_claimed_private_frame_pair()
+        real_capture = joint_runner.capture
+        def swap(*args, **kwargs):
+            receipt = real_capture(*args, **kwargs)
+            path = pair / "reference.bgr555"
+            new_path = pair / "same-byte-reference.bgr555"
+            new_path.write_bytes(path.read_bytes())
+            # The test isolates inode substitution, not file-mode refusal:
+            # the new inode must itself satisfy the strict 0600 preflight.
+            new_path.chmod(0o600)
+            os.replace(new_path, path)
+            return receipt
+        with patch.object(joint_runner, "capture", side_effect=swap):
+            with self.assertRaisesRegex(ValueError, "frame pair changed during capture"):
+                self.run_capture(frame_pair_dir=pair)
+
+    def test_claimed_pair_frame_label_mismatch_fails_before_executing_elf(self):
+        pair = self.make_claimed_private_frame_pair(frame=124)
+        with self.assertRaisesRegex(ValueError, "wrong labels"):
+            self.run_capture(frame_pair_dir=pair)
+        self.assertEqual(list(self.output.iterdir()), [])
+        self.assertEqual(list(self.journal.iterdir()), [])
+
+    def test_cli_claimed_reference_compare_returns_only_digests_and_counts(self):
+        pair = self.make_claimed_private_frame_pair(different_reference=True)
+        finished = subprocess.run([
+            sys.executable, "-m", "tools.run_map02_private_joint_capture_audit",
+            "--executable", str(self.executable),
+            "--executable-sha256", self.digest,
+            "--output-dir", str(self.output),
+            "--gpu-journal-dir", str(self.journal),
+            "--frame-pair-dir", str(pair),
+            "--frame", "123", "--timeout", "5",
+        ], capture_output=True, text=True, timeout=12)
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        result = json.loads(finished.stdout)
+        self.assertEqual(result["claimed_reference_different_bgr555_pixels"], 1)
+        self.assertFalse(result["claimed_reference_ps1_hardware_authenticated"])
+        self.assertNotIn(str(pair), finished.stdout)
+        self.assertNotIn(str(self.executable), finished.stdout)
+
+    def test_claimed_frame_pair_shared_directory_refused_before_elf(self):
+        pair = self.make_claimed_private_frame_pair()
+        pair.chmod(0o755)
+        with self.assertRaisesRegex(ValueError, "directory must be owner-private"):
+            self.run_capture(frame_pair_dir=pair)
+        self.assertEqual(list(self.output.iterdir()), [])
+        self.assertEqual(list(self.journal.iterdir()), [])
+
+    def test_claimed_pair_world_readable_reference_refused_before_elf(self):
+        pair = self.make_claimed_private_frame_pair()
+        (pair / "reference.bgr555").chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "file must be owner-private"):
+            self.run_capture(frame_pair_dir=pair)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_claimed_pair_symlinked_reference_refused_before_elf(self):
+        pair = self.make_claimed_private_frame_pair()
+        ref = pair / "reference.bgr555"
+        ref.unlink()
+        ref.symlink_to(pair / "candidate.bgr555")
+        with self.assertRaisesRegex(ValueError, "file must be owner-private"):
+            self.run_capture(frame_pair_dir=pair)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_claimed_pair_hardlinked_reference_refused_before_elf(self):
+        pair = self.make_claimed_private_frame_pair()
+        ref = pair / "reference.bgr555"
+        ref.unlink()
+        os.link(pair / "candidate.bgr555", ref)
+        with self.assertRaisesRegex(ValueError, "singly linked"):
+            self.run_capture(frame_pair_dir=pair)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_claimed_pair_extra_file_refused_before_elf(self):
+        pair = self.make_claimed_private_frame_pair()
+        (pair / "notes.txt").write_text("not part of the pair", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "unexpected file inventory"):
+            self.run_capture(frame_pair_dir=pair)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def prepare_two_pass_inventory(self):
+        # Minimal local on-disk inventory: no ELF execution necessary to
+        # exercise the owner and stability checks on actual held dir FDs.
+        for name in ("process-frame.bgr555", "process-frame.json"):
+            path = self.output / name
+            path.write_bytes(b"local-only-inventory")
+            path.chmod(0o600)
+        journal_file = self.journal / "gpu-native-events.jsonl"
+        journal_file.write_bytes(b"local-only-inventory")
+        journal_file.chmod(0o600)
+
+    def test_two_pass_inventory_requires_owner_directory(self):
+        self.prepare_two_pass_inventory()
+        with patch.object(joint_runner.os, "getuid",
+                          return_value=os.getuid() + 1):
+            with self.assertRaisesRegex(ValueError, "directory is not owner-private"):
+                joint_runner._session_inode_witness(self.output, self.journal)
+
+    def test_two_pass_inventory_requires_owner_file(self):
+        self.prepare_two_pass_inventory()
+        real_getuid = os.getuid
+        real_stat = os.stat
+        def simulate_other_owner(name, *args, **kwargs):
+            info = real_stat(name, *args, **kwargs)
+            if (name == "process-frame.bgr555"
+                    and kwargs.get("dir_fd") is not None):
+                values = list(info)
+                # os.stat_result positional tuples contain the uid at 4.
+                values[4] = real_getuid() + 1
+                return os.stat_result(values)
+            return info
+        with patch.object(joint_runner.os, "stat",
+                          side_effect=simulate_other_owner):
+            with self.assertRaisesRegex(ValueError, "file not owner-private"):
+                joint_runner._session_inode_witness(self.output, self.journal)
+
+    def test_two_pass_inventory_detects_metadata_change_mid_scan(self):
+        self.prepare_two_pass_inventory()
+        real_stat = os.stat
+        mutated = []
+        def alter_after_read(name, *args, **kwargs):
+            info = real_stat(name, *args, **kwargs)
+            if (not mutated and name == "process-frame.bgr555"
+                    and kwargs.get("dir_fd") is not None):
+                mutated.append(True)
+                # Keep the contents/inode/0600 unchanged; update only the
+                # file timestamp between the first and second FD scans.
+                os.utime(self.output / name,
+                         ns=(info.st_atime_ns, info.st_mtime_ns + 2_000_000_000))
+            return info
+        with patch.object(joint_runner.os, "stat", side_effect=alter_after_read):
+            with self.assertRaisesRegex(ValueError, "changed during inventory"):
+                joint_runner._session_inode_witness(self.output, self.journal)
+        self.assertEqual(mutated, [True])
+
+    def synthetic_original_ft4_witness(self, *args, **kwargs):
+        self.assertIs(kwargs["require_native_elf_image"], True)
+        self.assertIs(kwargs["require_native_probe_symbols"], True)
+        return {
+            "schema": "vh.map02.private-launch-two-word-join.v1",
+            "source_frame": 123,
+            "native_gpu_frame": 123,
+            "source_keyed_ft4_draws_checked": 1,
+            "original_launch_receipt_sha256": "1" * 64,
+            "two_word_manifest_sha256": "2" * 64,
+            "native_gpu_event_log_sha256": "3" * 64,
+            **{field: True for field in native_bridge.TRUE_FIELDS},
+            **{field: False for field in native_bridge.FALSE_FIELDS},
+        }
+
+    def source_witness_kwargs(self):
+        kwargs = {
+            "native_capture_dir": Path(self.temp.name) / "source-native",
+            "source_capture_dir": Path(self.temp.name) / "source-ft4",
+            "launch_receipt": Path(self.temp.name) / "launch.json",
+            "preflight_report": Path(self.temp.name) / "preflight.json",
+        }
+        for key in ("native_capture_dir", "source_capture_dir"):
+            kwargs[key].mkdir(mode=0o700, exist_ok=True)
+        for key in ("launch_receipt", "preflight_report"):
+            kwargs[key].write_text('{"synthetic":"private-only"}\n',
+                                   encoding="utf-8")
+            kwargs[key].chmod(0o600)
+        return kwargs
+
+    def test_malformed_original_source_json_refused_before_elf(self):
+        pair = self.make_claimed_private_frame_pair()
+        inputs = self.source_witness_kwargs()
+        receipt = inputs["launch_receipt"]
+        receipt.write_text('{"valid": [}', encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "JSON witness malformed"):
+            self.run_capture(frame_pair_dir=pair, **inputs)
+        self.assertEqual(list(self.output.iterdir()), [])
+        self.assertEqual(list(self.journal.iterdir()), [])
+
+    def test_duplicate_original_source_json_keys_refused_before_elf(self):
+        pair = self.make_claimed_private_frame_pair()
+        inputs = self.source_witness_kwargs()
+        receipt = inputs["preflight_report"]
+        receipt.write_text('{"frame":123,"frame":124}', encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "JSON witness duplicate key"):
+            self.run_capture(frame_pair_dir=pair, **inputs)
+        self.assertEqual(list(self.output.iterdir()), [])
+        self.assertEqual(list(self.journal.iterdir()), [])
+
+    def test_nonobject_original_source_json_refused_before_elf(self):
+        pair = self.make_claimed_private_frame_pair()
+        inputs = self.source_witness_kwargs()
+        receipt = inputs["launch_receipt"]
+        receipt.write_text('["private", "unsupported"]', encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "JSON witness must be a nonempty object"):
+            self.run_capture(frame_pair_dir=pair, **inputs)
+        self.assertEqual(list(self.output.iterdir()), [])
+        self.assertEqual(list(self.journal.iterdir()), [])
+
+    def test_original_source_json_parser_detects_inplace_mutation(self):
+        import io
+        pair = self.make_claimed_private_frame_pair()
+        inputs = self.source_witness_kwargs()
+        receipt = inputs["launch_receipt"]
+        real_pread = os.pread
+        changed = []
+        def mutate_while_reading(fd, size, offset):
+            chunk = real_pread(fd, size, offset)
+            if not changed and chunk:
+                changed.append(True)
+                stat_before = receipt.stat()
+                os.utime(receipt, ns=(
+                    stat_before.st_atime_ns,
+                    stat_before.st_mtime_ns + 2_000_000_000))
+            return chunk
+        with patch.object(joint_runner.os, "pread",
+                          side_effect=mutate_while_reading):
+            with self.assertRaisesRegex(ValueError, "JSON changed during preflight"):
+                self.run_capture(frame_pair_dir=pair, **inputs)
+        self.assertEqual(changed, [True])
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_missing_source_ft4_directory_refused_before_native_launch(self):
+        pair = self.make_claimed_private_frame_pair()
+        inputs = self.source_witness_kwargs()
+        inputs["source_capture_dir"].rmdir()
+        with self.assertRaises(OSError):
+            self.run_capture(frame_pair_dir=pair, **inputs)
+        self.assertEqual(list(self.output.iterdir()), [])
+        self.assertEqual(list(self.journal.iterdir()), [])
+
+    def test_world_readable_original_source_receipt_refused_before_launch(self):
+        pair = self.make_claimed_private_frame_pair()
+        inputs = self.source_witness_kwargs()
+        inputs["launch_receipt"].chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "witness file not private"):
+            self.run_capture(frame_pair_dir=pair, **inputs)
+        self.assertEqual(list(self.output.iterdir()), [])
+        self.assertEqual(list(self.journal.iterdir()), [])
+
+    def test_original_source_symlinked_receipt_refused_before_launch(self):
+        pair = self.make_claimed_private_frame_pair()
+        inputs = self.source_witness_kwargs()
+        inputs["launch_receipt"].unlink()
+        inputs["launch_receipt"].symlink_to(inputs["preflight_report"])
+        with self.assertRaises(OSError):
+            self.run_capture(frame_pair_dir=pair, **inputs)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_original_source_shared_directory_refused_before_launch(self):
+        pair = self.make_claimed_private_frame_pair()
+        inputs = self.source_witness_kwargs()
+        inputs["native_capture_dir"].chmod(0o755)
+        with self.assertRaisesRegex(ValueError, "directory is not private"):
+            self.run_capture(frame_pair_dir=pair, **inputs)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_original_source_duplicate_directory_role_refused_before_launch(self):
+        pair = self.make_claimed_private_frame_pair()
+        inputs = self.source_witness_kwargs()
+        inputs["source_capture_dir"] = inputs["native_capture_dir"]
+        with self.assertRaisesRegex(ValueError, "directory roles overlap"):
+            self.run_capture(frame_pair_dir=pair, **inputs)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_original_source_directory_cannot_alias_capture_output(self):
+        pair = self.make_claimed_private_frame_pair()
+        inputs = self.source_witness_kwargs()
+        inputs["native_capture_dir"] = self.output
+        with self.assertRaisesRegex(ValueError, "directory roles overlap"):
+            self.run_capture(frame_pair_dir=pair, **inputs)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_all_four_source_witness_inputs_required_before_launch(self):
+        pair = self.make_claimed_private_frame_pair()
+        args = self.source_witness_kwargs()
+        for missing in args:
+            partial = {k: v for k, v in args.items() if k != missing}
+            with self.subTest(missing=missing):
+                with self.assertRaisesRegex(ValueError, "arguments incomplete"):
+                    self.run_capture(frame_pair_dir=pair, **partial)
+                self.assertEqual(list(self.output.iterdir()), [])
+                self.assertEqual(list(self.journal.iterdir()), [])
+        with self.assertRaisesRegex(ValueError, "arguments incomplete"):
+            self.run_capture(**args)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_invalid_source_compiler_rejected_before_native_execution(self):
+        pair = self.make_claimed_private_frame_pair()
+        with self.assertRaisesRegex(ValueError, "arguments incomplete"):
+            self.run_capture(frame_pair_dir=pair, compiler="invalid")
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_original_ft4_gpu_witness_joined_to_actual_child_and_claimed_frame(self):
+        pair = self.make_claimed_private_frame_pair(different_reference=True)
+        with patch.object(native_bridge, "audit_launch_two_word",
+                          side_effect=self.synthetic_original_ft4_witness) as audit:
+            result = self.run_capture(
+                frame_pair_dir=pair, **self.source_witness_kwargs())
+        self.assertEqual(audit.call_count, 1)
+        self.assertTrue(result["source_keyed_native_ft4_vram_independently_replayed"])
+        self.assertTrue(result["original_source_receipt_and_roles_stable_through_replay"])
+        self.assertEqual(result["source_original_launch_receipt_sha256"], "1" * 64)
+        self.assertEqual(result["source_native_gpu_event_log_sha256"], "3" * 64)
+        self.assertEqual(result["claimed_reference_different_bgr555_pixels"], 1)
+        self.assertFalse(
+            result["source_original_trace_same_session_as_live_elf_authenticated"])
+        self.assertFalse(result["retail_gameplay_or_ps1_pixels_authenticated"])
+        self.assertFalse(result["hd_replacement_authorized"])
+        self.assertNotIn(str(pair), json.dumps(result))
+
+    def test_original_source_receipt_same_bytes_new_inode_during_replay_refused(self):
+        pair = self.make_claimed_private_frame_pair()
+        source = self.source_witness_kwargs()
+        def replace_receipt(*args, **kwargs):
+            receipt = source["launch_receipt"]
+            replacement = receipt.with_name("fresh-private-launch.json")
+            replacement.write_bytes(receipt.read_bytes())
+            replacement.chmod(0o600)
+            os.replace(replacement, receipt)
+            return self.synthetic_original_ft4_witness(*args, **kwargs)
+        with patch.object(native_bridge, "audit_launch_two_word",
+                          side_effect=replace_receipt):
+            with self.assertRaisesRegex(
+                    ValueError, "original source input identities changed"):
+                self.run_capture(frame_pair_dir=pair, **source)
+
+    def test_original_source_directory_same_contents_new_inode_refused(self):
+        pair = self.make_claimed_private_frame_pair()
+        source = self.source_witness_kwargs()
+        def replace_dir(*args, **kwargs):
+            old = source["source_capture_dir"]
+            old.rename(old.with_name("old-private-ft4-directory"))
+            old.mkdir(mode=0o700)
+            return self.synthetic_original_ft4_witness(*args, **kwargs)
+        with patch.object(native_bridge, "audit_launch_two_word",
+                          side_effect=replace_dir):
+            with self.assertRaisesRegex(
+                    ValueError, "original source input identities changed"):
+                self.run_capture(frame_pair_dir=pair, **source)
+
+    def test_original_source_preflight_timestamp_mutation_refused(self):
+        pair = self.make_claimed_private_frame_pair()
+        source = self.source_witness_kwargs()
+        def mutate_receipt(*args, **kwargs):
+            receipt = source["preflight_report"]
+            before = receipt.stat()
+            os.utime(receipt, ns=(before.st_atime_ns,
+                                  before.st_mtime_ns + 2_000_000_000))
+            return self.synthetic_original_ft4_witness(*args, **kwargs)
+        with patch.object(native_bridge, "audit_launch_two_word",
+                          side_effect=mutate_receipt):
+            with self.assertRaisesRegex(
+                    ValueError, "original source input identities changed"):
+                self.run_capture(frame_pair_dir=pair, **source)
+
+    def test_source_native_gpu_wrong_frame_rejected_not_label_joined(self):
+        pair = self.make_claimed_private_frame_pair()
+        def bad_source(*args, **kwargs):
+            witness = self.synthetic_original_ft4_witness(*args, **kwargs)
+            witness["native_gpu_frame"] += 1
+            return witness
+        with patch.object(native_bridge, "audit_launch_two_word",
+                          side_effect=bad_source):
+            with self.assertRaisesRegex(ValueError, "labels differ"):
+                self.run_capture(frame_pair_dir=pair,
+                                 **self.source_witness_kwargs())
+
+    def test_source_native_provenance_forgery_rejected(self):
+        pair = self.make_claimed_private_frame_pair()
+        def false_provenance(*args, **kwargs):
+            witness = self.synthetic_original_ft4_witness(*args, **kwargs)
+            witness[next(iter(native_bridge.FALSE_FIELDS))] = True
+            return witness
+        with patch.object(native_bridge, "audit_launch_two_word",
+                          side_effect=false_provenance):
+            with self.assertRaisesRegex(ValueError, "unexpectedly asserted"):
+                self.run_capture(frame_pair_dir=pair,
+                                 **self.source_witness_kwargs())
+
+    def test_source_digest_fields_reject_private_path_and_non_hex(self):
+        pair = self.make_claimed_private_frame_pair()
+        secret = str(Path(self.temp.name) / "private-playstation-source-path")
+        for field, value in (
+                ("original_launch_receipt_sha256", secret),
+                ("native_gpu_event_log_sha256", "G" * 64),
+                ("original_launch_receipt_sha256", None),
+                ("native_gpu_event_log_sha256", "a" * 63)):
+            def forged_digest(*args, **kwargs):
+                witness = self.synthetic_original_ft4_witness(*args, **kwargs)
+                witness[field] = value
+                return witness
+            with self.subTest(field=field, value_type=type(value).__name__):
+                # A fresh directory is required for each real ELF run.
+                for output in (self.output, self.journal):
+                    for child in output.iterdir():
+                        child.unlink()
+                with patch.object(native_bridge, "audit_launch_two_word",
+                                  side_effect=forged_digest):
+                    with self.assertRaisesRegex(ValueError, "invalid SHA-256 digest") as raised:
+                        self.run_capture(frame_pair_dir=pair,
+                                         **self.source_witness_kwargs())
+                self.assertNotIn(secret, str(raised.exception))
+
+    def test_malformed_source_join_result_refused_without_attribute_error(self):
+        pair = self.make_claimed_private_frame_pair()
+        for invalid in (None, "claimed-success", [1, 2, 3]):
+            with self.subTest(result_type=type(invalid).__name__):
+                for output in (self.output, self.journal):
+                    for child in output.iterdir():
+                        child.unlink()
+                with patch.object(joint_runner, "join_original_native",
+                                  return_value=invalid):
+                    with self.assertRaisesRegex(ValueError,
+                                                "independent source witness disagrees"):
+                        self.run_capture(frame_pair_dir=pair,
+                                         **self.source_witness_kwargs())
+
+    def test_digest_publication_helper_never_returns_arbitrary_strings(self):
+        source = {"original_launch_receipt_sha256": "a" * 64}
+        self.assertEqual(joint_runner._require_source_sha256(
+            source, "original_launch_receipt_sha256"), "a" * 64)
+        for bad in (None, True, 17, "", "A" * 64, "g" * 64, "a" * 65):
+            source["original_launch_receipt_sha256"] = bad
+            with self.subTest(bad=repr(bad)[:15]):
+                with self.assertRaisesRegex(ValueError, "invalid SHA-256 digest"):
+                    joint_runner._require_source_sha256(
+                        source, "original_launch_receipt_sha256")
+
+    def test_same_byte_claimed_reference_swap_during_source_replay_refused(self):
+        pair = self.make_claimed_private_frame_pair()
+        def swap(*args, **kwargs):
+            path = pair / "reference.bgr555"
+            other = pair / "reference-new.bgr555"
+            other.write_bytes(path.read_bytes())
+            other.chmod(0o600)
+            os.replace(other, path)
+            return self.synthetic_original_ft4_witness(*args, **kwargs)
+        with patch.object(native_bridge, "audit_launch_two_word",
+                          side_effect=swap):
+            with self.assertRaisesRegex(ValueError, "changed during native witness"):
+                self.run_capture(frame_pair_dir=pair,
+                                 **self.source_witness_kwargs())
+
+    def test_one_real_synthetic_child_two_complete_private_replays(self):
+        result = self.run_capture()
+        self.assertEqual(result["schema"], joint_runner.SCHEMA)
+        self.assertEqual((result["width"], result["height"]), (1024, 512))
+        self.assertEqual(result["frame"], 123)
+        self.assertEqual(result["gpu_journal_pairs_verified"], 1)
+        self.assertTrue(result["two_full_independent_private_replays_equal"])
+        self.assertTrue(result["private_frame_and_journal_inodes_stable_through_replays"])
+        self.assertEqual(result["terminal_gpu_after_vram_sha256"],
+                         result["terminal_bgr555_sha256"])
+        self.assertTrue(result["child_writable_gpu_journal_fd_observed"])
+        self.assertTrue(result["terminal_frame_exactly_equals_gpu_after_vram"])
+        for name in (
+                "retail_gameplay_or_ps1_pixels_authenticated",
+                "native_gpu_log_same_process_authenticated",
+                "gpu_journal_writer_kernel_authenticated",
+                "hd_replacement_authorized",
+                "private_pixel_bytes_or_paths_emitted"):
+            self.assertFalse(result[name])
+        self.assertNotIn(str(self.output), json.dumps(result))
+        self.assertNotIn(str(self.journal), json.dumps(result))
+        self.assertNotIn(str(self.executable), json.dumps(result))
+
+    def test_cli_invalid_private_elf_path_is_not_disclosed(self):
+        sensitive = Path(self.temp.name) / "private-authored-ELF-secret"
+        finished = subprocess.run([
+            sys.executable, "-m", "tools.run_map02_private_joint_capture_audit",
+            "--executable", str(sensitive),
+            "--executable-sha256", self.digest,
+            "--output-dir", str(self.output),
+            "--gpu-journal-dir", str(self.journal),
+            "--frame", "123",
+        ], capture_output=True, text=True, timeout=12)
+        self.assertNotEqual(finished.returncode, 0)
+        self.assertEqual(finished.stdout, "")
+        self.assertIn("MAP02 private capture I/O failed", finished.stderr)
+        self.assertNotIn(str(sensitive), finished.stderr)
+        self.assertNotIn(str(self.output), finished.stderr)
+        self.assertNotIn(str(self.journal), finished.stderr)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_cli_invalid_private_reference_path_is_not_disclosed(self):
+        sensitive = Path(self.temp.name) / "private-PS1-reference-secret"
+        finished = subprocess.run([
+            sys.executable, "-m", "tools.run_map02_private_joint_capture_audit",
+            "--executable", str(self.executable),
+            "--executable-sha256", self.digest,
+            "--output-dir", str(self.output),
+            "--gpu-journal-dir", str(self.journal),
+            "--frame-pair-dir", str(sensitive),
+            "--frame", "123",
+        ], capture_output=True, text=True, timeout=12)
+        self.assertNotEqual(finished.returncode, 0)
+        self.assertEqual(finished.stdout, "")
+        self.assertIn("MAP02 private capture I/O failed", finished.stderr)
+        self.assertNotIn(str(sensitive), finished.stderr)
+        self.assertNotIn(str(self.executable), finished.stderr)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_untrusted_error_text_sanitized_before_cli_diagnostic(self):
+        secret = str(Path(self.temp.name) / "PS1-ROM-private-path")
+        generic = joint_runner._safe_cli_failure(
+            ValueError("unrecognized failed witness: " + secret))
+        self.assertEqual(generic, "MAP02 private capture validation failed")
+        self.assertNotIn(secret, generic)
+        for reason, expected in (
+                ("private SHA-256 mismatch: " + secret,
+                 "MAP02 private SHA-256 mismatch"),
+                ("source arguments incomplete " + secret,
+                 "MAP02 original FT4/VRAM witness arguments incomplete"),
+                ("native frame pair changed: " + secret,
+                 "MAP02 private claimed frame pair changed")):
+            public = joint_runner._safe_cli_failure(ValueError(reason))
+            self.assertEqual(public, expected)
+            self.assertNotIn(secret, public)
+
+    def test_cli_runs_native_one_shot_and_prints_digests_not_private_paths(self):
+        result = subprocess.run([
+            sys.executable, "-m", "tools.run_map02_private_joint_capture_audit",
+            "--executable", str(self.executable),
+            "--executable-sha256", self.digest,
+            "--output-dir", str(self.output),
+            "--gpu-journal-dir", str(self.journal),
+            "--frame", "123", "--timeout", "5",
+        ], capture_output=True, text=True, timeout=12)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        meta = json.loads(result.stdout)
+        self.assertEqual(meta["schema"], joint_runner.SCHEMA)
+        self.assertEqual(meta["gpu_journal_pairs_verified"], 1)
+        self.assertTrue(meta["two_full_independent_private_replays_equal"])
+        self.assertFalse(meta["retail_gameplay_or_ps1_pixels_authenticated"])
+        self.assertNotIn(str(self.executable), result.stdout)
+        self.assertNotIn(str(self.output), result.stdout)
+        self.assertNotIn(str(self.journal), result.stdout)
+
+    def test_cli_wrong_elf_digest_fails_without_publication(self):
+        result = subprocess.run([
+            sys.executable, "-m", "tools.run_map02_private_joint_capture_audit",
+            "--executable", str(self.executable),
+            "--executable-sha256", "0" * 64,
+            "--output-dir", str(self.output),
+            "--gpu-journal-dir", str(self.journal),
+            "--frame", "123", "--timeout", "5",
+        ], capture_output=True, text=True, timeout=12)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("SHA-256 mismatch", result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(list(self.output.iterdir()), [])
+        self.assertEqual(list(self.journal.iterdir()), [])
+
+    def test_wrong_native_executable_digest_refused_without_publication(self):
+        with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+            self.run_capture(sha="0" * 64)
+        self.assertEqual(list(self.output.iterdir()), [])
+        self.assertEqual(list(self.journal.iterdir()), [])
+
+    def test_missing_native_journal_prevents_private_frame_publication(self):
+        with self.assertRaisesRegex(ValueError, "timed out observing writable"):
+            self.run_capture("no-journal", timeout=0.5)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_image_tamper_after_capture_refused_on_first_replay(self):
+        original_capture = joint_runner.capture
+        def tamper(*args, **kwargs):
+            receipt = original_capture(*args, **kwargs)
+            filename = self.output / "process-frame.bgr555"
+            with filename.open("r+b") as stream:
+                stream.write(b"\xff\xff")
+            return receipt
+        with patch.object(joint_runner, "capture", side_effect=tamper):
+            with self.assertRaisesRegex(ValueError, "changed after publication"):
+                self.run_capture()
+
+    def test_same_byte_gpu_journal_inode_swap_after_publication_refused(self):
+        # Identity was captured while BOTH directory FDs remained open in
+        # the original launcher; no replay starts after this inode change.
+        original_capture = joint_runner.capture
+        called = []
+        def tamper(*args, **kwargs):
+            receipt = original_capture(*args, **kwargs)
+            original = self.journal / "gpu-native-events.jsonl"
+            replacement = self.journal / "identical-events.jsonl"
+            replacement.write_bytes(original.read_bytes())
+            replacement.chmod(0o600)
+            os.replace(replacement, original)
+            called.append(1)
+            return receipt
+        with patch.object(joint_runner, "capture", side_effect=tamper):
+            with self.assertRaisesRegex(ValueError, "changed after publication"):
+                self.run_capture()
+        self.assertEqual(called, [1])
+
+    def test_same_byte_frame_inode_swap_after_publication_refused(self):
+        original_capture = joint_runner.capture
+        def tamper(*args, **kwargs):
+            receipt = original_capture(*args, **kwargs)
+            original = self.output / "process-frame.bgr555"
+            replacement = self.output / "identical-frame.bgr555"
+            replacement.write_bytes(original.read_bytes())
+            replacement.chmod(0o600)
+            os.replace(replacement, original)
+            return receipt
+        with patch.object(joint_runner, "capture", side_effect=tamper):
+            with self.assertRaisesRegex(ValueError, "changed after publication"):
+                self.run_capture()
+
+    def test_same_byte_receipt_inode_swap_after_publication_refused(self):
+        original_capture = joint_runner.capture
+        def tamper(*args, **kwargs):
+            receipt = original_capture(*args, **kwargs)
+            original = self.output / "process-frame.json"
+            replacement = self.output / "identical-receipt.json"
+            replacement.write_bytes(original.read_bytes())
+            replacement.chmod(0o600)
+            os.replace(replacement, original)
+            return receipt
+        with patch.object(joint_runner, "capture", side_effect=tamper):
+            with self.assertRaisesRegex(ValueError, "changed after publication"):
+                self.run_capture()
+
+    def test_failed_capture_publication_callback_rolls_back_frame(self):
+        from tools.capture_map02_live_frame_pipe import capture as native_capture
+        witnesses = []
+        def reject(output_fd, journal_fd):
+            self.assertTrue(os.fstat(output_fd).st_ino)
+            self.assertTrue(os.fstat(journal_fd).st_ino)
+            witnesses.append(True)
+            raise ValueError("intentional post-publication witness refusal")
+        with self.assertRaisesRegex(ValueError, "intentional post-publication"):
+            native_capture(
+                self.executable, self.output,
+                frame=123, width=1024, height=512,
+                executable_sha256=self.digest, timeout=4,
+                gpu_journal_dir=self.journal,
+                post_publish_witness=reject)
+        self.assertEqual(witnesses, [True])
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_missing_same_launch_fd_witness_rejected(self):
+        actual_capture = joint_runner.capture
+        def skip_witness(*args, **kwargs):
+            kwargs.pop("post_publish_witness", None)
+            return actual_capture(*args, **kwargs)
+        with patch.object(joint_runner, "capture", side_effect=skip_witness):
+            with self.assertRaisesRegex(ValueError, "missing same-launch"):
+                self.run_capture()
+
+    def test_same_launch_publication_callback_receives_pinned_fds(self):
+        # Exercise held directory inodes directly, not a second path lookup.
+        original_capture = joint_runner.capture
+        observed = []
+        def wrapped(*args, **kwargs):
+            original = kwargs["post_publish_witness"]
+            def record(output_fd, journal_fd):
+                self.assertEqual(
+                    os.fstat(output_fd).st_ino, self.output.stat().st_ino)
+                self.assertEqual(
+                    os.fstat(journal_fd).st_ino, self.journal.stat().st_ino)
+                observed.append((output_fd, journal_fd))
+                original(output_fd, journal_fd)
+            kwargs["post_publish_witness"] = record
+            return original_capture(*args, **kwargs)
+        with patch.object(joint_runner, "capture", side_effect=wrapped):
+            report = self.run_capture()
+        self.assertTrue(report["two_full_independent_private_replays_equal"])
+        self.assertEqual(len(observed), 1)
+
+    def test_same_byte_gpu_log_inode_replacement_between_replays_refused(self):
+        original_replay = joint_runner.replay
+        calls = [0]
+        def replace_after_first(*args, **kwargs):
+            report = original_replay(*args, **kwargs)
+            calls[0] += 1
+            if calls[0] == 1:
+                filename = self.journal / "gpu-native-events.jsonl"
+                replacement = self.journal / "fresh-log.jsonl"
+                replacement.write_bytes(filename.read_bytes())
+                replacement.chmod(0o600)
+                os.replace(replacement, filename)
+            return report
+        with patch.object(joint_runner, "replay",
+                          side_effect=replace_after_first):
+            with self.assertRaisesRegex(ValueError, "files changed between replays"):
+                self.run_capture()
+        self.assertEqual(calls[0], 1)
+
+    def test_same_byte_frame_inode_replacement_between_replays_refused(self):
+        original_replay = joint_runner.replay
+        calls = [0]
+        def replace_after_first(*args, **kwargs):
+            report = original_replay(*args, **kwargs)
+            calls[0] += 1
+            if calls[0] == 1:
+                filename = self.output / "process-frame.bgr555"
+                replacement = self.output / "fresh-frame.bgr555"
+                replacement.write_bytes(filename.read_bytes())
+                replacement.chmod(0o600)
+                os.replace(replacement, filename)
+            return report
+        with patch.object(joint_runner, "replay",
+                          side_effect=replace_after_first):
+            with self.assertRaisesRegex(ValueError, "files changed between replays"):
+                self.run_capture()
+        self.assertEqual(calls[0], 1)
+
+    def test_journal_bytes_changed_after_capture_refused(self):
+        original_capture = joint_runner.capture
+        def tamper(*args, **kwargs):
+            receipt = original_capture(*args, **kwargs)
+            filename = self.journal / "gpu-native-events.jsonl"
+            with filename.open("ab") as stream:
+                stream.write(b"\n")
+            return receipt
+        with patch.object(joint_runner, "capture", side_effect=tamper):
+            with self.assertRaises(ValueError):
+                self.run_capture()
+
+    def test_changed_evidence_between_two_replays_refused(self):
+        actual_replay = joint_runner.replay
+        calls = [0]
+        def changed(*args, **kwargs):
+            report = actual_replay(*args, **kwargs)
+            calls[0] += 1
+            if calls[0] == 2:
+                report = {**report, "receipt_sha256": "f" * 64}
+            return report
+        with patch.object(joint_runner, "replay", side_effect=changed):
+            with self.assertRaisesRegex(ValueError, "changed between replays"):
+                self.run_capture()
+        self.assertEqual(calls[0], 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

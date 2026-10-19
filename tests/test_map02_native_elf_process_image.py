@@ -1,0 +1,373 @@
+"""Native ELF process-image gate using an actually compiled Linux test executable.
+
+The binary copies only synthetic fixture snapshots; it is NOT the retail game
+and does not prove instrumentation or authentic provenance of the GPU logs.
+"""
+import json
+import os
+import subprocess
+import unittest
+from unittest.mock import patch
+
+import test_map02_launch_two_word_process_integration as fixture_module
+from tools.run_map02_private_native_capture import capture
+from tools.audit_map02_launch_two_word_binding import audit_launch_two_word
+from tools.verify_map02_private_capture_receipt import replay_receipt
+
+NATIVE_EMITTER = r'''
+#define _POSIX_C_SOURCE 200809L
+#include <dirent.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <time.h>
+
+static int copy_file(const char *src, const char *dest) {
+    FILE *a = fopen(src, "rb");
+    if (!a) return 1;
+    FILE *b = fopen(dest, "wb");
+    if (!b) { fclose(a); return 2; }
+    unsigned char buf[32768];
+    size_t n;
+    int failed = 0;
+    while ((n = fread(buf, 1, sizeof(buf), a)) > 0)
+        if (fwrite(buf, 1, n, b) != n) { failed = 3; break; }
+    if (ferror(a)) failed = 4;
+    if (fclose(a)) failed = 5;
+    if (fclose(b)) failed = 6;
+    return failed;
+}
+int main(int argc, char **argv) {
+    if (argc != 2) return 10;
+    const char *output = getenv("VH_MAP02_GPU_CAPTURE_DIR");
+    const char *frame = getenv("VH_MAP02_GPU_CAPTURE_FRAME");
+    if (!output || !frame) return 11;
+    DIR *directory = opendir(argv[1]);
+    if (!directory) return 12;
+    struct dirent *entry;
+    while ((entry = readdir(directory))) {
+        if (entry->d_name[0] == '.') continue;
+        char from[4096], to[4096];
+        if (snprintf(from, sizeof(from), "%s/%s", argv[1], entry->d_name) >= (int)sizeof(from)
+            || snprintf(to, sizeof(to), "%s/%s", output, entry->d_name) >= (int)sizeof(to)) {
+            closedir(directory); return 13;
+        }
+        struct stat info;
+        if (lstat(from, &info) || !S_ISREG(info.st_mode) || copy_file(from, to)) {
+            closedir(directory); return 14;
+        }
+    }
+    closedir(directory);
+    char dda[4096];
+    if (snprintf(dda, sizeof(dda), "%s/dda-native-spans.jsonl", output) >= (int)sizeof(dda))
+        return 15;
+    FILE *log = fopen(dda, "wb");
+    if (!log) return 16;
+    if (fprintf(log, "{\"stage\":\"native_dda_span\",\"step\":0,\"frame\":%s,"
+        "\"primitive_ordinal\":1,\"primitive_type\":2,\"y\":30,"
+        "\"x_start\":30,\"x_bound\":35,\"clip_l\":20,\"clip_r\":45,"
+        "\"clip_t\":25,\"clip_b\":40}\n", frame) < 0) {
+        fclose(log); return 17;
+    }
+    if (fclose(log)) return 18;
+    /* Keep procfs /proc/PID/exe observable while the parent launches. */
+    struct timespec delay = {0, 400000000};
+    nanosleep(&delay, NULL);
+    return 0;
+}
+'''
+
+
+PROBE_MARKERS = r"""
+void VH_CaptureEvent(void) {}
+void VH_Map02PixelScopeSet(void) {}
+void VH_Map02PixelScopeClear(void) {}
+void VH_PixelSampleRecord(void) {}
+const char *volatile map02_x2 = "VH_MAP02_PUTPIXEL_X2";
+const char *volatile map02_y2 = "VH_MAP02_PUTPIXEL_Y2";
+"""
+
+
+class NativeElfProcessImageTests(unittest.TestCase):
+    def setUp(self):
+        if os.name != "posix":
+            self.skipTest("Linux-only pinned ELF feature")
+        host = fixture_module.SpawnedTwoWordCrossAuditTests(
+            methodName="test_actual_subprocess_two_verifiers_and_stable_receipt_agree")
+        host.setUp()
+        self.addCleanup(host.doCleanups)
+        self.host = host
+
+    def build_elf(self, code=NATIVE_EMITTER):
+        result = subprocess.run(
+            ["gcc", "-std=c11", "-O0", "-Wall", "-Wextra", "-Werror",
+             "-x", "c", "-", "-o", str(self.host.executable)],
+            input=code, text=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, check=False, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.host.executable.chmod(0o700)
+        with self.host.executable.open("rb") as f:
+            self.assertEqual(f.read(4), b"\x7fELF")
+
+    def run_capture(self, *, strict=True, probes=False):
+        return capture(
+            self.host.executable, self.host.preflight, self.host.receipt,
+            game_args=(str(self.host.template),), environ=self.host.env,
+            timeout=10, require_native_elf_image=strict,
+            require_native_probe_symbols=probes,
+        )
+
+    def test_compiled_native_elf_is_verified_and_binds_two_word_gpu(self):
+        self.build_elf()
+        result = self.run_capture()
+        self.assertTrue(result["native_elf_image_required"])
+        self.assertTrue(result["native_elf_image_observed"])
+        self.assertTrue(result["process_started"])
+        self.assertEqual(result["process_exit_code"], 0)
+        self.assertTrue(result["capture_verified"])
+        self.assertEqual(result["schema"], "map02_private_native_process_receipt_v2")
+        checked = replay_receipt(
+            self.host.native, receipt_file=self.host.receipt,
+            preflight_report=self.host.preflight, executable=self.host.executable)
+        self.assertTrue(checked["raw_evidence_matches_original_receipt"])
+        joined = audit_launch_two_word(
+            self.host.native, self.host.source, launch_receipt=self.host.receipt,
+            preflight_report=self.host.preflight, executable=self.host.executable,
+            require_native_elf_image=True)
+        self.assertTrue(joined["same_native_gpu_log_sha256_verified"])
+        self.assertTrue(joined["native_elf_process_image_observed"])
+        self.assertTrue(joined["native_elf_image_required_for_join"])
+        self.assertEqual(joined["source_keyed_ft4_draws_checked"], 2)
+        self.assertFalse(joined["native_process_to_log_causality_authenticated"])
+        self.assertFalse(joined["retail_map02_gameplay_authenticated"])
+        self.assertFalse(joined["hd_replacement_authorized"])
+        public = json.dumps(result)
+        self.assertNotIn(str(self.host.template), public)
+        self.assertNotIn(str(self.host.native), public)
+
+    def test_native_probe_required_v3_elf_replays_full_two_word_source(self):
+        # Compile actual native ELF with all static probe *markers*, not
+        # a real instrumentation implementation. The source/VRAM verifier
+        # still replays the independent synthetic fixture end-to-end.
+        self.build_elf(NATIVE_EMITTER + PROBE_MARKERS)
+        result = self.run_capture(probes=True)
+        self.assertTrue(result["capture_verified"])
+        self.assertEqual(result["schema"], "map02_private_native_process_receipt_v3")
+        self.assertTrue(result["native_elf_image_observed"])
+        self.assertTrue(result["native_probe_symbols_required"])
+        self.assertTrue(result["native_probe_symbols_inspected"])
+        again = replay_receipt(
+            self.host.native, receipt_file=self.host.receipt,
+            preflight_report=self.host.preflight, executable=self.host.executable)
+        self.assertTrue(again["native_probe_symbols_inspected"])
+        joined = audit_launch_two_word(
+            self.host.native, self.host.source,
+            launch_receipt=self.host.receipt,
+            preflight_report=self.host.preflight,
+            executable=self.host.executable,
+            require_native_elf_image=True,
+            require_native_probe_symbols=True)
+        self.assertTrue(joined["same_native_gpu_log_sha256_verified"])
+        self.assertTrue(joined["native_probe_symbols_required_for_join"])
+        self.assertTrue(joined["native_probe_symbols_inspected"])
+        self.assertFalse(joined["retail_map02_gameplay_authenticated"])
+        self.assertFalse(joined["native_process_to_log_causality_authenticated"])
+
+    def test_same_bytes_inode_swap_after_nm_cannot_launch_uninspected_elf(self):
+        self.build_elf(NATIVE_EMITTER + PROBE_MARKERS)
+        from tools import run_map02_private_native_capture as launcher
+        original_inspector = launcher.inspect_binary
+        passed_fds = []
+
+        def swap_identical_inode_after_symbol_scan(path, **kwargs):
+            pinned_fd = kwargs["pinned_fd"]
+            passed_fds.append(pinned_fd)
+            original_inode = os.fstat(pinned_fd).st_ino
+            checked = original_inspector(path, **kwargs)
+            replacement = self.host.executable.with_name("same-bytes-elf-swap")
+            replacement.write_bytes(self.host.executable.read_bytes())
+            replacement.chmod(0o700)
+            os.replace(replacement, self.host.executable)
+            self.assertNotEqual(self.host.executable.stat().st_ino, original_inode)
+            return checked
+
+        with patch.object(launcher, "inspect_binary",
+                          side_effect=swap_identical_inode_after_symbol_scan):
+            with self.assertRaisesRegex(
+                ValueError, "changed after inspection|identity changed|changed during symbol inspection"):
+                self.run_capture(probes=True)
+        self.assertEqual(len(passed_fds), 1)
+        with self.assertRaises(OSError):
+            os.fstat(passed_fds[0])
+        self.assertFalse(self.host.preflight.exists())
+        self.assertFalse(self.host.receipt.exists())
+        self.assertEqual(list(self.host.native.iterdir()), [])
+
+    def test_strict_probe_fd_closed_if_preflight_publication_fails(self):
+        self.build_elf(NATIVE_EMITTER + PROBE_MARKERS)
+        from tools import run_map02_private_native_capture as launcher
+        original_inspector = launcher.inspect_binary
+        seen = []
+
+        def inspect_and_remember(path, **kwargs):
+            seen.append(kwargs["pinned_fd"])
+            return original_inspector(path, **kwargs)
+
+        with patch.object(launcher, "inspect_binary",
+                          side_effect=inspect_and_remember), patch.object(
+                launcher, "_private_create",
+                side_effect=OSError("synthetic private directory fsync failure")):
+            with self.assertRaisesRegex(OSError, "fsync failure"):
+                self.run_capture(probes=True)
+        self.assertEqual(len(seen), 1)
+        with self.assertRaises(OSError):
+            os.fstat(seen[0])
+        self.assertFalse(self.host.preflight.exists())
+        self.assertFalse(self.host.receipt.exists())
+        self.assertEqual(list(self.host.native.iterdir()), [])
+
+    def test_missing_probe_symbols_rejected_before_creating_receipts(self):
+        self.build_elf()
+        with self.assertRaisesRegex(ValueError, "probe evidence missing"):
+            self.run_capture(probes=True)
+        self.assertFalse(self.host.preflight.exists())
+        self.assertFalse(self.host.receipt.exists())
+        self.assertEqual(list(self.host.native.iterdir()), [])
+
+    def test_stripped_probe_elf_rejected_before_launch(self):
+        self.build_elf(NATIVE_EMITTER + PROBE_MARKERS)
+        subprocess.run(["strip", "--strip-all", str(self.host.executable)],
+                       check=True, timeout=20)
+        with self.assertRaisesRegex(ValueError, "symbol table unavailable"):
+            self.run_capture(probes=True)
+        self.assertFalse(self.host.preflight.exists())
+        self.assertFalse(self.host.receipt.exists())
+        self.assertEqual(list(self.host.native.iterdir()), [])
+
+    def test_v2_elf_cannot_be_passed_as_probe_verified_v3(self):
+        self.build_elf()
+        result = self.run_capture()
+        self.assertTrue(result["capture_verified"])
+        with self.assertRaisesRegex(ValueError, "probe inspection required"):
+            audit_launch_two_word(
+                self.host.native, self.host.source,
+                launch_receipt=self.host.receipt,
+                preflight_report=self.host.preflight,
+                executable=self.host.executable,
+                require_native_elf_image=True,
+                require_native_probe_symbols=True)
+
+    def test_forged_v3_probe_boolean_refused_on_replay(self):
+        self.build_elf(NATIVE_EMITTER + PROBE_MARKERS)
+        result = self.run_capture(probes=True)
+        self.assertTrue(result["capture_verified"])
+        forged = json.loads(self.host.receipt.read_bytes())
+        forged["native_probe_symbols_inspected"] = False
+        self.host.receipt.write_text(json.dumps(forged), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "probe inspection was not completed"):
+            replay_receipt(self.host.native, receipt_file=self.host.receipt,
+                           preflight_report=self.host.preflight,
+                           executable=self.host.executable)
+
+    def test_native_probe_flag_requires_strict_elf_mode(self):
+        with self.assertRaisesRegex(ValueError, "require strict native ELF"):
+            self.run_capture(strict=False, probes=True)
+        self.assertFalse(self.host.preflight.exists())
+        self.assertFalse(self.host.receipt.exists())
+        self.assertEqual(list(self.host.native.iterdir()), [])
+
+    def test_script_is_rejected_before_process_execution(self):
+        result = self.run_capture()
+        self.assertFalse(result["process_started"])
+        self.assertFalse(result["capture_verified"])
+        self.assertFalse(result["native_elf_image_observed"])
+        self.assertEqual(result["failure_category"], "native_elf_required")
+        self.assertEqual(list(self.host.native.iterdir()), [])
+        with self.assertRaises(ValueError):
+            replay_receipt(
+                self.host.native, receipt_file=self.host.receipt,
+                preflight_report=self.host.preflight,
+                executable=self.host.executable)
+
+    def test_legacy_synthetic_process_is_rejected_by_strict_join(self):
+        # A complete synthetic v1 capture remains valid for legacy audits,
+        # but cannot satisfy the native Linux ELF process gate.
+        ordinary = self.host.spawn()
+        self.assertTrue(ordinary["capture_verified"])
+        self.assertTrue(self.host.cross_audit()["same_native_gpu_log_sha256_verified"])
+        with self.assertRaisesRegex(ValueError, "native ELF image observation required"):
+            audit_launch_two_word(
+                self.host.native, self.host.source, launch_receipt=self.host.receipt,
+                preflight_report=self.host.preflight, executable=self.host.executable,
+                require_native_elf_image=True)
+
+    def test_observation_failure_is_not_promoted_to_verified_capture(self):
+        self.build_elf()
+        with patch("tools.run_map02_private_native_capture.observe_live_elf_image",
+                   side_effect=ValueError("unavailable kernel image")):
+            result = self.run_capture()
+        self.assertTrue(result["process_started"])
+        self.assertEqual(result["process_exit_code"], 0)
+        self.assertFalse(result["native_elf_image_observed"])
+        self.assertFalse(result["capture_verified"])
+        self.assertEqual(result["failure_category"], "native_elf_image_unverified")
+        with self.assertRaises(ValueError):
+            replay_receipt(
+                self.host.native, receipt_file=self.host.receipt,
+                preflight_report=self.host.preflight,
+                executable=self.host.executable)
+
+    def test_kernel_reports_different_executable_inode_fail_closed(self):
+        # Run an actual compiled native ELF with valid fixture output.
+        # Alter only the observed /proc/PID/exe inode in the test-facing
+        # kernel stat response: the capture must not become verified.
+        from types import SimpleNamespace
+        from tools import map02_linux_elf_process_image as kernel
+        self.build_elf()
+        original = kernel.os.stat
+        proc_reads = [0]
+
+        def mismatched_image_stat(path, *args, **kwargs):
+            result = original(path, *args, **kwargs)
+            if (isinstance(path, str) and path.startswith("/proc/")
+                    and path.endswith("/exe")):
+                proc_reads[0] += 1
+                return SimpleNamespace(
+                    st_dev=result.st_dev, st_ino=result.st_ino + 1,
+                    st_mode=result.st_mode)
+            return result
+
+        with patch.object(kernel.os, "stat", side_effect=mismatched_image_stat):
+            result = self.run_capture()
+        self.assertEqual(proc_reads[0], 1)
+        self.assertTrue(result["process_started"])
+        self.assertEqual(result["process_exit_code"], 0)
+        self.assertFalse(result["native_elf_image_observed"])
+        self.assertFalse(result["capture_verified"])
+        self.assertEqual(result["failure_category"], "native_elf_image_unverified")
+        self.assertTrue((self.host.native / "gpu-native-events.jsonl").is_file())
+        with self.assertRaises(ValueError):
+            replay_receipt(
+                self.host.native, receipt_file=self.host.receipt,
+                preflight_report=self.host.preflight,
+                executable=self.host.executable)
+
+    def test_forged_observation_false_is_rejected_during_replay(self):
+        self.build_elf()
+        result = self.run_capture()
+        self.assertTrue(result["capture_verified"])
+        forged = json.loads(self.host.receipt.read_bytes())
+        forged["native_elf_image_observed"] = False
+        self.host.receipt.write_text(json.dumps(forged), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "native ELF image"):
+            replay_receipt(
+                self.host.native, receipt_file=self.host.receipt,
+                preflight_report=self.host.preflight,
+                executable=self.host.executable)
+
+
+if __name__ == "__main__":
+    unittest.main()

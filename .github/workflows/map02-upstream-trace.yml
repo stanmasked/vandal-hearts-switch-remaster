@@ -2,6 +2,14 @@ name: Map02 upstream trace patch verification
 
 on:
   push:
+    branches:
+      - 'work/map02-dda-coverage-independent-audit'
+      - 'work/map02-pr55-receipt-compatibility'
+      - 'work/map02-pr55-native-recorder-compat'
+      - 'work/map02-pr55-drawenv-optional-fix'
+      - 'work/map02-pr55-window-upload-index'
+      - 'work/map02-pr55-joint-status-inventory'
+      - 'work/map02-main-merge-candidate'
     paths:
       - 'tools/make_map02_trace_patch.py'
       - 'tools/prepare_map02_pcport.py'
@@ -83,14 +91,62 @@ on:
       - 'tools/verify_map02_native_overdraw.py'
       - 'tools/instrument_map02_native_putpixel.py'
       - 'tools/verify_map02_native_putpixel.py'
+      - 'tools/map02_pc_writepixel_reference.py'
       - 'tools/instrument_map02_putpixel_scope.py'
       - 'tools/instrument_map02_raster_skips.py'
-      - 'tools/instrument_map02_dda_texel_counts.py'
       - 'tools/instrument_map02_vertical_dda.py'
+      - 'tools/instrument_map02_dda_span.py'
+      - 'tools/instrument_map02_dda_rejected_edges.py'
+      - 'tools/verify_map02_dda_rejected_edges.py'
+      - 'tests/test_instrument_map02_dda_rejected_edges.py'
+      - 'tests/test_map02_dda_candidate_c11.py'
+      - 'tests/test_verify_map02_dda_rejected_edges.py'
+      - 'tests/test_instrument_map02_dda_span.py'
+      - 'tests/test_map02_span_workflow_gate.py'
+      - 'tools/audit_map02_independent_dda_journals.py'
+      - 'tests/test_audit_map02_independent_dda_journals.py'
+      - 'tools/preflight_map02_private_dda_capture.py'
+      - 'tests/test_preflight_map02_private_dda_capture.py'
+      - 'tools/verify_map02_private_capture_session.py'
+      - 'tests/test_verify_map02_private_capture_session.py'
+      - 'tools/run_map02_private_native_capture.py'
+      - 'tools/map02_linux_elf_process_image.py'
+      - 'tools/check_map02_private_pc_binary.py'
+      - 'tests/test_check_map02_private_pc_binary.py'
+      - 'tests/test_map02_native_elf_process_image.py'
+      - 'tools/verify_map02_private_capture_receipt.py'
+      - 'tools/audit_map02_launch_two_word_binding.py'
+      - 'tests/test_run_map02_private_native_capture.py'
+      - 'tests/test_audit_map02_launch_two_word_binding.py'
+      - 'tests/test_map02_launch_two_word_process_integration.py'
+      - 'tests/test_map02_dda_span_c11.py'
       - 'tools/verify_map02_raster_skips.py'
-      - 'tools/verify_map02_dda_texel_counts.py'
-      - 'tools/verify_map02_source_dda_counts.py'
       - 'tools/verify_map02_putpixel_scope.py'
+      - 'tools/verify_map02_putpixel_multi_scope.py'
+      - 'tools/publish_map02_multi_capture_manifest.py'
+      - 'tools/instrument_map02_multi_putpixel_scope.py'
+      - 'tools/prepare_map02_private_gpu_make_overlay.py'
+      - 'tools/verify_map02_private_gpu_make_overlay.py'
+      - 'tools/build_map02_private_gpu_make_overlay.py'
+      - 'tools/map02_kernel_make_witness.py'
+      - 'tests/test_prepare_map02_private_gpu_make_overlay.py'
+      - 'tests/test_verify_map02_private_gpu_make_overlay.py'
+      - 'tests/test_build_map02_private_gpu_make_overlay.py'
+      - 'tools/consume_map02_sealed_gpu_objects.py'
+      - 'tools/verify_map02_linked_gpu_object.py'
+      - 'tools/run_map02_sealed_gpu_receipt_chain.py'
+      - 'tests/test_run_map02_sealed_gpu_receipt_chain.py'
+      - 'tools/verify_map02_published_receipt.py'
+      - 'tests/test_verify_map02_published_receipt.py'
+      - 'tools/map02_external_custody.py'
+      - 'tests/test_map02_external_custody.py'
+      - 'tools/compare_map02_private_bgr555_frames.py'
+      - 'tests/test_compare_map02_private_bgr555_frames.py'
+      - 'tools/bridge_map02_private_frame_native.py'
+      - 'tests/test_bridge_map02_private_frame_native.py'
+      - 'docs/MAP02_PRIVATE_BGR555_FRAME_DIFF.md'
+      - 'tests/test_consume_map02_sealed_gpu_objects.py'
+      - 'tools/audit_map02_putpixel_samples.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
       - 'tools/verify_map02_vram_timeline.py'
@@ -100,20 +156,24 @@ on:
       - 'tests/test_instrument_map02_gpu_native_events.py'
       - 'tests/test_verify_map02_native_gpu_capture.py'
       - 'tests/test_verify_map02_source_native_ft4_join.py'
-      - 'tests/test_verify_map02_timeline_native_ft4_join.py'
       - 'tests/test_verify_map02_source_native_ot_order.py'
       - 'tests/test_verify_map02_native_overdraw.py'
       - 'tests/test_instrument_map02_native_putpixel.py'
       - 'tests/test_verify_map02_native_putpixel.py'
+      - 'tests/test_map02_pc_writepixel_reference.py'
       - 'tests/test_instrument_map02_putpixel_scope.py'
       - 'tests/test_instrument_map02_raster_skips.py'
-      - 'tests/test_instrument_map02_dda_texel_counts.py'
       - 'tests/test_instrument_map02_vertical_dda.py'
       - 'tests/test_verify_map02_vertical_dda.py'
       - 'tests/test_verify_map02_raster_skips.py'
-      - 'tests/test_verify_map02_dda_texel_counts.py'
-      - 'tests/test_verify_map02_source_dda_counts.py'
       - 'tests/test_verify_map02_putpixel_scope.py'
+      - 'tools/map02_observed_blends.py'
+      - 'tests/test_map02_observed_blends.py'
+      - 'tests/test_verify_map02_putpixel_multi_scope.py'
+      - 'tests/test_publish_map02_multi_capture_manifest.py'
+      - 'tests/test_instrument_map02_multi_putpixel_scope.py'
+      - 'tests/test_instrument_map02_multi_putpixel_c11.py'
+      - 'tests/test_audit_map02_putpixel_samples.py'
       - 'tests/test_verify_map02_frame_bundle.py'
       - 'tests/test_verify_map02_vram_timeline.py'
       - 'tests/test_verify_map02_gpu_write_ledger.py'
@@ -135,7 +195,18 @@ on:
       - 'tests/test_capture_map02_runtime.py'
       - 'tests/test_make_map02_trace_patch.py'
       - 'tests/test_map02_trace_c_emitter.py'
+      - 'tools/instrument_map02_joint_gpu_frame.py'
+      - 'tests/test_instrument_map02_joint_gpu_frame.py'
+      - 'tools/audit_map02_joint_gpu_frame.py'
+      - 'tests/test_map02_joint_native_capture_c11.py'
       - '.github/workflows/map02-upstream-trace.yml'
+      - 'tools/instrument_map02_dda_texel_counts.py'
+      - 'tools/verify_map02_dda_texel_counts.py'
+      - 'tools/verify_map02_source_dda_counts.py'
+      - 'tests/test_verify_map02_timeline_native_ft4_join.py'
+      - 'tests/test_instrument_map02_dda_texel_counts.py'
+      - 'tests/test_verify_map02_dda_texel_counts.py'
+      - 'tests/test_verify_map02_source_dda_counts.py'
   pull_request:
     paths:
       - 'tools/make_map02_trace_patch.py'
@@ -218,14 +289,62 @@ on:
       - 'tools/verify_map02_native_overdraw.py'
       - 'tools/instrument_map02_native_putpixel.py'
       - 'tools/verify_map02_native_putpixel.py'
+      - 'tools/map02_pc_writepixel_reference.py'
       - 'tools/instrument_map02_putpixel_scope.py'
       - 'tools/instrument_map02_raster_skips.py'
-      - 'tools/instrument_map02_dda_texel_counts.py'
       - 'tools/instrument_map02_vertical_dda.py'
+      - 'tools/instrument_map02_dda_span.py'
+      - 'tools/instrument_map02_dda_rejected_edges.py'
+      - 'tools/verify_map02_dda_rejected_edges.py'
+      - 'tests/test_instrument_map02_dda_rejected_edges.py'
+      - 'tests/test_map02_dda_candidate_c11.py'
+      - 'tests/test_verify_map02_dda_rejected_edges.py'
+      - 'tests/test_instrument_map02_dda_span.py'
+      - 'tests/test_map02_span_workflow_gate.py'
+      - 'tools/audit_map02_independent_dda_journals.py'
+      - 'tests/test_audit_map02_independent_dda_journals.py'
+      - 'tools/preflight_map02_private_dda_capture.py'
+      - 'tests/test_preflight_map02_private_dda_capture.py'
+      - 'tools/verify_map02_private_capture_session.py'
+      - 'tests/test_verify_map02_private_capture_session.py'
+      - 'tools/run_map02_private_native_capture.py'
+      - 'tools/map02_linux_elf_process_image.py'
+      - 'tools/check_map02_private_pc_binary.py'
+      - 'tests/test_check_map02_private_pc_binary.py'
+      - 'tests/test_map02_native_elf_process_image.py'
+      - 'tools/verify_map02_private_capture_receipt.py'
+      - 'tools/audit_map02_launch_two_word_binding.py'
+      - 'tests/test_run_map02_private_native_capture.py'
+      - 'tests/test_audit_map02_launch_two_word_binding.py'
+      - 'tests/test_map02_launch_two_word_process_integration.py'
+      - 'tests/test_map02_dda_span_c11.py'
       - 'tools/verify_map02_raster_skips.py'
-      - 'tools/verify_map02_dda_texel_counts.py'
-      - 'tools/verify_map02_source_dda_counts.py'
       - 'tools/verify_map02_putpixel_scope.py'
+      - 'tools/verify_map02_putpixel_multi_scope.py'
+      - 'tools/publish_map02_multi_capture_manifest.py'
+      - 'tools/instrument_map02_multi_putpixel_scope.py'
+      - 'tools/prepare_map02_private_gpu_make_overlay.py'
+      - 'tools/verify_map02_private_gpu_make_overlay.py'
+      - 'tools/build_map02_private_gpu_make_overlay.py'
+      - 'tools/map02_kernel_make_witness.py'
+      - 'tests/test_prepare_map02_private_gpu_make_overlay.py'
+      - 'tests/test_verify_map02_private_gpu_make_overlay.py'
+      - 'tests/test_build_map02_private_gpu_make_overlay.py'
+      - 'tools/consume_map02_sealed_gpu_objects.py'
+      - 'tools/verify_map02_linked_gpu_object.py'
+      - 'tools/run_map02_sealed_gpu_receipt_chain.py'
+      - 'tests/test_run_map02_sealed_gpu_receipt_chain.py'
+      - 'tools/verify_map02_published_receipt.py'
+      - 'tests/test_verify_map02_published_receipt.py'
+      - 'tools/map02_external_custody.py'
+      - 'tests/test_map02_external_custody.py'
+      - 'tools/compare_map02_private_bgr555_frames.py'
+      - 'tests/test_compare_map02_private_bgr555_frames.py'
+      - 'tools/bridge_map02_private_frame_native.py'
+      - 'tests/test_bridge_map02_private_frame_native.py'
+      - 'docs/MAP02_PRIVATE_BGR555_FRAME_DIFF.md'
+      - 'tests/test_consume_map02_sealed_gpu_objects.py'
+      - 'tools/audit_map02_putpixel_samples.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
       - 'tools/verify_map02_vram_timeline.py'
@@ -235,20 +354,24 @@ on:
       - 'tests/test_instrument_map02_gpu_native_events.py'
       - 'tests/test_verify_map02_native_gpu_capture.py'
       - 'tests/test_verify_map02_source_native_ft4_join.py'
-      - 'tests/test_verify_map02_timeline_native_ft4_join.py'
       - 'tests/test_verify_map02_source_native_ot_order.py'
       - 'tests/test_verify_map02_native_overdraw.py'
       - 'tests/test_instrument_map02_native_putpixel.py'
       - 'tests/test_verify_map02_native_putpixel.py'
+      - 'tests/test_map02_pc_writepixel_reference.py'
       - 'tests/test_instrument_map02_putpixel_scope.py'
       - 'tests/test_instrument_map02_raster_skips.py'
-      - 'tests/test_instrument_map02_dda_texel_counts.py'
       - 'tests/test_instrument_map02_vertical_dda.py'
       - 'tests/test_verify_map02_vertical_dda.py'
       - 'tests/test_verify_map02_raster_skips.py'
-      - 'tests/test_verify_map02_dda_texel_counts.py'
-      - 'tests/test_verify_map02_source_dda_counts.py'
       - 'tests/test_verify_map02_putpixel_scope.py'
+      - 'tools/map02_observed_blends.py'
+      - 'tests/test_map02_observed_blends.py'
+      - 'tests/test_verify_map02_putpixel_multi_scope.py'
+      - 'tests/test_publish_map02_multi_capture_manifest.py'
+      - 'tests/test_instrument_map02_multi_putpixel_scope.py'
+      - 'tests/test_instrument_map02_multi_putpixel_c11.py'
+      - 'tests/test_audit_map02_putpixel_samples.py'
       - 'tests/test_verify_map02_frame_bundle.py'
       - 'tests/test_verify_map02_vram_timeline.py'
       - 'tests/test_verify_map02_gpu_write_ledger.py'
@@ -270,17 +393,39 @@ on:
       - 'tests/test_capture_map02_runtime.py'
       - 'tests/test_make_map02_trace_patch.py'
       - 'tests/test_map02_trace_c_emitter.py'
+      - 'tools/instrument_map02_joint_gpu_frame.py'
+      - 'tests/test_instrument_map02_joint_gpu_frame.py'
+      - 'tools/audit_map02_joint_gpu_frame.py'
+      - 'tests/test_map02_joint_native_capture_c11.py'
       - '.github/workflows/map02-upstream-trace.yml'
+      - 'tools/instrument_map02_dda_texel_counts.py'
+      - 'tools/verify_map02_dda_texel_counts.py'
+      - 'tools/verify_map02_source_dda_counts.py'
+      - 'tests/test_verify_map02_timeline_native_ft4_join.py'
+      - 'tests/test_instrument_map02_dda_texel_counts.py'
+      - 'tests/test_verify_map02_dda_texel_counts.py'
+      - 'tests/test_verify_map02_source_dda_counts.py'
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   verify-trace-patch:
     name: Apply generated trace patch to pinned upstream
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    outputs:
+      map02_receipt_sha256: ${{ steps.map02_receipt_commitment.outputs.sha256 }}
+      map02_receipt_artifact_digest: ${{ steps.map02_receipt_uploaded.outputs.artifact-digest }}
     steps:
       - name: Checkout remaster diagnostics
         uses: actions/checkout@v4
@@ -310,6 +455,12 @@ jobs:
             platform/pc/src/pc_raster.c
             platform/pc/src/libgpu.c
             platform/pc/src/pc_gpu_internal.h
+            platform/pc/src/libsnd_internal.h
+            platform/pc/src/pc_balance.h
+            platform/pc/src/pc_etc_internal.h
+            platform/pc/src/pc_movie_subs.h
+            platform/pc/src/pc_overlay.h
+            platform/pc/src/pc_saves.h
           sparse-checkout-cone-mode: false
 
       - name: Audit local preflight against public pinned upstream
@@ -338,6 +489,193 @@ jobs:
               assert literal in disc_backend, f"preflight disc probe drift: {literal}"
           print("Pinned source, font hash and disc boot identifiers match the local preflight.")
           PY
+
+      - name: Build pinned two-word GPU and native DDA objects through original PC Make
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd remaster
+            python3 -m unittest discover -s tests -p 'test_prepare_map02_private_gpu_make_overlay.py' -v
+            python3 -m unittest discover -s tests -p 'test_verify_map02_private_gpu_make_overlay.py' -v
+            python3 -m unittest discover -s tests -p 'test_build_map02_private_gpu_make_overlay.py' -v
+            python3 -m unittest discover -s tests -p 'test_consume_map02_sealed_gpu_objects.py' -v
+            python3 -m unittest discover -s tests -p 'test_run_map02_sealed_gpu_receipt_chain.py' -v
+          )
+          PYTHONPATH=remaster python3 -m tools.prepare_map02_private_gpu_make_overlay \
+            upstream --output-dir /tmp/vh-map02-pinned-private-make \
+            > /tmp/vh-map02-private-make.json
+          PYTHONPATH=remaster python3 -m tools.verify_map02_private_gpu_make_overlay \
+            upstream --output-dir /tmp/vh-map02-pinned-private-make \
+            --manifest /tmp/vh-map02-private-make.json \
+            > /tmp/vh-map02-replayed-make-before.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x = json.loads(Path("/tmp/vh-map02-private-make.json").read_text())
+          assert x["source_pinned"]
+          assert x["full_checkout_head_verified"] and x["full_tracked_checkout_clean"]
+          assert x["native_gpu_two_word_and_dda_in_same_make_objects"]
+          assert len(x["required_compiler_defines"]) == 6
+          assert len(x["required_native_symbols"]) == 6
+          assert not x["game_assets_included"] and not x["retail_map02_gameplay_captured"]
+          assert not x["hd_replacement_authorized"]
+          PY
+          PYTHONPATH=remaster python3 -m tools.run_map02_sealed_gpu_receipt_chain \
+            upstream --output-dir /tmp/vh-map02-pinned-private-make \
+            --manifest /tmp/vh-map02-private-make.json \
+            --build-dir build-map02-private-ci > /tmp/vh-map02-sealed-chain.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          bundle = json.loads(Path("/tmp/vh-map02-sealed-chain.json").read_text())
+          report = bundle["primary"]
+          assert bundle["schema"] == "vh.map02.sealed-gpu-receipt-chain.v1"
+          assert bundle["sealed_receipt_snapshots"] == 3
+          assert bundle["receipt_chain_consistent"]
+          assert not bundle["intermediate_receipt_files_written"]
+          assert not bundle["externally_authenticated"]
+          assert not bundle["hd_replacement_authorized"]
+          assert report["sealed_inputs"] == 6 + report["pinned_headers_checked"]
+          assert sorted(report["preprocessed_sha256"]) == ["libgpu", "pc_raster"]
+          assert report["pinned_headers_checked"] >= 40
+          assert report["pinned_headers_sealed"] == report["pinned_headers_checked"]
+          assert report["header_include_directory_watches"] >= 4
+          assert report["header_path_mutations_rejected"]
+          assert set(report["compiler_tool_sha256"]) == {"driver", "cc1", "as"}
+          assert report["compiler_tools_before_after_match"]
+          assert report["compiler_shared_object_count"] >= 1
+          assert len(report["compiler_shared_object_set_sha256"]) == 64
+          assert report["compiler_shared_objects_before_after_match"]
+          assert all(report["compiler_runtime_processes_seen"][key] >= 1
+                     for key in ("driver", "cc1", "as"))
+          assert report["compiler_runtime_loaded_object_count"] >= 1
+          assert len(report["compiler_runtime_loaded_object_set_sha256"]) == 64
+          assert report["compiler_runtime_mappings_correlated_to_resolved_files"]
+          assert report["compiler_runtime_log_pids_verified"]
+          assert report["compiler_runtime_executables_bound_to_selected_tools"]
+          assert report["kernel_tool_exec_witnesses"] == 6
+          assert report["kernel_tool_exec_images_match_sha256"]
+          assert report["actual_make_children_kernel_attested"]
+          assert all(report["kernel_make_primary_children_seen"][role] >= 1
+                     for role in ("driver", "cc1", "as"))
+          assert report["kernel_make_primary_executables_match_sha256"]
+          assert report["kernel_make_primary_mapped_library_count"] >= 1
+          assert len(report["kernel_make_primary_mapped_library_set_sha256"]) == 64
+          assert all(report["kernel_make_primary_mapped_library_roles"][role] >= 1
+                     for role in ("driver", "cc1", "as"))
+          assert report["kernel_make_primary_mapped_libraries_match_sha256"]
+          assert not report["separate_make_object_replay_performed"]
+          assert report["system_header_count"] >= 1
+          assert len(report["system_header_set_sha256"]) == 64
+          assert report["system_header_bytes_before_after_match"]
+          assert report["staged_header_hashes_verified"]
+          assert report["compiled_from_sealed_preprocessor_output"]
+          assert report["verified_source_bytes_used_for_compilation"]
+          assert sorted(report["objects_sha256"]) == ["libgpu.o", "pc_raster.o"]
+          assert not report["all_headers_sealed"] and not report["hd_replacement_authorized"]
+          PY
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          bundle = json.loads(Path("/tmp/vh-map02-sealed-chain.json").read_text())
+          original, linked = bundle["primary"], bundle["linked"]
+          assert linked["schema"] == "vh.map02.sealed-linked-gpu-object.v1"
+          assert linked["source_objects_sha256"] == original["objects_sha256"]
+          assert linked["source_objects_match_primary_receipt"]
+          assert linked["sealed_object_inputs"] == 2
+          assert linked["binutils_consumed_sealed_objects"]
+          assert len(linked["linked_object_sha256"]) == 64
+          assert linked["linked_output_path_stays_mutable"]
+          assert not linked["hd_replacement_authorized"]
+          PY
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          bundle = json.loads(Path("/tmp/vh-map02-sealed-chain.json").read_text())
+          primary, linked, verified = (
+              bundle["primary"], bundle["linked"], bundle["inspection"])
+          assert verified["schema"] == "vh.map02.sealed-linked-gpu-consumption.v1"
+          assert verified["source_objects_sha256"] == primary["objects_sha256"]
+          assert verified["linked_object_sha256"] == linked["linked_object_sha256"]
+          assert verified["linked_hash_verified_against_receipt"]
+          assert verified["linked_bytes_sealed_before_binutils"]
+          assert verified["linked_symbols_and_dda_markers_checked"]
+          assert verified["linked_output_path_stays_mutable"]
+          assert not verified["hd_replacement_authorized"]
+          PY
+          (
+            cd upstream/platform/pc
+            if make -f Makefile -f /tmp/vh-map02-pinned-private-make/map02_private_gpu.mk \
+              BUILD_DIR=build map02-private-gpu-objects > /tmp/vh-map02-unsafe-make.log 2>&1; then
+              echo "Unsafe reuse of baseline PC build directory allowed" >&2
+              exit 1
+            fi
+          )
+          test -z "$(cd upstream && git status --porcelain -- platform/pc/src/libgpu.c platform/pc/src/pc_raster.c)"
+          PYTHONPATH=remaster python3 -m tools.verify_map02_private_gpu_make_overlay \
+            upstream --output-dir /tmp/vh-map02-pinned-private-make \
+            --manifest /tmp/vh-map02-private-make.json \
+            > /tmp/vh-map02-replayed-make-after.json
+          cmp /tmp/vh-map02-replayed-make-before.json /tmp/vh-map02-replayed-make-after.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          evidence = json.loads(Path("/tmp/vh-map02-replayed-make-after.json").read_text())
+          assert evidence["receipt_exactly_replayed"]
+          assert evidence["generated_files_checked"] == 3
+          assert evidence["full_checkout_head_verified"] and evidence["full_tracked_checkout_clean"]
+          assert not evidence["private_game_assets_read"]
+          assert not evidence["private_game_executable_built"]
+          assert not evidence["hd_replacement_authorized"]
+          PY
+
+      - name: Anchor MAP02 receipt hash in producing job output
+        id: map02_receipt_commitment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          path = Path("/tmp/vh-map02-sealed-chain.json")
+          data = path.read_bytes()
+          assert 0 < len(data) <= 1024 * 1024
+          receipt = json.loads(data.decode("utf-8"))
+          assert receipt["schema"] == "vh.map02.sealed-gpu-receipt-chain.v1"
+          assert receipt["receipt_chain_consistent"]
+          assert not receipt["externally_authenticated"]
+          assert not receipt["hd_replacement_authorized"]
+          digest = hashlib.sha256(data).hexdigest()
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write("sha256=" + digest + "\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("MAP02 sealed receipt SHA-256: `" + digest + "`\n")
+          print("Published MAP02 receipt root SHA-256:", digest)
+          PY
+
+      - name: Cryptographically attest MAP02 receipt using GitHub OIDC / Sigstore
+        id: map02_sigstore_attestation
+        uses: actions/attest@v4
+        with:
+          subject-path: /tmp/vh-map02-sealed-chain.json
+
+      - name: Upload independently verifiable MAP02 receipt
+        id: map02_receipt_uploaded
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-gpu-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/vh-map02-sealed-chain.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Run asset-free private MAP02 frame differential regressions
+        working-directory: remaster
+        run: |
+          python3 -m unittest discover -s tests -p 'test_compare_map02_private_bgr555_frames.py' -v
+          python3 -m unittest discover -s tests -p 'test_bridge_map02_private_frame_native.py' -v
 
       - name: Run patch generator regression tests
         working-directory: remaster
@@ -449,6 +787,60 @@ jobs:
           )
           test -z "$(cd upstream && git status --porcelain -- src/core/graphics.c platform/pc/src/libgte.c)"
 
+      - name: Compile pinned combined GPU journal and terminal-frame observer
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd remaster && python3 -m unittest discover -s tests -p 'test_instrument_map02_joint_gpu_frame.py' -v)
+          mkdir -p /tmp/vh-map02-joint-gpu
+          PYTHONPATH=remaster python3 -m tools.instrument_map02_joint_gpu_frame upstream/platform/pc/src/libgpu.c --output /tmp/vh-map02-joint-gpu/libgpu.joint.c
+          (
+            cd upstream/platform/pc
+            flags=(-m64 -std=gnu89 -fno-builtin-csqrt -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US '-Dasm(x)=' -Ibuild/include_stage -Iinclude -I../.. -include pc_forward_decls.h -Wno-incompatible-pointer-types -Wno-builtin-declaration-mismatch -Wno-discarded-qualifiers -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast -Wno-int-conversion -Isrc -I"$GITHUB_WORKSPACE/remaster/tools")
+            mkdir -p build/map02-joint-gpu
+            for cc in gcc clang; do
+              "$cc" "${flags[@]}" -DVH_MAP02_PRIVATE_FRAME_PIPE_TRACE=1 -DVH_MAP02_GPU_CAPTURE=1 -c /tmp/vh-map02-joint-gpu/libgpu.joint.c -o "build/map02-joint-gpu/observer.${cc}.o"
+              "$cc" "${flags[@]}" -c /tmp/vh-map02-joint-gpu/libgpu.joint.c -o "build/map02-joint-gpu/baseline.${cc}.o"
+              "$cc" -std=c11 -Wall -Wextra -Werror -DVH_MAP02_PRIVATE_FRAME_PIPE_TRACE=1 -c "$GITHUB_WORKSPACE/remaster/tools/map02_native_frame_pipe.c" -o "build/map02-joint-gpu/pipe.${cc}.o"
+              ld -r "build/map02-joint-gpu/observer.${cc}.o" "build/map02-joint-gpu/pipe.${cc}.o" -o "build/map02-joint-gpu/linked.${cc}.o"
+              nm -a "build/map02-joint-gpu/observer.${cc}.o" | grep -q VH_Map02JointGpuSessionReady
+              nm -a "build/map02-joint-gpu/observer.${cc}.o" | grep -q VH_CaptureEvent
+              nm -a "build/map02-joint-gpu/observer.${cc}.o" | grep -q VH_Map02PrivateFrameFlush
+              nm -a "build/map02-joint-gpu/linked.${cc}.o" | grep -q vh_map02_frame_pipe_emit
+              if nm -a "build/map02-joint-gpu/baseline.${cc}.o" | grep -E 'VH_Map02JointGpuSessionReady|VH_CaptureEvent|VH_Map02PrivateFrameFlush|vh_map02_frame_pipe_emit'; then
+                echo 'Combined native MAP02 observer leaked into baseline' >&2
+                exit 1
+              fi
+              if "$cc" "${flags[@]}" -DVH_MAP02_PRIVATE_FRAME_PIPE_TRACE=1 -c /tmp/vh-map02-joint-gpu/libgpu.joint.c -o "build/map02-joint-gpu/unpaired.${cc}.o" 2>/dev/null; then
+                echo 'Combined native MAP02 observer allowed frame-only instrumentation' >&2
+                exit 1
+              fi
+            done
+          )
+          test -z "$(cd upstream && git status --porcelain -- platform/pc/src/libgpu.c)"
+      - name: Compile pinned MAP02 frame-flush source with GCC and Clang
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd remaster && python3 -m unittest discover -s tests -p 'test_instrument_map02_frame_flush.py' -v)
+          mkdir -p /tmp/vh-map02-flush-pinned
+          PYTHONPATH=remaster python3 -m tools.instrument_map02_frame_flush upstream/platform/pc/src/libgpu.c --output /tmp/vh-map02-flush-pinned/libgpu.frame.c
+          (
+            cd upstream/platform/pc
+            flags=(-m64 -std=gnu89 -fno-builtin-csqrt -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US '-Dasm(x)=' -Ibuild/include_stage -Iinclude -I../.. -include pc_forward_decls.h -Wno-incompatible-pointer-types -Wno-builtin-declaration-mismatch -Wno-discarded-qualifiers -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast -Wno-int-conversion -Isrc -I"$GITHUB_WORKSPACE/remaster/tools")
+            mkdir -p build/map02-frame-flush-hook
+            for cc in gcc clang; do
+              "$cc" "${flags[@]}" -DVH_MAP02_PRIVATE_FRAME_PIPE_TRACE=1 -c /tmp/vh-map02-flush-pinned/libgpu.frame.c -o "build/map02-frame-flush-hook/libgpu.${cc}.probe.o"
+              "$cc" "${flags[@]}" -c /tmp/vh-map02-flush-pinned/libgpu.frame.c -o "build/map02-frame-flush-hook/libgpu.${cc}.baseline.o"
+              "$cc" -std=c11 -Wall -Wextra -Werror -DVH_MAP02_PRIVATE_FRAME_PIPE_TRACE=1 -c "$GITHUB_WORKSPACE/remaster/tools/map02_native_frame_pipe.c" -o "build/map02-frame-flush-hook/pipe.${cc}.o"
+              ld -r "build/map02-frame-flush-hook/libgpu.${cc}.probe.o" "build/map02-frame-flush-hook/pipe.${cc}.o" -o "build/map02-frame-flush-hook/linked.${cc}.o"
+              nm -a "build/map02-frame-flush-hook/libgpu.${cc}.probe.o" | grep -q VH_Map02PrivateFrameFlush
+              nm -a "build/map02-frame-flush-hook/linked.${cc}.o" | grep -q vh_map02_frame_pipe_emit
+              if nm -a "build/map02-frame-flush-hook/libgpu.${cc}.baseline.o" | grep -q VH_Map02PrivateFrameFlush; then echo 'Frame hook leaked into baseline' >&2; exit 1; fi
+              if nm -a "build/map02-frame-flush-hook/libgpu.${cc}.baseline.o" | grep -q vh_map02_frame_pipe_emit; then echo 'Frame writer linked into baseline' >&2; exit 1; fi
+            done
+          )
+          test -z "$(cd upstream && git status --porcelain -- platform/pc/src/libgpu.c)"
       - name: Compile opt-in original PC GPU event probe, baseline and mutation tests
         shell: bash
         run: |
@@ -458,7 +850,6 @@ jobs:
             python3 -m unittest discover -s tests -p 'test_instrument_map02_gpu_native_events.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_native_gpu_capture.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_source_native_ft4_join.py' -v
-            python3 -m unittest discover -s tests -p 'test_verify_map02_timeline_native_ft4_join.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_source_native_ot_order.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_native_overdraw.py' -v
           )
@@ -511,6 +902,7 @@ jobs:
             cd remaster
             python3 -m unittest discover -s tests -p 'test_instrument_map02_native_putpixel.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_native_putpixel.py' -v
+            python3 -m unittest discover -s tests -p 'test_map02_pc_writepixel_reference.py' -v
           )
           mkdir -p /tmp/vh-map02-native-pixel
           PYTHONPATH=remaster python3 -m tools.instrument_map02_native_putpixel \
@@ -560,6 +952,12 @@ jobs:
             cd remaster
             python3 -m unittest discover -s tests -p 'test_instrument_map02_putpixel_scope.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_putpixel_scope.py' -v
+            python3 -m unittest discover -s tests -p 'test_map02_observed_blends.py' -v
+            python3 -m unittest discover -s tests -p 'test_audit_map02_putpixel_samples.py' -v
+            python3 -m unittest discover -s tests -p 'test_verify_map02_putpixel_multi_scope.py' -v
+            python3 -m unittest discover -s tests -p 'test_publish_map02_multi_capture_manifest.py' -v
+            python3 -m unittest discover -s tests -p 'test_instrument_map02_multi_putpixel_scope.py' -v
+            python3 -m unittest discover -s tests -p 'test_instrument_map02_multi_putpixel_c11.py' -v
           )
           PYTHONPATH=remaster python3 -m tools.instrument_map02_putpixel_scope \
             upstream/platform/pc/src/libgpu.c \
@@ -573,6 +971,21 @@ jobs:
           assert m["exact_original_gpu_sources_pinned"]
           assert m["synchronized_native_gpu_capture_in_same_binary"]
           assert m["pixel_calls_record_cap"] == 64
+          assert not m["original_gameplay_captured"]
+          PY
+          PYTHONPATH=remaster python3 -m tools.instrument_map02_multi_putpixel_scope \
+            upstream/platform/pc/src/libgpu.c \
+            upstream/platform/pc/src/pc_raster.c \
+            --output-dir /tmp/map02-multiscope-gpu \
+            > /tmp/map02-multiscope-gpu.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("/tmp/map02-multiscope-gpu.json").read_text())
+          assert m["exact_original_gpu_sources_pinned"]
+          assert m["single_shared_putpixel_event_stream"]
+          assert m["distinct_sample_coordinates_required"] == 2
+          assert m["total_pixel_calls_record_cap"] == 64
           assert not m["original_gameplay_captured"]
           PY
           (
@@ -607,6 +1020,29 @@ jobs:
             nm build/map02-scoped-gpu/combined.capture.o | grep VH_CaptureEvent
             if nm -a build/map02-scoped-gpu/combined.baseline.o | grep -Eq 'VH_Map02PixelScope|VH_PixelSampleRecord|VH_CaptureEvent'; then
               echo "Opt-in GPU scope leaked into the ordinary non-instrumented build" >&2
+              exit 1
+            fi
+            mkdir -p build/map02-multiscope-gpu
+            for mode in capture baseline; do
+              multi_flags=()
+              if [[ "$mode" == capture ]]; then
+                multi_flags=(-DVH_MAP02_GPU_CAPTURE -DVH_MAP02_MULTI_PUTPIXEL_SCOPE)
+              fi
+              gcc "${common_flags[@]}" "${multi_flags[@]}" \
+                -c /tmp/map02-multiscope-gpu/libgpu.multiscope.c \
+                -o "build/map02-multiscope-gpu/libgpu.${mode}.o"
+              gcc "${common_flags[@]}" "${multi_flags[@]}" \
+                -c /tmp/map02-multiscope-gpu/pc_raster.multiscope.c \
+                -o "build/map02-multiscope-gpu/pc_raster.${mode}.o"
+              ld -r "build/map02-multiscope-gpu/libgpu.${mode}.o" \
+                "build/map02-multiscope-gpu/pc_raster.${mode}.o" \
+                -o "build/map02-multiscope-gpu/combined.${mode}.o"
+            done
+            nm build/map02-multiscope-gpu/combined.capture.o | grep VH_Map02PixelScopeSet
+            nm build/map02-multiscope-gpu/combined.capture.o | grep VH_PixelSampleRecord
+            nm build/map02-multiscope-gpu/combined.capture.o | grep VH_CaptureEvent
+            if nm -a build/map02-multiscope-gpu/combined.baseline.o | grep -Eq 'VH_Map02PixelScope|VH_PixelSampleRecord|VH_CaptureEvent'; then
+              echo "Two-coordinate observer leaked into baseline GPU build" >&2
               exit 1
             fi
           )
@@ -739,6 +1175,17 @@ jobs:
           set -euo pipefail
           (
             cd remaster
+            python3 -m unittest discover -s tests -p 'test_instrument_map02_dda_span.py' -v
+            python3 -m unittest discover -s tests -p 'test_map02_dda_span_composition.py' -v
+            python3 -m unittest discover -s tests -p 'test_verify_map02_dda_native_spans.py' -v
+            python3 -m unittest discover -s tests -p 'test_audit_map02_independent_dda_journals.py' -v
+            python3 -m unittest discover -s tests -p 'test_preflight_map02_private_dda_capture.py' -v
+            python3 -m unittest discover -s tests -p 'test_verify_map02_private_capture_session.py' -v
+            python3 -m unittest discover -s tests -p 'test_run_map02_private_native_capture.py' -v
+            python3 -m unittest discover -s tests -p 'test_map02_native_elf_process_image.py' -v
+            python3 -m unittest discover -s tests -p 'test_check_map02_private_pc_binary.py' -v
+            python3 -m unittest discover -s tests -p 'test_audit_map02_launch_two_word_binding.py' -v
+            python3 -m unittest discover -s tests -p 'test_map02_launch_two_word_process_integration.py' -v
             python3 -m unittest discover -s tests -p 'test_instrument_map02_vertical_dda.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_vertical_dda.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_raster_skips.py' -v
@@ -759,6 +1206,39 @@ jobs:
           assert m["vertical_row_rejected_but_horizontal_coverage_unknown"]
           assert not m["per_pixel_triangle_coverage_verified"]
           PY
+          PYTHONPATH=remaster python3 - <<'PY'
+          from pathlib import Path
+          from tools.instrument_map02_dda_span import prepare_span
+          report = prepare_span(
+              Path("upstream/platform/pc/src/libgpu.c"),
+              Path("upstream/platform/pc/src/pc_raster.c"),
+              Path("/tmp/vh-map02-native-span-overlay"))
+          assert report["pinned_original_gpu"]
+          assert not report["vertical_rejected_row_coverage_proven"]
+          gpu_old = Path("/tmp/vh-map02-vertical-dda/libgpu.vertical.c").read_bytes()
+          gpu_new = Path("/tmp/vh-map02-native-span-overlay/libgpu.span.c").read_bytes()
+          assert gpu_old == gpu_new, "span overlay changed the native GPU observer"
+          vertical = Path("/tmp/vh-map02-vertical-dda/pc_raster.vertical.c").read_text()
+          span = Path("/tmp/vh-map02-native-span-overlay/pc_raster.span.c").read_text()
+          for reason in (4, 5, 6, 7):
+              anchor = f"VH_Map02SkipAt(vh_pixel_sample_x, y, {reason});"
+              assert vertical.count(anchor) == span.count(anchor) == 1
+          assert span.count("VH_Map02SpanObserve(cx, y, x_start, x_bound);") == 1
+          PY
+          PYTHONPATH=remaster python3 - <<'PY'
+          from pathlib import Path
+          from tools.instrument_map02_dda_rejected_edges import instrument_rejected_edges
+          original = Path("/tmp/vh-map02-native-span-overlay/pc_raster.span.c")
+          candidate = original.with_name("pc_raster.candidate.c")
+          generated = instrument_rejected_edges(original.read_text(encoding="utf-8"))
+          for reason in (4, 5, 6, 7):
+              observer = f"VH_Map02RejectedEdges(cx, y, left_x, right_x, {reason});"
+              assert generated.count(observer) == 1, f"missing or duplicate native candidate reason {reason}"
+              skip = f"VH_Map02SkipAt(vh_pixel_sample_x, y, {reason});"
+              assert generated.count(skip) == 1, f"original vertical event {reason} changed"
+          assert generated.count("static void VH_Map02RejectedEdges(") == 1
+          candidate.write_text(generated, encoding="utf-8")
+          PY
           (
             cd upstream/platform/pc
             flags=(
@@ -769,6 +1249,7 @@ jobs:
               -Wno-incompatible-pointer-types -Wno-builtin-declaration-mismatch
               -Wno-discarded-qualifiers -Wno-pointer-to-int-cast
               -Wno-int-to-pointer-cast -Wno-int-conversion
+              -Werror=implicit-function-declaration
             )
             mkdir -p build/map02-vertical-dda
             for mode in diagnostic baseline; do
@@ -783,10 +1264,98 @@ jobs:
               gcc "${flags[@]}" "${extra[@]}" \
                 -c /tmp/vh-map02-vertical-dda/pc_raster.vertical.c \
                 -o "build/map02-vertical-dda/raster.${mode}.o"
+              span_extra=()
+              if [[ "$mode" == diagnostic ]]; then
+                span_extra=(-DVH_MAP02_DDA_SPAN_TRACE)
+              fi
+              gcc "${flags[@]}" "${extra[@]}" "${span_extra[@]}" \
+                -c /tmp/vh-map02-native-span-overlay/pc_raster.span.c \
+                -o "build/map02-vertical-dda/span.${mode}.o"
               ld -r "build/map02-vertical-dda/gpu.${mode}.o" \
                 "build/map02-vertical-dda/raster.${mode}.o" \
                 -o "build/map02-vertical-dda/linked.${mode}.o"
+              ld -r "build/map02-vertical-dda/gpu.${mode}.o" \
+                "build/map02-vertical-dda/span.${mode}.o" \
+                -o "build/map02-vertical-dda/span-linked.${mode}.o"
+              candidate_extra=()
+              if [[ "$mode" == diagnostic ]]; then
+                candidate_extra=(-DVH_MAP02_DDA_REJECTED_EDGES_TRACE)
+              fi
+              gcc "${flags[@]}" "${extra[@]}" "${span_extra[@]}" "${candidate_extra[@]}" \
+                -c /tmp/vh-map02-native-span-overlay/pc_raster.candidate.c \
+                -o "build/map02-vertical-dda/candidate.${mode}.o"
+              ld -r "build/map02-vertical-dda/gpu.${mode}.o" \
+                "build/map02-vertical-dda/candidate.${mode}.o" \
+                -o "build/map02-vertical-dda/candidate-linked.${mode}.o"
+              # Independent syntax/semantic compile with Clang of the identical
+              # source-pinned candidate overlay, in both flag configurations.
+              clang "${flags[@]}" "${extra[@]}" "${span_extra[@]}" \
+                -c /tmp/vh-map02-native-span-overlay/pc_raster.span.c \
+                -o "build/map02-vertical-dda/span-clang.${mode}.o"
+              clang "${flags[@]}" "${extra[@]}" "${span_extra[@]}" "${candidate_extra[@]}" \
+                -c /tmp/vh-map02-native-span-overlay/pc_raster.candidate.c \
+                -o "build/map02-vertical-dda/candidate-clang.${mode}.o"
+              clang "${flags[@]}" "${extra[@]}" \
+                -c /tmp/vh-map02-vertical-dda/libgpu.vertical.c \
+                -o "build/map02-vertical-dda/gpu-clang.${mode}.o"
+              ld -r "build/map02-vertical-dda/gpu-clang.${mode}.o" \
+                "build/map02-vertical-dda/candidate-clang.${mode}.o" \
+                -o "build/map02-vertical-dda/candidate-linked-clang.${mode}.o"
+              if [[ "$mode" == diagnostic ]]; then
+                nm --defined-only "build/map02-vertical-dda/candidate-linked-clang.${mode}.o" |
+                  grep VH_Map02RejectedEdges
+              elif nm --defined-only "build/map02-vertical-dda/candidate-linked-clang.${mode}.o" |
+                   grep -q VH_Map02RejectedEdges; then
+                echo "Candidate observer leaked into Clang baseline" >&2
+                exit 1
+              fi
             done
+            # Candidate instrumentation is opt-in: the baseline raster must
+            # retain exactly the same executable instructions as the span
+            # overlay with candidate tracing disabled. Compare text sections,
+            # not object file metadata (which contains source path details).
+            objcopy --only-section=.text -O binary \
+              build/map02-vertical-dda/span.baseline.o \
+              build/map02-vertical-dda/span-baseline.text.bin
+            objcopy --only-section=.text -O binary \
+              build/map02-vertical-dda/candidate.baseline.o \
+              build/map02-vertical-dda/candidate-baseline.text.bin
+            cmp build/map02-vertical-dda/span-baseline.text.bin \
+                build/map02-vertical-dda/candidate-baseline.text.bin
+            # Raw .text bytes alone miss ELF relocations: two equivalent
+            # instruction sequences can still refer to different targets.
+            # Compare source-pinned baseline relocation tables as well.
+            readelf -rW build/map02-vertical-dda/span.baseline.o \
+              > build/map02-vertical-dda/span-baseline.relocations.txt
+            readelf -rW build/map02-vertical-dda/candidate.baseline.o \
+              > build/map02-vertical-dda/candidate-baseline.relocations.txt
+            cmp build/map02-vertical-dda/span-baseline.relocations.txt \
+                build/map02-vertical-dda/candidate-baseline.relocations.txt
+            # The same fail-closed baseline parity check for Clang.
+            objcopy --only-section=.text -O binary \
+              build/map02-vertical-dda/span-clang.baseline.o \
+              build/map02-vertical-dda/span-clang-baseline.text.bin
+            objcopy --only-section=.text -O binary \
+              build/map02-vertical-dda/candidate-clang.baseline.o \
+              build/map02-vertical-dda/candidate-clang-baseline.text.bin
+            cmp build/map02-vertical-dda/span-clang-baseline.text.bin \
+                build/map02-vertical-dda/candidate-clang-baseline.text.bin
+            readelf -rW build/map02-vertical-dda/span-clang.baseline.o \
+              > build/map02-vertical-dda/span-clang-baseline.relocations.txt
+            readelf -rW build/map02-vertical-dda/candidate-clang.baseline.o \
+              > build/map02-vertical-dda/candidate-clang-baseline.relocations.txt
+            cmp build/map02-vertical-dda/span-clang-baseline.relocations.txt \
+                build/map02-vertical-dda/candidate-clang-baseline.relocations.txt
+            nm --defined-only build/map02-vertical-dda/candidate-linked.diagnostic.o | grep VH_Map02RejectedEdges
+            if nm --defined-only build/map02-vertical-dda/candidate-linked.baseline.o | grep -q VH_Map02RejectedEdges; then
+              echo "Candidate observer leaked into baseline" >&2
+              exit 1
+            fi
+            nm -a build/map02-vertical-dda/span-linked.diagnostic.o | grep VH_Map02SpanObserve
+            if nm -a build/map02-vertical-dda/span-linked.baseline.o | grep -Eq "VH_Map02SpanObserve|VH_Map02SkipAt|VH_Map02PixelScope|VH_PixelSampleRecord"; then
+              echo "Span observer leaked into baseline" >&2
+              exit 1
+            fi
             nm -a build/map02-vertical-dda/linked.diagnostic.o | grep VH_Map02SkipAt
             nm -a build/map02-vertical-dda/linked.diagnostic.o | grep VH_Map02PixelScopeSet
             if nm -a build/map02-vertical-dda/linked.baseline.o | grep -Eq 'VH_Map02SkipAt|VH_Map02PixelScope|VH_PixelSampleRecord|VH_CaptureEvent'; then
@@ -795,6 +1364,94 @@ jobs:
             fi
           )
           test -z "$(cd upstream && git status --porcelain -- platform/pc/src/libgpu.c platform/pc/src/pc_raster.c)"
+
+      - name: Publish source-pinned DDA candidate build evidence
+        shell: bash
+        env:
+          REMASTER_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          cd upstream/platform/pc
+          test "$(git rev-parse HEAD)" = 14552fffa0e0b47e02b57592e274fc6e7a649923
+          test -s build/map02-vertical-dda/candidate-linked.diagnostic.o
+          test -s build/map02-vertical-dda/candidate-linked.baseline.o
+          test -s build/map02-vertical-dda/candidate-linked-clang.diagnostic.o
+          test -s build/map02-vertical-dda/candidate-linked-clang.baseline.o
+          {
+            echo "### Source-pinned original PC GPU — DDA candidate build"
+            echo "Pinned upstream: \`$(git rev-parse HEAD)\`"
+            echo "Checked-out remaster commit (PR merge revision): \`$GITHUB_SHA\`"
+            echo "Remaster source branch HEAD: \`$REMASTER_SOURCE_HEAD\`"
+            echo "GCC: \`$(gcc -dumpfullversion -dumpversion)\`"
+            echo "Clang: \`$(clang -dumpversion)\`"
+            echo "GCC/Clang: diagnostic and baseline objects built and partially linked."
+            echo "GCC/Clang: baseline text, relocations and symbol isolation checked."
+            echo "#### SHA-256 of real linked candidate objects"
+            for object in candidate-linked.diagnostic.o candidate-linked.baseline.o \
+                          candidate-linked-clang.diagnostic.o candidate-linked-clang.baseline.o; do
+              sha256sum "build/map02-vertical-dda/$object"
+            done
+            echo "This is a compile/link check, NOT an original MAP02 gameplay capture."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save reproducible original GPU object manifest
+        shell: bash
+        env:
+          REMASTER_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          cd upstream/platform/pc
+          mkdir -p build/map02-vertical-dda/evidence
+          test "$(git rev-parse HEAD)" = 14552fffa0e0b47e02b57592e274fc6e7a649923
+          git rev-parse HEAD > build/map02-vertical-dda/evidence/upstream-commit.txt
+          test -n "$REMASTER_SOURCE_HEAD"
+          test "$(git -C ../../../remaster rev-parse HEAD)" = "$GITHUB_SHA"
+          printf '%s\n' "$GITHUB_SHA" > build/map02-vertical-dda/evidence/remaster-commit.txt
+          printf '%s\n' "$REMASTER_SOURCE_HEAD" > build/map02-vertical-dda/evidence/remaster-source-head.txt
+          gcc --version | head -1 > build/map02-vertical-dda/evidence/gcc-version.txt
+          clang --version | head -1 > build/map02-vertical-dda/evidence/clang-version.txt
+          (
+            cd build/map02-vertical-dda
+            sha256sum candidate-linked.diagnostic.o candidate-linked.baseline.o \
+                      candidate-linked-clang.diagnostic.o candidate-linked-clang.baseline.o \
+              > evidence/objects.sha256
+            sha256sum --check evidence/objects.sha256
+          )
+          test "$(wc -l < build/map02-vertical-dda/evidence/objects.sha256)" -eq 4
+          # The new same-Makefile GPU+dual-PutPixel+DDA composition gets
+          # its own independent checksum receipt, without uploading object
+          # binaries or game files. sha256sum --check verifies all 3 bytes.
+          (
+            cd build-map02-private-ci
+            sha256sum libgpu.o pc_raster.o gpu-two-word-dda.o \
+              > ../build/map02-vertical-dda/evidence/private-make-gpu-dda-objects.sha256
+            sha256sum --check \
+              ../build/map02-vertical-dda/evidence/private-make-gpu-dda-objects.sha256
+          )
+          test "$(wc -l < build/map02-vertical-dda/evidence/private-make-gpu-dda-objects.sha256)" -eq 3
+          # The independent replay was executed both before and after Make.
+          # Publish only the bounded, path-free audit: never native game data.
+          cp /tmp/vh-map02-replayed-make-after.json \
+            build/map02-vertical-dda/evidence/private-make-gpu-dda-replay.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          evidence = json.loads(Path(
+              "build/map02-vertical-dda/evidence/private-make-gpu-dda-replay.json").read_text())
+          assert evidence["receipt_exactly_replayed"] is True
+          assert evidence["generated_files_checked"] == 3
+          assert evidence["private_game_assets_read"] is False
+          assert evidence["native_process_to_gpu_log_causality_verified"] is False
+          assert not any("path" in key or "directory" in key for key in evidence)
+          PY
+
+      - name: Upload original GPU object evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-original-gpu-candidate-evidence
+          path: upstream/platform/pc/build/map02-vertical-dda/evidence/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Verify pinned make-overlay diagnostic object compilation
         shell: bash
@@ -950,3 +1607,108 @@ jobs:
           assert marker in combined and loader in combined
           print("Verified matched loader/renderer markers in real Make-built and partial-linked objects.")
           PY
+
+  verify-published-gpu-receipt:
+    name: Independently recheck MAP02 receipt artifact
+    needs: verify-trace-patch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout independent verification code
+        uses: actions/checkout@v4
+        with:
+          path: remaster
+          persist-credentials: false
+
+      - name: Download immutable MAP02 receipt artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: map02-gpu-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: downloaded-map02-receipt
+
+      - name: Verify Sigstore signature and trusted GitHub workflow identity
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh attestation verify \
+            downloaded-map02-receipt/vh-map02-sealed-chain.json \
+            --repo "${{ github.repository }}" \
+            --signer-workflow "${{ github.repository }}/.github/workflows/map02-upstream-trace.yml" \
+            --source-digest "${{ github.sha }}" \
+            --format json > /tmp/vh-map02-sigstore-verified.json
+          test -s /tmp/vh-map02-sigstore-verified.json
+          echo "MAP02 receipt signature, source commit and workflow identity verified." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify uploaded JSON against producer's separate job output
+        shell: bash
+        env:
+          PRODUCER_SHA256: ${{ needs.verify-trace-patch.outputs.map02_receipt_sha256 }}
+          GITHUB_ARCHIVE_SHA256: ${{ needs.verify-trace-patch.outputs.map02_receipt_artifact_digest }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import re
+          archive = os.environ["GITHUB_ARCHIVE_SHA256"]
+          assert re.fullmatch(r"(?:sha256:)?[0-9a-f]{64}", archive), (
+              "GitHub-hosted receipt archive digest is missing")
+          PY
+          PYTHONPATH=remaster python3 -m unittest discover \
+            -s remaster/tests -p 'test_verify_map02_published_receipt.py' -v
+          PYTHONPATH=remaster python3 -m tools.verify_map02_published_receipt \
+            downloaded-map02-receipt/vh-map02-sealed-chain.json \
+            --expected-sha256 "$PRODUCER_SHA256" > verified-map02-receipt.json
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          receipt = json.loads(Path("verified-map02-receipt.json").read_text())
+          assert receipt["schema"] == "vh.map02.published-gpu-receipt-audit.v1"
+          assert receipt["published_report_sha256"] == os.environ["PRODUCER_SHA256"]
+          assert receipt["caller_supplied_sha256_matched"]
+          assert receipt["three_embedded_receipts_checked"] == 3
+          assert receipt["receipt_chain_consistent"]
+          assert not receipt["independent_digital_signature_verified"]
+          assert not receipt["hd_replacement_authorized"]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
+              out.write("Independent MAP02 receipt recheck passed. SHA-256: `"
+                        + receipt["published_report_sha256"] + "`\n")
+          PY
+
+      - name: Prepare unsigned request for an external MAP02 custodian
+        shell: bash
+        env:
+          PRODUCER_SHA256: ${{ needs.verify-trace-patch.outputs.map02_receipt_sha256 }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=remaster python3 -m unittest discover \
+            -s remaster/tests -p 'test_map02_external_custody.py' -v
+          PYTHONPATH=remaster python3 -m tools.map02_external_custody prepare \
+            --receipt downloaded-map02-receipt/vh-map02-sealed-chain.json \
+            --expected-sha256 "$PRODUCER_SHA256" \
+            --source-commit "${{ github.sha }}" \
+            --run-id "${{ github.run_id }}" \
+            --run-attempt "${{ github.run_attempt }}" \
+            --output map02-external-custody-request.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          request = json.loads(Path("map02-external-custody-request.json").read_text())
+          assert request["schema"] == "vh.map02.external-custody-request.v1"
+          assert not request["independent_custodian_signed"]
+          assert not request["real_map02_gameplay_authenticated"]
+          assert not request["hd_replacement_authorized"]
+          assert len(request["subject"]["receipt_sha256"]) == 64
+          PY
+
+      - name: Publish UNSIGNED MAP02 external custody request
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-unsigned-external-custody-${{ github.run_id }}-${{ github.run_attempt }}
+          path: map02-external-custody-request.json
+          if-no-files-found: error
+          retention-days: 14

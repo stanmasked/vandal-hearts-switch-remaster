@@ -1,0 +1,745 @@
+#!/usr/bin/env python3
+"""Compile two source-pinned MAP02 backend objects from Linux sealed inputs.
+
+The original Makefile, generated Make overlay, both generated C files and
+each pinned, source-local Git header are sealed in anonymous Linux memfd
+inodes before preprocessing. The two preprocessed C inputs are then sealed
+before object compilation. System headers, compiler/toolchain and other
+checkout inputs are NOT execution-attested.
+"""
+import argparse
+from contextlib import ExitStack
+import ctypes
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import signal
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+
+from tools import prepare_map02_private_gpu_make_overlay as builder
+from tools import map02_kernel_make_witness as kernel_witness
+from tools import verify_map02_private_gpu_make_overlay as auditor
+
+MAX_OBJECT_BYTES = 64 * 1024 * 1024
+SEALS = (fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW |
+         fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL)
+
+
+def _sealed_fd(content, label):
+    """Return an anonymous, immutable file; never fall back to a path."""
+    fd = os.memfd_create(label, flags=os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
+    try:
+        pos = 0
+        while pos < len(content):
+            n = os.write(fd, content[pos:])
+            if n <= 0:
+                raise OSError("unable to write sealed MAP02 source")
+            pos += n
+        fcntl.fcntl(fd, fcntl.F_ADD_SEALS, SEALS)
+        if fcntl.fcntl(fd, fcntl.F_GET_SEALS) & SEALS != SEALS:
+            raise ValueError("MAP02 source sealing was incomplete")
+        os.lseek(fd, 0, os.SEEK_SET)
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+HEADER_LIMIT = 16 * 1024 * 1024
+COMPILER_LIMIT = 128 * 1024 * 1024
+
+
+def _tracked_header_blobs(upstream):
+    """Read HEAD's tracked header inventory, independent of the mutable index."""
+    git = shutil.which("git", path="/usr/bin:/bin")
+    if not git:
+        raise ValueError("MAP02 pinned header Git inspector unavailable")
+    try:
+        result = subprocess.run(
+            [git, "ls-tree", "-r", "-z", "HEAD", "--",
+             "include", "platform/pc/include", "platform/pc/src"],
+            cwd=upstream, env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+            capture_output=True, timeout=20, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ValueError("MAP02 pinned header inventory unavailable") from exc
+    if result.returncode or not result.stdout:
+        raise ValueError("MAP02 pinned header inventory unavailable")
+    headers = {}
+    for entry in result.stdout.split(bytes([0])):
+        if not entry:
+            continue
+        try:
+            meta, raw_path = entry.split(bytes([9]), 1)
+            mode, kind, blob = meta.decode("ascii").split(" ")
+            rel = raw_path.decode("utf-8")
+        except (ValueError, UnicodeError) as exc:
+            raise ValueError("MAP02 pinned header inventory malformed") from exc
+        if not (rel.startswith(("include/", "platform/pc/include/",
+                                "platform/pc/src/"))
+                and rel.endswith((".h", ".inc", ".hpp"))):
+            continue
+        if (kind != "blob" or mode not in ("100644", "100755")
+                or rel in headers or not re.fullmatch(r"[A-Za-z0-9_./-]+", rel)
+                or any(x in (".", "..") for x in Path(rel).parts)):
+            raise ValueError("MAP02 pinned header inventory invalid")
+        headers[rel] = blob
+    if not headers:
+        raise ValueError("MAP02 pinned header inventory empty")
+    return headers
+
+
+def _stage_headers(upstream, stage, files, stack):
+    """Expose exact pinned header bytes only through immutable memfd symlinks."""
+    digests = {}
+    for relative, blob in sorted(_tracked_header_blobs(upstream).items()):
+        source = upstream / relative
+        for parent in source.parents:
+            if parent == upstream:
+                break
+            if parent.is_symlink():
+                raise ValueError("MAP02 pinned header directory redirected")
+        content = auditor._stable_regular_bytes(source, max_bytes=HEADER_LIMIT)
+        if builder.git_blob_sha1(content) != blob:
+            raise ValueError("MAP02 pinned header differs from Git blob")
+        key = "header:" + relative
+        fd = _sealed_fd(content, "vh-map02-pinned-header")
+        stack.callback(os.close, fd)
+        files[key] = fd
+        dest = stage / relative
+        dest.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        dest.symlink_to("/proc/self/fd/" + str(fd))
+        digests[relative] = hashlib.sha256(content).hexdigest()
+    return digests
+
+
+def _recheck_headers(stage, digests, files):
+    """Require an exact link inventory backed by the same sealed header FDs."""
+    observed = set()
+    for current, directories, filenames in os.walk(stage, followlinks=False):
+        for directory in directories:
+            if (Path(current) / directory).is_symlink():
+                raise ValueError("MAP02 staged header inventory changed")
+        for filename in filenames:
+            file = Path(current) / filename
+            relative = file.relative_to(stage).as_posix()
+            key = "header:" + relative
+            if relative not in digests or key not in files or not file.is_symlink():
+                raise ValueError("MAP02 staged header inventory changed")
+            fd = files[key]
+            if (os.readlink(file) != "/proc/self/fd/" + str(fd)
+                    or (os.stat(file).st_dev, os.stat(file).st_ino) !=
+                    (os.fstat(fd).st_dev, os.fstat(fd).st_ino)):
+                raise ValueError("MAP02 staged header link redirected")
+            observed.add(relative)
+    if observed != set(digests):
+        raise ValueError("MAP02 staged header inventory changed")
+    for relative, digest in digests.items():
+        fd = files["header:" + relative]
+        if fcntl.fcntl(fd, fcntl.F_GET_SEALS) & SEALS != SEALS:
+            raise ValueError("MAP02 staged header seal invalid")
+        if hashlib.sha256(os.pread(fd, HEADER_LIMIT + 1, 0)).hexdigest() != digest:
+            raise ValueError("MAP02 staged header changed during preprocessing")
+
+
+
+
+IN_MUTATION = (0x2 | 0x4 | 0x8 | 0x40 | 0x80 | 0x100 | 0x200 |
+               0x400 | 0x800 | 0x2000 | 0x4000 | 0x8000)
+IN_ONLYDIR = 0x01000000
+IN_DONT_FOLLOW = 0x02000000
+
+
+def _watch_header_tree(stage):
+    """Watch every include directory; refuse races including restored links."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    try:
+        init = libc.inotify_init1
+        add = libc.inotify_add_watch
+    except AttributeError as exc:
+        raise ValueError("MAP02 Linux inotify unavailable") from exc
+    init.argtypes, init.restype = [ctypes.c_int], ctypes.c_int
+    add.argtypes, add.restype = [ctypes.c_int, ctypes.c_char_p, ctypes.c_uint32], ctypes.c_int
+    fd = init(os.O_NONBLOCK | os.O_CLOEXEC)
+    if fd < 0:
+        raise OSError(ctypes.get_errno(), "MAP02 inotify initialization failed")
+    try:
+        count = 0
+        for current, directories, names in os.walk(stage, followlinks=False):
+            if count >= 512:
+                raise ValueError("MAP02 include watch directory limit exceeded")
+            if Path(current).is_symlink():
+                raise ValueError("MAP02 include directory redirected")
+            wd = add(fd, os.fsencode(current), IN_MUTATION | IN_ONLYDIR | IN_DONT_FOLLOW)
+            if wd < 0:
+                raise OSError(ctypes.get_errno(), "MAP02 include watch installation failed")
+            count += 1
+        if not count:
+            raise ValueError("MAP02 include watch inventory empty")
+        return fd, count
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _check_header_watch(fd):
+    """A single mutation or an inotify overflow invalidates the build."""
+    try:
+        events = os.read(fd, 65536)
+    except BlockingIOError:
+        return
+    if events:
+        raise ValueError("MAP02 pinned header include paths changed during preprocessing")
+
+
+
+def _compiler_evidence():
+    """Bind both Make passes to one checked GCC driver, cc1 and assembler.
+
+    This is a before/after content check, not process or toolchain attestation.
+    """
+    driver = shutil.which("cc", path="/usr/bin:/bin")
+    if not driver:
+        raise ValueError("MAP02 C compiler unavailable")
+    driver = str(Path(driver).resolve(strict=True))
+    if not Path(driver).is_file():
+        raise ValueError("MAP02 compiler is not a regular file")
+    evidence = {}
+    for name in ("driver", "cc1", "as"):
+        if name == "driver":
+            candidate = driver
+        else:
+            try:
+                p = subprocess.run(
+                    [driver, "-print-prog-name=" + name],
+                    env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+                    capture_output=True, text=True, timeout=20, check=False)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                raise ValueError("MAP02 compiler tool resolution failed") from exc
+            if p.returncode or not p.stdout.strip() or chr(10) in p.stdout.strip():
+                raise ValueError("MAP02 compiler tool resolution failed")
+            candidate = p.stdout.strip()
+            if not Path(candidate).is_absolute():
+                if "/" in candidate:
+                    raise ValueError("MAP02 compiler tool path not absolute")
+                candidate = shutil.which(candidate, path="/usr/bin:/bin")
+                if not candidate:
+                    raise ValueError("MAP02 compiler tool unavailable")
+        resolved = Path(candidate).resolve(strict=True)
+        if not resolved.is_file():
+            raise ValueError("MAP02 compiler tool is not a regular file")
+        data = auditor._stable_regular_bytes(resolved, max_bytes=COMPILER_LIMIT)
+        evidence[name] = hashlib.sha256(data).hexdigest()
+    return driver, evidence
+
+
+
+def _compiler_dynamic_evidence(driver):
+    """Snapshot resolved ELF shared objects for the GCC driver, cc1 and as.
+
+    ldd is limited to the already selected system compiler tools. Results
+    are cross-checked before/after Make; they are not runtime attestation.
+    """
+    ldd = shutil.which("ldd", path="/usr/bin:/bin")
+    if not ldd:
+        raise ValueError("MAP02 compiler shared-object inspector unavailable")
+    environment = {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}
+    tools = [driver]
+    for name in ("cc1", "as"):
+        try:
+            query = subprocess.run(
+                [driver, "-print-prog-name=" + name],
+                capture_output=True, text=True, env=environment,
+                check=False, timeout=20)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError("MAP02 compiler tool resolution failed") from exc
+        path = query.stdout.strip()
+        if query.returncode or not path or chr(10) in path:
+            raise ValueError("MAP02 compiler tool resolution failed")
+        if not Path(path).is_absolute():
+            if "/" in path:
+                raise ValueError("MAP02 compiler tool resolution unsafe")
+            path = shutil.which(path, path="/usr/bin:/bin")
+            if not path:
+                raise ValueError("MAP02 compiler tool unavailable")
+        tools.append(str(Path(path).resolve(strict=True)))
+
+    loaded = {}
+    for tool in tools:
+        try:
+            result = subprocess.run(
+                [ldd, tool], capture_output=True, text=True,
+                env=environment, check=False, timeout=30)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError("MAP02 compiler shared-object inspection failed") from exc
+        if result.returncode or not result.stdout or len(result.stdout) > 131072:
+            raise ValueError("MAP02 compiler shared-object inspection failed")
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if line.startswith("linux-vdso.so.") and " (0x" in line:
+                continue  # Kernel virtual mapping has no file to fingerprint.
+            origin, sep, address = line.partition(" (0x")
+            if not sep or not address.endswith(")"):
+                raise ValueError("MAP02 compiler shared-object record malformed")
+            target = origin.split(" => ", 1)[-1].strip()
+            if not target.startswith("/"):
+                raise ValueError("MAP02 compiler shared-object unresolved")
+            resolved = Path(target).resolve(strict=True)
+            if not resolved.is_file():
+                raise ValueError("MAP02 compiler shared-object is not a regular file")
+            digest = hashlib.sha256(auditor._stable_regular_bytes(
+                resolved, max_bytes=COMPILER_LIMIT)).hexdigest()
+            key = str(resolved)
+            if key in loaded and loaded[key] != digest:
+                raise ValueError("MAP02 compiler shared-object changed during inventory")
+            loaded[key] = digest
+            if len(loaded) > 128:
+                raise ValueError("MAP02 compiler shared-object inventory too large")
+    if not loaded:
+        raise ValueError("MAP02 compiler shared-object inventory empty")
+    summary = chr(10).join(k + " " + v for k,v in sorted(loaded.items()))
+    return {"count": len(loaded),
+            "sha256": hashlib.sha256(summary.encode("utf-8")).hexdigest(),
+            "_resolved_files": loaded,
+            "_resolved_tools": dict(zip(("driver", "cc1", "as"), tools))}
+
+
+
+def _runtime_loader_evidence(directory, driver, expected, expected_tools=None):
+    """Audit LD_DEBUG observations from the actual Make compiler processes.
+
+    Not a trusted kernel attestation: an unobserved/deliberately altered
+    loader log or a swap restored before the hash check remains possible.
+    """
+    seen = {"driver": 0, "cc1": 0, "as": 0}
+    libraries = {}
+    log_files = sorted(directory.glob("trace.*"))
+    if not log_files or len(log_files) > 256:
+        raise ValueError("MAP02 compiler runtime loader logs absent or excessive")
+    for log in log_files:
+        if not re.fullmatch(r"trace[.][0-9]+", log.name):
+            raise ValueError("MAP02 compiler runtime loader log name invalid")
+        pid = int(log.name.split(".", 1)[1])
+        if pid < 1:
+            raise ValueError("MAP02 compiler runtime loader PID invalid")
+        payload = auditor._stable_regular_bytes(log, max_bytes=2 * 1024 * 1024)
+        try:
+            text = payload.decode("utf-8")
+        except UnicodeError as exc:
+            raise ValueError("MAP02 compiler runtime loader log encoding invalid") from exc
+        # The loader prefixes its records with their originating process PID.
+        for line in text.splitlines():
+            if not line.strip():
+                continue
+            prefix = re.match(r"^\s*([0-9]+):", line)
+            if not prefix or int(prefix.group(1)) != pid:
+                raise ValueError("MAP02 compiler runtime loader PID mismatch")
+        programs = re.findall(r"initialize program:\s*(\S+)", text)
+        if not programs:
+            continue  # A loader invocation without a program initializer.
+        if len(set(programs)) != 1:
+            raise ValueError("MAP02 compiler runtime program identity ambiguous")
+        name = programs[0]
+        if name == driver or (name.startswith("/")
+                              and str(Path(name).resolve(strict=True)) == driver):
+            role = "driver"
+        elif Path(name).name == "cc1":
+            role = "cc1"
+        elif Path(name).name == "as":
+            role = "as"
+        else:
+            continue  # Parent Make/shell and unrelated system utilities.
+        if expected_tools is not None:
+            # A forged /tmp/.../cc1 must never match merely by basename.
+            if set(expected_tools) != {"driver", "cc1", "as"}:
+                raise ValueError("MAP02 compiler runtime tool inventory invalid")
+            if name.startswith("/"):
+                resolved_name = Path(name).resolve(strict=True)
+            else:
+                # GNU loader can report "initialize program: as" for a
+                # compiler subprocess invoked by basename. The wrapper
+                # restricts Make's PATH to /usr/bin:/bin.
+                if "/" in name or name not in ("cc1", "as"):
+                    raise ValueError("MAP02 compiler runtime executable identity mismatch")
+                resolved_path = shutil.which(name, path="/usr/bin:/bin")
+                if not resolved_path:
+                    raise ValueError("MAP02 compiler runtime executable identity mismatch")
+                resolved_name = Path(resolved_path).resolve(strict=True)
+            if str(resolved_name) != str(Path(expected_tools[role]).resolve(strict=True)):
+                raise ValueError("MAP02 compiler runtime executable identity mismatch")
+        matches = re.findall(r"calling init:\s*(/\S+)", text)
+        if not matches:
+            raise ValueError("MAP02 compiler runtime mapped objects absent")
+        seen[role] += 1
+        for item in matches:
+            path = Path(item).resolve(strict=True)
+            key = str(path)
+            if key not in expected:
+                raise ValueError("MAP02 compiler runtime loaded unrecognized shared object")
+            digest = hashlib.sha256(
+                auditor._stable_regular_bytes(path, max_bytes=COMPILER_LIMIT)
+            ).hexdigest()
+            if digest != expected[key]:
+                raise ValueError("MAP02 compiler runtime shared-object hash mismatch")
+            libraries[key] = digest
+    if any(count < 1 for count in seen.values()):
+        raise ValueError("MAP02 compiler runtime process witness missing")
+    if not libraries:
+        raise ValueError("MAP02 compiler runtime shared-object witness empty")
+    joined = chr(10).join(key + " " + value for key, value in sorted(libraries.items()))
+    return {
+        "processes": seen,
+        "loaded_object_count": len(libraries),
+        "loaded_object_set_sha256": hashlib.sha256(joined.encode("utf-8")).hexdigest(),
+    }
+
+
+
+def _kernel_exec_image_digest(executable):
+    """At execve SIGTRAP, read the actual /proc/PID/exe inode and SHA-256.
+
+    This is a separate, stopped control child, not a Make subprocess audit.
+    """
+    path = str(Path(executable).resolve(strict=True))
+    libc = ctypes.CDLL(None, use_errno=True)
+    trace = libc.ptrace
+    trace.argtypes = [ctypes.c_uint, ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p]
+    trace.restype = ctypes.c_long
+    pid = os.fork()
+    if pid == 0:
+        if trace(0, 0, None, None) != 0:  # PTRACE_TRACEME
+            os._exit(125)
+        try:
+            os.execve(path, [path, "--version"],
+                      {"PATH": "/usr/bin:/bin", "LC_ALL": "C"})
+        except OSError:
+            os._exit(126)
+    try:
+        deadline = time.monotonic() + 10
+        while True:
+            observed, status = os.waitpid(pid, os.WNOHANG)
+            if observed:
+                break
+            if time.monotonic() > deadline:
+                raise ValueError("MAP02 kernel tool exec timeout")
+            time.sleep(0.005)
+        if not os.WIFSTOPPED(status) or os.WSTOPSIG(status) != signal.SIGTRAP:
+            raise ValueError("MAP02 kernel tool did not stop after exec")
+        fd = os.open("/proc/" + str(pid) + "/exe", os.O_RDONLY | os.O_CLOEXEC)
+        try:
+            observed_stat = os.fstat(fd)
+            expected_stat = os.stat(path)
+            if (not stat.S_ISREG(observed_stat.st_mode) or
+                    (observed_stat.st_dev, observed_stat.st_ino) !=
+                    (expected_stat.st_dev, expected_stat.st_ino)):
+                raise ValueError("MAP02 kernel tool executable inode changed")
+            if not 0 < observed_stat.st_size <= COMPILER_LIMIT:
+                raise ValueError("MAP02 kernel tool executable size invalid")
+            digest, size = hashlib.sha256(), 0
+            while True:
+                part = os.read(fd, 1024 * 1024)
+                if not part:
+                    break
+                size += len(part)
+                if size > COMPILER_LIMIT:
+                    raise ValueError("MAP02 kernel tool executable too large")
+                digest.update(part)
+            if size != observed_stat.st_size:
+                raise ValueError("MAP02 kernel tool executable size changed")
+            return digest.hexdigest()
+        finally:
+            os.close(fd)
+    finally:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        try:
+            os.waitpid(pid, 0)
+        except ChildProcessError:
+            pass
+
+
+def _kernel_toolchain_evidence(tools, hashes):
+    if set(tools) != {"driver", "cc1", "as"} or set(hashes) != set(tools):
+        raise ValueError("MAP02 kernel toolchain inventory invalid")
+    for role in ("driver", "cc1", "as"):
+        if _kernel_exec_image_digest(tools[role]) != hashes[role]:
+            raise ValueError("MAP02 kernel compiler executable hash mismatch")
+
+
+def _system_header_evidence(preprocessed_files, pc, stage):
+    """Fingerprint system includes named by GCC in the sealed .i byte stream.
+
+    GNU cpp emits '# LINE "PATH"' markers. Ignore the pinned private tree
+    and pseudo-sources; refuse other unexpected checkout dependencies.
+    No file paths are disclosed in the returned aggregate evidence.
+    """
+    systems = {}
+    prefix = str(stage) + os.sep
+    for preprocessed in preprocessed_files:
+        data = auditor._stable_regular_bytes(
+            preprocessed, max_bytes=MAX_OBJECT_BYTES)
+        labels = re.findall(rb'(?m)^#\s+\d+\s+"([^"\r\n]+)"', data)
+        if not labels:
+            raise ValueError("MAP02 preprocessor produced no source locations")
+        for raw_label in labels:
+            try:
+                value = raw_label.decode("utf-8")
+            except UnicodeError as exc:
+                raise ValueError("MAP02 system include location invalid") from exc
+            if value.startswith("<") and value.endswith(">"):
+                continue
+            if value.startswith("/proc/self/fd/"):
+                continue
+            absolute = Path(value)
+            if not absolute.is_absolute():
+                absolute = pc / absolute
+            absolute = absolute.absolute()
+            if str(absolute).startswith(prefix):
+                continue
+            canonical = absolute.resolve(strict=True)
+            # GCC emits a source-location marker for its working directory,
+            # often ending in "//"; this marker is not a header dependency.
+            if canonical == pc and canonical.is_dir():
+                continue
+            if pc in canonical.parents:
+                raise ValueError("MAP02 unexpected PC checkout header dependency")
+            if not canonical.is_file():
+                raise ValueError("MAP02 source location is not a regular file")
+            digest = hashlib.sha256(auditor._stable_regular_bytes(
+                canonical, max_bytes=HEADER_LIMIT)).hexdigest()
+            if str(canonical) in systems and systems[str(canonical)] != digest:
+                raise ValueError("MAP02 system header changed during collection")
+            systems[str(canonical)] = digest
+    if not systems:
+        raise ValueError("MAP02 system header inventory empty")
+    merged = chr(10).join(k + " " + v for k, v in sorted(systems.items()))
+    return {"count": len(systems),
+            "sha256": hashlib.sha256(merged.encode("utf-8")).hexdigest()}
+
+
+def compile_overlay(upstream, output, manifest, *, build_dir):
+    """Fail closed if the replayed payload differs from the sealed Make input."""
+    if sys.platform != "linux" or not hasattr(os, "memfd_create"):
+        raise ValueError("Linux sealed memfd support is required")
+    if not re.fullmatch(r"build-map02-[A-Za-z0-9_-]+", build_dir):
+        raise ValueError("isolated MAP02 build directory name invalid")
+    upstream = Path(upstream).resolve(strict=True)
+    output = Path(output).absolute()
+    manifest = Path(manifest).absolute()
+    pc = upstream / "platform" / "pc"
+    if not pc.is_dir() or (pc / build_dir).exists() or (pc / build_dir).is_symlink():
+        raise ValueError("MAP02 isolated build directory missing parent or already exists")
+    make = shutil.which("make", path="/usr/bin:/bin")
+    if not make:
+        raise ValueError("GNU Make unavailable")
+    before = auditor.replay(upstream, output, manifest)
+    payloads = {}
+    for name in (builder.GENERATED_MAKE, builder.GENERATED_GPU,
+                 builder.GENERATED_RASTER):
+        payload = auditor._stable_regular_bytes(
+            output / name, max_bytes=auditor.MAX_GENERATED_BYTES)
+        if hashlib.sha256(payload).hexdigest() != before["generated_sha256"][name]:
+            raise ValueError("MAP02 generated source changed before sealing")
+        payloads[name] = payload
+    original_make = auditor._stable_regular_bytes(
+        upstream / builder.MAKE_REL, max_bytes=auditor.MAX_GENERATED_BYTES)
+    if builder.git_blob_sha1(original_make) != builder.PINNED_BLOB_SHA1[builder.MAKE_REL]:
+        raise ValueError("MAP02 pinned Makefile changed before sealing")
+    # Reconfirm the original paths before spawning Make, but compile only
+    # from our sealed byte snapshots after this point.
+    if auditor.replay(upstream, output, manifest) != before:
+        raise ValueError("MAP02 independent replay changed before compilation")
+    compiler, initial_compiler = _compiler_evidence()
+    runtime_objects = _compiler_dynamic_evidence(compiler)
+    _kernel_toolchain_evidence(runtime_objects["_resolved_tools"], initial_compiler)
+    with ExitStack() as stack:
+        runtime_dir = Path(stack.enter_context(
+            tempfile.TemporaryDirectory(prefix="vh-map02-compiler-runtime-")))
+        files = {}
+        for name, payload in (
+            ("original-make", original_make),
+            (builder.GENERATED_MAKE, payloads[builder.GENERATED_MAKE]),
+            (builder.GENERATED_GPU, payloads[builder.GENERATED_GPU]),
+            (builder.GENERATED_RASTER, payloads[builder.GENERATED_RASTER]),
+        ):
+            fd = _sealed_fd(payload, "vh-map02-" + name)
+            stack.callback(os.close, fd)
+            files[name] = fd
+        def fd_path(name):
+            return "/proc/self/fd/" + str(files[name])
+
+        base = [
+            make, "--no-print-directory",
+            "-f", fd_path("original-make"),
+            "-f", fd_path(builder.GENERATED_MAKE),
+            "REGION=us", "BUILD_DIR=" + build_dir,
+            "CC=" + compiler,
+        ]
+        clean_env = {
+            "PATH": "/usr/bin:/bin", "LC_ALL": "C",
+            "LD_DEBUG": "libs",
+            "LD_DEBUG_OUTPUT": str(runtime_dir / "trace"),
+        }
+
+        def run_make(args):
+            try:
+                result = subprocess.run(
+                    args, cwd=pc, env=clean_env,
+                    pass_fds=tuple(files.values()), capture_output=True,
+                    timeout=180, check=False)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                raise ValueError("MAP02 sealed Make execution failed") from exc
+            if result.returncode:
+                raise ValueError("MAP02 sealed Make compilation failed")
+
+        # Preprocess against a private byte-verified snapshot of pinned Git
+        # headers, never the mutable upstream include/src header directories.
+        with (tempfile.TemporaryDirectory(prefix="vh-map02-pinned-headers-") as headers,
+              tempfile.TemporaryDirectory(prefix="vh-map02-preprocessed-") as temp):
+            snapshot = Path(headers)
+            staged_headers = _stage_headers(upstream, snapshot, files, stack)
+            _recheck_headers(snapshot, staged_headers, files)
+            watch_fd, watched_dirs = _watch_header_tree(snapshot)
+            stack.callback(os.close, watch_fd)
+            _check_header_watch(watch_fd)
+            include_flags = ("-I" + str(snapshot / "platform/pc/include") +
+                             " -I" + str(snapshot / "platform/pc/src") +
+                             " -I" + str(snapshot / "include"))
+            run_make(base + [
+                "VH_MAP02_PRIVATE_GPU_C=" + fd_path(builder.GENERATED_GPU),
+                "VH_MAP02_PRIVATE_RASTER_C=" + fd_path(builder.GENERATED_RASTER),
+                "VH_MAP02_PRIVATE_INCLUDE_FLAGS=" + include_flags,
+                "VH_MAP02_PRIVATE_PREPROCESS_DIR=" + temp,
+                "map02-private-gpu-preprocess",
+            ])
+            _check_header_watch(watch_fd)
+            _recheck_headers(snapshot, staged_headers, files)
+            _check_header_watch(watch_fd)
+            preprocessed_files = tuple(
+                Path(temp) / (name + ".i")
+                for name in ("libgpu", "pc_raster"))
+            system_headers = _system_header_evidence(preprocessed_files, pc, snapshot)
+            preprocessed = {}
+            for unit in ("libgpu", "pc_raster"):
+                source = auditor._stable_regular_bytes(
+                    Path(temp) / (unit + ".i"),
+                    max_bytes=MAX_OBJECT_BYTES)
+                if not source:
+                    raise ValueError("MAP02 preprocessor emitted an empty source")
+                preprocessed[unit] = hashlib.sha256(source).hexdigest()
+                files[unit + "-preprocessed"] = _sealed_fd(
+                    source, "vh-map02-preprocessed-" + unit)
+                stack.callback(os.close, files[unit + "-preprocessed"])
+
+            # Trace the actual primary Make compilation. It consumes the
+            # sealed .i descriptors and emits the final audited objects.
+            # No separate untraced Make pass or second object replay.
+            mapped_libraries = {}
+            child_execs = kernel_witness.trace_make_children(
+                base + [
+                    "VH_MAP02_PRIVATE_INPUT_LANG=cpp-output",
+                    "VH_MAP02_PRIVATE_GPU_C=" + fd_path("libgpu-preprocessed"),
+                    "VH_MAP02_PRIVATE_RASTER_C=" + fd_path("pc_raster-preprocessed"),
+                    "map02-private-gpu-objects",
+                ],
+                cwd=pc, env=clean_env, pass_fds=tuple(files.values()),
+                tools=runtime_objects["_resolved_tools"],
+                hashes=initial_compiler,
+                expected_libraries=runtime_objects["_resolved_files"],
+                mapped_receipt=mapped_libraries, timeout=180)
+            if _compiler_evidence() != (compiler, initial_compiler):
+                raise ValueError("MAP02 compiler binaries changed during Make build")
+            if _compiler_dynamic_evidence(compiler) != runtime_objects:
+                raise ValueError("MAP02 compiler shared objects changed during Make build")
+            _kernel_toolchain_evidence(runtime_objects["_resolved_tools"], initial_compiler)
+            runtime_loaded = _runtime_loader_evidence(
+                runtime_dir, compiler, runtime_objects["_resolved_files"],
+                runtime_objects["_resolved_tools"])
+            if _system_header_evidence(preprocessed_files, pc, snapshot) != system_headers:
+                raise ValueError("MAP02 system header dependencies changed during Make build")
+
+    after = auditor.replay(upstream, output, manifest)
+    if after != before:
+        raise ValueError("MAP02 private overlay changed during sealed Make build")
+    hashes = {}
+    for filename in ("libgpu.o", "pc_raster.o"):
+        payload = auditor._stable_regular_bytes(
+            pc / build_dir / filename, max_bytes=MAX_OBJECT_BYTES)
+        if not payload:
+            raise ValueError("MAP02 sealed Make produced an empty object")
+        hashes[filename] = hashlib.sha256(payload).hexdigest()
+    return {
+        "schema": "vh.map02.sealed-gpu-make-objects.v1",
+        "pinned_public_pc_commit": builder.PINNED_UPSTREAM_REF,
+        "generated_sha256": before["generated_sha256"],
+        "makefile_sha256": hashlib.sha256(original_make).hexdigest(),
+        "objects_sha256": hashes,
+        "sealed_inputs": 6 + len(staged_headers),
+        "preprocessed_sha256": preprocessed,
+        "pinned_headers_checked": len(staged_headers),
+        "pinned_headers_sealed": len(staged_headers),
+        "header_include_directory_watches": watched_dirs,
+        "header_path_mutations_rejected": True,
+        "compiler_tool_sha256": initial_compiler,
+        "compiler_tools_before_after_match": True,
+        "compiler_shared_object_count": runtime_objects["count"],
+        "compiler_shared_object_set_sha256": runtime_objects["sha256"],
+        "compiler_shared_objects_before_after_match": True,
+        "compiler_runtime_processes_seen": runtime_loaded["processes"],
+        "compiler_runtime_loaded_object_count": runtime_loaded["loaded_object_count"],
+        "compiler_runtime_loaded_object_set_sha256": runtime_loaded["loaded_object_set_sha256"],
+        "compiler_runtime_mappings_correlated_to_resolved_files": True,
+        "compiler_runtime_log_pids_verified": True,
+        "compiler_runtime_executables_bound_to_selected_tools": True,
+        "kernel_tool_exec_witnesses": 6,
+        "kernel_tool_exec_images_match_sha256": True,
+        "kernel_make_primary_children_seen": child_execs,
+        "kernel_make_primary_executables_match_sha256": True,
+        "kernel_make_primary_mapped_library_count": mapped_libraries["count"],
+        "kernel_make_primary_mapped_library_set_sha256": mapped_libraries["sha256"],
+        "kernel_make_primary_mapped_library_roles": mapped_libraries["role_processes"],
+        "kernel_make_primary_mapped_libraries_match_sha256": True,
+        "actual_make_children_kernel_attested": True,
+        "separate_make_object_replay_performed": False,
+        "system_header_count": system_headers["count"],
+        "system_header_set_sha256": system_headers["sha256"],
+        "system_header_bytes_before_after_match": True,
+        "staged_header_hashes_verified": True,
+        "compiled_from_sealed_preprocessor_output": True,
+        "verified_source_bytes_used_for_compilation": True,
+        "private_game_assets_read": False,
+        "retail_map02_gameplay_captured": False,
+        "native_process_to_gpu_log_causality_verified": False,
+        "all_headers_sealed": False,
+        "compiler_execution_attested": False,
+        "hd_replacement_authorized": False,
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("pinned_public_pc_checkout", type=Path)
+    parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--manifest", required=True, type=Path)
+    parser.add_argument("--build-dir", required=True)
+    args = parser.parse_args()
+    try:
+        result = compile_overlay(
+            args.pinned_public_pc_checkout, args.output_dir,
+            args.manifest, build_dir=args.build_dir)
+    except (OSError, ValueError, UnicodeError) as exc:
+        parser.error(str(exc))
+    print(json.dumps(result, sort_keys=True, indent=2))
+
+
+if __name__ == "__main__":
+    main()

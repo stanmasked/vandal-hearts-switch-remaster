@@ -68,8 +68,29 @@ class PixelToOriginalPrimitiveTests(unittest.TestCase):
         self.assertEqual(result["source_ft4_draws_with_scoped_calls"],2)
         self.assertEqual(result["calls_attributed_to_source_keyed_ft4"],2)
         self.assertEqual(result["observed_native_putpixel_calls"],2)
+        # Preserve both the independent main-branch STP/ABR bins and
+        # PR #55's exact source-keyed PC PutPixel accounting.
+        self.assertEqual(result["observed_opaque_putpixel_by_accuracy"], [0, 2])
+        self.assertEqual(sum(
+            bucket["calls"] for mode in
+            result["observed_semi_putpixel_by_accuracy_and_abr"]
+            for bucket in mode), 0)
+        self.assertFalse(result["blendg1_equation_verified"])
+        self.assertFalse(result["ps1_hardware_abr_equivalence_verified"])
         self.assertEqual(result["observed_bit15_unset_to_set_calls"],1)
         self.assertEqual(result["observed_bit15_set_to_unset_calls"],1)
+        self.assertEqual(result["source_ft4_sampled_changed_word_draws"],2)
+        self.assertEqual(result["source_ft4_scoped_changed_putpixel_calls"],2)
+        self.assertEqual(result["source_ft4_scoped_unchanged_putpixel_calls"],0)
+        self.assertEqual(result["source_ft4_scoped_color_and_bit15_putpixel_calls"],2)
+        self.assertEqual(
+            result["source_ft4_scoped_transient_draws_invisible_to_vram_delta"],0)
+        self.assertEqual(result["source_ft4_sampled_bit15_only_changes"],0)
+        self.assertEqual(result["source_ft4_sampled_color_only_changes"],0)
+        self.assertEqual(result["source_ft4_sampled_color_and_bit15_changes"],2)
+        self.assertFalse(
+            result["source_ft4_sampled_first_changed_pre_equals_last_changed_post"])
+        self.assertFalse(result["source_ft4_sampled_endpoint_causality_verified"])
         self.assertTrue(result["pixel_to_primitive_frame_ordinal_matched"])
         self.assertTrue(result["native_vram_primitive_bounds_consistent"])
         for key in ("complete_original_pixel_stream_proven",
@@ -79,8 +100,9 @@ class PixelToOriginalPrimitiveTests(unittest.TestCase):
                     "original_gameplay_authenticated","raw_game_data_emitted"):
             self.assertFalse(result[key])
         public=json.dumps(result)
-        # Only raw field names/values are private. Aggregate names such as
-        # front_equal_after contain no raw BGR555 word and are allowed.
+        # The public bin keys may legitimately contain descriptive words
+        # such as front_equal_after; never allow the raw private
+        # before/front pixel *fields* or coordinate/texture words.
         for private in ('"x"','"y"','"front"','"before"',
                         '"tpage"','"clut"',"0x801f"):
             self.assertNotIn(private,public)
@@ -96,6 +118,348 @@ class PixelToOriginalPrimitiveTests(unittest.TestCase):
         result=verify_pixel_ot(self.root,self.native)
         self.assertEqual(result["actual_same_color_calls_invisible_to_vram_delta"],1)
         self.assertEqual(result["calls_attributed_to_source_keyed_ft4"],3)
+        self.assertEqual(result["source_ft4_scoped_changed_putpixel_calls"],2)
+        self.assertEqual(result["source_ft4_scoped_unchanged_putpixel_calls"],1)
+        self.assertEqual(
+            result["source_ft4_scoped_transient_draws_invisible_to_vram_delta"],0)
+
+    def test_two_real_putpixel_changes_can_cancel_inside_one_ft4(self):
+        # First MAP02-matched FT4 performs two observed writes at this
+        # coordinate: 0 -> bit15 -> 0. Its entire PRE/POST VRAM is
+        # identical, while the second FT4 visibly changes the word.
+        # Count both calls; do not infer a raster skip from the delta.
+        original = bytes(self.base.base.bytes_before)
+        self.base.base.override_snapshots = {
+            3: original, 4: original, 5: self.base.second,
+        }
+        self.pixel_rows = [
+            self.row(0,1,0,0x8000,0x8000),
+            self.row(1,1,0x8000,0,0),
+            self.row(2,2,0,0x7c00,0x7c00),
+        ]
+        self.save()
+        result = verify_pixel_ot(self.root,self.native)
+        self.assertEqual(result["source_ft4_sampled_changed_word_draws"],1)
+        self.assertEqual(result["source_ft4_draws_without_observable_word_change"],1)
+        self.assertEqual(result["source_ft4_scoped_changed_putpixel_calls"],3)
+        self.assertEqual(result["source_ft4_scoped_unchanged_putpixel_calls"],0)
+        self.assertEqual(result["source_ft4_scoped_bit15_only_putpixel_calls"],2)
+        self.assertEqual(result["source_ft4_scoped_color_only_putpixel_calls"],1)
+        self.assertEqual(result["source_ft4_scoped_color_and_bit15_putpixel_calls"],0)
+        self.assertEqual(
+            result["source_ft4_scoped_transient_draws_invisible_to_vram_delta"],1)
+        self.assertEqual(result["calls_attributed_to_source_keyed_ft4"],3)
+        self.assertFalse(result["no_missing_putpixel_calls_proven"])
+
+    def test_source_ft4_two_accurate_semi_blends_same_word_abrs_1_and_2(self):
+        # The same source-matched primitive performs two real accurate
+        # BlendG1 calls. A BGR555 endpoint delta alone cannot reveal
+        # which ABR requests generated the intermediate 0x801f word.
+        original = bytes(self.base.base.bytes_before)
+        first = bytearray(original)
+        struct.pack_into("<H", first, (30*1024+30)*2, 0x801e)
+        self.base.base.override_snapshots = {
+            3:bytes(first), 4:bytes(first), 5:self.base.second,
+        }
+        self.pixel_rows = [
+            self.row(0,1,0,0x001f,0x801f,semi=1),
+            self.row(1,1,0x801f,0x8001,0x801e,semi=1),
+            self.row(2,2,0x801e,0x7c00,0x7c00),
+        ]
+        self.pixel_rows[1]["abr"]=2
+        self.save()
+        report=verify_pixel_ot(self.root,self.native)
+        self.assertEqual(report["semi_transparent_putpixel_requests"],2)
+        self.assertEqual(report["accurate_pc_blend_results_checked"],2)
+        self.assertEqual(report["source_ft4_scoped_semitransparent_blend_calls"],2)
+        bins = report["observed_semi_putpixel_by_accuracy_and_abr"]
+        self.assertEqual(bins[1][1]["calls"], 1)
+        self.assertEqual(bins[1][2]["calls"], 1)
+        self.assertEqual(sum(bucket["calls"] for bucket in bins[0]), 0)
+        self.assertEqual(report["observed_opaque_putpixel_by_accuracy"], [0, 1])
+        self.assertFalse(report["blendg1_equation_verified"])
+        self.assertFalse(report["ps1_hardware_abr_equivalence_verified"])
+        self.assertEqual(report["source_ft4_scoped_semi_blend_abr0_calls"],0)
+        self.assertEqual(report["source_ft4_scoped_semi_blend_abr1_calls"],1)
+        self.assertEqual(report["source_ft4_scoped_semi_blend_abr2_calls"],1)
+        self.assertEqual(report["source_ft4_scoped_semi_blend_abr3_calls"],0)
+        self.assertEqual(report["source_ft4_scoped_accurate_semi_blend_calls"],2)
+        self.assertEqual(report["source_ft4_scoped_legacy_semi_blend_calls"],0)
+        self.assertEqual(report["source_ft4_scoped_draws_with_multiple_semi_blends"],1)
+        self.assertEqual(report["source_ft4_scoped_changed_putpixel_calls"],3)
+        self.assertEqual(report["source_ft4_sampled_changed_word_draws"],2)
+
+        # A forged ABR is rejected even when the claimed final value,
+        # per-primitive endpoints and all SHA digests are recomputed.
+        self.pixel_rows[1]["abr"]=0
+        self.save()
+        with self.assertRaisesRegex(ValueError, "semi-transparent PutPixel"):
+            verify_pixel_ot(self.root,self.native)
+
+    def test_source_ft4_semi_blend_abrs_0_and_3_on_adjacent_draws(self):
+        original = bytes(self.base.base.bytes_before)
+        first = bytearray(original)
+        second = bytearray(first)
+        struct.pack_into("<H", first, (30*1024+30)*2, 0xbc00)
+        second[:] = first
+        struct.pack_into("<H", second, (30*1024+30)*2, 0xbc07)
+        self.base.base.override_snapshots = {
+            3:bytes(first),4:bytes(first),5:bytes(second),
+        }
+        self.pixel_rows = [
+            self.row(0,1,0,0x7c00,0xbc00,semi=1),
+            self.row(1,2,0xbc00,0x001f,0xbc07,semi=1),
+        ]
+        self.pixel_rows[0]["abr"]=0
+        self.pixel_rows[1]["abr"]=3
+        self.save()
+        report=verify_pixel_ot(self.root,self.native)
+        self.assertEqual(report["source_ft4_scoped_semitransparent_blend_calls"],2)
+        self.assertEqual(report["source_ft4_scoped_semi_blend_abr0_calls"],1)
+        self.assertEqual(report["source_ft4_scoped_semi_blend_abr3_calls"],1)
+        self.assertEqual(report["source_ft4_scoped_draws_with_multiple_semi_blends"],0)
+        self.assertEqual(report["source_ft4_scoped_accurate_semi_blend_calls"],2)
+        self.assertEqual(report["source_ft4_scoped_color_and_bit15_putpixel_calls"],1)
+        self.assertEqual(report["source_ft4_scoped_color_only_putpixel_calls"],1)
+
+    def test_two_scoped_ft4_bit15_changes_cancel_at_temporal_endpoints(self):
+        # Two observed PutPixel calls (0 -> bit15 -> 0) leave the
+        # sampled VRAM word unchanged at the first PRE / final POST.
+        # Neither individual FT4 draw is itself a zero-change event.
+        original = bytes(self.base.base.bytes_before)
+        first = bytearray(original)
+        struct.pack_into("<H", first, (30*1024+30)*2, 0x8000)
+        self.base.base.override_snapshots = {
+            3: bytes(first), 4: bytes(first), 5: original,
+        }
+        self.pixel_rows = [
+            self.row(0,1,0,0x8000,0x8000),
+            self.row(1,2,0x8000,0,0),
+        ]
+        self.save()
+        result = verify_pixel_ot(self.root,self.native)
+        self.assertEqual(result["source_ft4_sampled_changed_word_draws"],2)
+        self.assertEqual(result["source_ft4_sampled_bit15_only_changes"],2)
+        self.assertEqual(result["source_ft4_scoped_changed_putpixel_calls"],2)
+        self.assertEqual(result["source_ft4_scoped_bit15_only_putpixel_calls"],2)
+        self.assertEqual(
+            result["source_ft4_scoped_transient_draws_invisible_to_vram_delta"],0)
+        self.assertEqual(result["source_ft4_sampled_color_only_changes"],0)
+        self.assertEqual(result["source_ft4_sampled_color_and_bit15_changes"],0)
+        self.assertTrue(
+            result["source_ft4_sampled_first_changed_pre_equals_last_changed_post"])
+        self.assertEqual(result["observed_bit15_unset_to_set_calls"],1)
+        self.assertEqual(result["observed_bit15_set_to_unset_calls"],1)
+        self.assertEqual(result["calls_attributed_to_source_keyed_ft4"],2)
+
+    def test_unmatched_ft4_can_change_sampled_word_between_matched_faces(self):
+        # Three native PutPixel calls, but only the first and last
+        # belong to the two source-keyed MAP02 FT4s. The intermediate
+        # DrawOTag FT4 is deliberately absent from the source bundle.
+        unrelated = self.base.base.event(6, "draw", {
+            "tpage": 3, "clut": 10,
+            "xy": [20,20,70,20,20,70,70,70],
+            "uv": [0,0,4,0,0,4,4,4],
+        })
+        self.base.base.entries.insert(2, unrelated)
+        original = bytes(self.base.base.bytes_before)
+        first = bytearray(original)
+        middle = bytearray(original)
+        struct.pack_into("<H", first, (30*1024+30)*2, 0x801f)
+        struct.pack_into("<H", middle, (30*1024+30)*2, 0x03e0)
+        self.base.base.override_snapshots = {
+            3:bytes(first), 4:bytes(first),
+            5:bytes(middle), 6:bytes(middle), 7:original,
+        }
+        self.pixel_rows = [
+            self.row(0,1,0,0x801f,0x801f),
+            self.row(1,2,0x801f,0x03e0,0x03e0),
+            self.row(2,3,0x03e0,0,0),
+        ]
+        self.save()
+        result = verify_pixel_ot(self.root,self.native)
+        self.assertEqual(result["native_drawotag_primitives_checked"],4)
+        self.assertEqual(result["observed_native_putpixel_calls"],3)
+        self.assertEqual(result["calls_attributed_to_source_keyed_ft4"],2)
+        self.assertEqual(result["source_ft4_scoped_changed_putpixel_calls"],2)
+        self.assertEqual(result["source_ft4_scoped_unchanged_putpixel_calls"],0)
+        self.assertEqual(result["source_ft4_scoped_bit15_only_putpixel_calls"],0)
+        self.assertEqual(result["source_ft4_scoped_color_only_putpixel_calls"],1)
+        self.assertEqual(result["source_ft4_scoped_color_and_bit15_putpixel_calls"],1)
+        self.assertEqual(result["source_ft4_sampled_changed_word_draws"],2)
+        self.assertTrue(
+            result["source_ft4_sampled_first_changed_pre_equals_last_changed_post"])
+        self.assertFalse(result["source_ft4_sampled_endpoint_causality_verified"])
+
+    def test_source_ft4_repeated_legacy_semi_blends_do_not_mix_modes(self):
+        # Pinned legacy WritePixel: ABR0 halves 0x001f red to 0x000f;
+        # ABR3 adds one quarter of front red, yielding 0x0016.
+        # AccurateEnabled remains 0 throughout this same native stream.
+        original = bytes(self.base.base.bytes_before)
+        first = bytearray(original)
+        struct.pack_into("<H", first, (30*1024+30)*2, 0x0016)
+        self.base.base.override_snapshots = {
+            3:bytes(first),4:bytes(first),5:self.base.second,
+        }
+        self.pixel_rows = [
+            self.row(0,1,0,0x001f,0x000f,semi=1),
+            self.row(1,1,0x000f,0x001f,0x0016,semi=1),
+            self.row(2,2,0x0016,0x7c00,0x7c00),
+        ]
+        for row in self.pixel_rows:
+            row["accurate"]=0
+        self.pixel_rows[0]["abr"]=0
+        self.pixel_rows[1]["abr"]=3
+        self.save()
+        report=verify_pixel_ot(self.root,self.native)
+        self.assertEqual(report["accurate_pc_blend_results_checked"],0)
+        self.assertEqual(report["legacy_pc_blend_results_checked"],2)
+        self.assertEqual(report["source_ft4_scoped_legacy_semi_blend_calls"],2)
+        self.assertEqual(report["source_ft4_scoped_accurate_semi_blend_calls"],0)
+        self.assertEqual(report["source_ft4_scoped_semi_blend_abr0_calls"],1)
+        self.assertEqual(report["source_ft4_scoped_semi_blend_abr3_calls"],1)
+        self.assertEqual(report["source_ft4_scoped_draws_with_multiple_semi_blends"],1)
+        self.assertTrue(report["single_runtime_accurate_mode_consistent"])
+        self.pixel_rows[1]["after"]=0x0017
+        self.save()
+        with self.assertRaisesRegex(ValueError,"semi-transparent PutPixel"):
+            verify_pixel_ot(self.root,self.native)
+
+    def test_unmatched_semi_blend_is_not_counted_as_source_ft4(self):
+        unrelated = self.base.base.event(6, "draw", {
+            "tpage":3, "clut":10,
+            "xy":[1,1,5,1,1,5,5,5],
+            "uv":[0,0,4,0,0,4,4,4],
+        })
+        self.base.base.entries.insert(2,unrelated)
+        self.base.base.override_snapshots = {
+            3:self.base.first,4:self.base.first,
+            5:self.base.first,6:self.base.first,7:self.base.second,
+        }
+        # Original PC ABR1: BGR555 0x801f + transparent-front 0
+        # makes a legitimate same-value semi-transparent WritePixel.
+        self.pixel_rows = [
+            self.row(0,1,0,0x801f,0x801f),
+            self.row(1,2,0x801f,0,0x801f,semi=1),
+            self.row(2,3,0x801f,0x7c00,0x7c00),
+        ]
+        self.save()
+        report=verify_pixel_ot(self.root,self.native)
+        self.assertEqual(report["observed_native_putpixel_calls"],3)
+        self.assertEqual(report["semi_transparent_putpixel_requests"],1)
+        self.assertEqual(report["accurate_pc_blend_results_checked"],1)
+        self.assertEqual(report["source_ft4_scoped_semitransparent_blend_calls"],0)
+        self.assertEqual(report["source_ft4_scoped_accurate_semi_blend_calls"],0)
+        self.assertEqual(report["source_ft4_scoped_draws_with_multiple_semi_blends"],0)
+        self.assertEqual(report["calls_attributed_to_source_keyed_ft4"],2)
+        self.assertEqual(report["source_ft4_scoped_changed_putpixel_calls"],2)
+
+    def test_same_color_calls_do_not_claim_a_changed_ft4_word(self):
+        original = bytes(self.base.base.bytes_before)
+        self.base.base.override_snapshots = {3:original,4:original,5:original}
+        self.pixel_rows=[self.row(0,1,0,0,0),self.row(1,2,0,0,0)]
+        self.save()
+        result=verify_pixel_ot(self.root,self.native)
+        self.assertEqual(result["source_ft4_sampled_changed_word_draws"],0)
+        self.assertIsNone(
+            result["source_ft4_sampled_first_changed_pre_equals_last_changed_post"])
+        self.assertEqual(result["actual_same_color_calls_invisible_to_vram_delta"],2)
+        self.assertEqual(result["source_ft4_scoped_unchanged_putpixel_calls"],2)
+        self.assertEqual(result["source_ft4_scoped_changed_putpixel_calls"],0)
+        self.assertEqual(
+            result["source_ft4_scoped_transient_draws_invisible_to_vram_delta"],0)
+        self.assertEqual(result["source_ft4_draws_without_observable_word_change"],2)
+
+    def test_dr_mode_cannot_emit_even_a_same_value_putpixel_call(self):
+        # The pinned DR_MODE dispatcher never enters WritePixel. Native
+        # VRAM snapshots alone would not detect this forged no-op call.
+        mode = self.base.base.event(6,"draw",None)
+        self.assertEqual(mode["primitive_type"],5)
+        self.base.base.entries.insert(2,mode)
+        self.base.base.override_snapshots = {
+            3:self.base.first, 4:self.base.first, 5:self.base.first,
+            6:self.base.first, 7:self.base.second,
+        }
+        self.pixel_rows = [
+            self.row(0,1,0,0x801f,0x801f),
+            self.row(1,2,0x801f,0x801f,0x801f),
+            self.row(2,3,0x801f,0x7c00,0x7c00),
+        ]
+        self.pixel_rows[1]["primitive_type"]=5
+        self.save()
+        with self.assertRaisesRegex(ValueError,"DR_MODE.*cannot call PutPixel"):
+            verify_pixel_ot(self.root,self.native)
+
+    def test_scoped_pixel_jsonl_rejects_rehashed_truncation_crlf_and_nul(self):
+        path=self.native/"putpixel-native-events.jsonl"
+        manifest=self.root/"gpu-putpixel-ot.json"
+        original=path.read_bytes()
+        self.assertTrue(original.endswith(b"\n"))
+        for mutated in (
+            original[:-1],
+            original.replace(b"\n",b"\r\n"),
+            original.replace(b"\n",b"\x00\n",1),
+        ):
+            with self.subTest(tail=repr(mutated[-15:])):
+                self.save()
+                path.write_bytes(mutated)
+                m=json.loads(manifest.read_text())
+                m["putpixel_events_sha256"]=sha(mutated)
+                manifest.write_text(json.dumps(m,sort_keys=True))
+                with self.assertRaisesRegex(ValueError,"noncanonical scoped PutPixel"):
+                    verify_pixel_ot(self.root,self.native)
+
+    def test_accurate_semitransparent_pc_blend_and_tamper_rejected(self):
+        # Keep the native snapshots untouched and forge only the claimed
+        # input to WritePixel. The previously checked primitive endpoints
+        # remain coherent but the actual PC BlendG1 result must differ.
+        self.pixel_rows[0]["semi"] = 1
+        self.pixel_rows[0]["front"] = 0x001f
+        self.save()
+        report = verify_pixel_ot(self.root, self.native)
+        self.assertEqual(report["accurate_pc_blend_results_checked"], 1)
+        self.assertEqual(report["legacy_pc_blend_results_checked"], 0)
+        self.assertTrue(report["source_pinned_pc_writepixel_effects_verified"])
+        self.assertTrue(report["single_runtime_accurate_mode_consistent"])
+        self.pixel_rows[0]["front"] = 0x0001
+        self.save()
+        with self.assertRaisesRegex(ValueError, "semi-transparent PutPixel"):
+            verify_pixel_ot(self.root, self.native)
+
+    def test_legacy_semitransparent_pc_blend_and_tamper_rejected(self):
+        # Legacy PackColor clears bit15 even when the input texel sets it.
+        original = bytes(self.base.base.bytes_before)
+        first = bytearray(original)
+        second = bytearray(first)
+        struct.pack_into("<H", first, (30*1024+30)*2, 0x001f)
+        second[:] = first
+        struct.pack_into("<H", second, (30*1024+30)*2, 0x7c00)
+        self.base.base.override_snapshots = {
+            3:bytes(first), 4:bytes(first), 5:bytes(second),
+        }
+        self.pixel_rows = [
+            self.row(0,1,0,0x801f,0x001f,semi=1),
+            self.row(1,2,0x001f,0x7c00,0x7c00),
+        ]
+        self.pixel_rows[0]["accurate"] = 0
+        self.pixel_rows[1]["accurate"] = 0
+        self.save()
+        report = verify_pixel_ot(self.root,self.native)
+        self.assertEqual(report["legacy_pc_blend_results_checked"],1)
+        self.assertEqual(report["accurate_pc_blend_results_checked"],0)
+        self.pixel_rows[0]["after"] = 0x801f
+        self.save()
+        with self.assertRaisesRegex(ValueError,"semi-transparent PutPixel"):
+            verify_pixel_ot(self.root,self.native)
+
+    def test_mixed_runtime_accurate_mode_rejected_even_with_opaque_calls(self):
+        # AccurateEnabled() is process-static in pinned original raster.
+        # Recomputing the JSONL digest must not legitimize an impossible
+        # accurate/legacy algorithm change between consecutive calls.
+        self.pixel_rows[1]["accurate"] = 0
+        self.save()
+        with self.assertRaisesRegex(ValueError, "inconsistent native AccurateEnabled"):
+            verify_pixel_ot(self.root, self.native)
 
     def test_wrong_frame_scope_or_primitive_type_refused(self):
         self.pixel_rows[0]["frame"]=13
