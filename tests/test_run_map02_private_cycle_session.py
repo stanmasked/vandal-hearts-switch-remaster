@@ -400,7 +400,7 @@ class PrivateOneShotCycleTests(unittest.TestCase):
         source.chmod(0o600)
         first = self.real_input_identity(source, "synthetic")
         self.assertEqual(first, self.real_input_identity(source, "synthetic"))
-        source.write_bytes(b"modified-synthetic-content")
+        source.write_bytes(b"modified-synthetic-content-with-extra-bytes")
         changed = self.real_input_identity(source, "synthetic")
         self.assertNotEqual(first, changed)
         original = source.read_bytes()
