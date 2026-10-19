@@ -1,0 +1,9 @@
+# MAP02 v182 — fail-closed signed LW/SW case identity
+
+Builds on fully green v181 [Draft PR #209](https://github.com/stanmasked/vandal-hearts-switch-remaster/pull/209) (74/74 GitHub Actions, native GCC and Clang).
+
+v181 proved that four valid self-authored signed guest MIPS operations — LW RAM0, LW RAM4, SW RAM0 and SW RAM4 — each reach the actual pinned PCSX ReARMed 32-bit memory accessors with the correct live `regs->pc`, opcode and 29-bit physical address during four emulator-internal VBlank windows, and retain 2380 native Unai pixel samples. It also rejected a clean EXE without the expected opcode.
+
+v182 establishes that a *valid but differently labeled* EXE cannot be falsely accepted. For each of the four real synthetic files, it invokes the original v181 native CLI with the **three other** expected case identifiers: `4 × 3 = 12` wrong pairings, on both GCC and Clang. Every mismatch must exit 84 with exactly `VH181_NATIVE_WORD_UNOBSERVED_REFUSED kind=<wrong-id> phase=0 count=0 faults=0`, and no v181 or v176 pixel success marker. All four correct pairings and the inherited unmodified negative remain tested by v181. The v182 layer does not modify any emulator memory hook or game source; it adds native negative-case invocations and independent test coverage of identity uniqueness and single-word synthetic mutations.
+
+Original retail Vandal Hearts assets are private and absent. These tests do not demonstrate a retail MAP02 frame, physical PlayStation timing, Nintendo Switch output or a complete remake.
