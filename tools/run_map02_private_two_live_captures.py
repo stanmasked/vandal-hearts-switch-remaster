@@ -131,6 +131,23 @@ def _require_bit_exact_gpu_timeline(report):
     # never become a successful bit-exact receipt by preserving only the
     # legacy all-true booleans and zero mismatch counters.
     try:
+        # The source-labelled GPU journal digests and replay-verified
+        # DrawOTag pair counts are also part of a strict equality claim.
+        # Recheck them here, since a mutated post-audit report could keep
+        # the "identical" booleans while changing the source commitments.
+        first_digest = report.get("first_gpu_journal_sha256")
+        second_digest = report.get("second_gpu_journal_sha256")
+        if (any(type(digest) is not str or len(digest) != 64
+                or any(c not in "0123456789abcdef" for c in digest)
+                for digest in (first_digest, second_digest))
+                or first_digest != second_digest
+                or any(type(report.get(key)) is not int for key in (
+                    "first_gpu_pairs_verified", "second_gpu_pairs_verified"))
+                or report["first_gpu_pairs_verified"] * 2 !=
+                   report["first_gpu_event_count"]
+                or report["second_gpu_pairs_verified"] * 2 !=
+                   report["second_gpu_event_count"]):
+            raise ValueError("GPU journal commitment/pair mismatch")
         _require_gpu_snapshot_aggregate_consistency(report)
         _require_terminal_gpu_frame_consistency(
             report,
