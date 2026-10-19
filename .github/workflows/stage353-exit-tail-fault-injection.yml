@@ -1,0 +1,49 @@
+name: Stage353 audout exit-tail error-path fault injection
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage353-exit-tail-fault-injection.yml'
+      - 'source/vh_audio_exit_tail_checks_stage353.h'
+      - 'source/vh_audio_exit_tail_reason_stage351.h'
+      - 'source/vh_audio_buffer_lease.c'
+      - 'source/vh_audio_buffer_lease.h'
+      - 'source/vh_switch_game_audio.c'
+      - 'tests/test_vh_audio_exit_tail_stage353_fault_injection.c'
+
+permissions:
+  contents: read
+
+jobs:
+  fault-injection:
+    name: GCC/Clang/UBSan production-shared exit-tail lease safety matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and execute strict shared-helper failure injections
+        env:
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          for cc in gcc clang; do
+            for mode in native undefined; do
+              if [ "$mode" = native ]; then
+                "$cc" -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+                  tests/test_vh_audio_exit_tail_stage353_fault_injection.c \
+                  source/vh_audio_buffer_lease.c \
+                  -o "build/stage353-$cc-native"
+                "build/stage353-$cc-native"
+              else
+                "$cc" -std=c11 -Wall -Wextra -Werror -O1 -g \
+                  -fsanitize=undefined -fno-omit-frame-pointer -Isource \
+                  tests/test_vh_audio_exit_tail_stage353_fault_injection.c \
+                  source/vh_audio_buffer_lease.c \
+                  -o "build/stage353-$cc-ubsan"
+                "build/stage353-$cc-ubsan"
+              fi
+            done
+          done
+          echo "Stage353: original bounded service return branches safely retain PCM leases in GCC/Clang/UBSan host injections. These are NOT real libnx fault events or audible/DAC/Switch hardware playback." >> "$GITHUB_STEP_SUMMARY"
