@@ -151,6 +151,38 @@ class Map02PrivateInputInventoryTests(unittest.TestCase):
                     archived.rename(directory)
                 self.assertTrue(self.inspect()["all_prerequisite_paths_present"])
 
+    def test_default_checkout_krom_refuses_redirected_parent_directories(self):
+        self.populate()
+        default = (self.upstream /
+                   "external/psy-q/3.6/PSYQ/BIN/KROMDAT.BIN")
+        self.make_file(default)
+        # Unlike the explicit user-selected --krom-source fixture used by
+        # inspect(), the default font is supposed to live below checkout.
+        def check_default():
+            return inventory.inspect_private_map02_inputs(*self.paths)
+
+        self.assertTrue(check_default()["all_prerequisite_paths_present"])
+        for relative in ("external", "external/psy-q",
+                         "external/psy-q/3.6/PSYQ/BIN"):
+            with self.subTest(directory=relative):
+                folder = self.upstream / relative
+                archive = self.root / ("previous-" + relative.replace("/", "-"))
+                folder.rename(archive)
+                folder.symlink_to(archive, target_is_directory=True)
+                try:
+                    result = check_default()
+                    self.assertIs(
+                        result["owned_krom_or_ps1_bios_path_present"], False)
+                    self.assertFalse(result["all_prerequisite_paths_present"])
+                    self.assertNotIn(str(self.root), json.dumps(result))
+                    # Explicitly supplied, independent user-owned KROM still
+                    # has its own presence check and is not redirected.
+                    self.assertTrue(self.inspect()["all_prerequisite_paths_present"])
+                finally:
+                    folder.unlink()
+                    archive.rename(folder)
+                self.assertTrue(check_default()["all_prerequisite_paths_present"])
+
     def test_executable_and_private_folders_require_expected_modes(self):
         self.populate()
         pc = self.upstream / "platform/pc" / BUILD / "vandalhearts_pc"
