@@ -38,6 +38,7 @@ on:
       - "docs/MAP02_GUEST_SCENE_TRACE.md"
       - "tools/audit_guest_native48_cross_arch.py"
       - "tests/test_audit_guest_native48_cross_arch.py"
+      - "tests/test_vh_guest_native_48k_boundary.c"
   workflow_dispatch:
 
 permissions:
@@ -86,6 +87,20 @@ jobs:
               -o "/tmp/test-map02-guest-sync-$cc"
             ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
               "/tmp/test-map02-guest-sync-$cc" | tee "build/host-sync/$cc.txt"
+          done
+      - name: Independently check production resampler at exact 64x512 cue boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for cc in gcc clang; do
+            "$cc" -std=c11 -O1 -g -Wall -Wextra -Werror -Isource \
+              -fsanitize=address,undefined -fno-sanitize-recover=all \
+              -fno-omit-frame-pointer \
+              tests/test_vh_guest_native_48k_boundary.c \
+              source/vh_audio_resample.c source/vh_audio_output_ramp.c \
+              -o "/tmp/test-map02-48k-boundary-$cc"
+            ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+              "/tmp/test-map02-48k-boundary-$cc"
           done
       - name: Test C11 PCM witness event kinds and optical byte serialization
         shell: bash
