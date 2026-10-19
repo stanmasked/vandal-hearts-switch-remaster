@@ -54,7 +54,7 @@ def check(source: str) -> dict[str, bool]:
     swr_one = swr.split("case 1:", 1)[1].split("case 2:", 1)[0]
     require(r"psxMemWrite16\(regs,\s*addr\s*&\s*~3,.*?psxMemWrite8\(\s*regs,\s*addr\s*,",
             swl_two, "SWL offset 2 uses 16-bit and 8-bit writes")
-    require(r"psxMemWrite8\(\s*regs,\s*addr\s*,.*?psxMemWrite16\(regs,\s*addr\s*\+\s*1,",
+    require(r"psxMemWrite8\s*\(\s*regs,\s*addr\s*,.*?psxMemWrite16\(regs,\s*addr\s*\+\s*1,",
             swr_one, "SWR offset 1 uses 8-bit and 16-bit writes")
     for name in ("doSWL", "doSWR"):
         require(r"psxMemWrite32\(regs,\s*addr", fragments[name],
