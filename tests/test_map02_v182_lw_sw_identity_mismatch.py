@@ -150,7 +150,28 @@ int main(void) {{
            vh174_disarm_wait_read(0u)!=0 ||
            vh173_disarm_wait_quiet(0u)!=0)return 8;
     }}
-    puts("VH182_COMPILED_WRONG_OPCODE_IDENTITY_PASS wrong_pairs=12 correct_pairs=4 wrong_pc_refused=4 wrong_ram_address_refused=4 original_retail=0");
+    /* Correct opcode, PC and address cannot excuse incorrect direction. */
+    for(unsigned kind=0u;kind<4u;kind++) {{
+        static const u32 addresses[4]={{0u,4u,0u,4u}};
+        if(vh173_arm_wait_quiet(0u)!=0 ||
+           vh174_arm_wait_read(0u)!=0 ||
+           vh175_arm_read_ports(0u)!=0 ||
+           vh176_arm_narrow(0u)!=0 ||
+           vh181_arm(kind,0u)!=0)return 9;
+        r.code=words[kind];
+        r.pc={wait_pc+4}u;
+        if(kind<2u)psxMemWrite32(&r,addresses[kind],0u);
+        else (void)psxMemRead32(&r,addresses[kind]);
+        if(vh181_count()!=0u || vh181_faults()!=1u ||
+           vh176_narrow_total()!=0u ||
+           vh173_wait_mmio_faults()!=0u)return 10;
+        if(vh181_disarm(kind,0u)!=0 ||
+           vh176_disarm_narrow(0u)!=0 ||
+           vh175_disarm_read_ports(0u)!=0 ||
+           vh174_disarm_wait_read(0u)!=0 ||
+           vh173_disarm_wait_quiet(0u)!=0)return 11;
+    }}
+    puts("VH182_COMPILED_WRONG_OPCODE_IDENTITY_PASS wrong_pairs=12 correct_pairs=4 wrong_pc_refused=4 wrong_ram_address_refused=4 wrong_direction_refused=4 original_retail=0");
     return 0;
 }}
 """
