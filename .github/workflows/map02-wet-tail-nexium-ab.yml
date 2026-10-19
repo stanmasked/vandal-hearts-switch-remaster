@@ -1,0 +1,304 @@
+name: MAP02 guest scene-input WET_TAIL 0 vs 1 NeXium A/B
+
+on:
+  pull_request:
+    paths:
+      - "tools/audit_map02_nexium_wet_tail_ab.py"
+      - "tests/test_audit_map02_nexium_wet_tail_ab.py"
+      - ".github/workflows/map02-wet-tail-nexium-ab.yml"
+      - "docs/MAP02_WET_TAIL_NEXIUM_AB.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synchronized-pcm:
+    name: Identical MAP02 A-input and scene timeline (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile synchronized generated-source scene test with ASan+UBSan
+        shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          "$CC" -std=c11 -O1 -g -Wall -Wextra -Werror -Isource \
+            -fsanitize=address,undefined -fno-sanitize-recover=all \
+            -fno-omit-frame-pointer \
+            tests/test_map02_synchronized_wet_tail.c \
+            source/vh_game_music_mailbox.c source/vh_music_scene.c \
+            source/vh_native_seq.c source/vh_native_spu.c \
+            source/vh_spu_reverb.c source/vh_spu_gaussian.c \
+            source/vh_audio_stream.c -lm \
+            -o build/test_map02_synchronized_wet_tail
+          ./build/test_map02_synchronized_wet_tail \
+            | tee "build/synchronized-wet-tail-${CC}.txt"
+          echo "PASS: same input, same cue clock; reset silent, wet nonzero" \
+            >> "$GITHUB_STEP_SUMMARY"
+      - name: Fail-closed virtual PCM and optical-scene regression fixtures
+        run: python3 -m unittest discover -s tests -p 'test_audit_map02_nexium_wet_tail_ab.py' -v
+      - name: Preserve original MAP02 A/B music input contract
+        shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -O1 -g -Wall -Wextra -Werror -Isource \
+            tests/test_map02_music_input.c source/vh_game_music_mailbox.c \
+            -o build/test_map02_music_input
+          ./build/test_map02_music_input
+      - name: Archive synchronized evidence log (no original game audio)
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-synchronized-wet-tail-${{ matrix.compiler }}
+          path: build/synchronized-wet-tail-*.txt
+          if-no-files-found: error
+
+  independent-libnx-modes:
+    name: Pair libnx MAP02 WET_TAIL 0 vs 1 in one CI run
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build default and opt-in MAP02 music NRO separately
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          make -f Makefile -f Makefile.map02-audio \
+            MAP02_AUDIO_BUILD=build/map02-wet-tail-0 \
+            MAP02_AUDIO_WET_TAIL=0 map02-audio-nro
+          make -f Makefile -f Makefile.map02-audio \
+            MAP02_AUDIO_BUILD=build/map02-wet-tail-1 \
+            MAP02_AUDIO_WET_TAIL=1 map02-audio-nro
+          mkdir -p build/wet-tail-0-1
+          cp build/map02-wet-tail-0/vandal-hearts-map02-audio.nro \
+             build/wet-tail-0-1/map02-wet-tail-0.nro
+          cp build/map02-wet-tail-1/vandal-hearts-map02-audio.nro \
+             build/wet-tail-0-1/map02-wet-tail-1.nro
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          root=Path("build/wet-tail-0-1")
+          a=root/"map02-wet-tail-0.nro"
+          b=root/"map02-wet-tail-1.nro"
+          h=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+          assert a.read_bytes()[16:20]==b.read_bytes()[16:20]==b"NRO0"
+          assert h(a)!=h(b), "WET_TAIL=1 must alter its NRO binary"
+          receipt={
+            "schema":"vh-map02-wet-tail-pair/v1",
+            "git_sha":os.environ["GITHUB_SHA"],
+            "run_id":int(os.environ["GITHUB_RUN_ID"]),
+            "run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
+            "legacy_sha256":h(a),
+            "wet_tail_sha256":h(b),
+            "legacy_bytes":a.stat().st_size,
+            "wet_tail_bytes":b.stat().st_size,
+            "bitwise_distinct":True,
+            "original_ps1_assets_included":False,
+            "physical_switch_audio_tested":False
+          }
+          (root/"manifest.json").write_text(json.dumps(receipt,indent=2)+"\n")
+          print(json.dumps(receipt,indent=2))
+          PY
+      - name: Archive exact-run wet-tail variants, not original soundtrack
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-wet-tail-0-vs-1-nro
+          path: build/wet-tail-0-1/
+          if-no-files-found: error
+
+  nexiumpcm-ab:
+    name: NeXium optical input + independent PCM, WET_TAIL 0 and 1
+    needs: [synchronized-pcm, independent-libnx-modes]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-wet-tail-0-vs-1-nro
+          path: nros
+      - name: Verify both NROs and provenance belong to this workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          r=Path("nros")
+          meta=json.loads((r/"manifest.json").read_text())
+          assert meta["schema"]=="vh-map02-wet-tail-pair/v1"
+          assert meta["run_id"]==int(os.environ["GITHUB_RUN_ID"])
+          assert meta["run_attempt"]==int(os.environ["GITHUB_RUN_ATTEMPT"])
+          assert meta["git_sha"]==os.environ["GITHUB_SHA"]
+          hashes=[]
+          for mode,key in [(0,"legacy_sha256"),(1,"wet_tail_sha256")]:
+              binary=(r/f"map02-wet-tail-{mode}.nro").read_bytes()
+              assert binary[16:20]==b"NRO0"
+              digest=hashlib.sha256(binary).hexdigest()
+              assert digest==meta[key]
+              hashes.append(digest)
+          assert hashes[0]!=hashes[1]
+          print("PASS: distinct mode 0/1 NRO bytes pinned to same workflow checkout")
+          PY
+      - name: Install headless NeXium audio-video environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl jq xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 libxkbcommon-x11-0 \
+            libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers pulseaudio pulseaudio-utils libasound2-plugins
+      - name: Retrieve established NeXium nightly emulator
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="$(curl -fsSL --retry 3 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+          asset_url="$(printf '%s' "$release_json" | jq -r \
+            '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          test -n "$asset_url" && test "$asset_url" != null
+          curl -fL --retry 3 --retry-all-errors "$asset_url" -o /tmp/map02-wet-tail-nexium.tar.gz
+          mkdir -p /tmp/map02-wet-tail-nexium
+          tar -xzf /tmp/map02-wet-tail-nexium.tar.gz -C /tmp/map02-wet-tail-nexium
+          emulator="$(find /tmp/map02-wet-tail-nexium -type f -executable \
+            \( -name 'nexium-gui' -o -name 'nexium' \) -print -quit)"
+          test -n "$emulator"
+          echo "NEXIUM_BIN=$emulator" >> "$GITHUB_ENV"
+      - name: Capture two guest A/B scene changes and virtual PCM streams
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          cp nros/manifest.json nros/map02-wet-tail-*.nro runtime-evidence/
+          export ROOT="$PWD/runtime-evidence"
+          rt="$RUNNER_TEMP/map02-wet-tail-guest-pulse"
+          mkdir -p "$rt"
+          chmod 700 "$rt"
+          export XDG_RUNTIME_DIR="$rt"
+          pulseaudio --daemonize=yes --exit-idle-time=-1 \
+            --log-target=file:runtime-evidence/pulseaudio.log
+          export PULSE_SERVER="unix:$rt/pulse/native"
+          pactl info >runtime-evidence/pulse-info.txt
+          pactl load-module module-null-sink sink_name=vh_map02_wet_guest \
+            rate=48000 channels=2 >runtime-evidence/pulse-module-id.txt
+          pactl set-default-sink vh_map02_wet_guest
+          cat >"$RUNNER_TEMP/wet-guest-asound.conf" <<'ASOUND'
+          pcm.!default { type pulse }
+          ctl.!default { type pulse }
+          ASOUND
+          export ALSA_CONFIG_PATH="$RUNNER_TEMP/wet-guest-asound.conf"
+          export SDL_AUDIODRIVER=pulse
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+
+          capture_mode() {
+            label="$1"
+            export LABEL="$label" NRO="$PWD/nros/map02-$label.nro"
+            parec --device=vh_map02_wet_guest.monitor --rate=48000 \
+              --channels=2 --format=s16le --raw \
+              >"$ROOT/$label.pcm" 2>"$ROOT/$label-parec.log" &
+            recorder=$!
+            sleep 1
+            timeout --kill-after=5s 58s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+              set -euo pipefail
+              "$NEXIUM_BIN" "$NRO" >"$ROOT/$LABEL-guest.log" 2>&1 &
+              guest=$!
+              trap "kill -KILL $guest 2>/dev/null || true" EXIT
+              window=""
+              for i in $(seq 1 30); do
+                sleep 1
+                window="$(xdotool search --onlyvisible --name NeXium 2>/dev/null | tail -n 1 || true)"
+                if [ -n "$window" ]; then break; fi
+                kill -0 "$guest" 2>/dev/null || exit 1
+              done
+              test -n "$window"
+              sleep 5
+              import -window "$window" "$ROOT/$LABEL-before.png"
+              timeout 3 xdotool windowfocus --sync "$window" || true
+              timeout 3 xdotool keydown --window "$window" c
+              sleep 0.15
+              timeout 3 xdotool keyup --window "$window" c
+              sleep 5
+              import -window "$window" "$ROOT/$LABEL-selected.png"
+              timeout 3 xdotool keydown --window "$window" x
+              sleep 0.15
+              timeout 3 xdotool keyup --window "$window" x
+              sleep 5
+              import -window "$window" "$ROOT/$LABEL-cancelled.png"
+              pactl list sink-inputs >"$ROOT/$LABEL-sinks.txt"
+              sleep 8
+              kill -INT "$guest" 2>/dev/null || true
+              sleep 1
+              kill -KILL "$guest" 2>/dev/null || true
+              wait "$guest" 2>/dev/null || true
+            '
+            kill -INT "$recorder" 2>/dev/null || true
+            wait "$recorder" 2>/dev/null || true
+            test -s "$ROOT/$label.pcm"
+            test -s "$ROOT/$label-before.png"
+            test -s "$ROOT/$label-selected.png"
+            test -s "$ROOT/$label-cancelled.png"
+            echo "$label PCM bytes $(wc -c <"$ROOT/$label.pcm")"
+          }
+          capture_mode wet-tail-0
+          capture_mode wet-tail-1
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root=Path("runtime-evidence")
+          blue=(86,190,244)
+          range_color=(43,91,91)
+          def count(img, color, box):
+              return sum(1 for r,g,b in img.crop(box).getdata()
+                         if max(abs(r-color[0]),abs(g-color[1]),abs(b-color[2]))<=16)
+          for mode in (0,1):
+              label=f"wet-tail-{mode}"
+              before=Image.open(root/f"{label}-before.png").convert("RGB")
+              selected=Image.open(root/f"{label}-selected.png").convert("RGB")
+              cancelled=Image.open(root/f"{label}-cancelled.png").convert("RGB")
+              assert before.size==selected.size==cancelled.size==(1280,720)
+              box=(500,248,560,308)
+              scene={"screen_size":[1280,720],
+                     "status_blue_pixels":count(before,blue,(967,90,1100,100)),
+                     "selection_range_pixels":count(selected,range_color,box),
+                     "cancelled_range_pixels":count(cancelled,range_color,box)}
+              (root/f"{label}-scene.json").write_text(json.dumps(scene,indent=2)+"\n")
+              print(label,scene)
+          PY
+          python3 tools/audit_map02_nexium_wet_tail_ab.py \
+            --root runtime-evidence \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" \
+            --sha "$GITHUB_SHA" \
+            --output runtime-evidence/wet-tail-ab-audit.json
+      - name: Archive guest screenshots, raw PCM and fail-closed report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-wet-tail-guest-scene-pcm-evidence
+          path: runtime-evidence/
+          if-no-files-found: warn
