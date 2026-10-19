@@ -88,6 +88,41 @@ int main(void) {
             assert(count_nonzero(output,frames)==0u);
         }
     }
+    /* A nonzero source sample is not a promise of nonzero output:
+     * signed integer interpolation truncates sub-LSB transition
+     * residues to zero. The decoder permits 0..2 on the first page. */
+    for(size_t i=0;i<VH_AUDIO_BLOCK_FRAMES;i++) {
+        constant[2*i]=1;
+        constant[2*i+1]=-1;
+    }
+    {
+        VhAudioResample converter;
+        VhAudioOutputRamp ramp;
+        vh_audio_resample_reset(&converter);
+        vh_audio_output_ramp_arm(&ramp);
+        for(unsigned block=0;block<64;block++) {
+            const size_t frames=vh_audio_resample_process(&converter,
+                constant,VH_AUDIO_BLOCK_FRAMES,output,
+                VH_AUDIO_RESAMPLE_MAX_FRAMES);
+            assert(frames>0);
+            assert(vh_audio_output_ramp_apply(&ramp,output,frames)==0);
+        }
+        const size_t first=vh_audio_resample_process(&converter,
+            silence,VH_AUDIO_BLOCK_FRAMES,output,
+            VH_AUDIO_RESAMPLE_MAX_FRAMES);
+        assert(first>0);
+        assert(vh_audio_output_ramp_apply(&ramp,output,first)==0);
+        assert(count_nonzero(output,first)==0u);
+        for(unsigned next=0;next<5u;next++) {
+            const size_t frames=vh_audio_resample_process(&converter,
+                silence,VH_AUDIO_BLOCK_FRAMES,output,
+                VH_AUDIO_RESAMPLE_MAX_FRAMES);
+            assert(frames>0);
+            assert(vh_audio_output_ramp_apply(&ramp,output,frames)==0);
+            assert(count_nonzero(output,frames)==0u);
+        }
+    }
+    puts("PASS: small-amplitude cue transient rounds to 0 signed PCM sample values");
     puts("PASS: 14 additional source-clock cue boundary phases stay within one stereo transient");
     puts("PASS: exact 64x512 cue-boundary has 2 transient signed samples, no later PCM; replay 2/2");
     return 0;
