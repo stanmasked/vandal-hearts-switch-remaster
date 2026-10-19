@@ -15,6 +15,7 @@ on:
       - 'work/map02-main-transfer-four-gates'
       - 'work/map02-main-transfer-frame-fix'
       - 'work/map02-main-recorder-drmode-boundary'
+      - 'work/map02-scoped-drmode-ordinal-compat'
   pull_request:
     paths:
       - 'tools/map02_dda_coverage.py'
