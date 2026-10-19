@@ -768,6 +768,45 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
         self.assertEqual(len(list(self.dirs[1].iterdir())), 3)
         self.assertEqual(len(list(self.dirs[3].iterdir())), 3)
 
+    def test_native_launch_receipts_reject_forged_post_replay_source_labels(self):
+        # Both actual Linux C11 captures and both full replays are valid.
+        # Mutate ONLY the returned source-labelled audit claims, after
+        # replay and before the two-run orchestrator joins its receipts.
+        # Even two identical but forged SHA-256 values must be refused,
+        # in strict AND ordinary diagnostic mode.
+        cases = (
+            ("both-journals", True, {
+                "first_gpu_journal_sha256": "0" * 64,
+                "second_gpu_journal_sha256": "0" * 64,
+            }),
+            ("both-frames", True, {
+                "first_image_sha256": "0" * 64,
+                "second_image_sha256": "0" * 64,
+            }),
+            ("one-gpu-pair-count", False, {
+                "first_gpu_pairs_verified": 2,
+            }),
+        )
+        real_audit = two_live.audit
+        for title, strict, altered in cases:
+            with self.subTest(title=title):
+                for folder in self.dirs:
+                    for entry in folder.iterdir():
+                        entry.unlink()
+                def forged_report(*args, **kwargs):
+                    actual = real_audit(*args, **kwargs)
+                    return {**actual, **altered}
+                with patch.object(two_live, "audit",
+                                  side_effect=forged_report):
+                    with self.assertRaisesRegex(
+                            ValueError, "pinned capture receipts"):
+                        self.run_two(
+                            require_identical_gpu_timeline=strict)
+                self.assertEqual(len(list(self.dirs[0].iterdir())), 2)
+                self.assertEqual(len(list(self.dirs[2].iterdir())), 2)
+                self.assertEqual(len(list(self.dirs[1].iterdir())), 3)
+                self.assertEqual(len(list(self.dirs[3].iterdir())), 3)
+
     def test_strict_cli_flag_succeeds_with_two_real_synthetic_launches(self):
         cmd = [
             sys.executable, "-m", "tools.run_map02_private_two_live_captures",
