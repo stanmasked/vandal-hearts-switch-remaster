@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 
 from audit_nexium_guest_exit_timeline import SUBDIR, ExitTimelineError
+from audit_nexium_guest_lease_reconciliation_stage348 import audit_source as audit_stage348_source
 
 SOURCE = "audio-exit-tail-reason-000.csv"
 SCHEMA = "vh-stage351-original-guest-exit-tail-reason/v1"
@@ -112,6 +113,75 @@ def audit_source(raw: bytes, stage313: dict, stage348: dict) -> dict:
     }
 
 
+
+def audit_existing_original_sources(
+    original_stage313: bytes, original_stage348: bytes,
+    stage313: dict, stage348: dict
+) -> dict:
+    """Bind both earlier verified receipts to their actual original CSV bytes."""
+    if (not isinstance(original_stage313,bytes)
+        or len(original_stage313)>1024
+        or not original_stage313.startswith(b"event,value\\n")
+        or not original_stage313.endswith(b"\\n")
+        or b"\\r" in original_stage313 or b"\\x00" in original_stage313):
+        raise ExitTimelineError("Stage313 original last page CSV missing or malformed")
+    sha313=hashlib.sha256(original_stage313).hexdigest()
+    if stage313.get("original_guest_page_witness_sha256") != sha313:
+        raise ExitTimelineError("Stage313 original source SHA differs from receipt")
+    expected=(
+        "page_return_count","last_page_return_guest_ns","last_page_frames",
+        "tail_attempt_guest_ns","tail_success_return_guest_ns",
+    )
+    lines=original_stage313[len(b"event,value\\n"):].splitlines(keepends=True)
+    if len(lines)!=len(expected):
+        raise ExitTimelineError("Stage313 original row count changed")
+    observed={}
+    for label,line in zip(expected,lines):
+        prefix=(label+",").encode("ascii")
+        if (not line.startswith(prefix) or line.count(b",")!=1
+            or not line.endswith(b"\\n")):
+            raise ExitTimelineError("Stage313 original row sequence changed")
+        field=line[len(prefix):-1]
+        if (not field or not field.isascii() or not field.isdigit()
+            or (len(field)>1 and field.startswith(b"0"))):
+            raise ExitTimelineError("Stage313 original counter noncanonical")
+        value=int(field)
+        if value>MAX64:
+            raise ExitTimelineError("Stage313 original source overflow")
+        observed[label]=value
+    for label,value in observed.items():
+        expected_value=stage313.get(label)
+        if value==0 and label.endswith("_guest_ns"):
+            if expected_value is not None:
+                raise ExitTimelineError("Stage313 original zero-absent mismatch")
+        elif type(expected_value) is not int or expected_value!=value:
+            raise ExitTimelineError("Stage313 receipt field disagrees with source")
+    if (bool(observed["tail_attempt_guest_ns"]) is not
+            stage313.get("tail_bounded_attempt_observed")
+        or bool(observed["tail_success_return_guest_ns"]) is not
+            stage313.get("tail_release_confirmed")):
+        raise ExitTimelineError("Stage313 original tail flags changed")
+
+    old=audit_stage348_source(original_stage348)
+    sha348=hashlib.sha256(original_stage348).hexdigest()
+    if (old["original_guest_software_lease_csv_sha256"]!=sha348
+        or stage348.get("original_guest_software_lease_csv_sha256")!=sha348):
+        raise ExitTimelineError("Stage348 original lease source SHA mismatch")
+    for label in ("schema","result","lease_pages_acquired","lease_pages_released",
+                  "abandoned_sessions","accepted_pages_submitted",
+                  "busy_begin_rejections","mismatched_releases","submit_failures",
+                  "only_software_owner_counters_checked",
+                  "physical_Nintendo_Switch_audio_tested"):
+        if (type(old[label]) is not type(stage348.get(label))
+            or old[label]!=stage348.get(label)):
+            raise ExitTimelineError("Stage348 original source receipt mismatch")
+    return {
+        "original_guest_stage313_csv_sha256":sha313,
+        "original_guest_stage348_csv_sha256":sha348,
+        "prior_stage313_and_stage348_original_bytes_reaudited":True,
+    }
+
+
 def audit_guest(root: Path, stage313: dict, stage348: dict) -> tuple[dict,bytes]:
     if root.is_symlink() or not root.is_dir():
         raise ExitTimelineError("missing or linked original guest SD root")
@@ -135,6 +205,8 @@ def main(argv=None):
     p.add_argument("--guest-root-file",required=True,type=Path)
     p.add_argument("--stage313",required=True,type=Path)
     p.add_argument("--stage348",required=True,type=Path)
+    p.add_argument("--stage313-original",required=True,type=Path)
+    p.add_argument("--stage348-original",required=True,type=Path)
     p.add_argument("--output",required=True,type=Path)
     p.add_argument("--output-original",required=True,type=Path)
     a = p.parse_args(argv)
@@ -142,17 +214,22 @@ def main(argv=None):
         for path in (a.output,a.output_original):
             if path.exists() or path.is_symlink():
                 raise ExitTimelineError("refuse overwrite Stage351 evidence")
-        for path in (a.guest_root_file,a.stage313,a.stage348):
+        for path in (a.guest_root_file,a.stage313,a.stage348,
+                     a.stage313_original,a.stage348_original):
             if path.is_symlink() or not path.is_file():
                 raise ExitTimelineError("Stage351 original source dependency unavailable")
         root = a.guest_root_file.read_text(encoding="utf-8").strip()
         if not root.startswith("/") or "\n" in root or "\x00" in root:
             raise ExitTimelineError("invalid NeXium guest SD locator")
-        doc, raw = audit_guest(
-            Path(root),
-            json.loads(a.stage313.read_text(encoding="utf-8")),
-            json.loads(a.stage348.read_text(encoding="utf-8")),
+        report313=json.loads(a.stage313.read_text(encoding="utf-8"))
+        report348=json.loads(a.stage348.read_text(encoding="utf-8"))
+        prior=audit_existing_original_sources(
+            a.stage313_original.read_bytes(),
+            a.stage348_original.read_bytes(),
+            report313,report348,
         )
+        doc, raw = audit_guest(Path(root),report313,report348)
+        doc.update(prior)
         a.output.parent.mkdir(parents=True,exist_ok=True)
         a.output_original.parent.mkdir(parents=True,exist_ok=True)
         with a.output_original.open("xb") as out:
