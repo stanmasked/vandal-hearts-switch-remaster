@@ -52,6 +52,7 @@ def _require_checkout_ancestors(root, relative):
     """
     parent = Path(root)
     relative = Path(relative)
+    identities = []
     for component in (".", *relative.parts[:-1]):
         if component != ".":
             parent = parent / component
@@ -65,6 +66,10 @@ def _require_checkout_ancestors(root, relative):
                 bits & (stat.S_IRUSR | stat.S_IXUSR) !=
                 (stat.S_IRUSR | stat.S_IXUSR)):
             raise ValueError("original PC source directory linked or inaccessible")
+        identities.append((info.st_dev, info.st_ino, info.st_uid,
+                           info.st_mode, info.st_nlink, info.st_mtime_ns,
+                           info.st_ctime_ns))
+    return tuple(identities)
 
 
 def _hash_file(path, algorithm):
@@ -171,8 +176,9 @@ def verify_private_pc_inputs(upstream, *, krom_source=None):
     )
     if default_krom:
         relatives += ("external/psy-q/3.6/PSYQ/BIN/KROMDAT.BIN",)
-    for relative in relatives:
+    original_directories = tuple(
         _require_checkout_ancestors(root, relative)
+        for relative in relatives)
     root_identity = _input_identity(root / EXE, "US PS-X executable")
     paths = [
         ("retail-us-exe", root / EXE, _original_exe),
@@ -235,6 +241,13 @@ def verify_private_pc_inputs(upstream, *, krom_source=None):
             raise ValueError("private original input changed during audit: " + category)
     if _input_identity(root / EXE, "US PS-X executable") != root_identity:
         raise ValueError("private original input changed during audit: retail-us-exe")
+    # The slow .inc regeneration and independent ELF comparison must not
+    # leave a redirected parent path behind. Even if all final file hashes
+    # match, the pinned checkout's source-directory identities must be the
+    # same ones validated before any private byte reads or subprocesses.
+    if tuple(_require_checkout_ancestors(root, relative)
+             for relative in relatives) != original_directories:
+        raise ValueError("original PC source directories changed during audit")
     # Bind path/category identity, digest and pinned order, without outputting
     # individual source input digests or original asset contents.
     combined = hashlib.sha256(
