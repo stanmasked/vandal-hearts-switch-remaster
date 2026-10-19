@@ -1,0 +1,31 @@
+name: MAP02 v182 forbid incorrect MIPS LW SW scenario identity
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v182-lw-sw-identity-mismatch.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tests/test_map02_v182_lw_sw_identity_mismatch.py'
+      - 'tools/apply_map02_v181_word_ram_opcodes.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  identity-check:
+    name: audit all 12 wrong LW SW opcode and address case pairs (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify single-word signed identity and 12 required mismatched cases
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tests/test_map02_v182_lw_sw_identity_mismatch.py
+          python3 -m unittest discover -s tests -p 'test_map02_v182_lw_sw_identity_mismatch.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v181_word_ram_opcodes.py' -v
+          echo 'VH182_INDEPENDENT_WRONG_OPCODE_PAIRINGS_PASS mismatches=12 original_retail_executed=0'
