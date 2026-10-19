@@ -19,6 +19,14 @@ The experiment demands:
 
 The paired DSP test does **not** assume that interpolation necessarily produces a nonzero value: it measures the actual first-page count and rejects more than one stereo frame of residue.
 
+### Stage 213: full recorder walk with injected clock faults (2026-10-19)
+
+The actual `tests/test_guest_sync_studio_c.c` host fixture now directly walks the diagnostic **observer** over all **64 prefix plus 48 post-switch pages**, in addition to replaying the real synthetic DSP scenario and exercising the production resampler in the separate independent boundary fixture. Input to this extra observer walk is generated silence, intentionally isolating page ordering/tick invariants from wet-tail sample values. For every page, an independently derived literal **44,100→48,000-Hz** clock is compared with the recorder's running prefix/tail frame count.
+
+Negative cases deliberately submit a skipped first prefix page, an early tail, invalid boundary indices, a repeated page at both the beginning and end, and both prefix and post-switch **+1 frame counter corruption** midway through the sequence. The intended result is immediate refusal without consuming converter state, then success when the corrupted counter is restored. End totals are exactly **35,665 / 26,750**, with all-zero nonzero-sample counters for this added silence-only fixture. Existing same-clock STUDIO_C reverb test and all legacy source preservation checks remain unchanged.
+
+A separate *local arithmetic-only* C oracle was compiled and executed successfully with **GCC and Clang under UBSan**: among 112 page lengths, **81 are 557 frames and 31 are 558 frames**. This verifies the independent integer-clock arithmetic only; it is **not** a claim that repository host fixtures, Switch NRO or NeXium have passed. New head run validation must be performed on its exact SHA and artifacts before reporting GCC/Clang/NeXium parity.
+
 ### Independent checks on every output page (continuation of stage 212)
 
 The guest diagnostic recorder now checks the **exact output-frame length of every one of the 112 generated 512-frame input pages**, not only the final 35,665/26,750 frame totals. An integer-clock oracle independent of the resampler state derives the total completed output frames after `n` input blocks as
