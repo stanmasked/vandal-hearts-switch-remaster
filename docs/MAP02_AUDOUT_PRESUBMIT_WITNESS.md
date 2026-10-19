@@ -43,8 +43,40 @@ Host regression `tests/test_vh_audout_presubmit_witness.c` tests single-bit
 PCM corruption, a changed page length, a failed first audout attempt followed
 by an identical retry, second arm while pending, and eight-page capacity.
 The independent workflow `.github/workflows/map02-audout-presubmit.yml`
-compiles GCC and Clang C11/ASan/UBSan tests and **builds** the special libnx
-NRO; no default Makefile target or existing PR #212 CI is changed.
+compiles GCC and Clang C11/ASan/UBSan tests, **builds** the special libnx
+NRO, and now runs that *same NRO* in NeXium after checking its SHA-256,
+source-commit SHA, workflow run ID and attempt. No default Makefile target or
+existing parent PR #212 CI is changed.
+
+## Guest optical packet (post-join only)
+
+Instead of relying on Switch `stdout` visibility, the opt-in NRO paints
+a calibrated 112×66 binary grid using the existing seven-pixel modules,
+magenta frame and 924-byte CRC packet transport. The framebuffer is shown
+**only after** `vh_switch_game_audio_stop()` has joined the owner thread.
+There is no framebuffer work within `audoutPlayBuffer`.
+
+- Bytes 0..7: ASCII `VHPRE001`.
+- Byte 8: count, exactly eight; byte 9: pending=0.
+- Bytes 10..11 reserved zero; bytes 12..15 mismatches=0.
+- Bytes 16..207: eight 24-byte little-endian records: frame count (u32),
+  pre-submit call attempts (u32), confirmed descriptor returns (u32),
+  PCM16-LE FNV-1a64 (u64), PCM16-LE CRC32 (u32).
+- Bytes 208..908 reserved zero; bytes 909..912 full-packet CRC32;
+  bytes 913..923 reserved zero.
+
+`tools/decode_map02_audout_presubmit.py` reads the screenshot, enforces
+packet identity, correct CRC32, reserved zeros, eight completed pages,
+frame counts of 557/558 at 44.1→48 kHz, positive attempt counts and
+one descriptor-release-confirmed return per page. On a failed decode the
+workflow fails and archives the screenshot and log. The Python regression
+suite rejects forged frames, a pending page, missing returns, corruption,
+bad checksums, partial packets and nonzero reserved fields.
+
+The optical packet contains only fingerprints and counters, **never**
+original sound data. Real screenshot-based decoding will be claimed only
+if the opt-in NeXium job completes with verified success; successful NRO
+compilation alone cannot establish guest observations.
 
 ## Evidence and what it does *not* prove
 
