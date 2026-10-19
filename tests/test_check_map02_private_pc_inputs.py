@@ -276,11 +276,16 @@ for name, offset, size in [
         self.assertTrue(compare_loaded_sections(self.exe, self.elf)[
             "original_exe_and_mips_elf_loaded_sections_match"])
 
-        forged = bytearray(valid)
-        # First original runtime section now points into the new table.
-        # It doesn't overlap the ELF32 file header or section-header table.
-        struct.pack_into("<I", forged, 64 + 40 + 16, 240)
+        # Keep all three pinned original anchor sections intact. Forge
+        # a fourth, otherwise source-matching section in the same PS-X
+        # load image, but redirect its bytes into the program-header table.
+        self.add_synthetic_loaded_section()
+        forged = bytearray(self.elf.read_bytes())
+        table = struct.unpack_from("<I", forged, 32)[0]
+        struct.pack_into("<I", forged, table + 4 * 40 + 16, 240)
         self.elf.write_bytes(forged)
+        self.assertTrue(compare_data_ranges(self.exe, self.elf)[
+            "original_exe_and_mips_elf_data_anchors_match"])
         with self.assertRaisesRegex(ValueError, "aliases ELF metadata"):
             compare_loaded_sections(self.exe, self.elf)
         with self.assertRaisesRegex(ValueError, "aliases ELF metadata"):
