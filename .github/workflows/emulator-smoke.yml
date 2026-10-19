@@ -2143,6 +2143,37 @@ jobs:
           PY
           echo "Stage303: captured original Parec before-SIGINT and after-wait PCM byte snapshots; independently source-bound and byte/frame-intersected with EOF silence. Buffered host snapshots do NOT prove audible/guest shutdown." >> "$GITHUB_STEP_SUMMARY"
 
+      # Stage362 must run EVEN when the preceding strict Stage303 fails.
+      # The paired host clock is explanatory evidence, not an exception
+      # to the original recorder-stop epoch ordering requirements.
+      - name: Stage362 independent recorder stop wall/monotonic companion audit
+        if: ${{ always() && steps.scene_capture.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s runtime-evidence/scene-recorder-stop.csv
+          test -s runtime-evidence/scene-recorder-stop-monotonic.csv
+          python3 tools/audit_nexium_recorder_stop_dual_clock_stage362.py \
+            --legacy runtime-evidence/scene-recorder-stop.csv \
+            --paired runtime-evidence/scene-recorder-stop-monotonic.csv \
+            --output runtime-evidence/scene-recorder-stop-dual-clock-stage362.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("runtime-evidence/scene-recorder-stop-dual-clock-stage362.json")
+          r=json.loads(p.read_text(encoding="utf-8"))
+          if (r["result"]!="STAGE362_ORIGINAL_HOST_RECORDER_STOP_DUAL_CLOCKS_RECONCILED"
+              or r["host_monotonic_clock_increased"] is not True
+              or r["strict_stage303_source_audit_not_waived"] is not True
+              or r["strict_stage303_original_csv_not_modified"] is not True
+              or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage362 host-only independent original clock pairing invalid")
+          print("Stage362 original host recorder wall delta (ms):",r["host_wall_elapsed_ms"])
+          print("Stage362 original host recorder monotonic delta (ns):",r["host_monotonic_elapsed_ns"])
+          print("Stage362 original strict Stage303 chronology compatible:",r["strict_stage303_chronology_compatible"])
+          PY
+          echo "Stage362: original host recorder SIGINT wall+monotonic clocks paired. Backwards wall clock still fails Stage303; no audio speaker/device claim." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Stage304 source-bound real Plus exit control host PCM timeline
         shell: bash
         run: |
