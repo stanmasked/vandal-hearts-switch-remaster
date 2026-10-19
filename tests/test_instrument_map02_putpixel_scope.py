@@ -32,6 +32,7 @@ void DrawOTag(unsigned int *p) {
             }
         }
         nextTok = rawTagOfCur;
+    TrcFrameEnd();
 }
 '''
 
