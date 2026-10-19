@@ -19,9 +19,6 @@ on:
       - "tests/test_guest_sync_studio_c.c"
       - "tests/test_decode_guest_sync_studio_c.py"
       - "tools/decode_guest_sync_studio_c.py"
-      - "tools/decode_guest_native_48k.py"
-      - "tests/test_decode_guest_native_48k.py"
-      - "docs/MAP02_GUEST_48K_BRIDGE.md"
       - "docs/MAP02_GUEST_SYNCHRONIZED_STUDIO_C.md"
       - "tools/audit_guest_sync_cross_arch.py"
       - "tests/test_audit_guest_sync_cross_arch.py"
@@ -39,6 +36,8 @@ on:
       - "tests/test_decode_map02_guest_scene_trace.py"
       - ".github/workflows/map02-guest-scene-trace.yml"
       - "docs/MAP02_GUEST_SCENE_TRACE.md"
+      - "tools/audit_guest_native48_cross_arch.py"
+      - "tests/test_audit_guest_native48_cross_arch.py"
   workflow_dispatch:
 
 permissions:
@@ -65,6 +64,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_audit_guest_sync_cross_arch.py' -v
       - name: Reject corrupted 48-kHz resampler/ramp guest receipts
         run: python3 -m unittest discover -s tests -p 'test_decode_guest_native_48k.py' -v
+      - name: Reject mismatched 48-kHz native output fingerprints
+        run: python3 -m unittest discover -s tests -p 'test_audit_guest_native48_cross_arch.py' -v
       - name: Re-run guest exact-clock DSP source under GCC and Clang sanitizer
         shell: bash
         run: |
@@ -380,6 +381,13 @@ jobs:
             --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" \
             --sha "$GITHUB_SHA" \
             --out runtime-evidence/guest-host-cross-architecture-parity.json
+          python3 tools/audit_guest_native48_cross_arch.py \
+            --gcc host-sync/gcc.txt --clang host-sync/clang.txt \
+            --guest0 runtime-evidence/wet-tail-0-native48.json \
+            --guest1 runtime-evidence/wet-tail-1-native48.json \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" \
+            --sha "$GITHUB_SHA" \
+            --out runtime-evidence/guest-native48-cross-architecture-parity.json
       - name: Always archive guest receipts, PNG screenshots and logs
         if: always()
         uses: actions/upload-artifact@v4
