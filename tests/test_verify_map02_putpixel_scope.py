@@ -68,6 +68,15 @@ class PixelToOriginalPrimitiveTests(unittest.TestCase):
         self.assertEqual(result["source_ft4_draws_with_scoped_calls"],2)
         self.assertEqual(result["calls_attributed_to_source_keyed_ft4"],2)
         self.assertEqual(result["observed_native_putpixel_calls"],2)
+        # Preserve both the independent main-branch STP/ABR bins and
+        # PR #55's exact source-keyed PC PutPixel accounting.
+        self.assertEqual(result["observed_opaque_putpixel_by_accuracy"], [0, 2])
+        self.assertEqual(sum(
+            bucket["calls"] for mode in
+            result["observed_semi_putpixel_by_accuracy_and_abr"]
+            for bucket in mode), 0)
+        self.assertFalse(result["blendg1_equation_verified"])
+        self.assertFalse(result["ps1_hardware_abr_equivalence_verified"])
         self.assertEqual(result["observed_bit15_unset_to_set_calls"],1)
         self.assertEqual(result["observed_bit15_set_to_unset_calls"],1)
         self.assertEqual(result["source_ft4_sampled_changed_word_draws"],2)
@@ -159,6 +168,13 @@ class PixelToOriginalPrimitiveTests(unittest.TestCase):
         self.assertEqual(report["semi_transparent_putpixel_requests"],2)
         self.assertEqual(report["accurate_pc_blend_results_checked"],2)
         self.assertEqual(report["source_ft4_scoped_semitransparent_blend_calls"],2)
+        bins = report["observed_semi_putpixel_by_accuracy_and_abr"]
+        self.assertEqual(bins[1][1]["calls"], 1)
+        self.assertEqual(bins[1][2]["calls"], 1)
+        self.assertEqual(sum(bucket["calls"] for bucket in bins[0]), 0)
+        self.assertEqual(report["observed_opaque_putpixel_by_accuracy"], [0, 1])
+        self.assertFalse(report["blendg1_equation_verified"])
+        self.assertFalse(report["ps1_hardware_abr_equivalence_verified"])
         self.assertEqual(report["source_ft4_scoped_semi_blend_abr0_calls"],0)
         self.assertEqual(report["source_ft4_scoped_semi_blend_abr1_calls"],1)
         self.assertEqual(report["source_ft4_scoped_semi_blend_abr2_calls"],1)
