@@ -1180,6 +1180,22 @@ jobs:
           PY
           echo "Stage351: original guest exit-tail service cause independently source-audited after join; not proof of DAC/speaker audio." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Preserve bounded unverified guest Stage351 source on strict audit failure
+        if: failure()
+        shell: bash
+        run: |
+          # Forensic fallback only. This does not turn a failed Stage351 audit
+          # into a pass and never labels a guest reason code as verified.
+          if python3 tools/preserve_unverified_guest_tail_reason_stage351.py \
+              --guest-root-file runtime-evidence/guest-sd-root.txt \
+              --output-original runtime-evidence/stage351-unverified-quarantine.csv \
+              --output-report runtime-evidence/stage351-unverified-quarantine.json \
+              --run-id "$GITHUB_RUN_ID"; then
+            echo "Stage351 failed; limited original guest diagnostic bytes quarantined as UNVERIFIED." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Stage351 failed; no safe original guest diagnostic bytes were available to quarantine." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Capture ten additional A/B transitions in isolated NeXium
         id: scene_soak_capture
         shell: bash

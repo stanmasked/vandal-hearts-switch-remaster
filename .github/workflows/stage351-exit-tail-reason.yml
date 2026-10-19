@@ -46,5 +46,8 @@ jobs:
           done
           python3 -m unittest discover -s tests \
             -p 'test_audit_nexium_guest_tail_reason_stage351.py' -v
+          python3 -m unittest discover -s tests \
+            -p 'test_preserve_unverified_guest_tail_reason_stage351.py' -v
           python3 -m py_compile tools/audit_nexium_guest_tail_reason_stage351.py
+          python3 -m py_compile tools/preserve_unverified_guest_tail_reason_stage351.py
           echo "Stage351 tests are synthetic. Original NeXium source must be observed in an independent NRO runtime workflow." >> "$GITHUB_STEP_SUMMARY"
