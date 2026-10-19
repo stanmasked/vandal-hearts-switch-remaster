@@ -60,9 +60,6 @@ int vh_audio_scene_optical_draw_packet(VhCanvas *canvas,
        canvas->width < VH_SCENE_OPTICAL_LEFT+(int)VH_SCENE_OPTICAL_WIDTH ||
        canvas->height < VH_SCENE_OPTICAL_TOP+(int)VH_SCENE_OPTICAL_HEIGHT ||
        canvas->stride_pixels<(size_t)canvas->width) return -1;
-    uint8_t packet[VH_SCENE_OPTICAL_PACKET_BYTES];
-    const int rows=vh_audio_scene_optical_encode(trace,packet);
-    if(rows<0) return -1;
     vh_canvas_fill_rect(canvas,0,0,canvas->width,canvas->height,black);
     vh_canvas_fill_rect(canvas,VH_SCENE_OPTICAL_LEFT,VH_SCENE_OPTICAL_TOP,
                         VH_SCENE_OPTICAL_WIDTH,VH_SCENE_OPTICAL_HEIGHT,
