@@ -169,15 +169,9 @@ def _require_bit_exact_gpu_timeline(report):
         ) from exc
 
 
-def run(executable, first_frame, first_journal, second_frame, second_journal,
-        *, frame, executable_sha256, args=(), timeout=10,
-        require_identical_gpu_timeline=False):
-    """Launch the same SHA-pinned ELF twice and audit independent GPU captures.
-
-    Requires four pre-existing, distinct, empty owner-private directories.
-    Failed captures leave already-created private evidence available for
-    local diagnosis, but NEVER issue a successful summary.
-    """
+def _validated_launch_args(frame, executable_sha256, args, timeout,
+                           require_identical_gpu_timeline):
+    """Share the exact argument restrictions between preview and live launch."""
     if (type(frame) is not int or not 1 <= frame <= 0xffffffff
             or type(executable_sha256) is not str
             or len(executable_sha256) != 64
@@ -187,12 +181,81 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
             or not isinstance(args, (tuple, list))
             or any(type(arg) is not str or "\x00" in arg for arg in args)):
         raise ValueError("MAP02 two-run launch arguments invalid")
+    # Freeze caller-owned mutable argv for the entire operation.
+    return tuple(args)
 
-    # Preserve the same argv VALUE for both child processes, even when the
-    # caller provides a mutable list and alters it while the first capture
-    # runs. A single SHA-pinned ELF is not sufficient if the launch inputs
-    # can silently change between independent captures.
-    args = tuple(args)
+
+def preflight(executable, first_frame, first_journal, second_frame,
+              second_journal, *, frame, executable_sha256, args=(),
+              timeout=10, require_identical_gpu_timeline=False):
+    """Read-only private launch readiness check; never execute an ELF.
+
+    All four output directories must ALREADY exist, be owner-private,
+    distinct, and empty. This does not create any file/receipt/snapshot.
+    A subsequent real launch MUST repeat its own checks since preflight
+    cannot pin its descriptors across separate CLI invocations.
+    """
+    _validated_launch_args(frame, executable_sha256, args, timeout,
+                           require_identical_gpu_timeline)
+    executable = Path(executable).absolute()
+    folders = tuple(Path(p).absolute() for p in (
+        first_frame, first_journal, second_frame, second_journal))
+    opened, identities = [], []
+    exe_fd = None
+    try:
+        for path in folders:
+            fd, identity = _directory(path, empty=True)
+            opened.append(fd)
+            identities.append(identity)
+        if len({identity[:2] for identity in identities}) != 4:
+            raise ValueError("MAP02 two-run private directory roles overlap")
+        exe_fd = os.open(executable, os.O_RDONLY | os.O_NOFOLLOW |
+                         os.O_CLOEXEC | os.O_NONBLOCK)
+        _require_held_elf_image(exe_fd, executable, executable_sha256)
+        for fd, path, identity in zip(opened, folders, identities):
+            _check_directory(fd, path, identity)
+            if os.listdir(fd):
+                raise ValueError("MAP02 two-run private directory not empty")
+        _require_held_elf_image(exe_fd, executable, executable_sha256)
+        return {
+            "schema": "vh.map02.private-two-live-elf-preflight.v1",
+            "frame": frame,
+            "width": WIDTH,
+            "height": HEIGHT,
+            "executable_sha256": executable_sha256,
+            "four_owner_private_empty_directory_roles_verified": True,
+            "same_executable_inode_and_sha_checked_at_preflight": True,
+            "same_elf_arguments_validated": True,
+            "strict_gpu_timeline_match_requested": require_identical_gpu_timeline,
+            "native_elf_launched": False,
+            "two_native_elf_captures_and_complete_replays_verified": False,
+            "strict_gpu_timeline_match_verified": False,
+            "actual_gameplay_rendering_authenticated": False,
+            "ps1_hardware_pixel_equivalence_verified": False,
+            "hd_replacement_authorized": False,
+            "private_pixel_bytes_or_paths_emitted": False,
+        }
+    finally:
+        if exe_fd is not None:
+            os.close(exe_fd)
+        for fd in reversed(opened):
+            os.close(fd)
+
+
+def run(executable, first_frame, first_journal, second_frame, second_journal,
+        *, frame, executable_sha256, args=(), timeout=10,
+        require_identical_gpu_timeline=False):
+    """Launch the same SHA-pinned ELF twice and audit independent GPU captures.
+
+    Requires four pre-existing, distinct, empty owner-private directories.
+    Failed captures leave already-created private evidence available for
+    local diagnosis, but NEVER issue a successful summary.
+    """
+    # Preserve the SAME immutable argv for both child processes even if
+    # the caller mutates its original list after the first launch.
+    args = _validated_launch_args(
+        frame, executable_sha256, args, timeout,
+        require_identical_gpu_timeline)
 
     executable = Path(executable).absolute()
     folders = tuple(Path(p).absolute() for p in (
@@ -350,9 +413,13 @@ def main():
     p.add_argument("--require-identical-gpu-timeline", action="store_true",
                    help="reject independently valid but different GPU event/"
                         "VRAM snapshot/terminal frame sequences")
+    p.add_argument("--dry-run", action="store_true",
+                   help="check the four private directories and ELF SHA-256 "
+                        "without launching, writing files or claiming a capture")
     ns = p.parse_args()
     try:
-        report = run(
+        operation = preflight if ns.dry_run else run
+        report = operation(
             ns.executable, ns.first_frame, ns.first_journal,
             ns.second_frame, ns.second_journal,
             frame=ns.frame, executable_sha256=ns.executable_sha256,
