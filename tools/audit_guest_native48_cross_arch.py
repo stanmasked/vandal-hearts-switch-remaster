@@ -37,7 +37,7 @@ def audit(gcc,clang,guest0,guest1,run_id,attempt,sha):
         raise ValueError("GCC and Clang 48-kHz PCM fingerprints differ")
     pre=baseline["pre_switch_native_frames"]
     tail=baseline["post_switch_native_frames"]
-    if not (64*555<=pre<=64*559 and 48*555<=tail<=48*559 and
+    if not (pre==35665 and tail==26750 and
             baseline["different_post_switch_native_pages"]==48 and
             0<baseline["retained_tail_nonzero_sample_values"]<=2*tail and
             0<=baseline["reset_first_page_nonzero_sample_values"]<=2 and
