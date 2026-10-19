@@ -816,6 +816,53 @@ for name, offset, size in [
             folder.unlink()
             saved.rename(folder)
 
+    def test_source_parent_symlinked_after_expensive_regeneration_is_rejected(self):
+        # The .inc verifier ran on correct bytes, but before the final
+        # source-input recheck the checkout's assets/ directory was swapped
+        # for a symlink to the SAME original inodes. Leaf hashes still match.
+        assets = self.root / "assets"
+        saved = self.root.parent / "moved-assets-after-generator"
+        regenerate = private_inputs.check_original_includes
+
+        def replaced_after_generation(*args, **kwargs):
+            report = regenerate(*args, **kwargs)
+            assets.rename(saved)
+            assets.symlink_to(saved, target_is_directory=True)
+            return report
+
+        try:
+            with patch.object(private_inputs, "check_original_includes",
+                              side_effect=replaced_after_generation):
+                with self.assertRaisesRegex(
+                        ValueError, "directory linked or inaccessible"):
+                    verify_private_pc_inputs(self.root)
+        finally:
+            if assets.is_symlink():
+                assets.unlink()
+            if saved.exists():
+                saved.rename(assets)
+        self.assertTrue(
+            verify_private_pc_inputs(self.root)["us_ps1_font_charset_verified"])
+
+    def test_source_parent_same_inode_mode_drift_after_regeneration_rejected(self):
+        assets = self.root / "assets"
+        old_mode = assets.stat().st_mode & 0o777
+        regenerate = private_inputs.check_original_includes
+
+        def chmod_after_generation(*args, **kwargs):
+            report = regenerate(*args, **kwargs)
+            assets.chmod(0o700)
+            return report
+
+        try:
+            with patch.object(private_inputs, "check_original_includes",
+                              side_effect=chmod_after_generation):
+                with self.assertRaisesRegex(
+                        ValueError, "source directories changed during audit"):
+                    verify_private_pc_inputs(self.root)
+        finally:
+            assets.chmod(old_mode)
+
     def test_original_source_parent_requires_owner_search_permission(self):
         folder = self.root / "assets"
         old_mode = folder.stat().st_mode & 0o777
