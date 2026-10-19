@@ -85,7 +85,9 @@ def compare_receipt(observed:dict,archived:dict,relative_path:str)->None:
     if not isinstance(archived,dict):
         raise ValueError("nonobject original guest receipt")
     observed={**observed,"original_guest_source_relative_path":relative_path}
-    if observed!=archived:
+    if (set(observed)!=set(archived)
+        or any(type(observed[key]) is not type(archived[key])
+               or observed[key]!=archived[key] for key in observed)):
         raise ValueError("independent guest-source parsing disagrees with archive receipt")
 
 def recheck(source:dict[str,bytes])->dict:
