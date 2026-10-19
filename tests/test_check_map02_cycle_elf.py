@@ -100,6 +100,47 @@ class OriginalCycleElfAuditTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, error):
                     load(raw, entry, size)
 
+    def test_nonexecuting_interpreter_audit_accepts_static_or_installed_loader(self):
+        check = elf._require_available_elf_interpreter
+        check("", 4096)  # a static ELF has no PT_INTERP
+        # The fixture uses a local synthetic executable, never a game/BIOS.
+        interpreter = self.root / "fake-system-ld-so"
+        interpreter.write_bytes(b"synthetic-loader-fixture")
+        interpreter.chmod(0o700)
+        row = (
+            " INTERP 0x000080 0x000080 0x000080 "
+            "0x000100 0x000100 R 0x1"
+        )
+        report = row + "\n [Requesting program interpreter: " + str(interpreter) + "]\n"
+        check(report, 4096)
+
+    def test_private_preflight_fails_closed_on_missing_or_forged_elf_interpreter(self):
+        check = elf._require_available_elf_interpreter
+        missing = str(self.root / "absent-original-elf-loader")
+        row = (
+            " INTERP 0x000080 0x000080 0x000080 "
+            "0x000100 0x000100 R 0x1"
+        )
+        for description, report, file_size, error in (
+            ("missing interpreter", row + "\n [Requesting program interpreter: "
+             + missing + "]\n", 4096, "system interpreter is unavailable"),
+            ("relative interpreter", row + "\n [Requesting program interpreter: "
+             + "relative/ld.so]\n", 4096, "interpreter path is invalid"),
+            ("missing request", row, 4096, "metadata is inconsistent"),
+            ("request without segment",
+             "[Requesting program interpreter: " + missing + "]",
+             4096, "metadata is inconsistent"),
+            ("duplicated PT_INTERP", row + "\n" + row + "\n [Requesting program interpreter: "
+             + missing + "]\n", 4096, "metadata is inconsistent"),
+            ("invalid file extent", row + "\n [Requesting program interpreter: "
+             + missing + "]\n", 128, "segment has invalid bounds"),
+            ("malformed PT_INTERP", " INTERP bad\n [Requesting program interpreter: "
+             + missing + "]\n", 4096, "segment is malformed"),
+        ):
+            with self.subTest(description=description):
+                with self.assertRaisesRegex(ValueError, error):
+                    check(report, file_size)
+
     def test_native_introspection_timeout_redacts_private_elf_path(self):
         private = str(self.executable)
         timeout = subprocess.TimeoutExpired(
