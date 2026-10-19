@@ -13,7 +13,8 @@ LEFT, TOP, MODULE = 250, 160, 7
 COLS, ROWS = 112, 66
 PACKET_BYTES = 924
 KINDS = {1:"INPUT",2:"POST",3:"ACCEPT",4:"SUBMIT_CALL",
-         5:"RELEASE_RETURN",6:"SUBMIT_ERROR"}
+         5:"RELEASE_RETURN",6:"SUBMIT_ERROR",
+         7:"PCM_PAGE_NONZERO",8:"PCM_PAGE_SILENT"}
 
 
 def decode_image(path):
@@ -80,12 +81,16 @@ def audit_receipt(decoded, mode):
         raise ValueError("Incomplete guest trace / unexpected lost slots")
     if any(x["event"]=="SUBMIT_ERROR" for x in rows):
         raise ValueError("Guest audio page submission failed")
+    if any(x["event"]=="PCM_PAGE_SILENT" and
+           x["serial"] in (1,2) for x in rows):
+        raise ValueError("First accepted guest PCM page was silent")
     details=[]
     # One real A-selection then one real B-cancel. Avoid searching by
     # mere event kind across different ticket IDs.
     for serial,scene in ((1,2),(2,1)):
         relevant=[x for x in rows if x["serial"]==serial]
-        required=("INPUT","POST","ACCEPT","SUBMIT_CALL","RELEASE_RETURN")
+        required=("INPUT","POST","ACCEPT","PCM_PAGE_NONZERO",
+                  "SUBMIT_CALL","RELEASE_RETURN")
         order=[]
         prior=-1
         for kind in required:
@@ -97,7 +102,7 @@ def audit_receipt(decoded, mode):
             prior=event["index"]
             order.append(event)
         if any(order[i]["guest_monotonic_ns"]>order[i+1]["guest_monotonic_ns"]
-               for i in range(4)):
+               for i in range(len(order)-1)):
             raise ValueError("Nonmonotonic guest input-to-PCM time")
         details.append({"serial":serial,"scene":scene,
                         "events":[x["event"] for x in order],
@@ -106,8 +111,9 @@ def audit_receipt(decoded, mode):
     return {"schema":"vh-map02-guest-scene-trace/v1",
             "mode":mode,"trace_rows":len(rows),"trace_dropped":0,
             "confirmed_transitions":details,
-            "result":"POST_ACCEPT_FIRST_PCM_PAGE_CORRELATED",
-            "submitted_pcm_content_nonzero_verified":False,
+            "result":"FIRST_PCM_PAGE_NONZERO_AND_SUBMITTED",
+            "first_pre_submit_pcm_page_nonzero_verified":True,
+            "audout_submit_returned_for_first_page":True,
             "sample_aligned_guest_reverb_proven":False,
             "physical_speaker_tested":False}
 
@@ -128,7 +134,7 @@ def main():
     opts.output.parent.mkdir(parents=True,exist_ok=True)
     opts.output.write_text(json.dumps(result,indent=2,sort_keys=True)+"\n")
     print(json.dumps(result,indent=2,sort_keys=True))
-    return 0 if result["result"]=="POST_ACCEPT_FIRST_PCM_PAGE_CORRELATED" else 1
+    return 0 if result["result"]=="FIRST_PCM_PAGE_NONZERO_AND_SUBMITTED" else 1
 
 if __name__=="__main__":
     raise SystemExit(main())
