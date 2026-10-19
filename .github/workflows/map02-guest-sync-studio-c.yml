@@ -1,0 +1,354 @@
+name: NeXium single-guest synchronous STUDIO_C wet-tail counterfactual
+
+on:
+  pull_request:
+    paths:
+      - "source/main.c"
+      - "source/vh_switch_game_audio.c"
+      - "source/vh_audio_scene_trace.h"
+      - "source/vh_audio_scene_trace.c"
+      - "source/vh_audio_scene_optical.c"
+      - "source/vh_audio_scene_optical.h"
+      - "source/vh_guest_sync_studio_c.c"
+      - "source/vh_guest_sync_studio_c.h"
+      - "Makefile.map02-guest-sync-tail"
+      - "tests/test_guest_sync_studio_c.c"
+      - "tests/test_decode_guest_sync_studio_c.py"
+      - "tools/decode_guest_sync_studio_c.py"
+      - "docs/MAP02_GUEST_SYNCHRONIZED_STUDIO_C.md"
+      - "tools/audit_guest_sync_cross_arch.py"
+      - "tests/test_audit_guest_sync_cross_arch.py"
+      - ".github/workflows/map02-guest-sync-studio-c.yml"
+      - "source/vh_map02_pcm_metrics.c"
+      - "source/vh_map02_pcm_metrics.h"
+      - "tests/test_map02_guest_pcm_metrics.c"
+      - "tests/test_decode_map02_guest_pcm_metrics.py"
+      - "tools/decode_map02_guest_pcm_metrics.py"
+      - "docs/MAP02_GUEST_FIRST_PAGE_METRICS.md"
+      - "tests/test_map02_guest_pcm_witness.c"
+      - "docs/MAP02_GUEST_FIRST_PCM_PAGE.md"
+      - "Makefile.map02-guest-trace"
+      - "tools/decode_map02_guest_scene_trace.py"
+      - "tests/test_decode_map02_guest_scene_trace.py"
+      - ".github/workflows/map02-guest-scene-trace.yml"
+      - "docs/MAP02_GUEST_SCENE_TRACE.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  decoder-regressions:
+    name: Optical packet CRC, serial and PCM receipt negative tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Pillow from Ubuntu packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pil
+      - name: Reject forged guest scene transitions and silent first PCM pages
+        run: python3 -m unittest discover -s tests -p 'test_decode_map02_guest_scene_trace.py' -v
+      - name: Reject forged guest quantitative PCM metrics packets
+        run: python3 -m unittest discover -s tests -p 'test_decode_map02_guest_pcm_metrics.py' -v
+      - name: Verify the same bounded guest synthetic replay packet rejects forged claims
+        run: python3 -m unittest discover -s tests -p 'test_decode_guest_sync_studio_c.py' -v
+      - name: Fail-closed GCC / Clang / guest parity auditor fixtures
+        run: python3 -m unittest discover -s tests -p 'test_audit_guest_sync_cross_arch.py' -v
+      - name: Re-run guest exact-clock DSP source under GCC and Clang sanitizer
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/host-sync
+          for cc in gcc clang; do
+            "$cc" -std=c11 -O1 -g -Wall -Wextra -Werror -Isource \
+              -fsanitize=address,undefined -fno-sanitize-recover=all \
+              -fno-omit-frame-pointer \
+              tests/test_guest_sync_studio_c.c \
+              source/vh_guest_sync_studio_c.c \
+              source/vh_game_music_mailbox.c source/vh_music_scene.c \
+              source/vh_native_seq.c source/vh_native_spu.c \
+              source/vh_spu_reverb.c source/vh_spu_gaussian.c \
+              source/vh_audio_stream.c source/vh_audio_scene_optical.c \
+              source/vh_audio_scene_trace.c -lm \
+              -o "/tmp/test-map02-guest-sync-$cc"
+            ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+              "/tmp/test-map02-guest-sync-$cc" | tee "build/host-sync/$cc.txt"
+          done
+      - name: Test C11 PCM witness event kinds and optical byte serialization
+        shell: bash
+        run: |
+          set -euo pipefail
+          for cc in gcc clang; do
+            "$cc" -std=c11 -O1 -g -Wall -Wextra -Werror -Isource \
+              -fsanitize=address,undefined -fno-omit-frame-pointer \
+              tests/test_map02_guest_pcm_witness.c \
+              source/vh_audio_scene_trace.c source/vh_audio_scene_optical.c \
+              -o "/tmp/map02-pcm-witness-$cc"
+            ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+              "/tmp/map02-pcm-witness-$cc"
+            "$cc" -std=c11 -O1 -g -Wall -Wextra -Werror -Isource \
+              -fsanitize=address,undefined -fno-omit-frame-pointer \
+              tests/test_map02_guest_pcm_metrics.c \
+              source/vh_map02_pcm_metrics.c \
+              source/vh_audio_scene_optical.c source/vh_audio_scene_trace.c \
+              -o "/tmp/map02-pcm-metrics-$cc"
+            ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+              "/tmp/map02-pcm-metrics-$cc"
+          done
+
+      - name: Archive original GCC/Clang exact-clock fingerprints
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-exact-clock-gcc-clang-reference
+          path: build/host-sync/
+          if-no-files-found: error
+
+  paired-trace-nro:
+    name: Build distinct 0/1 NRO binaries with diagnostic post-join display
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cross-compile exact two guest trace receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO=/opt/devkitpro
+          export DEVKITA64=/opt/devkitpro/devkitA64
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          for mode in 0 1; do
+            make -f Makefile -f Makefile.map02-audio -f Makefile.map02-guest-trace -f Makefile.map02-guest-sync-tail \
+              MAP02_AUDIO_BUILD="build/map02-trace-$mode" \
+              MAP02_AUDIO_WET_TAIL="$mode" map02-audio-nro
+          done
+          mkdir -p build/guest-trace-nros
+          for mode in 0 1; do
+            cp "build/map02-trace-$mode/vandal-hearts-map02-audio.nro" \
+              "build/guest-trace-nros/wet-tail-$mode.nro"
+          done
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          root=Path("build/guest-trace-nros")
+          hashes={}
+          for mode in (0,1):
+              data=(root/f"wet-tail-{mode}.nro").read_bytes()
+              assert data[16:20]==b"NRO0"
+              hashes[str(mode)]=hashlib.sha256(data).hexdigest()
+          assert hashes["0"]!=hashes["1"]
+          receipt={"schema":"vh-map02-post-join-guest-trace/v1",
+                   "git_sha":os.environ["GITHUB_SHA"],
+                   "run_id":int(os.environ["GITHUB_RUN_ID"]),
+                   "attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
+                   "trace_receipt_enabled":True,
+                   "mode_nro_sha256":hashes,
+                   "no_original_ps1_assets":True}
+          (root/"manifest.json").write_text(json.dumps(receipt,indent=2)+"\n")
+          print(json.dumps(receipt,indent=2))
+          PY
+      - name: Archive both guest trace NROs
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-wet-tail-guest-optical-trace-nros
+          path: build/guest-trace-nros/
+          if-no-files-found: error
+
+  guest-scene-receipt:
+    name: NeXium actual A/B to audio owner trace per mode
+    needs: [decoder-regressions, paired-trace-nro]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-wet-tail-guest-optical-trace-nros
+          path: nros
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-exact-clock-gcc-clang-reference
+          path: host-sync
+      - name: Validate NRO byte identity and same-run origin
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          root=Path("nros")
+          m=json.loads((root/"manifest.json").read_text())
+          assert m["schema"]=="vh-map02-post-join-guest-trace/v1"
+          assert m["git_sha"]==os.environ["GITHUB_SHA"]
+          assert m["run_id"]==int(os.environ["GITHUB_RUN_ID"])
+          assert m["attempt"]==int(os.environ["GITHUB_RUN_ATTEMPT"])
+          assert m["trace_receipt_enabled"]
+          for mode in (0,1):
+              binary=(root/f"wet-tail-{mode}.nro").read_bytes()
+              assert binary[16:20]==b"NRO0"
+              assert hashlib.sha256(binary).hexdigest()==m["mode_nro_sha256"][str(mode)]
+          assert m["mode_nro_sha256"]["0"]!=m["mode_nro_sha256"]["1"]
+          PY
+      - name: Install graphics and emulator test prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl jq xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 libxkbcommon-x11-0 \
+            libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers pulseaudio pulseaudio-utils libasound2-plugins
+      - name: Retrieve validated NeXium Linux nightly
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="$(curl -fsSL --retry 3 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+          url="$(printf '%s' "$release_json" | jq -r \
+            '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          test -n "$url" && test "$url" != null
+          curl -fL --retry 3 --retry-all-errors "$url" -o /tmp/nexium-scene-trace.tar.gz
+          mkdir -p /tmp/nexium-scene-trace
+          tar -xzf /tmp/nexium-scene-trace.tar.gz -C /tmp/nexium-scene-trace
+          emulator="$(find /tmp/nexium-scene-trace -type f -executable \
+            \( -name nexium-gui -o -name nexium \) -print -quit)"
+          test -n "$emulator"
+          echo "NEXIUM_BIN=$emulator" >> "$GITHUB_ENV"
+      - name: Send actual A/B and decode post-join guest scene receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          cp nros/manifest.json runtime-evidence/
+          rt="$RUNNER_TEMP/vh-map02-guest-trace-pulse"
+          mkdir -p "$rt"
+          chmod 700 "$rt"
+          export XDG_RUNTIME_DIR="$rt"
+          pulseaudio --daemonize=yes --exit-idle-time=-1 \
+            --log-target=file:runtime-evidence/pulseaudio.log
+          export PULSE_SERVER="unix:$rt/pulse/native"
+          pactl load-module module-null-sink sink_name=vh_map02_trace \
+            rate=48000 channels=2 >runtime-evidence/pulse-module-id.txt
+          pactl set-default-sink vh_map02_trace
+          cat >"$RUNNER_TEMP/map02-trace-asound.conf" <<'ASOUND'
+          pcm.!default { type pulse }
+          ctl.!default { type pulse }
+          ASOUND
+          export ALSA_CONFIG_PATH="$RUNNER_TEMP/map02-trace-asound.conf"
+          export SDL_AUDIODRIVER=pulse
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          export ROOT="$PWD/runtime-evidence"
+
+          for mode in 0 1; do
+            export MODE="$mode" NRO="$PWD/nros/wet-tail-$mode.nro"
+            timeout --kill-after=5s 73s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+              set -euo pipefail
+              "$NEXIUM_BIN" "$NRO" >"$ROOT/wet-tail-$MODE-guest.log" 2>&1 &
+              guest=$!
+              trap "kill -KILL $guest 2>/dev/null || true" EXIT
+              window=""
+              for n in $(seq 1 30); do
+                sleep 1
+                window="$(xdotool search --onlyvisible --name NeXium 2>/dev/null | tail -n1 || true)"
+                [ -z "$window" ] || break
+                kill -0 "$guest" 2>/dev/null || exit 1
+              done
+              test -n "$window"
+              sleep 4
+              timeout 3 xdotool windowfocus --sync "$window" || true
+              timeout 3 xdotool keydown --window "$window" c
+              sleep 0.15
+              timeout 3 xdotool keyup --window "$window" c
+              sleep 4
+              timeout 3 xdotool keydown --window "$window" x
+              sleep 0.15
+              timeout 3 xdotool keyup --window "$window" x
+              sleep 4
+              timeout 3 xdotool keydown --window "$window" m
+              sleep 0.15
+              timeout 3 xdotool keyup --window "$window" m
+              sleep 3
+              import -window "$window" "$ROOT/wet-tail-$MODE-trace.png"
+              test -s "$ROOT/wet-tail-$MODE-trace.png"
+              sleep 7
+              import -window "$window" "$ROOT/wet-tail-$MODE-metrics.png"
+              test -s "$ROOT/wet-tail-$MODE-metrics.png"
+              # The synthetic SEQ/SPU replay runs after audout joins; give
+              # the guest extra bounded time to paint its third 8s receipt.
+              sleep 10
+              import -window "$window" "$ROOT/wet-tail-$MODE-synced.png"
+              test -s "$ROOT/wet-tail-$MODE-synced.png"
+              kill -INT "$guest" 2>/dev/null || true
+              sleep 1
+              kill -KILL "$guest" 2>/dev/null || true
+              wait "$guest" 2>/dev/null || true
+            '
+            python3 tools/decode_map02_guest_scene_trace.py \
+              --image "runtime-evidence/wet-tail-$mode-trace.png" \
+              --mode "$mode" \
+              --output "runtime-evidence/wet-tail-$mode-scene-receipt.json"
+            python3 tools/decode_map02_guest_pcm_metrics.py \
+              --image "runtime-evidence/wet-tail-$mode-metrics.png" \
+              --mode "$mode" \
+              --output "runtime-evidence/wet-tail-$mode-metrics.json"
+            python3 tools/decode_guest_sync_studio_c.py \
+              --image "runtime-evidence/wet-tail-$mode-synced.png" \
+              --mode "$mode" \
+              --output "runtime-evidence/wet-tail-$mode-synced.json"
+          done
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("runtime-evidence")
+          pair=[json.loads((root/f"wet-tail-{i}-metrics.json").read_text()) for i in (0,1)]
+          synced=[json.loads((root/f"wet-tail-{i}-synced.json").read_text()) for i in (0,1)]
+          assert all(x["result"]=="GUEST_SYNCHRONIZED_SYNTHETIC_STUDIO_C_TAIL_PROVEN" for x in synced)
+          for key in ("pre_switch_pcm_fnv1a64", "retained_tail_pcm_fnv1a64",
+                      "reset_tail_pcm_fnv1a64", "wet_nonzero_sample_values",
+                      "different_blocks", "reset_nonzero_sample_values"):
+              assert synced[0][key]==synced[1][key], (
+                  f"Different deterministic synthetic guest DSP proof for {key}")
+          (root/"guest-single-clock-studio-c-proof.json").write_text(
+              json.dumps({"schema":"vh-guest-same-clock-studio-c/v1",
+                          "independent_outer_nro_modes":True,
+                          "identical_generated_synthetic_stimulus":True,
+                          "wet_and_reset_in_single_guest_clock":True,
+                          "guest_synthetic_tails_match_across_outer_modes":True,
+                          "guest_synthetic_reverb_causally_proven":True,
+                          "real_audout_reverb_causality_proven":False,
+                          "physical_switch_audio_tested":False,
+                          "results":synced},indent=2,sort_keys=True)+"\n")
+          assert all(x["result"]=="GUEST_FIRST_PAGES_QUANTIFIED" for x in pair)
+          out={"schema":"vh-map02-unmatched-first-page-quantitative-contrast/v1",
+               "mode_0":pair[0]["tickets"],"mode_1":pair[1]["tickets"],
+               "independent_guest_runs":True,
+               "sample_aligned":False,
+               "reverb_causality_proven":False,
+               "physical_audio_verified":False}
+          (root/"wet-tail-quantitative-contrast.json").write_text(
+              json.dumps(out,sort_keys=True,indent=2)+"\n")
+          PY
+          python3 tools/audit_guest_sync_cross_arch.py \
+            --gcc host-sync/gcc.txt --clang host-sync/clang.txt \
+            --guest0 runtime-evidence/wet-tail-0-synced.json \
+            --guest1 runtime-evidence/wet-tail-1-synced.json \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" \
+            --sha "$GITHUB_SHA" \
+            --out runtime-evidence/guest-host-cross-architecture-parity.json
+      - name: Always archive guest receipts, PNG screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-guest-single-clock-studio-c-evidence
+          path: runtime-evidence/
+          if-no-files-found: warn
