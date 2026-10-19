@@ -30,6 +30,23 @@ int main(void) {
     assert(a.initial_hash==b.initial_hash && a.wet_hash==b.wet_hash &&
            a.reset_hash==b.reset_hash && a.wet_nonzero==b.wet_nonzero);
     assert(a.wet_hash!=a.reset_hash);
+    assert(a.native48.different_pages==48);
+    assert(a.native48.prefix_frames>=64u*555u);
+    assert(a.native48.tail_frames>=48u*555u);
+    assert(a.native48.wet_nonzero>0u);
+    assert(a.native48.reset_first_page_nonzero<=2u);
+    assert(a.native48.reset_later_nonzero==0u);
+    assert(a.native48.verified_roundtrips==2u);
+    assert(a.native48.prefix_hash==b.native48.prefix_hash);
+    assert(a.native48.wet_hash==b.native48.wet_hash);
+    assert(a.native48.reset_hash==b.native48.reset_hash);
+    assert(a.native48.wet_hash!=a.native48.reset_hash);
+    assert(vh_guest_native_48k_encode(&a,packet)==0);
+    assert(!memcmp(packet,"VH48K001",8));
+    assert(packet[8]==1u && packet[9]==0u && packet[10]==15u);
+    assert(le32(packet+20)==48u);
+    assert(le32(packet+32)==0u);
+    assert(le32(packet+909)==crc32(packet,909u));
     assert(vh_guest_sync_studio_c_encode(&a,packet)==0);
     assert(memcmp(packet,"VHSYNC01",8)==0);
     assert(packet[8]==1u && packet[9]==0u && packet[10]==15u);
