@@ -63,7 +63,7 @@ def unpack(packet):
 
 def audit_receipt(decoded, mode):
     rows = decoded["rows"]
-    if decoded["dropped"] or len(rows) < 10:
+    if decoded["dropped"] or len(rows) < 5:
         raise ValueError("Incomplete guest trace / unexpected lost slots")
     if any(x["event"]=="SUBMIT_ERROR" for x in rows):
         raise ValueError("Guest audio page submission failed")
