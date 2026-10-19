@@ -240,6 +240,9 @@ class PrivateOneShotCycleTests(unittest.TestCase):
         cases = (
             {"ready_for_controlled_local_launch": True},
             {**self.ready_report, "schema": "foreign-schema"},
+            {**self.ready_report, "undocumented_gameplay_proven": True},
+            {key: value for key, value in self.ready_report.items()
+             if key != "original_pc_source_identity_checked"},
             {**self.ready_report, "private_directories_checked": True},
             {**self.ready_report, "capture_folders_empty": 4},
             {**self.ready_report, "complete_pc_elf_bytes_checked": False},
