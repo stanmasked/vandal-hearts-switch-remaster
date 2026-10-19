@@ -824,6 +824,11 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
         # Reconstruct the original auditor-shaped part (the runner adds
         # only its own small set of explicit receipt claims).
         raw = {key: valid[key] for key in two_live._AUDIT_SAFE_KEYS}
+        # The two-run launcher deliberately replaces the audit schema
+        # with its distinct successful-public-receipt schema. Restore
+        # only that label when unit-testing the internal audit contract.
+        self.assertEqual(valid["schema"], two_live.SCHEMA)
+        raw["schema"] = two_live.AUDIT_SCHEMA
         two_live._require_safe_public_audit_summary(raw)
         cases = (
             ("path", {"private_raw_frame_path":
