@@ -17,6 +17,7 @@ COMPOSED = (
     "static int vh_capture_init;\n"
     "#define VH_CAPTURE_LIMIT 64u\n"
     + "\n".join(joint.PRIVATE_FILE_OPENERS) + "\n"
+    + ('    file = fopen(status_path, "wx");\n' * 2)
     + joint.EVENT_ANCHOR + "\n"
     + joint.ORIGINAL_GPU_MARKER + "\n"
     "void DrawOTag(unsigned int *p) {}\n"
@@ -56,9 +57,30 @@ class CombinedMap02GpuFrameTests(unittest.TestCase):
         self.assertIn("vh_map02_joint_events_completed == vh_capture_seq", result)
         self.assertIn("if (VH_Map02FlushLog(log) == 0)", result)
         self.assertIn("++vh_map02_joint_events_completed;", result)
+        self.assertIn("++vh_capture_saved;", result)
+        self.assertIn("file = VH_Map02SecureFile(status_path);", result)
+        self.assertEqual(result.count("file = VH_Map02SecureFile(status_path);"), 2)
+        self.assertIn("if (vh_capture_windows) return 0;", result)
+        self.assertIn("if (ferror(log) == 0) {", result)
         self.assertEqual(result.count("file = fopen(snapshot_path, \"wb\");"), 1)
         self.assertEqual(result.count("log = fopen(log_path, \"ab\");"), 1)
         self.assertIn("#else\n    log = fopen(log_path, \"ab\");", result)
+
+    def test_missing_or_duplicate_terminal_status_open_sites_fail_closed(self):
+        status = '    file = fopen(status_path, "wx");'
+        with self.assertRaisesRegex(ValueError,
+                                    "completion receipt anchor changed"):
+            self.generate(COMPOSED.replace(status, "", 1))
+        with self.assertRaisesRegex(ValueError,
+                                    "completion receipt anchor changed"):
+            self.generate(COMPOSED + status)
+
+    def test_main_recorder_close_sequence_must_match_exactly(self):
+        original = joint.PRIVATE_FILE_OPENERS[3]
+        self.assertIn("++vh_capture_saved", original)
+        with self.assertRaisesRegex(ValueError,
+                                    "joint MAP02 private GPU hook anchor changed"):
+            self.generate(COMPOSED.replace(original, "    fclose(log);"))
 
     def test_missing_snapshot_open_site_refused(self):
         with self.assertRaisesRegex(ValueError, "anchor changed"):
