@@ -1,3 +1,4 @@
 # Only for post-join scene-event receipts in experimental NeXium.
 # Include after Makefile.map02-audio; leaves standard/default builds alone.
-override CFLAGS += -DVH_MAP02_AUDIO_TRACE_RECEIPT=1 -DVH_MAP02_AUDIO_PCM_WITNESS=1
+override CFLAGS += -DVH_MAP02_AUDIO_TRACE_RECEIPT=1 -DVH_MAP02_AUDIO_PCM_WITNESS=1 -DVH_MAP02_AUDIO_PCM_METRICS=1
+MAP02_AUDIO_SOURCES += $(SOURCES)/vh_map02_pcm_metrics.c
