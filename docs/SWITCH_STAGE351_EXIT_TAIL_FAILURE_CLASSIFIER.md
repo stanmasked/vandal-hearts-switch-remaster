@@ -29,8 +29,24 @@ The worker stores its final code in `VhAudioExitTailReason`; after the thread jo
 
 `tools/audit_nexium_guest_tail_reason_stage351.py` independently reopens the original guest source path through the NeXium guest SD locator, rejects symlinked directories and ambiguous CSVs, validates exact ordered canonical rows, checks the Stage313/348 source receipts, and preserves the original CSV bytes with an independent SHA-256. The full `.github/workflows/emulator-smoke.yml` now demands the original Stage351 source to pass on a fresh NRO run; tests or a successful compile alone are never described as actual guest-source observations.
 
+## Verified NeXium runs and failure forensics
+
+[NeXium #39308380160](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39308380160) completed end-to-end with an **original guest software Stage351 code 7** (`return_confirmed`) and independent Stage348 counts **1441 acquired / 1441 released / 0 abandoned**. This is the *successful* bounded exit-tail branch, not an audible-quality assertion.
+
+A second genuine [NeXium #39311305607](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39311305607) completed the NRO build and proved a different Stage348 guest software balance: **1468 acquired / 1467 released / 1 abandoned**. Its Stage351 audit was **not verified**: the strict auditor required the original Stage313 guest CSV preserved by Stage314, but Stage314 was positioned later in the workflow. The source dependency was not present; there is **no authenticated Stage351 reason code from this run**.
+
+The workflow now enforces producer-before-consumer order: **Stage313 -> Stage348 -> Stage314 (copies original Stage313 CSV) -> Stage351**. A dedicated regression test checks the order and unchanged mandatory raw inputs. This fix changes CI orchestration only, not the audio worker.
+
+### Fail-closed diagnostic quarantine
+
+If and only if the **specific Stage351 audit step** fails, an optional forensic step attempts to copy at most **512 bytes** of printable original guest diagnostic CSV and an SHA-256 receipt under `stage351-unverified-quarantine.*`. Its GitHub Actions predicate is tied to `steps.stage351_audit.outcome == 'failure'`, not an unrelated earlier workflow failure. Symlinked paths, ambiguous sources, existing destinations, binary payloads and oversized input are rejected. No raw PCM/music bank is exported. This optional step **cannot convert failed CI to success or identify a reason code**.
+
+The strict original source checker now emits a *nonsecret diagnostic phase* on failure — `destination-preflight`, `required-input-files`, `read-input-receipts`, `prior-original-source-reaudit`, `stage351-guest-source-reaudit` or `preserve-verified-source`. Each failure is marked `stage351_reason_code_validated: false`. These are failure locations in the host auditor, **not guest audout service errors**. Two original-source rejection regression tests and one precise-workflow-scope test guard the change.
+
+The expanded strict-auditor and quarantine tests, and a fresh NRO run containing these later fixes, are not evidence of completion until their GitHub Actions jobs actually finish. The earlier real code-7 verification remains valid for its own original archived NRO only.
+
 ## CI and limitations
 
-`.github/workflows/stage351-exit-tail-reason.yml` tests the source-only C11 writer on GCC and Clang both optimized and under UBSan, plus sixteen synthetic positive/negative Python audit tests. Only CI that completes successfully may validate these new code paths. A separate successful, source-bound NeXium run is required before interpreting original numeric Stage351 reason codes.
+`.github/workflows/stage351-exit-tail-reason.yml` tests the source-only C11 writer on GCC and Clang both optimized and under UBSan, plus synthetic positive/negative Python audit and failure-only quarantine tests. Only CI that completes successfully may validate these new code paths. A separate successful, source-bound NeXium run is required before interpreting original numeric Stage351 reason codes.
 
 Stage351 determines *which software branch returned failure during a bounded exit-tail attempt*. It does **not** prove that branch caused an acoustic problem, that a buffer reached a DAC or speaker, physical Nintendo Switch playback, or original PS1 soundtrack fidelity. Even a returned descriptor establishes software ownership only.
