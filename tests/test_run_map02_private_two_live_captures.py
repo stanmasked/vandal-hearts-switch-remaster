@@ -768,6 +768,43 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
         self.assertEqual(len(list(self.dirs[1].iterdir())), 3)
         self.assertEqual(len(list(self.dirs[3].iterdir())), 3)
 
+    def test_capture_return_must_match_canonical_published_receipt(self):
+        # The actual C11 child has already published its two native GPU
+        # artifacts and frame metadata under owner-private directories.
+        # A compromised callback could alter the in-memory CAPTURE
+        # return object without changing the canonical on-disk receipt.
+        # Refuse even if the modified metadata field was not consumed by
+        # the later GPU/VRAM repeatability auditor.
+        for field, forged in (
+            ("gpu_journal_same_elf_launch_requested", False),
+            ("terminal_after_vram_matched", False),
+            ("kernel_observed_pinned_elf_before_stream", False),
+            ("child_stdout_pipe_frame_received", False),
+            ("retail_gameplay_authenticated", True),
+            ("gpu_journal_pairs_verified", 2),
+        ):
+            with self.subTest(field=field):
+                for directory in self.dirs:
+                    for entry in directory.iterdir():
+                        entry.unlink()
+                calls = []
+                def change_return_only(*args, **kwargs):
+                    result = original_capture(*args, **kwargs)
+                    calls.append(1)
+                    return {**result, field: forged}
+                with patch.object(two_live, "capture",
+                                  side_effect=change_return_only):
+                    with self.assertRaisesRegex(
+                            ValueError, "differs from published receipt"):
+                        self.run_two()
+                # The FIRST child really did publish evidence, but a
+                # mismatch at the earliest boundary blocks second launch.
+                self.assertEqual(calls, [1])
+                self.assertEqual(len(list(self.dirs[0].iterdir())), 2)
+                self.assertEqual(len(list(self.dirs[1].iterdir())), 3)
+                self.assertEqual(list(self.dirs[2].iterdir()), [])
+                self.assertEqual(list(self.dirs[3].iterdir()), [])
+
     def test_native_launch_receipts_reject_forged_post_replay_source_labels(self):
         # Both actual Linux C11 captures and both full replays are valid.
         # Mutate ONLY the returned source-labelled audit claims, after
