@@ -505,6 +505,24 @@ int main(int argc, char **argv) {
         }
         framebufferEnd(&fb);
         svcSleepThread(8000000000LL);
+#if VH_MAP02_AUDIO_NATIVE_48K_WITNESS
+        /* Fourth post-join screen: the SAME synthetic scene fixture
+         * after the actual stateful 48-kHz resampler and audout ramp. */
+        receipt_pixels=(u32 *)framebufferBegin(&fb,&receipt_stride_bytes);
+        if(receipt_pixels) {
+            VhCanvas receipt={
+                (uint32_t *)receipt_pixels,
+                (size_t)(receipt_stride_bytes/sizeof(u32)),
+                FB_WIDTH,FB_HEIGHT
+            };
+            (void)vh_guest_native_48k_draw(&receipt,&guest_sync,
+                RGBA8_MAXALPHA(0,0,0),
+                RGBA8_MAXALPHA(255,255,255),
+                RGBA8_MAXALPHA(255,0,255));
+        }
+        framebufferEnd(&fb);
+        svcSleepThread(8000000000LL);
+#endif
 #endif
 #endif
     }
