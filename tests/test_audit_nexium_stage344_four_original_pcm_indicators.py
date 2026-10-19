@@ -100,6 +100,33 @@ class OriginalPcmIndicatorTests(unittest.TestCase):
         a=copy.deepcopy(self.docs)
         a[3]["scenes_capture"]["longest_exact_zero_stereo_run_frames"]=101
         with self.assertRaises(ValueError):compare_verified_reports(self.source,a)
+    def test_partial_final_10ms_block_can_be_all_zero_without_full_480_frames(self):
+        v=copy.deepcopy(self.docs[0]["monitor_capture"])
+        v["frames"]=763
+        v["pcm_bytes"]=763*4
+        v["analysis_blocks"]=2
+        v["final_partial_block_frames"]=283
+        v["exact_zero_stereo_frames"]=283
+        v["longest_exact_zero_stereo_run_frames"]=283
+        v["exact_zero_10ms_blocks"]=1
+        v["low_rms_10ms_blocks"]=1
+        result=compact_pcm(v,"monitor")
+        self.assertEqual(result["all_zero_10ms_blocks"],1)
+        self.assertEqual(result["exact_zero_frames"],283)
+
+    def test_partial_block_cannot_claim_more_full_zero_blocks_than_zero_frames(self):
+        v=copy.deepcopy(self.docs[0]["monitor_capture"])
+        v["frames"]=763
+        v["pcm_bytes"]=763*4
+        v["analysis_blocks"]=2
+        v["final_partial_block_frames"]=283
+        v["exact_zero_stereo_frames"]=282
+        v["longest_exact_zero_stereo_run_frames"]=282
+        v["exact_zero_10ms_blocks"]=1
+        v["low_rms_10ms_blocks"]=1
+        with self.assertRaises(ValueError):
+            compact_pcm(v,"monitor")
+
     def test_large_step_boundary_cannot_exceed_total(self):
         a=copy.deepcopy(self.docs)
         a[0]["scenes_capture"]["ge4096_deltas_at_10ms_block_boundaries"]=3

@@ -65,7 +65,8 @@ def compact_pcm(snapshot:dict,kind:str)->dict:
     silent=nonneg(snapshot.get("exact_zero_10ms_blocks"),"all zero blocks",blocks)
     steps=nonneg(snapshot.get("adjacent_frame_deltas_ge4096"),"large frame steps",frames-1)
     boundaries=nonneg(snapshot.get("ge4096_deltas_at_10ms_block_boundaries"),"boundary steps",steps)
-    if (long>zeros or silent>low or silent*480>zeros):
+    min_zero_from_zero_blocks = max(0, silent*480 - (480-frames%480 if frames%480 else 0))
+    if (long>zeros or silent>low or min_zero_from_zero_blocks>zeros):
         raise ValueError("original exact-zero/low-RMS conservation fails")
     markers=snapshot.get("scene_event_markers")
     if (kind=="monitor" and markers is not None) or (
