@@ -1181,6 +1181,39 @@ jobs:
           PY
           echo "Stage351: original guest exit-tail service cause independently source-audited after join; not proof of DAC/speaker audio." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Stage357 independently verify original raw audoutWait Result against Stage351
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_guest_tail_wait_result_stage357.py \
+            --guest-root-file runtime-evidence/guest-sd-root.txt \
+            --stage351 runtime-evidence/guest-exit-tail-reason-stage351.json \
+            --stage351-original runtime-evidence/audio-exit-tail-reason-000.csv \
+            --output runtime-evidence/guest-exit-tail-wait-result-stage357.json \
+            --output-original runtime-evidence/audio-exit-tail-wait-result-000.csv
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          doc=json.loads(Path(
+              "runtime-evidence/guest-exit-tail-wait-result-stage357.json"
+              ).read_text(encoding="utf-8"))
+          original=Path("runtime-evidence/audio-exit-tail-wait-result-000.csv")
+          if (doc["result"]!="ORIGINAL_NEIXUM_GUEST_EXIT_TAIL_WAIT_RESULT_SOURCE_VERIFIED"
+              or doc["original_guest_wait_result_source_observed"] is not True
+              or doc["original_guest_wait_result_bytes_preserved"] is not True
+              or doc["raw_result_is_software_service_status_only"] is not True
+              or doc["physical_Nintendo_Switch_audio_tested"] is not False
+              or doc["underlying_result_symbolic_meaning_proven"] is not False
+              or not original.is_file() or original.is_symlink()
+              or hashlib.sha256(original.read_bytes()).hexdigest()!=
+                 doc["original_guest_wait_result_csv_sha256"]):
+              raise SystemExit("Stage357 raw original guest wait Result not verified")
+          print("Stage357 original guest wait Result bits:",
+                doc["audout_wait_result_raw"],
+                "Stage351 reason:",doc["stage351_reason_code"])
+          PY
+          echo "Stage357: independently preserved true guest raw Result from existing bounded tail wait, not physical audio." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Preserve bounded unverified guest Stage351 source on strict audit failure
         if: ${{ failure() && steps.stage351_audit.outcome == 'failure' }}
         shell: bash

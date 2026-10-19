@@ -41,4 +41,7 @@ jobs:
               fi
             done
           done
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_nexium_guest_tail_wait_result_stage357.py' -v
+          python3 -m py_compile tools/audit_nexium_guest_tail_wait_result_stage357.py
           echo "Stage357 native result codes are synthetic only. Actual numeric audoutWaitPlayFinish Result requires a NEW NeXium guest CSV. No physical hardware or speaker audio proof." >> "$GITHUB_STEP_SUMMARY"
