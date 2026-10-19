@@ -180,6 +180,73 @@ class PrivateNativeLauncherTests(unittest.TestCase):
                     else:
                         marker.unlink()
 
+    def test_late_git_worktree_between_receipt_and_native_exec_refused(self):
+        # An operator may initialize a Git checkout after preflight checks
+        # but before the actual child exec. Refuse before running the ELF.
+        from tools import run_map02_private_native_capture as launcher
+        actual_create = launcher._private_create
+        marker = self.base / ".git"
+        calls = []
+        def create_preflight_then_initialize_git(path, obj):
+            result = actual_create(path, obj)
+            calls.append(1)
+            if len(calls) == 1:
+                marker.mkdir(mode=0o700)
+            return result
+        try:
+            with (
+                patch.object(launcher, "_private_create",
+                             side_effect=create_preflight_then_initialize_git),
+                patch.object(launcher.subprocess, "Popen",
+                             side_effect=AssertionError("must not launch")),
+            ):
+                with self.assertRaisesRegex(
+                        ValueError, "Git worktree") as caught:
+                    self.run_synthetic()
+            self.assertEqual(calls, [1])
+            self.assertNotIn(str(self.base), str(caught.exception))
+            self.assertTrue(self.preflight.is_file())
+            self.assertFalse(self.summary.exists())
+            self.assertEqual(list(self.capture_dir.iterdir()), [])
+        finally:
+            if marker.exists():
+                marker.rmdir()
+
+    def test_late_git_worktree_after_native_replay_never_verifies_capture(self):
+        # A late .git marker cannot turn valid, fully replayed synthetic
+        # evidence into a successful receipt under version control.
+        from tools import run_map02_private_native_capture as launcher
+        actual_verify = launcher.verify_session
+        marker = self.base / ".git"
+        checked = []
+        def verified_then_initialize_git(*args, **kwargs):
+            result = actual_verify(*args, **kwargs)
+            checked.append(1)
+            marker.write_text(
+                "gitdir: /private/linked-worktree\\n", encoding="utf-8")
+            return result
+        try:
+            with patch.object(launcher, "verify_session",
+                              side_effect=verified_then_initialize_git):
+                report = self.run_synthetic()
+            self.assertEqual(checked, [1])
+            self.assertTrue(report["process_started"])
+            self.assertEqual(report["process_exit_code"], 0)
+            self.assertFalse(report["capture_verified"])
+            self.assertEqual(report["failure_category"],
+                             "incomplete_or_invalid_private_capture")
+            self.assertFalse(report["retail_map02_verified"])
+            self.assertFalse(report["hd_replacement_authorized"])
+            self.assertTrue(self.summary.is_file())
+            self.assertFalse(json.loads(
+                self.summary.read_text())["capture_verified"])
+            self.assertTrue((self.capture_dir /
+                             "gpu-native-events.jsonl").is_file())
+            self.assertNotIn(str(self.base), json.dumps(report))
+        finally:
+            if marker.exists():
+                marker.unlink()
+
     def test_real_subprocess_produces_valid_private_trace(self):
         result = self.run_synthetic()
         self.assertTrue(result["process_started"])
