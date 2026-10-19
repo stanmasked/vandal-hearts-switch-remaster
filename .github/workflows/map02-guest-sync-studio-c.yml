@@ -70,7 +70,7 @@ jobs:
               -fsanitize=address,undefined -fno-sanitize-recover=all \
               -fno-omit-frame-pointer \
               tests/test_guest_sync_studio_c.c \
-              source/vh_guest_sync_studio_c.c \
+              source/vh_guest_sync_studio_c.c source/vh_guest_native_48k.c \
               source/vh_game_music_mailbox.c source/vh_music_scene.c \
               source/vh_native_seq.c source/vh_native_spu.c \
               source/vh_spu_reverb.c source/vh_spu_gaussian.c \
