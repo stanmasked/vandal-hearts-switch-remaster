@@ -530,6 +530,33 @@ int main(int argc, char **argv) {
                     (void)unlink(history_path);
             }
         }
+        /* Stage347: separate post-join software lease source; no PCM or
+         * extra hot-path I/O. Never overwrite prior guest SD captures. */
+        int lease_fd=-1;
+        char lease_path[256];
+        for(unsigned slot=0;slot<32u;slot++) {
+            const int n=snprintf(lease_path,sizeof lease_path,
+                VH_SCENE_TRACE_SD_DIRECTORY
+                "/audio-lease-reconciliation-%03u.csv",slot);
+            if(n<=0 || (size_t)n>=sizeof lease_path) break;
+            lease_fd=open(lease_path,O_WRONLY|O_CREAT|O_EXCL,0600);
+            if(lease_fd>=0) break;
+            if(errno!=EEXIST) break;
+        }
+        if(lease_fd>=0) {
+            FILE *lease_stream=fdopen(lease_fd,"w");
+            if(!lease_stream) {
+                (void)close(lease_fd);
+                (void)unlink(lease_path);
+            } else {
+                const int rows=vh_switch_game_audio_lease_reconciliation_dump(
+                    lease_stream);
+                const int flushed=fflush(lease_stream);
+                const int closed=fclose(lease_stream);
+                if(rows!=8 || flushed!=0 || closed!=0)
+                    (void)unlink(lease_path);
+            }
+        }
         char scene_path[VH_SCENE_TRACE_EXPORT_PATH_CAP];
         const VhSceneExportResult saved=vh_switch_game_audio_trace_export(
             scene_path,sizeof scene_path);

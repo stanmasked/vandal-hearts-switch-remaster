@@ -73,6 +73,8 @@ int vh_switch_game_audio_worker_stop_dump(FILE *stream);
 int vh_switch_game_audio_last_playbuffer_dump(FILE *stream);
 /* Stage322: last 16 normal call brackets, read only after audio join. */
 int vh_switch_game_audio_playbuffer_history_dump(FILE *stream);
+/* Stage347: independent post-join software lease balance; no DAC proof. */
+int vh_switch_game_audio_lease_reconciliation_dump(FILE *stream);
 void vh_switch_game_audio_stop(void);
 /* 0 starting/stopped, 1 playing, 2 paused, negative means audio failed.
  * Main gameplay can continue silently if the device is unavailable.

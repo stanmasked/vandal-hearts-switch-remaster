@@ -26,6 +26,7 @@
 #include "vh_audio_resample.h"
 #include "vh_audio_output_recovery.h"
 #include "vh_audio_buffer_lease.h"
+#include "vh_audio_lease_reconciliation.h"
 #include "vh_audout_queue_telemetry.h"
 #include "vh_audout_queue_export.h"
 #include "vh_audio_output_ramp.h"
@@ -59,6 +60,7 @@ static atomic_uint published_resume_recoveries;
 static atomic_uint published_lease_mismatches;
 static atomic_uint published_abandoned_sessions;
 static atomic_ullong published_lease_pages_acquired;
+static atomic_ullong published_lease_pages_released;
 static atomic_uint published_lease_busy_begin_rejections;
 /* Two producer threads reserve immutable slots, then release-publish.
  * No heap, locks or file I/O in this path. */
@@ -297,6 +299,8 @@ static void publish_audio_diagnostics(const VhAudioOutputRecovery *r,
                           memory_order_release);
     atomic_store_explicit(&published_lease_pages_acquired,
                           lease->pages_leased,memory_order_release);
+    atomic_store_explicit(&published_lease_pages_released,
+                          lease->pages_released,memory_order_release);
     atomic_store_explicit(&published_lease_busy_begin_rejections,
                           lease->busy_begin_rejections,memory_order_release);
 }
@@ -619,6 +623,7 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
     atomic_store_explicit(&published_lease_mismatches,0u,memory_order_release);
     atomic_store_explicit(&published_abandoned_sessions,0u,memory_order_release);
     atomic_store_explicit(&published_lease_pages_acquired,0u,memory_order_release);
+    atomic_store_explicit(&published_lease_pages_released,0u,memory_order_release);
     atomic_store_explicit(&published_lease_busy_begin_rejections,0u,memory_order_release);
     Result rc = threadCreate(&audio_thread, audio_worker, NULL,
                              NULL, 0x10000u, 0x2Cu, -2);
@@ -778,6 +783,13 @@ int vh_switch_game_audio_playbuffer_history_dump(FILE *stream) {
     return vh_playbuffer_history_write_csv(&last_playbuffer_history,stream);
 }
 
+int vh_switch_game_audio_lease_reconciliation_dump(FILE *stream) {
+    if (!stream || thread_started) return -1;
+    VhAudioDiagnostics final={0};
+    vh_switch_game_audio_diagnostics(&final);
+    return vh_audio_lease_reconciliation_write(&final,stream);
+}
+
 void vh_switch_game_audio_stop(void) {
     if (!thread_started) return;
     (void)vh_audio_exit_timeline_mark(&exit_timeline,
@@ -834,6 +846,8 @@ void vh_switch_game_audio_diagnostics(VhAudioDiagnostics *out) {
         &published_abandoned_sessions,memory_order_acquire);
     out->lease_pages_acquired=(uint64_t)atomic_load_explicit(
         &published_lease_pages_acquired,memory_order_acquire);
+    out->lease_pages_released=(uint64_t)atomic_load_explicit(
+        &published_lease_pages_released,memory_order_acquire);
     out->lease_busy_begin_rejections=atomic_load_explicit(
         &published_lease_busy_begin_rejections,memory_order_acquire);
 }

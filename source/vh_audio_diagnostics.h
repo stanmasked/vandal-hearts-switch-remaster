@@ -26,6 +26,7 @@ typedef struct {
     uint32_t lease_mismatches;
     uint32_t abandoned_sessions;
     uint64_t lease_pages_acquired;
+    uint64_t lease_pages_released;
     uint32_t lease_busy_begin_rejections;
 } VhAudioDiagnostics;
 
