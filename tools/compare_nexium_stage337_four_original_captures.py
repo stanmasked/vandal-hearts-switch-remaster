@@ -156,10 +156,10 @@ def main()->int:
         report=compare_four(
             original,old_pins,
             third_saved,read_json(find_unique(archives[2],"integrated-nro-preflight.json"),max_bytes=4096),
-            read_json(find_unique(archives[2],"pcm-quality-report.json")),
+            read_json(find_unique(archives[2],"pcm-monitor-report.json")),
             fourth_saved,fourth_binding,
             read_json(find_unique(archives[3],"integrated-nro-preflight.json"),max_bytes=4096),
-            read_json(find_unique(archives[3],"pcm-quality-report.json")),
+            read_json(find_unique(archives[3],"pcm-monitor-report.json")),
             third_sha=args.third_git_sha,third_run_id=args.third_run_id,
             third_attempt=args.third_attempt,fourth_sha=args.fourth_git_sha,
             fourth_run_id=args.fourth_run_id,fourth_attempt=args.fourth_attempt)
