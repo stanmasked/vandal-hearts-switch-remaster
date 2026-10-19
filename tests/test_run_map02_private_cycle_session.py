@@ -51,6 +51,7 @@ class PrivateOneShotCycleTests(unittest.TestCase):
             # identities are mocked like the existing complete preflight;
             # targeted tests independently exercise drift rejection.
             "_private_input_identity": (1, 21, 22, 0o100600, 1, 256, 3, 4),
+            "_receipt_directory_identity": (1, 100, 22, 0o40700, 3, 4),
             "private_file": (self.plan, self.plan_identity),
             "_validate_plan": {"target_gpu_draw_frame": 12},
             "verify_private_cycle_readiness": self.ready_report,
@@ -408,6 +409,48 @@ class PrivateOneShotCycleTests(unittest.TestCase):
             runner._private_input_identity(linked, "synthetic")
         with self.assertRaisesRegex(ValueError, "input unavailable"):
             runner._private_input_identity(self.root / "no-such-file", "synthetic")
+
+    def test_dry_run_rejects_late_build_receipt_directory_swap(self):
+        first = (1, 100, 22, 0o40700, 3, 4)
+        replacement = (1, 101, 22, 0o40700, 3, 4)
+        changes = [0]
+
+        def changed_after_full_preflight(path):
+            changes[0] += 1
+            return first if changes[0] == 1 else replacement
+
+        self.mocks["_receipt_directory_identity"].side_effect = (
+            changed_after_full_preflight)
+        with self.assertRaisesRegex(
+                ValueError, "build receipt directory changed after preflight"):
+            self.execute(dry_run=True, allow_local_completion=False)
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+        self.assertFalse(list(self.folders[-1].iterdir()))
+
+    def test_real_one_shot_rejects_late_build_receipt_directory_swap(self):
+        identities = iter(((1, 100, 22, 0o40700, 3, 4),
+                           (1, 101, 22, 0o40700, 3, 4)))
+        self.mocks["_receipt_directory_identity"].side_effect = (
+            lambda path: next(identities))
+        with self.assertRaisesRegex(
+                ValueError, "build receipt directory changed after preflight"):
+            self.execute()
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["finalize_private_capture"].assert_not_called()
+
+    def test_real_receipt_directory_identity_rejects_symlink_and_replacement(self):
+        receipt = self.root / "actual-synthetic-receipt-root"
+        receipt.mkdir(mode=0o700)
+        first = runner._receipt_directory_identity(receipt)
+        renamed = self.root / "original-synthetic-receipt-root"
+        receipt.rename(renamed)
+        receipt.mkdir(mode=0o700)
+        self.assertNotEqual(first, runner._receipt_directory_identity(receipt))
+        with self.assertRaisesRegex(ValueError, "directory is not owner-only"):
+            alias = self.root / "linked-synthetic-receipt-root"
+            alias.symlink_to(renamed, target_is_directory=True)
+            runner._receipt_directory_identity(alias)
 
     def test_dry_run_rejects_input_inode_drift_after_final_layout_scan(self):
         for drifted in (self.elf, self.disc,
