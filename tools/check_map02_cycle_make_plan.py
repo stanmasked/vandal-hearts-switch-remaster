@@ -257,8 +257,9 @@ def main():
     try:
         report = audit(args.pinned_original_pc_checkout,
                        args.prepared_private_bundle)
-    except (ValueError, json.JSONDecodeError) as exc:
-        p.error(str(exc))
+    except (ValueError, json.JSONDecodeError):
+        # Caller-specific source paths may occur in Make graph validation.
+        p.error("private original Make plan or source verification failed")
     except (OSError, subprocess.TimeoutExpired):
         p.error("private original Make plan filesystem or command verification failed")
     print(json.dumps(report, indent=2, sort_keys=True))
