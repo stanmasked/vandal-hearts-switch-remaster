@@ -26,6 +26,10 @@ typedef struct {
 int vh_guest_sync_studio_c_run(VhGuestSyncStudioC *result);
 int vh_guest_sync_studio_c_encode(const VhGuestSyncStudioC *metrics,
     uint8_t packet[924]);
+void vh_guest_native_48k_init(VhGuestNative48k *metrics);
+int vh_guest_native_48k_observe(VhGuestNative48k *metrics,
+    const int16_t *wet_pcm, const int16_t *reset_pcm,
+    unsigned tail, unsigned tail_index);
 int vh_guest_native_48k_encode(const VhGuestSyncStudioC *metrics,
     uint8_t packet[924]);
 int vh_guest_native_48k_draw(VhCanvas *canvas,
