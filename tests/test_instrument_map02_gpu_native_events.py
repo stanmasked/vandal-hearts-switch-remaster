@@ -86,7 +86,7 @@ class NativeGpuProbeTests(unittest.TestCase):
         self.assertIn('local_seq = seq % VH_CAPTURE_LIMIT;', rendered)
         self.assertIn('"gpu-%04u-vram.bin", local_seq', rendered)
         self.assertIn('"gpu-%04u-upload.bin", local_seq', rendered)
-        self.assertIn('"\\\"rect\\\":", local_seq', rendered)
+        self.assertIn('local_seq, s_drawFrame, phase, operation, snapshot_name', rendered)
         self.assertNotIn('"gpu-%04u-upload.bin", seq', rendered)
         self.assertIn('VH_MAP02_GPU_CAPTURE_WINDOW_COUNT', rendered)
         self.assertIn('gpu-native-window-index.json', rendered)
