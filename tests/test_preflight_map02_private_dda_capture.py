@@ -151,6 +151,47 @@ class NativeDdaCapturePreflightTests(unittest.TestCase):
         self.assertTrue(preflight(dict(
             selected, VH_MAP02_PUTPIXEL_Y2="30"))["sample_coordinate_in_vram"])
 
+    def test_git_worktree_markers_block_private_native_capture_preflight(self):
+        # Unlike the public synthetic CI files, private GPU/VRAM logs must
+        # never be captured under a Git checkout, even with owner-only 0700
+        # output permissions. Linked worktrees use a .git FILE.
+        parent = self.root.parent
+        marker = parent / ".git"
+        for kind in ("directory", "linked-worktree-file"):
+            with self.subTest(kind=kind):
+                if kind == "directory":
+                    marker.mkdir(mode=0o700)
+                else:
+                    marker.write_text(
+                        "gitdir: /private/linked-worktree\\n", encoding="utf-8")
+                try:
+                    with self.assertRaisesRegex(
+                            ValueError, "Git worktree") as caught:
+                        preflight(self.env)
+                    self.assertNotIn(str(parent), str(caught.exception))
+                    self.assertEqual(list(self.root.iterdir()), [])
+                finally:
+                    if marker.is_dir():
+                        marker.rmdir()
+                    else:
+                        marker.unlink()
+        # Also refuse hidden worktree metadata *inside* a literal or
+        # resolved parent without publishing a private capture.
+        hidden = parent / ".git"
+        hidden.mkdir(mode=0o700)
+        try:
+            nested = parent / "secondary" / "capture"
+            nested.mkdir(parents=True, mode=0o700)
+            nested.chmod(0o700)
+            env = dict(self.env,
+                       VH_MAP02_GPU_CAPTURE_DIR=str(nested),
+                       VH_MAP02_PUTPIXEL_DIR=str(nested))
+            with self.assertRaisesRegex(ValueError, "Git worktree"):
+                preflight(env)
+            self.assertEqual(list(nested.iterdir()), [])
+        finally:
+            hidden.rmdir()
+
     def test_must_not_use_existing_or_public_directory(self):
         file = self.root / "old-journal.jsonl"
         file.write_text("private\n", encoding="utf-8")
