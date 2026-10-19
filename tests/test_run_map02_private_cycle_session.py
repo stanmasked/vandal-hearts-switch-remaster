@@ -172,7 +172,7 @@ class PrivateOneShotCycleTests(unittest.TestCase):
             self.assertFalse(status[key])
         self.assertEqual(milestones, list(runner.SAFE_STAGES[:4]) + ["complete"])
         self.mocks["verify_private_cycle_readiness"].assert_called_once()
-        self.assertEqual(self.mocks["private_file"].call_count, 2)
+        self.assertEqual(self.mocks["private_file"].call_count, 3)
         for name in ("launch_observed_pc", "finalize_private_capture",
                      "seal_final_capture", "verify_final_seal"):
             self.mocks[name].assert_not_called()
@@ -333,6 +333,39 @@ class PrivateOneShotCycleTests(unittest.TestCase):
             self.mocks["inspect_private_launch_layout"].side_effect = real_inspect
             with self.assertRaisesRegex(ValueError, "not empty"):
                 self.execute(dry_run=True, allow_local_completion=False)
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+
+    def test_final_layout_rescan_rejects_plan_in_place_mutation(self):
+        # Use the real owner-private reader, and an in-place change during
+        # the last structural scan. The containing handoff directory keeps
+        # its inode and timestamps: directory identity alone is insufficient.
+        from tools.check_map02_private_launch_layout import (
+            inspect_private_launch_layout as real_inspect,
+        )
+        from tools.verify_map02_native_gpu_capture import (
+            private_file as real_private_file,
+        )
+        plan_file = self.folders[3] / runner.PLAN
+        plan_file.write_bytes(self.plan)
+        plan_file.chmod(0o600)
+        original_dir = self.folders[3].stat()
+        self.mocks["private_file"].side_effect = real_private_file
+
+        def mutate_after_scan(*args, **kwargs):
+            report = real_inspect(*args, **kwargs)
+            plan_file.write_bytes(self.plan.replace(b"test", b"fake"))
+            return report
+
+        self.mocks["inspect_private_launch_layout"].side_effect = mutate_after_scan
+        with self.assertRaisesRegex(ValueError, "plan changed after final layout scan"):
+            self.execute(dry_run=True, allow_local_completion=False)
+        current_dir = self.folders[3].stat()
+        self.assertEqual(
+            (current_dir.st_dev, current_dir.st_ino, current_dir.st_mtime_ns,
+             current_dir.st_ctime_ns),
+            (original_dir.st_dev, original_dir.st_ino, original_dir.st_mtime_ns,
+             original_dir.st_ctime_ns))
         self.mocks["launch_observed_pc"].assert_not_called()
         self.mocks["seal_final_capture"].assert_not_called()
 
