@@ -683,6 +683,53 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not bit-exact"):
             two_live._require_bit_exact_gpu_timeline(without_field)
 
+    def test_strict_gate_rechecks_secondary_gpu_vram_evidence_fields(self):
+        # The independently replayed baseline is genuinely bit-exact, but
+        # its reported secondary evidence can be falsified after audit.
+        # Checking only legacy digest and zero-difference booleans used
+        # to accept some of these internally contradictory summaries.
+        good = self.run_two(require_identical_gpu_timeline=True)
+        two_live._require_bit_exact_gpu_timeline(good)
+        mutations = (
+            {"different_gpu_before_vram_snapshots": 1},
+            {"different_gpu_after_vram_snapshots": 1},
+            {"first_different_gpu_vram_snapshot_index": 0},
+            {"last_different_gpu_vram_snapshot_index": 1},
+            {"first_reconverged_gpu_vram_snapshot_index": 1},
+            {"gpu_vram_reconverged_at_common_prefix_end": True},
+            {"gpu_vram_divergence_reappeared_after_reconvergence": True},
+            {"first_different_gpu_event_record_index": 0},
+            {"first_different_gpu_event_phase": "before"},
+            {"first_different_gpu_event_pair_index": 0},
+            {"changed_scanlines": 1},
+            {"stp_bit_differences": 1},
+            {"second_image_sha256": "0" * 64},
+            {"first_gpu_vram_snapshot_count": 4},
+        )
+        for modified in mutations:
+            with self.subTest(modified=modified):
+                with self.assertRaisesRegex(ValueError, "not bit-exact"):
+                    two_live._require_bit_exact_gpu_timeline({
+                        **good, **modified
+                    })
+
+    def test_full_strict_run_rejects_post_audit_secondary_counter_tamper(self):
+        # Do not merely unit-test the gate: run both real synthetic C11
+        # children and let the independent audit replay all private files.
+        # A fixture hook changes only the returned *aggregate* before the
+        # orchestrator issues its strict receipt, never the native files.
+        real_audit = two_live.audit
+        def falsify_after_replay(*args, **kwargs):
+            result = real_audit(*args, **kwargs)
+            return {**result, "different_gpu_before_vram_snapshots": 1}
+        with patch.object(two_live, "audit", side_effect=falsify_after_replay):
+            with self.assertRaisesRegex(ValueError, "not bit-exact"):
+                self.run_two(require_identical_gpu_timeline=True)
+        self.assertEqual(len(list(self.dirs[0].iterdir())), 2)
+        self.assertEqual(len(list(self.dirs[2].iterdir())), 2)
+        self.assertEqual(len(list(self.dirs[1].iterdir())), 3)
+        self.assertEqual(len(list(self.dirs[3].iterdir())), 3)
+
     def test_strict_cli_flag_succeeds_with_two_real_synthetic_launches(self):
         cmd = [
             sys.executable, "-m", "tools.run_map02_private_two_live_captures",
