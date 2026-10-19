@@ -55,6 +55,12 @@ class Native48GuestTests(unittest.TestCase):
     def test_mismatched_native_clocks_rejected(self):
         with self.assertRaisesRegex(ValueError,"clocks"):
             tool.decode(fixture(lambda p:struct.pack_into("<I",p,16,30000)))
+    def test_single_prefix_frame_drift_rejected(self):
+        with self.assertRaisesRegex(ValueError,"clocks"):
+            tool.decode(fixture(lambda p:struct.pack_into("<I",p,12,35664)))
+    def test_single_tail_frame_drift_rejected(self):
+        with self.assertRaisesRegex(ValueError,"clocks"):
+            tool.decode(fixture(lambda p:struct.pack_into("<I",p,16,26751)))
     def test_equal_tail_fingerprints_rejected(self):
         with self.assertRaisesRegex(ValueError,"contrast"):
             tool.decode(fixture(lambda p:struct.pack_into("<Q",p,48,0xf5edab31b6802325)))
