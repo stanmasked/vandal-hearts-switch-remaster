@@ -16,6 +16,16 @@ KEYS=("pre_switch_native_fnv1a64","wet_native_fnv1a64",
       "retained_tail_nonzero_sample_values",
       "reset_first_page_nonzero_sample_values",
       "reset_later_pages_nonzero_sample_values")
+GUEST_SCHEMA="vh-map02-guest-native-48k-bridge/v1"
+
+def unique_json_fields(pairs):
+    """Reject ambiguous duplicate JSON fields rather than keeping the last."""
+    result={}
+    for key,value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate guest JSON field: {key}")
+        result[key]=value
+    return result
 
 def host_receipt(path):
     matches=[m for line in Path(path).read_text().splitlines()
@@ -42,11 +52,16 @@ def audit(gcc,clang,guest0,guest1,run_id,attempt,sha):
             0<baseline["retained_tail_nonzero_sample_values"]<=2*tail and
             0<=baseline["reset_first_page_nonzero_sample_values"]<=2 and
             baseline["reset_later_pages_nonzero_sample_values"]==0 and
-            baseline["wet_native_fnv1a64"]!=baseline["reset_native_fnv1a64"]):
+            baseline["wet_native_fnv1a64"]!=baseline["reset_native_fnv1a64"] and
+            all(int(baseline[key],16)!=0 for key in KEYS[:3])):
         raise ValueError("Host output-stage proof violates native 48k bounds")
     for i,file in enumerate((guest0,guest1)):
-        receipt=json.loads(Path(file).read_text())
-        if (receipt.get("result")!="GUEST_NATIVE_48K_SYNCHRONIZED_TAIL_OBSERVED" or
+        receipt=json.loads(Path(file).read_text(),
+                           object_pairs_hook=unique_json_fields)
+        if not isinstance(receipt,dict):
+            raise ValueError(f"Guest mode {i} 48k receipt must be an object")
+        if (receipt.get("schema")!=GUEST_SCHEMA or
+            receipt.get("result")!="GUEST_NATIVE_48K_SYNCHRONIZED_TAIL_OBSERVED" or
             receipt.get("outer_nro_wet_tail_mode")!=i or
             receipt.get("identical_complete_replays")!=2 or
             receipt.get("rate_hz")!=48000 or
@@ -54,6 +69,12 @@ def audit(gcc,clang,guest0,guest1,run_id,attempt,sha):
             receipt.get("live_audout_music_sample_aligned") is not False or
             receipt.get("physical_switch_speakers_verified") is not False):
             raise ValueError(f"Guest mode {i} 48k audit status or claim boundary invalid")
+        if (any(type(receipt.get(key)) is not (str if n<3 else int)
+                for n,key in enumerate(KEYS)) or
+            any(type(receipt.get(key)) is not int for key in
+                ("outer_nro_wet_tail_mode","identical_complete_replays",
+                 "rate_hz"))):
+            raise ValueError(f"Guest mode {i} 48k field types invalid")
         observed={key:receipt.get(key) for key in KEYS}
         if observed!=baseline:
             raise ValueError(f"Guest mode {i} 48k values differ from GCC/Clang")
