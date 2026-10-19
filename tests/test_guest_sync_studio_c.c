@@ -71,8 +71,47 @@ int main(void) {
         assert(vh_guest_native_48k_observe(&probe,quiet,quiet,0u,2u)==-1);
         assert(vh_guest_native_48k_observe(&probe,quiet,quiet,0u,1u)==0);
         assert(probe.prefix_frames==1114u);
+        /* Exercise every other prefix page, not only the first two.
+         * The test's literal-rate oracle is independent of the recorder. */
+        for(unsigned i=2u;i<64u;i++) {
+            if(i==16u) {
+                ++probe.prefix_frames; /* forged one-frame accumulated drift */
+                assert(vh_guest_native_48k_observe(&probe,quiet,quiet,0u,i)==-1);
+                --probe.prefix_frames;
+            }
+            const uint64_t source=(uint64_t)(i+1u)*512u;
+            const uint32_t expected=(uint32_t)(
+                ((source-1u)*48000u)/44100u+1u);
+            assert(vh_guest_native_48k_observe(&probe,quiet,quiet,0u,i)==0);
+            assert(probe.prefix_frames==expected);
+            assert(probe.tail_frames==0u);
+        }
+        assert(probe.prefix_frames==35665u);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,0u,63u)==-1);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,1u,1u)==-1);
+        /* All 48 post-switch pages must follow that same cumulative clock. */
+        for(unsigned i=0u;i<48u;i++) {
+            if(i==17u) {
+                ++probe.tail_frames; /* forged tail clock drift */
+                assert(vh_guest_native_48k_observe(&probe,quiet,quiet,1u,i)==-1);
+                --probe.tail_frames;
+            }
+            const uint64_t source=(uint64_t)(65u+i)*512u;
+            const uint32_t total=(uint32_t)(
+                ((source-1u)*48000u)/44100u+1u);
+            assert(vh_guest_native_48k_observe(&probe,quiet,quiet,1u,i)==0);
+            assert(probe.prefix_frames==35665u);
+            assert(probe.tail_frames==total-35665u);
+        }
+        assert(probe.tail_frames==26750u);
+        assert(probe.different_pages==0u);
+        assert(probe.wet_nonzero==0u);
+        assert(probe.reset_first_page_nonzero==0u);
+        assert(probe.reset_later_nonzero==0u);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,1u,47u)==-1);
     }
-    puts("PASS: sequential native 48k pages reject skipped, duplicated and early tail indices");
+    puts("PASS: 112 native 48k observer pages preserve the exact integer clock");
+    puts("PASS: native 48k observer rejects skipped/replayed pages, early tail and forged +/-1 frame drift");
     puts("PASS: synchronized guest DSP replay: 64 identical prefix, 48/48 different tail blocks, 0 reset samples");
     printf("initial=%016llx wet=%016llx reset=%016llx wet_nonzero=%u\n",
            (unsigned long long)a.initial_hash,
