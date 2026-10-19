@@ -136,8 +136,8 @@ class V183NativeRAMData(unittest.TestCase):
         for x in (
             "apply_map02_v183_native_ram_values",
             "test_map02_v183_native_ram_values.py",
-            "V183_RAM_CORRECT.EXE","V183_RAM_MISSING_SW.EXE",
-            "V183_RAM_MISSING_LW.EXE","--vh183-guest-ram-values",
+            "for kind in CORRECT MISSING_SW MISSING_LW; do",
+            "V183_RAM_$kind.EXE","--vh183-guest-ram-values",
             "VH183_NATIVE_GUEST_RAM_VALUES_PASS",
             "VH183_NATIVE_RAM_VALUE_REFUSED",
             "VH183_NATIVE_GUEST_RAM_DATA_PASS",
