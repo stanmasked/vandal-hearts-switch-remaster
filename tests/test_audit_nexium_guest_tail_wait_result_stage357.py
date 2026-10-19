@@ -148,6 +148,34 @@ class Stage357Tests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(main(argv),2)
         self.assertFalse((self.root/"out.csv").exists())
+        # Do not trust a forged earlier Stage313 tail-success receipt
+        # even with the original Stage351/357 CSV bytes still unchanged.
+        st348["lease_pages_acquired"]=a
+        q348.write_text(json.dumps(st348))
+        st313["tail_release_confirmed"]=True
+        q313.write_text(json.dumps(st313))
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(main(argv),2)
+        self.assertFalse((self.root/"out.json").exists())
+        st313["tail_release_confirmed"]=False
+        q313.write_text(json.dumps(st313))
+        # A forged SHA field in the old Stage351 receipt must never
+        # license an otherwise canonical raw numeric Result source.
+        st351["original_guest_tail_reason_csv_sha256"]="0"*64
+        q351.write_text(json.dumps(st351))
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(main(argv),2)
+        self.assertFalse((self.root/"out.csv").exists())
+
+    def test_stage357_ci_triggers_on_own_python_auditor_and_regressions(self):
+        workflow=(Path(__file__).resolve().parents[1]/".github"/
+                  "workflows"/"stage357-tail-wait-result.yml").read_text()
+        for path in (
+            "tools/audit_nexium_guest_tail_wait_result_stage357.py",
+            "tests/test_audit_nexium_guest_tail_wait_result_stage357.py",
+            "tools/audit_nexium_guest_tail_reason_stage351.py",
+        ):
+            self.assertIn("- '"+path+"'",workflow)
 
     def test_reject_symlinked_guest_source(self):
         self.path.symlink_to(self.root/"missing.csv")

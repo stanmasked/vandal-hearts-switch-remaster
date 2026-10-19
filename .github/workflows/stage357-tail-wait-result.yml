@@ -10,6 +10,9 @@ on:
       - 'source/vh_switch_game_audio.c'
       - 'source/vh_switch_game_audio.h'
       - 'source/main.c'
+      - 'tools/audit_nexium_guest_tail_wait_result_stage357.py'
+      - 'tests/test_audit_nexium_guest_tail_wait_result_stage357.py'
+      - 'tools/audit_nexium_guest_tail_reason_stage351.py'
 permissions:
   contents: read
 jobs:
