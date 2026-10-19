@@ -586,6 +586,35 @@ int main(int argc, char **argv) {
                     (void)unlink(reason_path);
             }
         }
+        /* Stage357: preserve raw software Result from the original
+         * single bounded tail wait as a separate exclusive guest CSV.
+         * The original Stage313/347/351 sources are unchanged.
+         */
+        int wait_result_fd=-1;
+        char wait_result_path[256];
+        for(unsigned slot=0;slot<32u;slot++) {
+            const int n=snprintf(wait_result_path,sizeof wait_result_path,
+                VH_SCENE_TRACE_SD_DIRECTORY
+                "/audio-exit-tail-wait-result-%03u.csv",slot);
+            if(n<=0 || (size_t)n>=sizeof wait_result_path) break;
+            wait_result_fd=open(wait_result_path,O_WRONLY|O_CREAT|O_EXCL,0600);
+            if(wait_result_fd>=0) break;
+            if(errno!=EEXIST) break;
+        }
+        if(wait_result_fd>=0) {
+            FILE *wait_result_stream=fdopen(wait_result_fd,"w");
+            if(!wait_result_stream) {
+                (void)close(wait_result_fd);
+                (void)unlink(wait_result_path);
+            } else {
+                const int rows=vh_switch_game_audio_tail_wait_result_dump(
+                    wait_result_stream);
+                const int flushed=fflush(wait_result_stream);
+                const int closed=fclose(wait_result_stream);
+                if(rows!=4 || flushed!=0 || closed!=0)
+                    (void)unlink(wait_result_path);
+            }
+        }
         char scene_path[VH_SCENE_TRACE_EXPORT_PATH_CAP];
         const VhSceneExportResult saved=vh_switch_game_audio_trace_export(
             scene_path,sizeof scene_path);

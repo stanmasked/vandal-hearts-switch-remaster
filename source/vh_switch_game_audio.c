@@ -17,6 +17,7 @@
 #include "vh_audio_playbuffer_history.h"
 #include "vh_audio_exit_tail_reason_stage351.h"
 #include "vh_audio_exit_tail_checks_stage353.h"
+#include "vh_audio_exit_tail_wait_result_stage357.h"
 
 #include <stdio.h>
 
@@ -73,6 +74,7 @@ static VhAudioExitWorkerStopWitness worker_stop_witness;
 static VhAudioLastPlayBufferCall last_playbuffer_call; /* same owner, existing clocks */
 static VhPlayBufferHistory last_playbuffer_history; /* last 16 real calls */
 static VhAudioExitTailReason exit_tail_reason; /* written only on cleanup */
+static VhAudioTailWaitResult357 exit_tail_wait_result; /* same owner; read after join */
 /* Audout worker is the sole writer. Main reads after thread join. */
 static VhAudoutQueueTelemetry audout_telemetry;
 static atomic_ullong scene_trace_latest_ticket; /* serial << 32 | scene */
@@ -279,6 +281,9 @@ static int output_tail_submit_bounded(VhSwitchOutput *s, size_t frames) {
      * lease, and audoutExit remains responsible for session discard. */
     const Result wait_result=audoutWaitPlayFinish(
         &released,&released_count,UINT64_C(12000000));
+    /* Record only the actual already-returned service Result. Do not
+     * issue another wait, poll, timestamp or PCM operation. */
+    vh_tail357_record(&exit_tail_wait_result,(uint32_t)wait_result);
     return vh_audio_tail_stage353_wait_checked(
         &exit_tail_reason,&s->lease,
         R_FAILED(wait_result),released_count,released);
@@ -610,6 +615,7 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
     vh_audio_last_playbuffer_reset(&last_playbuffer_call);
     vh_playbuffer_history_reset(&last_playbuffer_history);
     vh_audio_tail_reason_reset(&exit_tail_reason);
+    vh_tail357_reset(&exit_tail_wait_result);
     vh_audout_queue_reset(&audout_telemetry);
     if(vh_audout_queue_set_probe_phase(&audout_telemetry,
                                       VH_AUDOUT_PROBE_PHASE)) return -1;
@@ -815,6 +821,14 @@ int vh_switch_game_audio_tail_reason_dump(FILE *stream) {
     vh_switch_game_audio_diagnostics(&final);
     return vh_audio_tail_reason_write_csv(
         &exit_tail_reason,&exit_output_witness,&final,stream);
+}
+
+/* Stage357 is an independent software-only source; never changes the
+ * eight-row Stage351 CSV or the underlying audout service path. */
+int vh_switch_game_audio_tail_wait_result_dump(FILE *stream) {
+    if (!stream || thread_started) return -1;
+    return vh_tail357_write_csv(
+        &exit_tail_wait_result,&exit_tail_reason,stream);
 }
 
 void vh_switch_game_audio_stop(void) {
