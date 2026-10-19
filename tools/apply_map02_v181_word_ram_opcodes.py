@@ -104,6 +104,10 @@ def patch_memory(source:str):
         raise ValueError("v181 32-bit RAM witness already inserted")
     s=once(source,PROBE_ANCHOR,witness()+PROBE_ANCHOR,
            "install read-only original PSX 32-bit interpreter RAM witness")
+    s=once(s,"static void vh180_observe_nongpu(psxRegisters*,u32,unsigned,unsigned);\n",
+           "static void vh180_observe_nongpu(psxRegisters*,u32,unsigned,unsigned);\n"
+           "static void vh181_observe(psxRegisters*,u32,unsigned);\n",
+           "declare v181 passive C observer before native memory accessors")
     s=once(s,READ_ANCHOR,
            "    vh181_observe(regs,mem,0u);\n"+READ_ANCHOR,
            "true guest 32-bit RAM LW observation before original PCSX read")
