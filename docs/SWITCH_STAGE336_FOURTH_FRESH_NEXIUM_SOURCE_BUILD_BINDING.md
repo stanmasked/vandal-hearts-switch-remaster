@@ -17,3 +17,14 @@ Do not claim Stage336 success or fourth original timings until the new independe
 [NeXium #39177437951](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39177437951) failed the **unchanged Stage303** original PCM recorder SIGINT chronology audit. Its original stop CSV has **−87 ms host wall delta** between two signaled-success events; no recorded PCM byte regression. This archive is NOT an accepted fourth capture, and Stage336's final source-to-NRO binding was never reached. The first three accepted capture records remain separate and unchanged.
 
 The updated emulator workflow adds only a read-only **Stage339 relative stop chronology diagnostic** before Stage303 and triggers a distinct fresh actual NeXium execution. Its original Stage303–305 acceptance requirements and Stage334/336 steps are unchanged. A successful new run may be counted as fourth verified source only after the entire strict chain and source/NRO binding completes. This is not a physical hardware audio or soundtrack correctness claim.
+
+## Stage341 — source report selection correction
+
+[Stage340 independent audit #39181465166](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39181465166) passed all eleven tests and diagnosed the original Stage336 source/NRO rejection as `host_monitor_NRO_SHA256_differs_from_preflight`. The original archive preserves two intentionally different monitor reports:
+
+- `pcm-monitor-report.json` is written by the recorder at capture time and includes the original `source_nro_sha256` matching the current-workflow preflight.
+- `pcm-quality-report.json` is a derived PCM analysis without any `source_nro_sha256` field.
+
+Stage336 incorrectly read the latter as if it were the former. Stage341 corrects this source file selection while independently requiring the derived PCM-quality receipt to agree on PCM byte count, stereo format and non-hardware evidence scope. The original `source_nro_sha256` must still equal the NRO preflight digest, with exact GitHub run, attempt and commit identity. Stage337 also now reads the capture-time source report for both third/fourth NRO-binding comparisons.
+
+The dedicated [Stage341 independent source replay](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/workflows/stage341-replay-source-build-binding.yml) downloads the preserved original #39179079695 archive and independently repeats strict source verification with nine negative/positive controls. Passing it **does not retroactively turn the historical failed GitHub Actions run into a success**. A new fully successful original NeXium workflow remains a separate milestone, and physical Nintendo Switch DAC/speaker behavior remains untested.
