@@ -239,6 +239,17 @@ class PrivateCapturePreflightTests(unittest.TestCase):
             inspect_staged_capture(self.source, link)
 
 
+    def test_loadimage_requires_rect_and_forbids_inherited_ft4_packet(self):
+        from tools.verify_map02_native_gpu_capture import validate_meta
+        draw = json.loads(self.native_events.splitlines()[0])
+        self.assertIsNotNone(draw["ft4"])
+        transfer = dict(draw, operation="load", primitive_type=0,
+                        rect=[0, 0, 1, 1], semi=0, upload="")
+        with self.assertRaisesRegex(ValueError, "transfer requires RECT"):
+            validate_meta(transfer, 0, self.frame)
+        transfer["ft4"] = None
+        validate_meta(transfer, 0, self.frame)
+
     def test_requires_transfer_snapshots_and_declared_upload_bytes(self):
         (self.native / "gpu-0000-vram.bin").rename(
             self.native / "gpu-0002-vram.bin")
