@@ -12,6 +12,7 @@ from pathlib import Path
 import stat
 
 from tools.check_map02_private_pc_inputs import ASSETS, EXE, FONT_GENERATOR
+from tools.check_map02_original_inc_provenance import GENERATOR as INCLUDE_GENERATOR
 from tools.check_map02_cycle_make_plan import BUILD
 from tools.map02_cycle_build_provenance import NAME as BUILD_RECEIPT
 from tools.map02_local_capture_handoff import PLAN
@@ -99,6 +100,8 @@ def inspect_private_map02_inputs(upstream, owned_image, build_bundle,
             _source_tree_file(root, Path("build") / (EXE + ".elf")),
         "original_asset_include_paths_present": includes_count,
         "original_asset_include_paths_expected": len(ASSETS),
+        "pinned_original_include_generator_path_present":
+            _source_tree_file(root, INCLUDE_GENERATOR),
         "pinned_font_generator_path_present":
             _source_tree_file(root, FONT_GENERATOR),
         "owned_krom_or_ps1_bios_path_present":
