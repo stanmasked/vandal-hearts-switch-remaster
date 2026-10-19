@@ -7,6 +7,7 @@ on:
       - 'work/map02-pr55-native-recorder-compat'
       - 'work/map02-pr55-drawenv-optional-fix'
       - 'work/map02-pr55-window-upload-index'
+      - 'work/map02-pr55-joint-status-inventory'
   pull_request:
     paths:
       - 'tools/map02_dda_coverage.py'
