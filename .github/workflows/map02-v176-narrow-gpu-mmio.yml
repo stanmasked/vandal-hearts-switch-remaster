@@ -1,0 +1,34 @@
+name: MAP02 v176 no narrow guest GPU MMIO during actual MIPS VBlank waits
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v176-narrow-gpu-mmio.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v176_narrow_gpu_mmio.py'
+      - 'tests/test_map02_v176_narrow_gpu_mmio.py'
+      - 'tools/apply_map02_v175_dual_gpu_read_ports.py'
+      - 'tools/make_map02_v78_vblank_mips_exe.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  narrow-gpu-mmio:
+    name: GCC/Clang narrow GPU reads plus writes (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile 8/16-bit GPU register read/write mutation fixtures
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v176_narrow_gpu_mmio.py tests/test_map02_v176_narrow_gpu_mmio.py
+          python3 -m unittest discover -s tests -p 'test_map02_v176_narrow_gpu_mmio.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v175_dual_gpu_read_ports.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v174_vblank_read_quiet.py' -v
+          echo 'VH176_COMPILED_NARROW_GPU_MMIO_PASS narrow_reads=0 narrow_writes=0 actual_native_pending=1 original_retail_executed=0'
