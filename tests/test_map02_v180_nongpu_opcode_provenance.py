@@ -49,7 +49,7 @@ void psxMemWrite32(psxRegisters *regs,u32 mem,u32 value){
 """
 
 def all_memory():
-    return patch_memory(v176_mem(v175_mem(v174_mem(v173_mem(fake_mem()))))
+    return patch_memory(v176_mem(v175_mem(v174_mem(v173_mem(fake_mem())))))
 
 def fake_front():
     return ('\tint vh176_mips_vblank_narrow_mmio_smoke = 0;\n'
