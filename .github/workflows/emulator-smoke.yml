@@ -2122,6 +2122,27 @@ jobs:
           PY
           echo "Stage334: new independent NeXium original guest-source / host-clock compact witness; Stage320/322/325 and strict Stage304/305 replayed; no original PCM or absolute timestamps in compact manifest; not guest-host clock mapping or physical Switch sound." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Stage341 verify original capture NRO metadata versus subsequent PCM quality report
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,sys
+          from pathlib import Path
+          sys.path.insert(0,str(Path("tools").resolve()))
+          from audit_nexium_stage336_capture_build_binding import read_json,verify_monitor_quality
+          root=Path("runtime-evidence")
+          capture=read_json(root/"pcm-monitor-report.json")
+          quality=read_json(root/"pcm-quality-report.json")
+          preflight=read_json(Path("integrated-nro-preflight.json"),max_bytes=4096)
+          verify_monitor_quality(capture,quality)
+          if capture["source_nro_sha256"]!=preflight["nro_sha256"]:
+              raise SystemExit("Stage341 original capture source NRO differs from same-run preflight")
+          print("Stage341 capture source NRO SHA-256 confirmed:",capture["source_nro_sha256"])
+          print("Stage341 virtual PCM source-byte count confirmed:",quality["bytes"])
+          PY
+          echo "Stage341: original NRO-carrying PCM monitor capture metadata matches its separate quality analysis and current-run NRO preflight; not physical Switch audio." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Stage336 bind fourth fresh genuine NeXium guest host sources to exact same-run NRO
         shell: bash
         run: |
