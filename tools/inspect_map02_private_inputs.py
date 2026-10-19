@@ -78,8 +78,13 @@ def inspect_private_map02_inputs(upstream, owned_image, build_bundle,
     bundle = Path(build_bundle).absolute()
     receipt_dir = Path(build_receipt_dir).absolute()
     handoff = Path(handoff_dir).absolute()
+    # The default KROM location is part of the pinned source checkout.
+    # A symlink anywhere under external/ must not make a redirected font
+    # appear to belong to that checkout. An explicit --krom-source is an
+    # independent user-owned location and is inventoried as such.
+    default_krom = Path("external/psy-q/3.6/PSYQ/BIN/KROMDAT.BIN")
     krom = (Path(krom_source).absolute() if krom_source is not None else
-            root / "external/psy-q/3.6/PSYQ/BIN/KROMDAT.BIN")
+            root / default_krom)
     upstream_ok = _folder(root)
     bundle_ok = _folder(bundle, private=True)
     receipt_ok = _folder(receipt_dir, private=True)
@@ -96,7 +101,9 @@ def inspect_private_map02_inputs(upstream, owned_image, build_bundle,
         "original_asset_include_paths_expected": len(ASSETS),
         "pinned_font_generator_path_present":
             _source_tree_file(root, FONT_GENERATOR),
-        "owned_krom_or_ps1_bios_path_present": _regular(krom),
+        "owned_krom_or_ps1_bios_path_present":
+            (_regular(krom) if krom_source is not None else
+             _source_tree_file(root, default_krom)),
         "owned_disc_image_private_path_present":
             _regular(image, owner_only=True),
         "full_pc_elf_executable_path_present":
