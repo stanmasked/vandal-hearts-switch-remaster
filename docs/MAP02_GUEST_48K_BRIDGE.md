@@ -10,6 +10,7 @@ The new isolated `source/vh_guest_native_48k.c` receives the very same two **syn
 
 The experiment demands:
 - Identical 48-kHz PCM pages before the common scene transition (64 blocks)
+- **Exactly 35,665** 48-kHz stereo output frames over the 64 synchronized source blocks and **exactly 26,750** over the following 48 blocks: these counts are derived from the original integer output-tick arithmetic of 512-frame 44.1-kHz input blocks and fail on even a one-frame deviation
 - Exactly equal 48-kHz stereo output **frame counts** on the two synthetic paths
 - All **48 post-switch pages** must differ, with retained-history output nonzero
 - A special distinction between the **first reset-mode page** and later pages: the stateful resampler may interpolate **one stereo output frame from the previous scene**, so its first reset page is allowed up to **2 nonzero sample values**, but *all later reset pages must contain zero*
@@ -24,13 +25,13 @@ A separate asset-free `tests/test_vh_guest_native_48k_boundary.c` exercises the 
 
 The exact 17-phase reference values were independently checked against a source-equivalent reconstruction of the production integer resampler and 192-frame ramp, compiled with **GCC 14.2 and Clang 17**, `-Wall -Wextra -Werror -fsanitize=address,undefined`: both passed all 17 amplitude/frame-count assertions and the low-amplitude silent case. This preflight is **not** a claim that the still-queued GitHub Actions or NeXium jobs have run.
 
-The guest source test also prints an exact `native48 ...` stdout receipt under GCC and Clang: 48-kHz pre/wet/reset FNV hashes, total prefix and tail frames, number of differing pages, retained nonzero values and reset-first/reset-later residue counts. A second fail-closed auditor `tools/audit_guest_native48_cross_arch.py` requires **all nine values** to agree exactly with **both** CRC-verified NeXium `VH48K001` receipts. Twelve generated-only tests reject forged compiler logs, guest values and unsafe claims. Any real compiler or architecture mismatch causes a failure rather than being rounded away or described as equivalent.
+The guest source test also prints an exact `native48 ...` stdout receipt under GCC and Clang: 48-kHz pre/wet/reset FNV hashes, total prefix and tail frames, number of differing pages, retained nonzero values and reset-first/reset-later residue counts. A second fail-closed auditor `tools/audit_guest_native48_cross_arch.py` requires **all nine values** to agree exactly with **both** CRC-verified NeXium `VH48K001` receipts. Fourteen generated-only tests reject forged compiler logs, guest values and unsafe claims, including intentional one-frame output-clock drift. Any real compiler or architecture mismatch causes a failure rather than being rounded away or described as equivalent.
 
 ## Guest evidence and strict boundaries
 
 Only the extra opt-in `Makefile.map02-guest-sync-tail` binary builds this observer. It adds a **fourth diagnostic optical screen** after guest audout has joined, with the same calibrated magenta border, a new `VH48K001` packet and CRC32. No copyrighted PS1 music data, raw PCM arrays, file I/O or extra work in the live audio thread.
 
-`tools/decode_guest_native_48k.py` verifies first/remaining reset residue, complete block counts, physical bounds, hashes, immutable ticket context and packet integrity. Twelve generated positive/negative cases prevent false green results. GCC/Clang ASan+UBSan execute the same C DSP+output-stage fixture, while NeXium checks both outer NRO modes independently and requires identical synthetic 48-kHz metrics from both.
+`tools/decode_guest_native_48k.py` verifies first/remaining reset residue, complete block counts, physical bounds, hashes, immutable ticket context and packet integrity. Fourteen generated positive/negative cases prevent false green results, including both +1 and −1 48-kHz frame drift. GCC/Clang ASan+UBSan execute the same C DSP+output-stage fixture, while NeXium checks both outer NRO modes independently and requires identical synthetic 48-kHz metrics from both.
 
 **Evidence limits:** This isolates retained STUDIO_C state *after the native 48-kHz conversion and device-start ramp*, but is still a generated-only in-guest counterfactual. It does not prove the live audout stream's content is sample-aligned across independent guest boots, physical speaker output, original PS1 music fidelity or a real gameplay cue's acoustic reverb.
 
