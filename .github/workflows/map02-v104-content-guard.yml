@@ -231,6 +231,9 @@ on:
       - 'tools/make_map02_v179_nongpu_mips_exes.py'
       - 'tests/test_map02_v179_nongpu_memory_exclusion.py'
       - '.github/workflows/map02-v179-nongpu-memory-exclusion.yml'
+      - 'tools/apply_map02_v180_nongpu_opcode_provenance.py'
+      - 'tests/test_map02_v180_nongpu_opcode_provenance.py'
+      - '.github/workflows/map02-v180-nongpu-opcode-provenance.yml'
       - 'tests/test_map02_v172_mips_real_vblank_vram.py'
       - '.github/workflows/map02-v172-mips-real-vblank-vram.yml'
       - 'tests/test_map02_v171_mips_multiphase_vram.py'
@@ -433,6 +436,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v177_narrow_gpu_lanes.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v178_unaligned_gpu_mips.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v179_nongpu_memory_exclusion.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v180_nongpu_opcode_provenance.py' -v
           python3 -m remaster.tools.check_map02_v147_native_bounded_c --cc "${{ matrix.cc }}" \
             | grep -Fx 'VH147_COMPILED_BOUNDED_NATIVE_PASS capacity=1024 generic=1 repeated_pc=1 overflow_refused=1 atomic_mode0600=1 no_overwrite=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v144_native_challenge_c --cc "${{ matrix.cc }}" \
@@ -453,7 +457,10 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v176_narrow_gpu_mmio upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v180_nongpu_opcode_provenance upstream-pcsx
+          grep -F 'vh180_observe_nongpu(regs,mem,0u,0u)' upstream-pcsx/libpcsxcore/psxmem.c
+          grep -F 'vh180_observe_nongpu(regs,mem,2u,0u)' upstream-pcsx/libpcsxcore/psxmem.c
+          grep -F 'VH180_NONGPU_GUEST_OPCODE_EXECUTED_PASS' upstream-pcsx/frontend/main.c
           python3 -m remaster.tools.check_map02_v178_native_unaligned_routes upstream-pcsx/libpcsxcore/psxinterpreter.c \
             | grep -Fx 'VH178_PINNED_MIPS_UNALIGNED_GPU_ROUTES_PASS lwl32=1 lwr32=1 swl16plus8=1 swr8plus16=1 original_retail=0'
           grep -F 'vh176_observe_narrow(mem,0u,0u)' upstream-pcsx/libpcsxcore/psxmem.c
@@ -2123,6 +2130,71 @@ jobs:
             fi
           done
           echo 'VH179_NATIVE_NONGPU_MEMORY_NO_FALSE_POSITIVE_PASS cases=8 vblanks_each=4 samples_each=2380 original_retail=0'
+          # v180: source-authored opcode MUST be executed as a real guest
+          # instruction in each VBlank wait, not merely loaded on disk.
+          for idx in 0 1 2 3 4 5 6 7; do
+            case "$idx" in
+              0) kind=LB_BELOW_GP0;;
+              1) kind=LHU_ABOVE_GP1;;
+              2) kind=LWL_BELOW_GP0;;
+              3) kind=LWR_ABOVE_GP1;;
+              4) kind=SB_RAM0;;
+              5) kind=SH_RAM2;;
+              6) kind=SWL_RAM2;;
+              7) kind=SWR_RAM1;;
+            esac
+            mkdir -m 700 "proof/v180-${idx}-home"
+            timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+              SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+              HOME="$PWD/proof/v180-${idx}-home" \
+              ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+              "--vh180-nongpu-mips-${idx}" \
+              "proof/private/V179_NONGPU_${kind}.EXE" \
+              > "proof/private/v180-${idx}.log" 2>&1 || {
+                tail -n 90 "proof/private/v180-${idx}.log"
+                exit 1
+              }
+            if test "$idx" -ge 6; then
+              expected="^VH180_NONGPU_GUEST_OPCODE_EXECUTED_PASS kind=${idx} windows=4 primary=[1-9][0-9]* secondary=[1-9][0-9]* opcode_pc_bound=1 vblanks=4 samples=2380 original_retail=0$"
+            else
+              expected="^VH180_NONGPU_GUEST_OPCODE_EXECUTED_PASS kind=${idx} windows=4 primary=[1-9][0-9]* secondary=0 opcode_pc_bound=1 vblanks=4 samples=2380 original_retail=0$"
+            fi
+            grep -E "$expected" "proof/private/v180-${idx}.log"
+            grep -Fx 'VH176_GUEST_MIPS_NARROW_GPU_QUIET_PASS windows=4 narrow_reads=0 narrow_writes=0 vblanks=4 samples=2380 native_psxcounters=1 original_retail=0' \
+              "proof/private/v180-${idx}.log"
+            for phase in 0 1 2 3; do
+              grep -F "VH78_VBLANK_OBSERVED phase=$phase event=" \
+                "proof/private/v180-${idx}.log"
+              grep -Fx "VH78_PHASE_PASS phase=$phase checked=595 guard=499" \
+                "proof/private/v180-${idx}.log"
+            done
+            if grep -Eq 'VH180_GUEST_OPCODE_UNOBSERVED_REFUSED|VH175_VBLANK_GPU_READ_PORT_REFUSED|VH176_NARROW_MMIO_REFUSED' \
+                "proof/private/v180-${idx}.log"; then
+              echo "VH180_UNEXPECTED_REFUSAL idx=${idx}"
+              exit 1
+            fi
+          done
+          # A clean unmodified PS-X EXE has no replacement instruction.
+          # It MUST be refused despite retaining identical pixel values.
+          python3 -m remaster.tools.make_map02_v78_vblank_mips_exe \
+            --output proof/private/V180_NEGATIVE_UNMODIFIED.EXE
+          mkdir -m 700 proof/v180-missing-home
+          rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v180-missing-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh180-nongpu-mips-0 proof/private/V180_NEGATIVE_UNMODIFIED.EXE \
+            > proof/private/v180-missing.log 2>&1 || rc=$?
+          test "$rc" -eq 83
+          grep -Fx 'VH180_GUEST_OPCODE_UNOBSERVED_REFUSED kind=0 phase=0 primary=0 secondary=0 faults=0' \
+            proof/private/v180-missing.log
+          if grep -Eq 'VH180_NONGPU_GUEST_OPCODE_EXECUTED_PASS|VH176_GUEST_MIPS_NARROW_GPU_QUIET_PASS' \
+              proof/private/v180-missing.log; then
+            echo 'VH180_FALSE_OPCODE_EXECUTION_CREDIT_REFUSED'
+            exit 1
+          fi
+          echo 'VH180_NATIVE_NONGPU_OPCODE_PROVENANCE_PASS cases=8 four_vblanks_each=1 pixels_each=2380 genuine_pc_opcode=1 missing_opcode_refused=1 original_retail=0'
           # Retain valid signed synthetic EXE / CPU stage markers, but
           # mutate one actual interpreted ORI instruction so the first
           # GP0(60) red command carries a wrong color. The native GPU
