@@ -387,6 +387,28 @@ class PrivateOneShotCycleTests(unittest.TestCase):
         self.mocks["launch_observed_pc"].assert_not_called()
         self.mocks["seal_final_capture"].assert_not_called()
 
+    def test_real_private_input_identity_detects_in_place_and_inode_changes(self):
+        # This is a disposable, synthetic file; no retail data or PC ELF.
+        source = self.root / "owned-synthetic-identity"
+        source.write_bytes(b"original-synthetic-content")
+        source.chmod(0o600)
+        first = runner._private_input_identity(source, "synthetic")
+        self.assertEqual(first, runner._private_input_identity(source, "synthetic"))
+        source.write_bytes(b"modified-synthetic-content")
+        changed = runner._private_input_identity(source, "synthetic")
+        self.assertNotEqual(first, changed)
+        original = source.read_bytes()
+        source.unlink()
+        source.write_bytes(original)
+        source.chmod(0o600)
+        self.assertNotEqual(changed, runner._private_input_identity(source, "synthetic"))
+        linked = self.root / "symlink-synthetic-identity"
+        linked.symlink_to(source)
+        with self.assertRaisesRegex(ValueError, "became linked"):
+            runner._private_input_identity(linked, "synthetic")
+        with self.assertRaisesRegex(ValueError, "input unavailable"):
+            runner._private_input_identity(self.root / "no-such-file", "synthetic")
+
     def test_dry_run_rejects_input_inode_drift_after_final_layout_scan(self):
         for drifted in (self.elf, self.disc,
                         self.receipt / runner.BUILD_RECEIPT_NAME):
