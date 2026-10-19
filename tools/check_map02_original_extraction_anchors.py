@@ -174,6 +174,15 @@ def compare_loaded_sections(exe_path, elf_path):
                     continue  # not initialized runtime bytes (e.g. .bss)
                 if offset + size > elf_size or address + size > 0x100000000:
                     raise ValueError("original ELF loaded section has invalid bounds")
+                # A mapped runtime section must contain real file payload,
+                # not byte aliases into its own ELF/section metadata. Valid
+                # ELF files place SHT_PROGBITS payload outside both regions.
+                section_table_end = shoff + entsize * count
+                if (offset < 52 or
+                        (offset < section_table_end and
+                         shoff < offset + size)):
+                    raise ValueError(
+                        "original ELF loaded section aliases ELF metadata")
                 if address >= end_of_image or address + size <= exe_load:
                     outside += 1
                     continue
