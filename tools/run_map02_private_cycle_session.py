@@ -8,7 +8,9 @@ This is a local orchestration gate, NOT game-content authentication.
 """
 import argparse
 import json
+import os
 from pathlib import Path
+import stat
 import subprocess
 
 from tools.check_map02_private_launch_layout import (
@@ -17,6 +19,7 @@ from tools.check_map02_private_launch_layout import (
 from tools.check_map02_private_cycle_readiness import verify_private_cycle_readiness
 from tools.finalize_map02_private_capture import finalize_private_capture
 from tools.map02_local_capture_handoff import PLAN, _validate_plan
+from tools.map02_cycle_build_provenance import NAME as BUILD_RECEIPT_NAME
 from tools.map02_verified_process_launch import launch_observed_pc
 from tools.seal_map02_private_finalization import (
     _dir_identity, _roots, seal_final_capture, verify_final_seal,
@@ -96,6 +99,27 @@ def _require_final_layout_report(layout):
         raise ValueError("private MAP02 one-shot layout recheck was not confirmed")
 
 
+def _private_input_identity(path, category):
+    """Stable path/inode metadata for source-bound local preflight inputs.
+
+    This is a second, inexpensive guard across the last directory scan.
+    The full read-only preflight independently compares original file bytes,
+    so a metadata comparison alone must never authorize a game launch.
+    """
+    path = Path(path).absolute()
+    if path.is_symlink():
+        raise ValueError("MAP02 private input became linked: " + category)
+    try:
+        info = os.stat(path, follow_symlinks=False)
+    except OSError:
+        raise ValueError("MAP02 private input unavailable: " + category) from None
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+            or info.st_nlink != 1 or info.st_size <= 0):
+        raise ValueError("MAP02 private input identity invalid: " + category)
+    return (info.st_dev, info.st_ino, info.st_uid, info.st_mode,
+            info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
 def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
                                 preview, rgb, seal_directory, owned_game,
                                 upstream, binary, build_receipt, build_bundle,
@@ -162,6 +186,18 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
     if plan["target_gpu_draw_frame"] != frame:
         raise ValueError("MAP02 requested frame differs from prepared private plan")
 
+    # Keep exact file identities across the full private preflight and
+    # the final layout scan; a late replacement must not turn a stale
+    # readiness result into permission to start an original game process.
+    pinned_inputs = (
+        (binary, "PC binary"),
+        (owned_game, "owned disc image"),
+        (Path(build_receipt) / BUILD_RECEIPT_NAME, "build receipt"),
+    )
+    before_inputs = tuple(
+        _private_input_identity(path, category)
+        for path, category in pinned_inputs)
+
     enter("full-preflight")
     ready = verify_private_cycle_readiness(
         *captures, pc_binary=binary, owned_game_image=owned_game,
@@ -187,6 +223,10 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
         raise ValueError("MAP02 private launch plan changed after final layout scan")
     require_original_capture_directories()
     require_original_seal_directory(must_be_empty=True)
+    if tuple(_private_input_identity(path, category)
+             for path, category in pinned_inputs) != before_inputs:
+        raise ValueError(
+            "MAP02 original PC ELF, owned image or build receipt changed after preflight")
     if dry_run:
         # Exactly the pre-execution checks used by the real one-shot path:
         # no subprocess, no output witness, no finalizer, no seal.
