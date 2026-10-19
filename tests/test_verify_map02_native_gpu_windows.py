@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from tools.verify_map02_native_gpu_windows import (
     INDEX, SCHEMA, verify_native_windows,
@@ -76,6 +77,39 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
         name.write_bytes(data)
         with self.assertRaisesRegex(ValueError, "discontinuous VRAM|continuity broken"):
             self.verify()
+
+    def test_gpu_mode_cannot_change_silently_across_window_boundary(self):
+        # Test with a two-event window capacity to avoid allocating
+        # 64 synthetic 1-MiB snapshots. Production capacity remains 64.
+        self.events = self.events[:2]
+        for index in (2, 3):
+            (self.window / f"gpu-{index:04d}-vram.bin").unlink()
+        (self.window / "gpu-native-events.jsonl").write_bytes(
+            b"".join(jsonline(event) for event in self.events))
+        next_window = self.root / "window-001"
+        next_window.mkdir(mode=0o700)
+        before = dict(self.events[0], step=0, primitive_type=5,
+                      snapshot="gpu-0000-vram.bin", draw_mode=[0, 0, 0])
+        after = dict(before, step=1, phase="after",
+                     snapshot="gpu-0001-vram.bin", draw_mode=[1, 0, 0])
+        for event in (before, after):
+            (next_window / event["snapshot"]).write_bytes(self.snapshots[1])
+        logfile = next_window / "gpu-native-events.jsonl"
+        logfile.write_bytes(jsonline(before) + jsonline(after))
+        self.status.update(window_capacity_events=2, windows_written=2)
+        self.save_status()
+        with patch("tools.verify_map02_native_gpu_windows.MAX_RECORDS", 2):
+            report = self.verify()
+            self.assertEqual(report["recorded_windows"], 2)
+            self.assertEqual(report["native_draw_pairs"], 2)
+            self.assertFalse(report["whole_original_gameplay_frame_proven"])
+            # Forging both local DR_MODE phases leaves local VRAM/state
+            # consistent. Only the cross-window GPU bridge rejects it.
+            before["draw_mode"] = [1, 0, 0]
+            logfile.write_bytes(jsonline(before) + jsonline(after))
+            with self.assertRaisesRegex(
+                    ValueError, "GPU state continuity broken"):
+                self.verify()
 
     def test_rejects_oversubscribed_or_counterfeit_completion(self):
         for change in (
