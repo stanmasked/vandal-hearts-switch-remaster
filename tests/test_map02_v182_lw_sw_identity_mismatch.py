@@ -188,6 +188,7 @@ int main(void) {{
             result=subprocess.run([str(exe)],capture_output=True,text=True,timeout=12)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             self.assertIn("VH182_COMPILED_WRONG_OPCODE_IDENTITY_PASS",result.stdout)
+            self.assertIn("wrong_pairs=12 correct_pairs=4 wrong_pc_refused=4 wrong_ram_address_refused=4 wrong_direction_refused=4 original_retail=0",result.stdout)
 
     def test_native_ci_proves_all_wrong_pairings_have_exit_84(self):
         main=(ROOT/".github/workflows/map02-v104-content-guard.yml").read_text()
