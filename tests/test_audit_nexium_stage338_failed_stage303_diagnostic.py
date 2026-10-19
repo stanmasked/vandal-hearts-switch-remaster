@@ -71,6 +71,41 @@ class Stage303SourceFailureClassificationTests(unittest.TestCase):
         self.assertTrue(r["partial_frame_before_sigint"])
         self.assertEqual(r["stop_wall_interval_ms"],100)
 
+    def test_invalid_stop_failed_signal_is_located_precisely(self):
+        doc=bounded_stop_diagnosis(self.raw,self.stage302,
+                                   lifecycle(3900,4000,signal=0))
+        self.assertEqual(doc["original_stop_csv_failure"]["kind"],
+                         "stop_csv_failed_or_missing_sigint_success")
+        self.assertEqual(doc["original_stop_csv_failure"]["stop_signal_success_flags"],
+                         [0,0])
+
+    def test_invalid_stop_wall_regression_reports_only_relative_interval(self):
+        doc=bounded_stop_diagnosis(self.raw,self.stage302,
+                                   lifecycle(3900,4000,before=100200,after=100100))
+        self.assertEqual(doc["original_stop_csv_failure"]["kind"],
+                         "stop_csv_host_wall_clock_regression")
+        self.assertEqual(doc["original_stop_csv_failure"]["original_stop_wall_delta_ms"],-100)
+        self.assertNotIn("100200",__import__("json").dumps(doc))
+
+    def test_invalid_stop_pcm_regression_is_source_rejected(self):
+        doc=bounded_stop_diagnosis(self.raw,self.stage302,lifecycle(4100,4000))
+        self.assertEqual(doc["original_stop_csv_failure"]["kind"],
+                         "stop_csv_pcm_size_regression")
+        self.assertEqual(doc["original_stop_csv_failure"][
+            "after_wait_minus_before_sigint_pcm_bytes"],-100)
+
+    def test_invalid_stop_row_order_is_explicit(self):
+        bad=lifecycle(3900,4000).replace(b"before_sigint",b"after_wait",1)
+        doc=bounded_stop_diagnosis(self.raw,self.stage302,bad)
+        self.assertEqual(doc["original_stop_csv_failure"]["kind"],
+                         "stop_csv_wrong_row_count_or_order")
+
+    def test_invalid_stop_line_endings_are_explicit(self):
+        bad=lifecycle(3900,4000).replace(b"\n",b"\r\n")
+        doc=bounded_stop_diagnosis(self.raw,self.stage302,bad)
+        self.assertEqual(doc["original_stop_csv_failure"]["kind"],
+                         "stop_csv_noncanonical_line_endings_or_empty")
+
     def test_no_diagnostic_claims_physical_audio(self):
         for csv in (lifecycle(4000,4000),lifecycle(3990,4004),
                     lifecycle(4000,4000,signal=0)):

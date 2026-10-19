@@ -47,13 +47,60 @@ FILENAMES={
 }
 
 
+def inspect_invalid_original_stop_csv(raw:bytes)->dict:
+    """More precise reject reason, reporting only deltas and Boolean fields."""
+    import csv
+    import io
+    if not raw or b"\r" in raw or not raw.endswith(b"\n"):
+        return {"kind":"stop_csv_noncanonical_line_endings_or_empty"}
+    try:
+        reader=csv.DictReader(io.StringIO(raw.decode("ascii")),strict=True)
+        if reader.fieldnames!=["event","pcm_bytes","host_epoch_ms","signal_success"]:
+            return {"kind":"stop_csv_wrong_header"}
+        rows=list(reader)
+    except (UnicodeError,csv.Error,ValueError):
+        return {"kind":"stop_csv_not_valid_ascii"}
+    if (len(rows)!=2 or any(set(row)!=set(reader.fieldnames) for row in rows)
+            or [row.get("event") for row in rows]!=["before_sigint","after_wait"]):
+        return {"kind":"stop_csv_wrong_row_count_or_order"}
+    values=[]
+    for row in rows:
+        fields=[]
+        for key in ("pcm_bytes","host_epoch_ms","signal_success"):
+            value=row.get(key)
+            if (not isinstance(value,str) or not value.isascii()
+                    or not value.isdecimal()
+                    or (len(value)>1 and value.startswith("0"))):
+                return {"kind":"stop_csv_noncanonical_numeric_field","field":key}
+            fields.append(int(value))
+        values.append(fields)
+    (b0,t0,s0),(b1,t1,s1)=values
+    summary={
+        "stop_signal_success_flags":[s0,s1],
+        "original_stop_wall_delta_ms":t1-t0,
+        "after_wait_minus_before_sigint_pcm_bytes":b1-b0,
+    }
+    if t0<=0 or t1<=0:
+        kind="stop_csv_nonpositive_host_epoch"
+    elif s0!=1 or s1!=1:
+        kind="stop_csv_failed_or_missing_sigint_success"
+    elif t0>t1:
+        kind="stop_csv_host_wall_clock_regression"
+    elif b0>b1:
+        kind="stop_csv_pcm_size_regression"
+    else:
+        kind="stop_csv_rejected_unclassified"
+    return {"kind":kind,**summary}
+
+
 def bounded_stop_diagnosis(raw:bytes,stage302:dict,csv:bytes)->dict:
     """Compact fail-closed stop lifecycle check; never emit host epoch values."""
     try:
         events=read_stop_events(csv)
     except (ValueError,TypeError,KeyError):
         return {"gate":"stage303_stop_csv_invalid",
-                "strict_stage303_accepted":False}
+                "strict_stage303_accepted":False,
+                "original_stop_csv_failure":inspect_invalid_original_stop_csv(csv)}
     first,second=events
     pre=first["pcm_bytes"]
     post=second["pcm_bytes"]
