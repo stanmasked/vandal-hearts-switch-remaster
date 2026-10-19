@@ -1476,7 +1476,10 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
                 self.run_two()
 
     def test_cli_reports_only_digests_not_private_paths(self):
-        command = [
+        # Exercise the actual subprocess/JSON stdout egress, not only the
+        # Python runner's internal dict. Both diagnostic and strict output
+        # must obey the same exact outer receipt field contract.
+        base_command = [
             sys.executable, "-m", "tools.run_map02_private_two_live_captures",
             "--executable", str(self.executable),
             "--executable-sha256", self.digest,
@@ -1486,13 +1489,34 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
             "--second-journal", str(self.dirs[3]),
             "--frame", "123",
         ]
-        completed = subprocess.run(command, text=True, capture_output=True,
-                                   timeout=22)
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        report = json.loads(completed.stdout)
-        self.assertTrue(report["two_native_elf_captures_and_complete_replays_verified"])
-        self.assertNotIn(str(self.executable), completed.stdout)
-        self.assertNotIn(str(self.dirs[0]), completed.stdout)
+        for strict in (False, True):
+            with self.subTest(strict=strict):
+                for folder in self.dirs:
+                    for entry in folder.iterdir():
+                        entry.unlink()
+                command = base_command + (
+                    ["--require-identical-gpu-timeline"] if strict else [])
+                completed = subprocess.run(
+                    command, text=True, capture_output=True, timeout=22)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stderr, "")
+                report = json.loads(completed.stdout)
+                self.assertEqual(report["schema"], two_live.SCHEMA)
+                self.assertEqual(set(report), two_live._TWO_RUN_SAFE_KEYS)
+                self.assertEqual(len(report), len(two_live._AUDIT_SAFE_KEYS) + 7)
+                two_live._require_safe_public_two_run_receipt(report)
+                self.assertTrue(
+                    report["two_native_elf_captures_and_complete_replays_verified"])
+                self.assertIs(report["strict_gpu_timeline_match_required"], strict)
+                self.assertIs(report["strict_gpu_timeline_match_verified"], strict)
+                self.assertIs(report["retail_gameplay_authenticated"], False)
+                self.assertIs(report["hd_replacement_authorized"], False)
+                for private_path in (self.executable, *self.dirs):
+                    self.assertNotIn(str(private_path), completed.stdout)
+                self.assertNotIn("gpu-native-events.jsonl", completed.stdout)
+                self.assertNotIn("process-frame.bgr555", completed.stdout)
+                for folder in self.dirs:
+                    self.assertGreater(len(list(folder.iterdir())), 0)
 
     def test_cli_missing_executable_does_not_reveal_private_path(self):
         private = self.dirs[0].parent / "retail-game-image-secret"
