@@ -71,6 +71,101 @@ class V182FailClosedWordRAMIdentities(unittest.TestCase):
         self.assertNotIn("GPUwriteData(",c_source)
         self.assertNotIn("psxRegs.cycle=",c_source)
 
+    def test_compiled_native_memory_observer_rejects_all_twelve_wrong_labels(self):
+        """Real C callbacks: 12 mismatches ignored, 4 matching opcodes accepted."""
+        import os
+        import shutil
+        import subprocess
+        import tempfile
+        sys.path.insert(0,str(ROOT/"tests"))
+        from test_map02_v181_word_ram_opcodes import full_memory
+        compiler=os.environ.get("CC","cc")
+        if not shutil.which(compiler):
+            self.skipTest("no C compiler")
+        _,_,_,wait_pc,_=build()
+        source = r"""
+#include <stdint.h>
+#include <stdio.h>
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef struct {u32 pc;u32 code;} psxRegisters;
+#define VH_MAP02_V66_PCSX_PROBE 1
+static void vh138_pc_observe(psxRegisters *r,u32 a,u32 v) {
+ (void)r;(void)a;(void)v;
+}
+""" + full_memory() + f"""
+static void touch(psxRegisters *r,unsigned actual,unsigned wrong_address) {{
+    static const u32 addresses[4]={{0u,4u,0u,4u}};
+    u32 address=addresses[actual];
+    if(wrong_address)address^=4u;
+    if(actual<2u)(void)psxMemRead32(r,address);
+    else psxMemWrite32(r,address,0u);
+}}
+int main(void) {{
+    static const u32 words[4]={{0x8c000000u,0x8c000004u,0xac000000u,0xac000004u}};
+    psxRegisters r={{0}};
+    unsigned wrong=0u,correct=0u;
+    for(unsigned actual=0u;actual<4u;actual++)
+      for(unsigned expected=0u;expected<4u;expected++) {{
+        if(vh173_arm_wait_quiet(0u)!=0 ||
+           vh174_arm_wait_read(0u)!=0 ||
+           vh175_arm_read_ports(0u)!=0 ||
+           vh176_arm_narrow(0u)!=0 ||
+           vh181_arm(expected,0u)!=0)return 1;
+        r.pc={wait_pc+4}u;
+        r.code=words[actual];
+        touch(&r,actual,0u);
+        if(vh181_count()!=(unsigned)(actual==expected) ||
+           vh181_faults()!=0u)return 2;
+        if(actual==expected)correct++;
+        else wrong++;
+        if(vh181_disarm(expected,0u)!=0 ||
+           vh176_disarm_narrow(0u)!=0 ||
+           vh175_disarm_read_ports(0u)!=0 ||
+           vh174_disarm_wait_read(0u)!=0 ||
+           vh173_disarm_wait_quiet(0u)!=0)return 3;
+      }}
+    if(wrong!=12u || correct!=4u)return 4;
+    /* A valid opcode alone must not bypass PC or exact address checks. */
+    for(unsigned kind=0u;kind<4u;kind++) {{
+        if(vh173_arm_wait_quiet(0u)!=0 ||
+           vh174_arm_wait_read(0u)!=0 ||
+           vh175_arm_read_ports(0u)!=0 ||
+           vh176_arm_narrow(0u)!=0 ||
+           vh181_arm(kind,0u)!=0)return 5;
+        r.code=words[kind];
+        r.pc={wait_pc+8}u;touch(&r,kind,0u);
+        r.pc={wait_pc+4}u;touch(&r,kind,1u);
+        if(vh181_count()!=0u || vh181_faults()!=0u)return 6;
+        touch(&r,kind,0u);
+        if(vh181_count()!=1u || vh181_faults()!=0u ||
+           vh176_narrow_total()!=0u ||
+           vh173_wait_mmio_faults()!=0u)return 7;
+        if(vh181_disarm(kind,0u)!=0 ||
+           vh176_disarm_narrow(0u)!=0 ||
+           vh175_disarm_read_ports(0u)!=0 ||
+           vh174_disarm_wait_read(0u)!=0 ||
+           vh173_disarm_wait_quiet(0u)!=0)return 8;
+    }}
+    puts("VH182_COMPILED_WRONG_OPCODE_IDENTITY_PASS wrong_pairs=12 correct_pairs=4 wrong_pc_refused=4 wrong_ram_address_refused=4 original_retail=0");
+    return 0;
+}}
+"""
+        with tempfile.TemporaryDirectory(prefix="vh182-compiled-wrong-id-") as directory:
+            src=Path(directory)/"witness.c"
+            exe=Path(directory)/"witness"
+            src.write_text(source)
+            compile_run=subprocess.run(
+                [compiler,"-std=c99","-Wall","-Wextra","-Werror","-pedantic",
+                 str(src),"-o",str(exe)],
+                capture_output=True,text=True,timeout=40
+            )
+            self.assertEqual(compile_run.returncode,0,compile_run.stderr)
+            result=subprocess.run([str(exe)],capture_output=True,text=True,timeout=12)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertIn("VH182_COMPILED_WRONG_OPCODE_IDENTITY_PASS",result.stdout)
+
     def test_native_ci_proves_all_wrong_pairings_have_exit_84(self):
         main=(ROOT/".github/workflows/map02-v104-content-guard.yml").read_text()
         independent=(ROOT/".github/workflows/map02-v182-lw-sw-identity-mismatch.yml").read_text()
