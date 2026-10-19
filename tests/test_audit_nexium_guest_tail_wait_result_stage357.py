@@ -139,6 +139,15 @@ class Stage357Tests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(main(argv),2)
         self.assertFalse((self.root/"out.csv").exists())
+        # A forged Stage348 owner receipt must also be rejected, even
+        # though both guest CSVs and Stage351 SHA are unmodified.
+        st351["tail_descriptor_return_confirmed"]=False
+        q351.write_text(json.dumps(st351))
+        st348["lease_pages_acquired"]=a+1
+        q348.write_text(json.dumps(st348))
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(main(argv),2)
+        self.assertFalse((self.root/"out.csv").exists())
 
     def test_reject_symlinked_guest_source(self):
         self.path.symlink_to(self.root/"missing.csv")
