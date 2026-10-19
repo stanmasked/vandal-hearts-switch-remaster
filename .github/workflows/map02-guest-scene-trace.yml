@@ -1,4 +1,4 @@
-name: NeXium MAP02 first PCM page nonzero per scene ticket
+name: NeXium MAP02 quantitative first PCM page per scene ticket
 
 on:
   pull_request:
@@ -8,6 +8,13 @@ on:
       - "source/vh_audio_scene_trace.h"
       - "source/vh_audio_scene_trace.c"
       - "source/vh_audio_scene_optical.c"
+      - "source/vh_audio_scene_optical.h"
+      - "source/vh_map02_pcm_metrics.c"
+      - "source/vh_map02_pcm_metrics.h"
+      - "tests/test_map02_guest_pcm_metrics.c"
+      - "tests/test_decode_map02_guest_pcm_metrics.py"
+      - "tools/decode_map02_guest_pcm_metrics.py"
+      - "docs/MAP02_GUEST_FIRST_PAGE_METRICS.md"
       - "tests/test_map02_guest_pcm_witness.c"
       - "docs/MAP02_GUEST_FIRST_PCM_PAGE.md"
       - "Makefile.map02-guest-trace"
@@ -33,6 +40,8 @@ jobs:
           sudo apt-get install -y python3-pil
       - name: Reject forged guest scene transitions and silent first PCM pages
         run: python3 -m unittest discover -s tests -p 'test_decode_map02_guest_scene_trace.py' -v
+      - name: Reject forged guest quantitative PCM metrics packets
+        run: python3 -m unittest discover -s tests -p 'test_decode_map02_guest_pcm_metrics.py' -v
       - name: Test C11 PCM witness event kinds and optical byte serialization
         shell: bash
         run: |
@@ -45,6 +54,14 @@ jobs:
               -o "/tmp/map02-pcm-witness-$cc"
             ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
               "/tmp/map02-pcm-witness-$cc"
+            "$cc" -std=c11 -O1 -g -Wall -Wextra -Werror -Isource \
+              -fsanitize=address,undefined -fno-omit-frame-pointer \
+              tests/test_map02_guest_pcm_metrics.c \
+              source/vh_map02_pcm_metrics.c \
+              source/vh_audio_scene_optical.c source/vh_audio_scene_trace.c \
+              -o "/tmp/map02-pcm-metrics-$cc"
+            ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+              "/tmp/map02-pcm-metrics-$cc"
           done
 
   paired-trace-nro:
@@ -218,6 +235,9 @@ jobs:
               sleep 3
               import -window "$window" "$ROOT/wet-tail-$MODE-trace.png"
               test -s "$ROOT/wet-tail-$MODE-trace.png"
+              sleep 7
+              import -window "$window" "$ROOT/wet-tail-$MODE-metrics.png"
+              test -s "$ROOT/wet-tail-$MODE-metrics.png"
               kill -INT "$guest" 2>/dev/null || true
               sleep 1
               kill -KILL "$guest" 2>/dev/null || true
@@ -227,7 +247,26 @@ jobs:
               --image "runtime-evidence/wet-tail-$mode-trace.png" \
               --mode "$mode" \
               --output "runtime-evidence/wet-tail-$mode-scene-receipt.json"
+            python3 tools/decode_map02_guest_pcm_metrics.py \
+              --image "runtime-evidence/wet-tail-$mode-metrics.png" \
+              --mode "$mode" \
+              --output "runtime-evidence/wet-tail-$mode-metrics.json"
           done
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("runtime-evidence")
+          pair=[json.loads((root/f"wet-tail-{i}-metrics.json").read_text()) for i in (0,1)]
+          assert all(x["result"]=="GUEST_FIRST_PAGES_QUANTIFIED" for x in pair)
+          out={"schema":"vh-map02-unmatched-first-page-quantitative-contrast/v1",
+               "mode_0":pair[0]["tickets"],"mode_1":pair[1]["tickets"],
+               "independent_guest_runs":True,
+               "sample_aligned":False,
+               "reverb_causality_proven":False,
+               "physical_audio_verified":False}
+          (root/"wet-tail-quantitative-contrast.json").write_text(
+              json.dumps(out,sort_keys=True,indent=2)+"\n")
+          PY
       - name: Always archive guest receipts, PNG screenshots and logs
         if: always()
         uses: actions/upload-artifact@v4
