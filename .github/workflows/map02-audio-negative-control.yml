@@ -1,0 +1,201 @@
+name: MAP02 video-only vs native-audio NeXium PCM negative control
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/map02-audio-negative-control.yml"
+      - "tools/verify_map02_audio_control.py"
+      - "tests/test_verify_map02_audio_control.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reject-false-positive-evidence:
+    name: Test 11 PCM negative controls
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise quiet/loud, NRO hash, sink, duration and frame failures
+        run: python3 -m unittest discover -s tests -p 'test_verify_map02_audio_control.py' -v
+
+  exact-nro-pair:
+    name: Build video-only and audout experimental NRO in same run
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and structurally verify two NRO variants
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          make verify-nro
+          make -f Makefile -f Makefile.map02-audio map02-audio-nro
+          mkdir -p build/audio-contrast
+          cp build/vandal-hearts-prototype.nro build/audio-contrast/control.nro
+          cp build/map02-audio/vandal-hearts-map02-audio.nro \
+            build/audio-contrast/experiment.nro
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          root=Path("build/audio-contrast")
+          control=hashlib.sha256((root/"control.nro").read_bytes()).hexdigest()
+          experiment=hashlib.sha256((root/"experiment.nro").read_bytes()).hexdigest()
+          assert control!=experiment, "Variant binary identity is unexpected"
+          manifest={
+            "schema":"vh-map02-nro-pair/v1",
+            "control_nro_sha256":control,
+            "audio_nro_sha256":experiment,
+            "git_sha":os.environ["GITHUB_SHA"],
+            "run_id":int(os.environ["GITHUB_RUN_ID"]),
+            "run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"])
+          }
+          (root/"manifest.json").write_text(json.dumps(manifest,indent=2)+"\n")
+          print(json.dumps(manifest,indent=2))
+          PY
+      - name: Archive paired NRO binaries and immutable receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-control-and-audio-nro-pair
+          path: build/audio-contrast/
+          if-no-files-found: error
+
+  nexiumpcm-contrast:
+    name: Two isolated virtual monitor captures (video-only vs audio)
+    needs: [reject-false-positive-evidence, exact-nro-pair]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-control-and-audio-nro-pair
+          path: nros
+      - name: Pin both NROs to exact same-run manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,hashlib,os
+          from pathlib import Path
+          root=Path("nros")
+          meta=json.loads((root/"manifest.json").read_text())
+          assert meta["run_id"]==int(os.environ["GITHUB_RUN_ID"])
+          assert meta["run_attempt"]==int(os.environ["GITHUB_RUN_ATTEMPT"])
+          assert meta["git_sha"]==os.environ["GITHUB_SHA"]
+          assert hashlib.sha256((root/"control.nro").read_bytes()).hexdigest()==meta["control_nro_sha256"]
+          assert hashlib.sha256((root/"experiment.nro").read_bytes()).hexdigest()==meta["audio_nro_sha256"]
+          assert meta["control_nro_sha256"]!=meta["audio_nro_sha256"]
+          print("PASS: both control and audout NRO bytes match same-run receipt")
+          PY
+      - name: Install virtual headless graphics and PulseAudio drivers
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl jq xvfb xauth xdotool python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 libxkbcommon-x11-0 \
+            libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers \
+            pulseaudio pulseaudio-utils libasound2-plugins
+      - name: Retrieve the pinned NeXium nightly build
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="$(curl -fsSL --retry 3 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+          asset_url="$(printf '%s' "$release_json" | jq -r \
+            '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          test -n "$asset_url"
+          curl -fL --retry 3 --retry-all-errors "$asset_url" -o /tmp/map02-nexium.tar.gz
+          mkdir -p /tmp/map02-nexium
+          tar -xzf /tmp/map02-nexium.tar.gz -C /tmp/map02-nexium
+          emulator="$(find /tmp/map02-nexium -type f -executable \
+            \( -name 'nexium-gui' -o -name 'nexium' \) -print -quit)"
+          test -n "$emulator"
+          echo "NEXIUM_BIN=$emulator" >> "$GITHUB_ENV"
+      - name: Capture separate video-only and audio NROs in identical virtual sink
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          rt="${RUNNER_TEMP}/vh-map02-control-pulse"
+          mkdir -p "$rt"
+          chmod 700 "$rt"
+          export XDG_RUNTIME_DIR="$rt"
+          pulseaudio --daemonize=yes --exit-idle-time=-1 \
+            --log-target=file:runtime-evidence/pulseaudio.log
+          export PULSE_SERVER="unix:$rt/pulse/native"
+          pactl info >runtime-evidence/pulse-info.txt
+          pactl load-module module-null-sink sink_name=vh_map02_control \
+            rate=48000 channels=2 >runtime-evidence/module-id.txt
+          pactl set-default-sink vh_map02_control
+          cat >"${RUNNER_TEMP}/map02-control-asound.conf" <<'ASOUND'
+          pcm.!default { type pulse }
+          ctl.!default { type pulse }
+          ASOUND
+          export ALSA_CONFIG_PATH="${RUNNER_TEMP}/map02-control-asound.conf"
+          export SDL_AUDIODRIVER=pulse
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+
+          capture() {
+            label="$1"
+            nro="$2"
+            parec --device=vh_map02_control.monitor --rate=48000 \
+              --channels=2 --format=s16le --raw \
+              >"runtime-evidence/${label}.pcm" \
+              2>"runtime-evidence/${label}-parec.log" &
+            recorder=$!
+            sleep 1
+            timeout --kill-after=5s 40s xvfb-run -a -s "-screen 0 1280x720x24" \
+              "$NEXIUM_BIN" "$nro" \
+              >"runtime-evidence/${label}-guest.log" 2>&1 &
+            guest=$!
+            for sample in 1 2 3; do
+              sleep 10
+              {
+                echo "=== $label sink input $sample ==="
+                pactl list sink-inputs
+              } >>"runtime-evidence/${label}-sinks.txt"
+            done
+            guest_exit=0
+            wait "$guest" || guest_exit=$?
+            echo "$guest_exit" >"runtime-evidence/${label}-guest-status.txt"
+            kill -INT "$recorder" 2>/dev/null || true
+            wait "$recorder" 2>/dev/null || true
+            test -s "runtime-evidence/${label}.pcm"
+            echo "$label: PCM bytes $(wc -c <"runtime-evidence/${label}.pcm")"
+          }
+          capture "video-only" nros/control.nro
+          capture "native-audio" nros/experiment.nro
+          python3 tools/verify_map02_audio_control.py \
+            --control-pcm runtime-evidence/video-only.pcm \
+            --audio-pcm runtime-evidence/native-audio.pcm \
+            --control-nro nros/control.nro \
+            --audio-nro nros/experiment.nro \
+            --manifest nros/manifest.json \
+            --audio-sinks runtime-evidence/native-audio-sinks.txt \
+            --output runtime-evidence/map02-control-contrast-report.json
+      - name: Archive JSON, recordings and observation logs even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-negative-control-virtual-pcm-evidence
+          path: runtime-evidence/
+          if-no-files-found: warn
