@@ -84,7 +84,7 @@ def _require_entry_in_executable_load(segments, entry, file_size):
         except ValueError:
             raise ValueError("MAP02 PC ELF has malformed load program headers") from None
         if (file_bytes > mem_bytes or offset + file_bytes > file_size or
-                vaddr + mem_bytes > 1 << 64 or file_bytes == 0):
+                vaddr + mem_bytes > 1 << 64):
             raise ValueError("MAP02 PC ELF has invalid executable load extent")
         loads += 1
         if "E" in parts[6:-1] and vaddr <= entry < vaddr + file_bytes:
