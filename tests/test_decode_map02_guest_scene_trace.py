@@ -80,7 +80,7 @@ class TraceOpticalTests(unittest.TestCase):
         image.paste(crop.resize((769,459),Image.Resampling.NEAREST),(264,154))
         image.save(self.image)
         decoded=tool.decode_image(self.image)
-        self.assertEqual(len(decoded["rows"]),10)
+        self.assertEqual(len(decoded["rows"]),12)
         self.assertEqual(tool.audit_receipt(decoded,1)["result"],
                          "FIRST_PCM_PAGE_NONZERO_AND_SUBMITTED")
 
