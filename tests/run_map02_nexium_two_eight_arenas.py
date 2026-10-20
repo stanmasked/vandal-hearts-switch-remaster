@@ -16,7 +16,9 @@ from run_map02_nexium_4v4 import (
     NeXiumPad, HERO, ENEMY, ACTED, BOARD, cmd, diff, read, tile,
 )
 
-ARENA_TAG = (980, 481, 1190, 523)
+# Measured against genuine NeXium 1280x720 PNGs: the second-arena
+# identifier starts at Y=473. Previous ROI Y=481 missed every glyph.
+ARENA_TAG = (965, 465, 1190, 488)
 
 
 def verify(folder: Path):
