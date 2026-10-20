@@ -13,7 +13,10 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INPUT = ROOT / "data/map02_roster8_4v4.json"
 FIXTURE_ID = "map02_capacity_smoke_4v4"
+SECOND_FIXTURE_ID = "map02_capacity_smoke_second_4v4"
 SYMBOL = "VH_MAP02_ROSTER8_SMOKE"
+SECOND_SYMBOL = "VH_MAP02_ROSTER8_SECOND"
+SECOND_INPUT = ROOT / "data/map02_roster8_second_4v4.json"
 
 
 def unique_pairs(pairs):
@@ -44,11 +47,11 @@ def point(v, label):
             number(v[1], 0, 5, label + ".y"))
 
 
-def parse(data):
+def parse(data, fixture_id=FIXTURE_ID):
     d = exact_keys(data, {"schema_version", "id", "board", "allies",
                           "enemies", "cursor"}, "root")
     number(d["schema_version"], 2, 2, "schema_version")
-    if type(d["id"]) is not str or d["id"] != FIXTURE_ID:
+    if type(d["id"]) is not str or d["id"] != fixture_id:
         raise ValueError("unsupported independent fixture ID")
     board = exact_keys(d["board"], {"width", "height", "blocked"}, "board")
     number(board["width"], 8, 8, "board.width")
@@ -84,33 +87,50 @@ def parse(data):
     return walls, groups[0] + groups[1], len(d["allies"]), len(d["enemies"]), cursor
 
 
-def render(data):
-    walls, units, allies, enemies, cursor = parse(data)
+def render(data, fixture_id=FIXTURE_ID, symbol=SYMBOL,
+           guard="VH_MAP02_ROSTER8_SMOKE_H"):
+    if fixture_id not in (FIXTURE_ID, SECOND_FIXTURE_ID):
+        raise ValueError("unsupported independent fixture ID")
+    if (symbol, guard) not in (
+            (SYMBOL, "VH_MAP02_ROSTER8_SMOKE_H"),
+            (SECOND_SYMBOL, "VH_MAP02_ROSTER8_SECOND_H")):
+        raise ValueError("unsupported generated C symbol or include guard")
+    if (fixture_id == FIXTURE_ID) != (symbol == SYMBOL):
+        raise ValueError("fixture ID and generated symbol do not correspond")
+    walls, units, allies, enemies, cursor = parse(data, fixture_id)
     actor_lines = ", ".join("{{{}, {}, {}, {}}}".format(*u) for u in units)
     wall_line = ", ".join(f"0x{x:02X}" for x in walls)
     return (
         "/* GENERATED independent MAP02 capacity smoke; no retail assets. */\n"
-        "#ifndef VH_MAP02_ROSTER8_SMOKE_H\n"
-        "#define VH_MAP02_ROSTER8_SMOKE_H\n"
-        f"static const VhRoster8 {SYMBOL} = {{\n"
+        f"#ifndef {guard}\n"
+        f"#define {guard}\n"
+        f"static const VhRoster8 {symbol} = {{\n"
         f"    {{{actor_lines}}},\n"
         f"    {{{wall_line}}},\n"
         f"    {allies}, {enemies},\n"
         f"    {cursor[0]}, {cursor[1]}\n"
         "};\n"
-        "#endif /* VH_MAP02_ROSTER8_SMOKE_H */\n"
+        f"#endif /* {guard} */\n"
     )
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
+    parser.add_argument("--scene", choices=("primary", "secondary"),
+                        default="primary")
+    parser.add_argument("--input", type=Path, default=None)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
-        data = json.loads(args.input.read_text(encoding="utf-8"),
+        is_second = args.scene == "secondary"
+        input_path = args.input or (SECOND_INPUT if is_second else DEFAULT_INPUT)
+        data = json.loads(input_path.read_text(encoding="utf-8"),
                           object_pairs_hook=unique_pairs)
-        result = render(data)
+        result = (
+            render(data, SECOND_FIXTURE_ID, SECOND_SYMBOL,
+                   "VH_MAP02_ROSTER8_SECOND_H")
+            if is_second else render(data)
+        )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(result, encoding="utf-8")
     except (ValueError, OSError, UnicodeError) as exc:
