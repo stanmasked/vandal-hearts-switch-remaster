@@ -453,6 +453,33 @@ int main(int argc, char **argv) {
     /* This is the only blocking audio join; never wait during a frame. */
     if (audio_started) {
         appletUnhook(&audio_focus_hook);
+#if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+        /* RESEARCH-ONLY: make a cooperative stop request, then draw an
+         * atomic pre-join snapshot on the existing main framebuffer.
+         * This happens BEFORE the following potentially blocking join;
+         * it neither touches PCM memory nor calls a second audout API.
+         * Holding eight seconds changes only experimental teardown,
+         * never the default Switch game audio build. */
+        if(vh_switch_game_audio_presubmit_request_stop()==0) {
+            svcSleepThread(1000000000LL);
+            u32 stage_stride_bytes=0;
+            u32 *stage_pixels=(u32 *)framebufferBegin(
+                &fb,&stage_stride_bytes);
+            if(stage_pixels) {
+                VhCanvas stage_canvas={
+                    (uint32_t *)stage_pixels,
+                    (size_t)(stage_stride_bytes/sizeof(u32)),
+                    FB_WIDTH,FB_HEIGHT
+                };
+                (void)vh_switch_game_audio_presubmit_stage_render(
+                    &stage_canvas,RGBA8_MAXALPHA(0,0,0),
+                    RGBA8_MAXALPHA(255,255,255),
+                    RGBA8_MAXALPHA(255,0,255));
+            }
+            framebufferEnd(&fb);
+            svcSleepThread(8000000000LL);
+        }
+#endif
         vh_switch_game_audio_stop();
 #if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
         /* No worker-thread stdout, writes or allocated PCM pointers. */
