@@ -38,6 +38,62 @@ def digest(path):
     return h.hexdigest()
 
 
+def stable_relocatable_output(path, *, expected=None):
+    """Bind the partial ELF's bytes and inode to two reads of one descriptor.
+
+    A same-byte replacement at the output pathname is not equivalent to
+    retaining the linked object. This is a bounded audit, not a filesystem
+    lock against an attacker who can concurrently modify owner-owned files.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags)
+    try:
+        info = os.fstat(fd)
+
+        def identity(item):
+            return (item.st_dev, item.st_ino, item.st_uid,
+                    stat.S_IMODE(item.st_mode), item.st_nlink,
+                    item.st_size, item.st_mtime_ns, item.st_ctime_ns)
+
+        anchor = identity(info)
+        if (not stat.S_ISREG(info.st_mode)
+                or info.st_uid != os.geteuid()
+                or info.st_nlink != 1
+                or stat.S_IMODE(info.st_mode) != 0o600
+                or info.st_size < 1024):
+            raise ValueError("untrusted original PC partial ELF output metadata")
+
+        def check_identity():
+            if (identity(os.fstat(fd)) != anchor
+                    or identity(os.stat(path, follow_symlinks=False)) != anchor):
+                raise ValueError("original PC partial ELF output inode or metadata changed")
+
+        check_identity()
+        results = []
+        for _ in range(2):
+            os.lseek(fd, 0, os.SEEK_SET)
+            hashed = hashlib.sha256()
+            count = 0
+            while True:
+                block = os.read(fd, 1024 * 1024)
+                if not block:
+                    break
+                hashed.update(block)
+                count += len(block)
+            if count != info.st_size:
+                raise ValueError("original PC partial ELF output short descriptor read")
+            check_identity()
+            results.append(hashed.hexdigest())
+        if results[0] != results[1]:
+            raise ValueError("original PC partial ELF output bytes changed")
+        proof = (results[0], anchor)
+        if expected is not None and proof != expected:
+            raise ValueError("original PC partial ELF output differs from linked proof")
+        return proof
+    finally:
+        os.close(fd)
+
+
 def make_inventory(upstream, bundle, *, make="make"):
     pc = Path(upstream).absolute() / "platform/pc"
     overlay = Path(bundle).absolute() / "map02_cycle.mk"
@@ -142,22 +198,36 @@ def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
         # Linker diagnostics can include private checkout locations and
         # arguments. Keep stderr out of the public audit/CLI output.
         raise ValueError("original public CD/GPU combined ld -r link failed")
-    if output.is_symlink() or not output.is_file():
-        raise ValueError("missing original public relocatable output")
-    output.chmod(0o600)
-    if output.stat().st_size < 1024:
-        raise ValueError("original public relocatable ELF was unexpectedly short")
+    # Never chmod a pathname without first anchoring the linked inode.
+    # The private output folder (0700) already prevents other users from
+    # reading ld's temporary output before this 0600 permissions change.
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(output, flags)
+    try:
+        info = os.fstat(fd)
+        if (not stat.S_ISREG(info.st_mode)
+                or info.st_uid != os.geteuid() or info.st_nlink != 1
+                or (info.st_dev, info.st_ino) !=
+                   (os.stat(output, follow_symlinks=False).st_dev,
+                    os.stat(output, follow_symlinks=False).st_ino)):
+            raise ValueError("untrusted original PC partial ELF output")
+        os.fchmod(fd, 0o600)
+    finally:
+        os.close(fd)
+    output_proof = stable_relocatable_output(output)
     checked = inspect_relocatable(output)
+    stable_relocatable_output(output, expected=output_proof)
     if [digest(path) for path in sources] != initial:
         raise ValueError("original PC objects changed during public partial link")
     if audit_objects(upstream, bundle, make=make) != before:
         raise ValueError("pinned original public source/code inventory changed")
     preflight(upstream, bundle)
+    stable_relocatable_output(output, expected=output_proof)
     return {
         "schema": "vh.map02.public-source-partial-elf-link.v1",
         "public_game_object_count": len(objects[0]),
         "backend_and_observer_object_count": len(objects[1]),
-        "relocatable_elf_sha256": digest(output),
+        "relocatable_elf_sha256": output_proof[0],
         **checked,
         "fully_linked_game_executable": False,
         "retail_game_assets_linked": False,
