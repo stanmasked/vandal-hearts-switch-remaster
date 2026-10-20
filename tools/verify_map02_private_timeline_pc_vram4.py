@@ -16,6 +16,7 @@ import stat
 import struct
 import subprocess
 import tempfile
+from typing import Optional
 
 from tools.publish_map02_blendg1_witness import _private_directory
 from tools.verify_map02_frame_bundle import (
@@ -97,7 +98,7 @@ int main(void) {
 """
 
 
-def make_harness(public_source: bytes, *, portable_header: str | None = None) -> str:
+def make_harness(public_source: bytes, *, portable_header: Optional[str] = None) -> str:
     if git_blob_sha1(public_source) != PINNED_RASTER_BLOB:
         raise ValueError("public PC raster is not the pinned Git blob")
     functions = extract_sample_functions(public_source.decode("utf-8"))
@@ -132,7 +133,7 @@ def snapshot_inputs(root: Path, count: int) -> tuple:
 
 def verify_private_timeline(
     directory: Path, pinned_raster: Path, *, compiler: str = "gcc",
-    portable_header: str | None = None,
+    portable_header: Optional[str] = None,
 ) -> dict:
     root = _private_directory(directory)
     raster = Path(pinned_raster).absolute()
