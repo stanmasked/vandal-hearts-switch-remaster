@@ -52,6 +52,11 @@ jobs:
           assert sum(e["result"] == "linear" for e in x["edges"]) == 24
           assert x["core_audit"]["integration_merge_performed"] is False
           assert len(x["core_audit"]["preserved_files"]) == 4
+          reconciliation = x["divergent_tree_reconciliation"]
+          assert reconciliation["edge"] == [262, 265]
+          assert reconciliation["tree_identical"] is True
+          assert reconciliation["history_rewritten"] is False
+          assert reconciliation["simulated_merge_tree"] == reconciliation["unchanged_downstream_tree"]
           assert not x["forbidden_added_assets"]
           PY
       - name: Save the read-only integration evidence
