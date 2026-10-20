@@ -10,6 +10,7 @@ on:
       - 'tests/run_map02_nexium_roster_variants.py'
       - 'source/map02_roster8_variants.h'
       - 'tests/test_map02_nexium_4v4_oracle.py'
+      - 'tests/test_map02_roster_variants_oracle.py'
       - 'tests/test_map02_roster8_variants.c'
       - 'data/map02_roster8_4v4.json'
       - 'tools/generate_map02_roster8.py'
@@ -53,6 +54,7 @@ jobs:
           set -euo pipefail
           python3 -m py_compile tests/run_map02_nexium_4v4.py tests/run_map02_nexium_roster_variants.py tests/test_map02_nexium_4v4_oracle.py
           python3 -m unittest discover -s tests -p 'test_map02_nexium_4v4_oracle.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_roster_variants_oracle.py' -v
           echo 'VH_MAP02_ROSTER_SELECT_ORACLE_PASS base_images=synthetic no_emulator_claim=1'
   build-4v4-nro:
     name: Build real optional 4v4 devkitPro/libnx NRO
