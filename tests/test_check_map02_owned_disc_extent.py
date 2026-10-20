@@ -49,6 +49,9 @@ class OwnedMap02DiscExtentTests(unittest.TestCase):
                 pos = lba + 150
                 raw[12:15] = bytes((_bcd(pos // 4500),
                                     _bcd(pos // 75 % 60), _bcd(pos % 75)))
+                raw[15] = 2  # CD-ROM XA Mode 2
+                raw[16:20] = b"\x01\x00\x08\x00"
+                raw[20:24] = raw[16:20]  # mirrored XA Form 1 subheader
                 if lba == BOOT_LBA_US:
                     raw[24:32] = b"PS-X EXE"
                 else:
@@ -83,6 +86,37 @@ class OwnedMap02DiscExtentTests(unittest.TestCase):
             f.write(b"\x00")
         with self.assertRaisesRegex(ValueError, "MSF"):
             self.check()
+
+    def test_rejects_mode1_sectors_even_with_valid_sync_and_msf(self):
+        with self.image.open("r+b") as f:
+            f.seek(self.first * SECTOR_RAW + 15)
+            f.write(b"\x01")
+        with self.assertRaisesRegex(ValueError, "not XA Mode 2"):
+            self.check()
+
+    def test_rejects_form2_payload_masquerading_as_2048_byte_form1(self):
+        with self.image.open("r+b") as f:
+            for offset in (18, 22):  # both mirrored submode bytes
+                f.seek(self.first * SECTOR_RAW + offset)
+                f.write(b"\x28")  # FORM2 (0x20) plus DATA (0x08)
+        with self.assertRaisesRegex(ValueError, "Form 2, not Form 1"):
+            self.check()
+
+    def test_rejects_inconsistent_xa_subheader_copies(self):
+        with self.image.open("r+b") as f:
+            f.seek(self.first * SECTOR_RAW + 21)
+            f.write(b"\x07")
+        with self.assertRaisesRegex(ValueError, "subheader copies differ"):
+            self.check()
+
+    def test_matching_nonzero_form1_subheaders_are_accepted(self):
+        # Ordinary Form 1 headers can carry nonzero file/channel/coding
+        # information; only malformed copies or Form 2 are rejected.
+        header = b"\x04\x02\x08\x01"
+        with self.image.open("r+b") as f:
+            f.seek(self.first * SECTOR_RAW + 16)
+            f.write(header + header)
+        self.assertEqual(self.check()["resource_sector_count"], self.count)
 
     def test_rejects_truncated_and_nonprivate_or_linked_images(self):
         with self.image.open("r+b") as f:
