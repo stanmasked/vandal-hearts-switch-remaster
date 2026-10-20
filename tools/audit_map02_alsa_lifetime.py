@@ -76,7 +76,25 @@ def parse(path,first_input_ns=None,last_observation_ns=None):
         eligible=[e for e in events if e["rate_hz"]==48000 and e["channels"]==2]
         other=[e for e in events if e["rate_hz"]!=48000 or e["channels"]!=2]
         label="mixed" if eligible and other else ("48k_stereo" if eligible else "other_or_unknown")
+        # Approximate controller-input window: compare a snapshot no
+        # later than the first input to the latest sampled state close to
+        # the final observation. No baseline => unknown, not zero.
+        before_input=[e for e in events
+                      if first_input is not None and e["t"]<=first_input]
+        close_to_final=[e for e in events
+                        if final is not None and
+                        final-1000000000<=e["t"]<=beats[-1]]
+        coverage=bool(before_input and close_to_final)
+        baseline=before_input[-1] if coverage else None
+        final_sample=close_to_final[-1] if coverage else None
         totals[str(ident)]={
+            "input_to_final_sample_window_covered":coverage,
+            "input_to_final_sample_delta_write_calls":(
+                final_sample["write_calls"]-baseline["write_calls"]
+                if coverage else None),
+            "input_to_final_sample_delta_positive_frames":(
+                final_sample["positive_frames"]-baseline["positive_frames"]
+                if coverage else None),
             "format_class":label,
             "sampled_snapshots":len(events),
             "first_ns":events[0]["t"],"last_ns":events[-1]["t"],
