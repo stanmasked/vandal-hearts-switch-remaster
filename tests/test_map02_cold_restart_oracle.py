@@ -145,6 +145,25 @@ class ColdRestartOracle(unittest.TestCase):
             self.change(folder, "boot2_bow_hit", mutate)
         self.case(bad, "non-deterministic on guard HUD")
 
+    @staticmethod
+    def change_one_rgb_channel(im, x, y):
+        """Produce a real RGB difference of exactly one, below semantic tolerance."""
+        rgb = list(im.getpixel((x, y)))
+        rgb[0] += 1 if rgb[0] < 255 else -1
+        im.putpixel((x, y), tuple(rgb))
+
+    def test_reject_single_channel_one_unit_board_difference(self):
+        self.case(lambda f: self.change(
+            f, "boot2_bow_ready",
+            lambda im: self.change_one_rgb_channel(im, 740, 445)),
+            "non-deterministic on BOARD")
+
+    def test_reject_single_channel_one_unit_hud_difference(self):
+        self.case(lambda f: self.change(
+            f, "boot2_bow_hit",
+            lambda im: self.change_one_rgb_channel(im, 1040, 556)),
+            "non-deterministic on guard HUD")
+
     def test_reject_wrong_dimensions(self):
         self.case(lambda f: Image.new("RGB", (640, 360)).save(
             f / "boot2_legacy.png"), "unexpected NeXium screenshot")
