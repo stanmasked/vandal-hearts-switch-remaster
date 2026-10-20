@@ -7,6 +7,7 @@ causal queue-depth, kernel call-site, host epoch, or physical audio inference.
 """
 from __future__ import annotations
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -27,6 +28,16 @@ MISSING_PROBE_NAMES=(
     "audio-exit-probe-context-000.csv",
     "guest-exit-probe-context-stage360.json",
 )
+# Exact preserved JSON original guest receipts from the old 0xEA01 run.
+# Parsing the original CSV families alone is not a license to exchange
+# their associated historical receipt bytes with another execution.
+TIMEOUT_ORIGINAL_RECEIPT_SHA256={
+    "stage313":"ca3a1727c03e400d594c3246863bff7c391805219c1d2d7e875a8ca9ab0ec2ac",
+    "stage314":"c648fcc360e9c36aeb0164e92d3c1abeba4ebc5a7be6f397c545e47c04bcf1fe",
+    "stage348":"5858aeb3bac7ac2ce9040032f7e56172338e3d0acb85dbab9244ac1cfcf55469",
+    "stage351":"2b94dba79b35fb8d464988242a862dee4da5fa0ac1b6dfab4daa7fa65a843b63",
+    "stage357":"862a0ca78fb570dfc2502119eb2010e8a6b3eb90efdbf5e693a48c49cc90505a",
+}
 
 def safe_files(root:Path, names:dict[str,str])->dict[str,Path]:
     if not root.is_dir() or any(x.is_symlink() for x in (root,*root.parents)):
@@ -45,6 +56,9 @@ def safe_files(root:Path, names:dict[str,str])->dict[str,Path]:
 
 def old_capture(root:Path)->dict:
     files=safe_files(root,TIMEOUT_SOURCES)
+    for key,sha in TIMEOUT_ORIGINAL_RECEIPT_SHA256.items():
+        if hashlib.sha256(files[key].read_bytes()).hexdigest()!=sha:
+            raise ValueError("authentic historical timeout receipt SHA-256 changed: "+key)
     # Explicitly establish that NO pairable Stage360 old-queue reading exists.
     # Treat missing evidence as unknown, NEVER infer zero or inherit data
     # from the separately successful guest run.
@@ -75,6 +89,7 @@ def old_capture(root:Path)->dict:
         or checked.get("underlying_event_wait_call_site_uniquely_proven") is not False
         or checked.get("physical_Nintendo_Switch_audio_tested") is not False):
         raise ValueError("authentic old kernel timeout source not independently proven")
+    checked["original_timeout_guest_receipt_sha256"]=dict(TIMEOUT_ORIGINAL_RECEIPT_SHA256)
     return checked
 
 def compare(timeout:dict,success:dict)->dict:
@@ -87,6 +102,7 @@ def compare(timeout:dict,success:dict)->dict:
         or TIMEOUT_RUN==SUCCESS_RUN
         or timeout.get("result")!=TIMEOUT_VERIFIED
         or success.get("result")!=SUCCESS_VERIFIED
+        or timeout.get("original_timeout_guest_receipt_sha256")!=TIMEOUT_ORIGINAL_RECEIPT_SHA256
         or timeout.get("source_sha256")!={
             "stage313":TIMEOUT_TAIL_SHA,"stage348":TIMEOUT_LEASE_SHA,
             "stage351":TIMEOUT_REASON_SHA,"stage357":TIMEOUT_WAIT_SHA,
@@ -135,6 +151,7 @@ def compare(timeout:dict,success:dict)->dict:
         "success_original_run_id":SUCCESS_RUN,
         "two_distinct_original_archives_reaudited":True,
         "timeout_stage313_348_351_357_sha256":timeout["source_sha256"],
+        "timeout_original_guest_receipt_sha256":dict(TIMEOUT_ORIGINAL_RECEIPT_SHA256),
         "success_stage313_348_351_sha256":{
             "stage313":success["stage313_original_tail_csv_sha256"],
             "stage348":success["stage348_original_lease_csv_sha256"],
