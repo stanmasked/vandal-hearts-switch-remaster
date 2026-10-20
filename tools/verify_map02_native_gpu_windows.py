@@ -88,6 +88,7 @@ def verify_native_windows(directory, *, target_frame):
     # the texture window / draw mode at the next native event.
     last_operation = None
     last_draw_post_state = None
+    last_draw_post_env = None
     logs_hash = hashlib.sha256()
     file_tree_hash = hashlib.sha256()
     for idx in range(window_count):
@@ -142,6 +143,9 @@ def verify_native_windows(directory, *, target_frame):
                         last_draw_post_state):
                     raise ValueError(
                         "GPU state continuity broken at native window boundary")
+                if first.get("draw_env") != last_draw_post_env:
+                    raise ValueError(
+                        "DRAWENV continuity broken at native window boundary")
             if last_vram is not None and last_vram != hashlib.sha256(
                     before_vram).digest():
                 raise ValueError("GPU VRAM continuity broken at native event/window boundary")
@@ -150,6 +154,9 @@ def verify_native_windows(directory, *, target_frame):
             last_draw_post_state = (
                 (second["window"], second["draw_mode"])
                 if last_operation == "draw" else None
+            )
+            last_draw_post_env = (
+                second.get("draw_env") if last_operation == "draw" else None
             )
             seen += 2
         logs_hash.update(log)
