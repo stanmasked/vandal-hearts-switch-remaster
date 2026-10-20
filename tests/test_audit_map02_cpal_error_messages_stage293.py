@@ -78,9 +78,16 @@ class ErrorLogTests(unittest.TestCase):
         self.assertEqual(scan_host_log(self.file)["original_stdout_sha256"],
                          hashlib.sha256(raw).hexdigest())
 
-    def test_stdout_empty_fails_closed(self):
+    def test_existing_empty_stdout_is_valid_explicit_no_message_observation(self):
         self.file.write_bytes(b"")
-        with self.assertRaisesRegex(ValueError,"empty"):
+        out=scan_host_log(self.file)
+        self.assertTrue(out["original_stdout_is_empty"])
+        self.assertEqual(out["cpal_stream_error_log_line_count_all_times"],0)
+        self.assertEqual(out["original_stdout_sha256"],hashlib.sha256(b"").hexdigest())
+
+    def test_missing_stdout_fails_closed(self):
+        self.file.unlink()
+        with self.assertRaisesRegex(ValueError,"missing"):
             scan_host_log(self.file)
 
     def test_stdout_oversized_fails_closed(self):
