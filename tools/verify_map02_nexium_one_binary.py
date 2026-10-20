@@ -82,6 +82,29 @@ def verify_host_links(root, source, run_id):
     }
 
 
+
+def verify_evidence_attempts(root, source, run_id):
+    """All original NRO and guest artifacts must originate in one attempt.
+
+    GitHub run ID alone is insufficient when jobs from a rerun can retain
+    artifacts from a previous attempt. No SHA equality may override this.
+    """
+    host = read(root / "map02-nexium-once-binary" / "manifest.json")
+    attempt = host["attempt"]
+    files = [root / "map02-audout-presubmit-research-nro" / "manifest.json"]
+    files.extend(root / f"map02-presubmit-nexium-guest-proof-{ms}-r{rep}"
+                 / "manifest.json" for ms in (21, 22) for rep in (1, 2, 3))
+    for file in files:
+        data = read(file)
+        require(data.get("schema") == "vh-map02-presubmit-guest-nro/v1" and
+                data.get("source_sha") == source and
+                data.get("run_id") == run_id and
+                type(data.get("attempt")) is int and
+                data["attempt"] == attempt,
+                f"Cross-attempt research NRO or guest artifact: {file}")
+    return attempt
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--root", required=True, type=Path)
@@ -91,6 +114,8 @@ def main():
     opts = ap.parse_args()
     try:
         identity = verify_host_links(opts.root,opts.source_sha,opts.run_id)
+        identity["verified_run_attempt"] = verify_evidence_attempts(
+            opts.root,opts.source_sha,opts.run_id)
         # Don't claim audit complete from copied manifests alone: CRC-8
         # PNGs, real PCM bytes and NRO digest must all independently match.
         evidence = audit(opts.root,opts.source_sha,opts.run_id)
