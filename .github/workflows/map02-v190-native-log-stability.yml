@@ -1,0 +1,31 @@
+name: MAP02 v190 private native PCSX log identity and SHA-256 stability
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v190-native-log-stability.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/check_map02_v190_native_log_stability.py'
+      - 'tests/test_map02_v190_native_log_stability.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-log-stability-model:
+    name: Private native log inode and digest invariance (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject private log byte edits, swaps, links and missing files
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/check_map02_v190_native_log_stability.py tests/test_map02_v190_native_log_stability.py
+          python3 -m unittest discover -s tests -p 'test_map02_v190_native_log_stability.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v189_adversarial_native_logs.py' -v
+          echo 'VH190_INDEPENDENT_LOG_STABILITY_PASS modes=10 corruption_rejections=159 original_retail_executed=0'
