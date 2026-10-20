@@ -74,6 +74,28 @@ The full-stack audit now verifies both:
 Even identical trees do **not** mean the Git histories are identical; the
 historical divergence remains explicitly recorded.
 
+## Full-chain virtual integration rehearsal (object-only)
+
+Before any real merge, `tools/rehearse_map02_full_stack.py` simulates the
+complete sequence of **26 individual merges** starting from the pinned
+`origin/main` commit, in precisely the manifest order. Each intermediate
+`git merge-tree --write-tree` must have no conflicts **and** produce the
+exact same Git tree SHA as the reviewed downstream PR at that step. This
+prevents silent reintroduction of older-only files even if Git sees no conflict.
+
+The tool then creates an **unreferenced temporary Git commit object** using
+`git commit-tree` to model the parents of the following merge. This writes
+objects only to the ephemeral CI runner's local Git object database; **no
+branch, tag, worktree, index, remote repository, or PR is changed**. The final
+simulated tree must equal the checked-out PR #352 tree, byte for byte.
+
+The required CI produces `virtual-merge.json` listing all 26 source commits,
+their expected/rehearsed tree hashes, and ephemeral commit hashes. Five
+synthetic tests prove successful linear/copied-history replay and rejection
+of conflicts, silent revived files and incorrect final heads. A successful
+rehearsal is an integration *safety proof for the pinned snapshot*, not a
+claim that any branch was merged, or that its tests passed after a real merge.
+
 ## Human-gated integration procedure
 
 For each PR, beginning at #241:
