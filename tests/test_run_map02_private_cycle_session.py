@@ -1,0 +1,685 @@
+"""Synthetic one-shot MAP02 execution sequencing; never launch owned game."""
+from contextlib import redirect_stderr, redirect_stdout
+import io
+import json
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import tools.run_map02_private_cycle_session as runner
+
+
+class PrivateOneShotCycleTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="vh-map02-one-shot-")
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.roles = ("source", "native", "scoped", "handoff",
+                      "cycle", "preview", "rgb", "seal")
+        self.folders = [self.root / name for name in self.roles]
+        for folder in self.folders:
+            folder.mkdir(mode=0o700)
+        self.disc = self.root / "owned-synthetic-disc"
+        self.upstream = self.root / "pinned-synthetic-source"
+        self.elf = self.root / "synthetic-elf"
+        self.receipt = self.root / "synthetic-build-receipt"
+        self.bundle = self.root / "synthetic-build-bundle"
+        self.plan = b'{"test":"only synthetic input"}\n'
+        self.plan_identity = (1, 11, 22, 0o100600, 1, len(self.plan), 3, 4)
+        self.mocks = {}
+        self.ready_report = {
+            "schema": "vh.map02.private-pc-cycle-readiness.v1",
+            "private_directories_checked": 7,
+            "capture_folders_empty": 5,
+            "source_bound_plan_checked": True,
+            "original_pc_source_identity_checked": True,
+            "complete_pc_elf_symbols_checked": True,
+            "complete_pc_elf_bytes_checked": True,
+            "private_original_image_bytes_checked": True,
+            "pinned_full_elf_build_receipt_checked": True,
+            "prelaunch_inputs_stable_across_checks": True,
+            "ready_for_controlled_local_launch": True,
+            "gameplay_process_started": False,
+            "original_map02_rendering_proven": False,
+            "hardware_ps1_equivalence_proven": False,
+            "game_content_emitted": False,
+        }
+        # Retain true production implementations before this test case's
+        # synthetic mocks replace them. Standalone filesystem tests below
+        # must inspect actual on-disk inode/mtime rather than mock tuples.
+        self.real_input_identity = runner._private_input_identity
+        self.real_receipt_directory_identity = runner._receipt_directory_identity
+        simulated = {
+            # Original game inputs are not present in synthetic CI. These
+            # identities are mocked like the existing complete preflight;
+            # targeted tests independently exercise drift rejection.
+            "_private_input_identity": (1, 21, 22, 0o100600, 1, 256, 3, 4),
+            "_receipt_directory_identity": (1, 100, 22, 0o40700, 3, 4),
+            "private_file": (self.plan, self.plan_identity),
+            "_validate_plan": {"target_gpu_draw_frame": 12},
+            "verify_private_cycle_readiness": self.ready_report,
+            "inspect_private_launch_layout": {
+                "schema": "vh.map02.prelaunch-directory-layout.v1",
+                "prelaunch_layout_ready": True,
+                "private_directory_roles_checked": 7,
+                "capture_output_directories_empty": 5,
+                "single_private_handoff_plan_present": True,
+                "original_pc_elf_verified": False,
+                "original_game_image_verified": False,
+                "original_gameplay_executed": False,
+                "map02_frame_authenticated": False,
+                "private_game_bytes_read": False},
+            "launch_observed_pc": {
+                "kernel_executable_hash_matched": True,
+                "same_process_gpu_scoped_nonce_checked": True,
+                "pc_preoverlay_capture_session_bound": True},
+            "finalize_private_capture": {
+                "independently_verified_cd_gpu_process_and_rgb24_png": True,
+                "gpu_draw_frame": 12,
+                "original_map02_rendering_proven": False},
+            "seal_final_capture": {
+                "two_independent_readonly_final_audits": True,
+                "postpublication_independent_verification_completed": True,
+                "gpu_draw_frame": 12,
+                "private_final_seal_sha256": "a" * 64},
+            "verify_final_seal": {
+                "sealed_evidence_independently_reverified": True,
+                "gpu_draw_frame": 12,
+                "private_final_seal_sha256": "a" * 64,
+                "original_map02_rendering_proven": False},
+        }
+        for name, result in simulated.items():
+            handle = patch.object(runner, name, return_value=result)
+            self.mocks[name] = handle.start()
+            self.addCleanup(handle.stop)
+
+    def execute(self, **kwargs):
+        options = dict(frame=12, x=10, y=20,
+                       allow_local_completion=True)
+        options.update(kwargs)
+        return runner.execute_private_map02_cycle(
+            *self.folders, self.disc, self.upstream, self.elf,
+            self.receipt, self.bundle, **options)
+
+    def test_full_one_shot_order_and_only_non_game_report(self):
+        order = []
+        for name in ("verify_private_cycle_readiness",
+                     "launch_observed_pc", "finalize_private_capture",
+                     "seal_final_capture", "verify_final_seal"):
+            original = self.mocks[name].return_value
+            self.mocks[name].side_effect = lambda *a, _name=name, _r=original, **kw: (
+                order.append(_name) or _r)
+        result = self.execute()
+        self.assertEqual(order, [
+            "verify_private_cycle_readiness", "launch_observed_pc",
+            "finalize_private_capture", "seal_final_capture",
+            "verify_final_seal"])
+        self.assertEqual(result["gpu_draw_frame"], 12)
+        self.assertEqual(result["private_final_seal_sha256"], "a" * 64)
+        self.assertTrue(result["private_completion_seal_independently_reverified"])
+        self.assertFalse(result["original_map02_rendering_proven"])
+        self.assertFalse(result["physical_ps1_equivalence_proven"])
+        self.assertFalse(result["private_game_files_uploaded"])
+        options = self.mocks["launch_observed_pc"].call_args.kwargs
+        self.assertIs(options["require_complete_preflight"], True)
+        self.assertIs(options["stop_after_present"], True)
+        self.assertIs(self.mocks["finalize_private_capture"].call_args.kwargs[
+            "complete_missing"], True)
+        self.assertEqual(
+            self.mocks["verify_final_seal"].call_count, 1)
+
+    def test_stage_callback_tracks_only_fixed_public_diagnostic_stages(self):
+        recorded = []
+        result = self.execute(stage_callback=recorded.append)
+        self.assertTrue(result["private_completion_seal_independently_reverified"])
+        self.assertEqual(recorded, list(runner.SAFE_STAGES))
+        self.assertNotIn(str(self.elf), repr(recorded))
+        self.assertNotIn(str(self.disc), repr(recorded))
+
+    def test_cli_failed_stages_do_not_disclose_original_paths_or_exceptions(self):
+        private = "/private/owned-original/SLUS_004.47"
+        args = ["private-one-shot"] + [str(x) for x in self.folders] + [
+            str(self.disc), "--upstream-checkout", str(self.upstream),
+            "--pc-binary", str(self.elf), "--build-receipt-dir",
+            str(self.receipt), "--build-bundle-dir", str(self.bundle),
+            "--frame", "12", "--x", "10", "--y", "20",
+            "--allow-local-completion"]
+        for function, phase in (
+            ("verify_private_cycle_readiness", "full-preflight"),
+            ("launch_observed_pc", "observed-process"),
+            ("finalize_private_capture", "capture-finalization"),
+            ("seal_final_capture", "seal-publication"),
+            ("verify_final_seal", "seal-verification"),
+        ):
+            with self.subTest(phase=phase):
+                stderr = io.StringIO()
+                original = self.mocks[function].side_effect
+                self.mocks[function].side_effect = ValueError(
+                    "private source unavailable: " + private)
+                try:
+                    with patch("sys.argv", args), redirect_stderr(stderr):
+                        with self.assertRaises(SystemExit) as exit_result:
+                            runner.main()
+                    self.assertEqual(exit_result.exception.code, 2)
+                    self.assertIn("stage=" + phase, stderr.getvalue())
+                    self.assertIn("one-shot execution/finalization unavailable",
+                                  stderr.getvalue())
+                    self.assertNotIn(private, stderr.getvalue())
+                    self.assertNotIn(str(self.elf), stderr.getvalue())
+                finally:
+                    self.mocks[function].side_effect = original
+
+    def test_dry_run_reuses_private_readiness_but_never_starts_game(self):
+        milestones = []
+        status = self.execute(
+            dry_run=True, allow_local_completion=False,
+            stage_callback=milestones.append)
+        self.assertEqual(status["schema"], "vh.map02.private-one-shot-dry-run.v1")
+        self.assertEqual(status["gpu_draw_frame"], 12)
+        self.assertTrue(status["ready_for_controlled_local_launch"])
+        self.assertTrue(status["full_private_original_elf_disc_preflight_checked"])
+        for key in ("gameplay_process_started", "private_witnesses_written",
+                    "private_final_seal_published",
+                    "original_map02_rendering_proven",
+                    "physical_ps1_equivalence_proven",
+                    "private_game_files_uploaded"):
+            self.assertFalse(status[key])
+        self.assertEqual(milestones, list(runner.SAFE_STAGES[:4]) + ["complete"])
+        self.mocks["verify_private_cycle_readiness"].assert_called_once()
+        self.assertEqual(self.mocks["private_file"].call_count, 3)
+        for name in ("launch_observed_pc", "finalize_private_capture",
+                     "seal_final_capture", "verify_final_seal"):
+            self.mocks[name].assert_not_called()
+        self.assertFalse(list(self.folders[-1].iterdir()))
+
+    def test_dry_run_does_not_mutate_any_private_directory(self):
+        # Synthetic preflight return values are mocked; the coordinator
+        # itself must not write even a temporary file to any private root.
+        def snapshot():
+            return tuple((
+                folder.stat().st_dev, folder.stat().st_ino,
+                folder.stat().st_mode, folder.stat().st_mtime_ns,
+                folder.stat().st_ctime_ns,
+                tuple(sorted(child.name for child in folder.iterdir())),
+            ) for folder in self.folders)
+
+        before = snapshot()
+        result = self.execute(dry_run=True, allow_local_completion=False)
+        self.assertTrue(result["ready_for_controlled_local_launch"])
+        self.assertEqual(snapshot(), before)
+        for name in ("launch_observed_pc", "finalize_private_capture",
+                     "seal_final_capture", "verify_final_seal"):
+            self.mocks[name].assert_not_called()
+
+    def test_dry_run_is_fail_closed_when_private_plan_or_seal_is_wrong(self):
+        with self.assertRaisesRegex(ValueError, "requested frame differs"):
+            self.execute(frame=13, dry_run=True, allow_local_completion=False)
+        self.mocks["verify_private_cycle_readiness"].return_value = {
+            "ready_for_controlled_local_launch": False}
+        with self.assertRaisesRegex(ValueError, "preflight was not confirmed"):
+            self.execute(dry_run=True, allow_local_completion=False)
+        self.mocks["verify_private_cycle_readiness"].return_value = self.ready_report
+        extra = self.folders[-1] / "unexpected"
+        extra.write_bytes(b"synthetic")
+        with self.assertRaisesRegex(ValueError, "must be empty"):
+            self.execute(dry_run=True, allow_local_completion=False)
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+
+    def test_dry_run_rejects_byte_identical_capture_folder_replacement(self):
+        # A new, empty 0700 folder is not the same private session root.
+        source = self.folders[0]
+        archived = self.root / "old-source-capture"
+
+        def replace_folder(*args, **kwargs):
+            source.rename(archived)
+            source.mkdir(mode=0o700)
+            return self.ready_report
+
+        self.mocks["verify_private_cycle_readiness"].side_effect = replace_folder
+        with self.assertRaisesRegex(ValueError, "capture folders changed"):
+            self.execute(dry_run=True, allow_local_completion=False)
+        self.assertTrue(archived.is_dir())
+        for name in ("launch_observed_pc", "finalize_private_capture",
+                     "seal_final_capture", "verify_final_seal"):
+            self.mocks[name].assert_not_called()
+        self.assertFalse(list(self.folders[-1].iterdir()))
+
+    def test_dry_run_rejects_new_capture_output_during_preflight(self):
+        native = self.folders[1]
+
+        def inject_output(*args, **kwargs):
+            (native / "unexpected-synthetic-output").write_bytes(b"synthetic")
+            return self.ready_report
+
+        self.mocks["verify_private_cycle_readiness"].side_effect = inject_output
+        with self.assertRaisesRegex(ValueError, "capture folders changed"):
+            self.execute(dry_run=True, allow_local_completion=False)
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+
+    def test_real_one_shot_rejects_folder_swap_before_child_process(self):
+        handoff = self.folders[3]
+        archived = self.root / "old-handoff"
+
+        def replace_handoff(*args, **kwargs):
+            handoff.rename(archived)
+            handoff.mkdir(mode=0o700)
+            return self.ready_report
+
+        self.mocks["verify_private_cycle_readiness"].side_effect = replace_handoff
+        with self.assertRaisesRegex(ValueError, "capture folders changed"):
+            self.execute()
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["finalize_private_capture"].assert_not_called()
+
+    def test_readiness_contract_rejects_forged_or_partial_reports(self):
+        # A single ready=True field must never become process authorization.
+        cases = (
+            {"ready_for_controlled_local_launch": True},
+            {**self.ready_report, "schema": "foreign-schema"},
+            {**self.ready_report, "undocumented_gameplay_proven": True},
+            {key: value for key, value in self.ready_report.items()
+             if key != "original_pc_source_identity_checked"},
+            {**self.ready_report, "private_directories_checked": True},
+            {**self.ready_report, "capture_folders_empty": 4},
+            {**self.ready_report, "complete_pc_elf_bytes_checked": False},
+            {**self.ready_report, "prelaunch_inputs_stable_across_checks": None},
+            {**self.ready_report, "gameplay_process_started": True},
+            {**self.ready_report, "game_content_emitted": True},
+            {**self.ready_report, "original_map02_rendering_proven": True},
+            {**self.ready_report, "hardware_ps1_equivalence_proven": True},
+        )
+        for report in cases:
+            with self.subTest(report=report):
+                self.mocks["verify_private_cycle_readiness"].return_value = report
+                with self.assertRaisesRegex(ValueError, "report contract mismatch"):
+                    self.execute(dry_run=True, allow_local_completion=False)
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+        self.assertFalse(list(self.folders[-1].iterdir()))
+
+    def test_dry_run_rejects_false_or_incomplete_final_layout(self):
+        original = self.mocks["inspect_private_launch_layout"].return_value
+        for forged in (
+            {"prelaunch_layout_ready": True},
+            {**original, "prelaunch_layout_ready": False},
+            {**original, "private_directory_roles_checked": 6},
+            {**original, "capture_output_directories_empty": True},
+            {**original, "single_private_handoff_plan_present": False},
+            {**original, "schema": "foreign-layout"},
+            {**original, "original_gameplay_executed": True},
+            {**original, "private_game_bytes_read": True},
+            {**original, "original_pc_elf_verified": True},
+            {**original, "map02_frame_authenticated": True},
+            {**original, "unexpected_game_frame_claim": True},
+            {key: value for key, value in original.items()
+             if key != "original_game_image_verified"},
+        ):
+            with self.subTest(forged=forged):
+                self.mocks["inspect_private_launch_layout"].return_value = forged
+                with self.assertRaisesRegex(ValueError, "layout recheck"):
+                    self.execute(dry_run=True, allow_local_completion=False)
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+
+    def test_real_structural_rescan_accepts_clean_dry_run(self):
+        from tools.check_map02_private_launch_layout import (
+            inspect_private_launch_layout as real_inspect,
+        )
+        plan_file = self.folders[3] / runner.PLAN
+        plan_file.write_bytes(self.plan)
+        plan_file.chmod(0o600)
+        self.mocks["inspect_private_launch_layout"].side_effect = real_inspect
+        report = self.execute(dry_run=True, allow_local_completion=False)
+        self.assertTrue(report["private_layout_and_capture_plan_checked"])
+        self.assertFalse(report["gameplay_process_started"])
+        self.mocks["inspect_private_launch_layout"].assert_called_once()
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+
+    def test_real_structural_rescan_rejects_late_unexpected_output(self):
+        # The readiness stub says ready, and metadata checks are mocked
+        # stable, but the actual independent layout scanner must detect
+        # a newly written capture artifact before the original child starts.
+        from tools.check_map02_private_launch_layout import (
+            inspect_private_launch_layout as real_inspect,
+        )
+        plan_file = self.folders[3] / runner.PLAN
+        plan_file.write_bytes(self.plan)
+        plan_file.chmod(0o600)
+        native = self.folders[1]
+        (native / "late-unexpected-synthetic").write_bytes(b"synthetic")
+        with patch.object(runner, "_directory_identity",
+                          return_value=(1, 1, 1, 0o40700, 1, 1)):
+            self.mocks["inspect_private_launch_layout"].side_effect = real_inspect
+            with self.assertRaisesRegex(ValueError, "not empty"):
+                self.execute(dry_run=True, allow_local_completion=False)
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+
+    def test_final_layout_rescan_rejects_plan_in_place_mutation(self):
+        # Use the real owner-private reader, and an in-place change during
+        # the last structural scan. The containing handoff directory keeps
+        # its inode and timestamps: directory identity alone is insufficient.
+        from tools.check_map02_private_launch_layout import (
+            inspect_private_launch_layout as real_inspect,
+        )
+        from tools.verify_map02_native_gpu_capture import (
+            private_file as real_private_file,
+        )
+        plan_file = self.folders[3] / runner.PLAN
+        plan_file.write_bytes(self.plan)
+        plan_file.chmod(0o600)
+        original_dir = self.folders[3].stat()
+        self.mocks["private_file"].side_effect = real_private_file
+
+        def mutate_after_scan(*args, **kwargs):
+            report = real_inspect(*args, **kwargs)
+            plan_file.write_bytes(self.plan.replace(b"test", b"fake"))
+            return report
+
+        self.mocks["inspect_private_launch_layout"].side_effect = mutate_after_scan
+        with self.assertRaisesRegex(ValueError, "plan changed after final layout scan"):
+            self.execute(dry_run=True, allow_local_completion=False)
+        current_dir = self.folders[3].stat()
+        self.assertEqual(
+            (current_dir.st_dev, current_dir.st_ino, current_dir.st_mtime_ns,
+             current_dir.st_ctime_ns),
+            (original_dir.st_dev, original_dir.st_ino, original_dir.st_mtime_ns,
+             original_dir.st_ctime_ns))
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+
+    def test_real_private_input_identity_detects_in_place_and_inode_changes(self):
+        # This is a disposable, synthetic file; no retail data or PC ELF.
+        source = self.root / "owned-synthetic-identity"
+        source.write_bytes(b"original-synthetic-content")
+        source.chmod(0o600)
+        first = self.real_input_identity(source, "synthetic")
+        self.assertEqual(first, self.real_input_identity(source, "synthetic"))
+        source.write_bytes(b"modified-synthetic-content-with-extra-bytes")
+        changed = self.real_input_identity(source, "synthetic")
+        self.assertNotEqual(first, changed)
+        original = source.read_bytes()
+        source.rename(self.root / "archived-synthetic-identity")
+        source.write_bytes(original)
+        source.chmod(0o600)
+        self.assertNotEqual(changed, self.real_input_identity(source, "synthetic"))
+        linked = self.root / "symlink-synthetic-identity"
+        linked.symlink_to(source)
+        with self.assertRaisesRegex(ValueError, "became linked"):
+            self.real_input_identity(linked, "synthetic")
+        with self.assertRaisesRegex(ValueError, "input unavailable"):
+            self.real_input_identity(self.root / "no-such-file", "synthetic")
+
+    def test_dry_run_rejects_late_build_receipt_directory_swap(self):
+        first = (1, 100, 22, 0o40700, 3, 4)
+        replacement = (1, 101, 22, 0o40700, 3, 4)
+        changes = [0]
+
+        def changed_after_full_preflight(path):
+            changes[0] += 1
+            return first if changes[0] == 1 else replacement
+
+        self.mocks["_receipt_directory_identity"].side_effect = (
+            changed_after_full_preflight)
+        with self.assertRaisesRegex(
+                ValueError, "build receipt directory changed after preflight"):
+            self.execute(dry_run=True, allow_local_completion=False)
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+        self.assertFalse(list(self.folders[-1].iterdir()))
+
+    def test_real_one_shot_rejects_late_build_receipt_directory_swap(self):
+        identities = iter(((1, 100, 22, 0o40700, 3, 4),
+                           (1, 101, 22, 0o40700, 3, 4)))
+        self.mocks["_receipt_directory_identity"].side_effect = (
+            lambda path: next(identities))
+        with self.assertRaisesRegex(
+                ValueError, "build receipt directory changed after preflight"):
+            self.execute()
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["finalize_private_capture"].assert_not_called()
+
+    def test_real_receipt_directory_identity_rejects_symlink_and_replacement(self):
+        receipt = self.root / "actual-synthetic-receipt-root"
+        receipt.mkdir(mode=0o700)
+        first = self.real_receipt_directory_identity(receipt)
+        renamed = self.root / "original-synthetic-receipt-root"
+        receipt.rename(renamed)
+        receipt.mkdir(mode=0o700)
+        self.assertNotEqual(first, self.real_receipt_directory_identity(receipt))
+        with self.assertRaisesRegex(ValueError, "directory is not owner-only"):
+            alias = self.root / "linked-synthetic-receipt-root"
+            alias.symlink_to(renamed, target_is_directory=True)
+            self.real_receipt_directory_identity(alias)
+
+    def test_dry_run_rejects_input_inode_drift_after_final_layout_scan(self):
+        for drifted in (self.elf, self.disc,
+                        self.receipt / runner.BUILD_RECEIPT_NAME):
+            with self.subTest(input=str(drifted.name)):
+                count = [0]
+                stable = (1, 21, 22, 0o100600, 1, 256, 3, 4)
+                replaced = (1, 99, 22, 0o100600, 1, 256, 3, 4)
+
+                def changed_after_preflight(path, category):
+                    if Path(path) == Path(drifted):
+                        count[0] += 1
+                        return stable if count[0] == 1 else replaced
+                    return stable
+
+                self.mocks["_private_input_identity"].side_effect = changed_after_preflight
+                try:
+                    with self.assertRaisesRegex(
+                            ValueError, "changed after preflight"):
+                        self.execute(dry_run=True, allow_local_completion=False)
+                    self.mocks["launch_observed_pc"].assert_not_called()
+                    self.mocks["finalize_private_capture"].assert_not_called()
+                    self.mocks["seal_final_capture"].assert_not_called()
+                finally:
+                    self.mocks["_private_input_identity"].side_effect = None
+                self.assertFalse(list(self.folders[-1].iterdir()))
+
+    def test_real_one_shot_rejects_changed_owned_input_before_child_launch(self):
+        baseline = (1, 21, 22, 0o100600, 1, 256, 3, 4)
+        modified = (1, 21, 22, 0o100600, 1, 256, 3, 5)
+        count = [0]
+
+        def changed_image_during_preflight(path, category):
+            if Path(path) == self.disc:
+                count[0] += 1
+                return baseline if count[0] == 1 else modified
+            return baseline
+
+        self.mocks["_private_input_identity"].side_effect = changed_image_during_preflight
+        with self.assertRaisesRegex(ValueError, "changed after preflight"):
+            self.execute()
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["finalize_private_capture"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+
+    def test_dry_run_and_publish_permission_mutually_exclusive(self):
+        with self.assertRaisesRegex(ValueError, "forbids local completion"):
+            self.execute(dry_run=True)
+        with self.assertRaisesRegex(ValueError, "must be boolean"):
+            self.execute(dry_run="true", allow_local_completion=False)
+        self.mocks["verify_private_cycle_readiness"].assert_not_called()
+        self.mocks["launch_observed_pc"].assert_not_called()
+
+    def test_dry_run_cli_emits_only_safe_status_not_game_paths(self):
+        args = ["private-one-shot"] + [str(x) for x in self.folders] + [
+            str(self.disc), "--upstream-checkout", str(self.upstream),
+            "--pc-binary", str(self.elf), "--build-receipt-dir",
+            str(self.receipt), "--build-bundle-dir", str(self.bundle),
+            "--frame", "12", "--x", "10", "--y", "20", "--dry-run"]
+        output = io.StringIO()
+        with patch("sys.argv", args), redirect_stdout(output):
+            runner.main()
+        result = json.loads(output.getvalue())
+        self.assertTrue(result["ready_for_controlled_local_launch"])
+        self.assertFalse(result["gameplay_process_started"])
+        self.assertNotIn(str(self.disc), output.getvalue())
+        self.assertNotIn(str(self.elf), output.getvalue())
+        self.mocks["launch_observed_pc"].assert_not_called()
+
+    def test_local_completion_requires_explicit_consent_before_process(self):
+        with self.assertRaisesRegex(ValueError, "explicit private"):
+            self.execute(allow_local_completion=False)
+        self.mocks["verify_private_cycle_readiness"].assert_not_called()
+        self.mocks["launch_observed_pc"].assert_not_called()
+
+    def test_wrong_frame_and_invalid_sample_fail_before_game_process(self):
+        for option, expected in (
+            ({"frame": 13}, "requested frame differs"),
+            ({"x": -1}, "pixel X"),
+            ({"y": 512}, "pixel Y"),
+            ({"timeout": 0}, "timeout"),
+        ):
+            with self.subTest(option=option):
+                with self.assertRaisesRegex(ValueError, expected):
+                    self.execute(**option)
+        self.mocks["launch_observed_pc"].assert_not_called()
+
+    def test_refuse_overlapping_and_dirty_seal_directory_before_launch(self):
+        dirty = self.folders[-1] / "previous-run.jsonl"
+        dirty.write_bytes(b"synthetic")
+        with self.assertRaisesRegex(ValueError, "must be empty"):
+            self.execute()
+        dirty.unlink()
+        with self.assertRaisesRegex(ValueError, "separate"):
+            runner.execute_private_map02_cycle(
+                *self.folders[:-1], self.folders[0],
+                self.disc, self.upstream, self.elf, self.receipt,
+                self.bundle, frame=12, x=10, y=20,
+                allow_local_completion=True)
+        self.mocks["launch_observed_pc"].assert_not_called()
+
+    def test_refuse_changed_plan_between_preflight_and_spawn(self):
+        self.mocks["private_file"].side_effect = [
+            (self.plan, self.plan_identity),
+            (b'{"changed":"plan"}\n', self.plan_identity)]
+        with self.assertRaisesRegex(ValueError, "plan changed"):
+            self.execute()
+        self.mocks["launch_observed_pc"].assert_not_called()
+
+    def test_identical_bytes_plan_replacement_inode_rejected(self):
+        replaced = tuple(
+            999 if index == 1 else value
+            for index, value in enumerate(self.plan_identity))
+        self.mocks["private_file"].side_effect = [
+            (self.plan, self.plan_identity), (self.plan, replaced)]
+        with self.assertRaisesRegex(ValueError, "plan changed"):
+            self.execute()
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["finalize_private_capture"].assert_not_called()
+
+    def test_seal_directory_swap_during_process_rejected(self):
+        original = self.folders[-1]
+        archived = self.root / "old-seal-directory"
+
+        def swap_instead_of_private_child(*args, **kwargs):
+            original.rename(archived)
+            original.mkdir(mode=0o700)
+            return {
+                "kernel_executable_hash_matched": True,
+                "same_process_gpu_scoped_nonce_checked": True,
+                "pc_preoverlay_capture_session_bound": True,
+            }
+
+        self.mocks["launch_observed_pc"].side_effect = swap_instead_of_private_child
+        with self.assertRaisesRegex(ValueError, "seal directory changed"):
+            self.execute()
+        self.assertTrue(archived.is_dir())
+        self.mocks["finalize_private_capture"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+
+    def test_seal_directory_populated_during_process_rejected(self):
+        original = self.folders[-1]
+
+        def create_rogue_output(*args, **kwargs):
+            (original / "unrelated-private-run").write_bytes(b"synthetic")
+            return {
+                "kernel_executable_hash_matched": True,
+                "same_process_gpu_scoped_nonce_checked": True,
+                "pc_preoverlay_capture_session_bound": True,
+            }
+
+        self.mocks["launch_observed_pc"].side_effect = create_rogue_output
+        with self.assertRaisesRegex(ValueError, "unexpectedly populated"):
+            self.execute()
+        self.mocks["finalize_private_capture"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+
+    def test_negative_readiness_prohibits_process_and_artifact_publication(self):
+        self.mocks["verify_private_cycle_readiness"].return_value = {
+            "ready_for_controlled_local_launch": False}
+        with self.assertRaisesRegex(ValueError, "not confirmed"):
+            self.execute()
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["finalize_private_capture"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+
+    def test_failed_process_never_finalizes_or_seals(self):
+        self.mocks["launch_observed_pc"].side_effect = ValueError(
+            "synthetic CD/GPU did not complete")
+        with self.assertRaisesRegex(ValueError, "did not complete"):
+            self.execute()
+        self.mocks["finalize_private_capture"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+
+    def test_failed_finalizer_never_seals_and_failed_seal_not_reported(self):
+        self.mocks["finalize_private_capture"].return_value = {
+            "independently_verified_cd_gpu_process_and_rgb24_png": False,
+            "gpu_draw_frame": 12,
+            "original_map02_rendering_proven": False}
+        with self.assertRaisesRegex(ValueError, "not verified"):
+            self.execute()
+        self.mocks["seal_final_capture"].assert_not_called()
+        self.mocks["finalize_private_capture"].return_value = {
+            "independently_verified_cd_gpu_process_and_rgb24_png": True,
+            "gpu_draw_frame": 12,
+            "original_map02_rendering_proven": False}
+        self.mocks["seal_final_capture"].side_effect = ValueError(
+            "synthetic sealed evidence inconsistent")
+        with self.assertRaisesRegex(ValueError, "inconsistent"):
+            self.execute()
+        self.mocks["verify_final_seal"].assert_not_called()
+
+    def test_final_receipt_mismatch_fails_closed(self):
+        self.mocks["verify_final_seal"].return_value = {
+            "sealed_evidence_independently_reverified": True,
+            "gpu_draw_frame": 12,
+            "private_final_seal_sha256": "f" * 64,
+            "original_map02_rendering_proven": False}
+        with self.assertRaisesRegex(ValueError, "seal changed"):
+            self.execute()
+
+    def test_cli_does_not_show_private_file_error(self):
+        private_path = "/private/owned-MAP02/SLUS_004.47"
+        args = ["private-one-shot"] + [str(x) for x in self.folders] + [
+            str(self.disc), "--upstream-checkout", str(self.upstream),
+            "--pc-binary", str(self.elf), "--build-receipt-dir",
+            str(self.receipt), "--build-bundle-dir", str(self.bundle),
+            "--frame", "12", "--x", "10", "--y", "20",
+            "--allow-local-completion"]
+        for failure in (OSError(private_path), ValueError(private_path),
+                        subprocess.TimeoutExpired([private_path], 2)):
+            with self.subTest(kind=type(failure).__name__):
+                errors = io.StringIO()
+                with (patch("sys.argv", args),
+                      patch.object(runner, "execute_private_map02_cycle",
+                                   side_effect=failure),
+                      redirect_stderr(errors)):
+                    with self.assertRaises(SystemExit) as raised:
+                        runner.main()
+                self.assertEqual(raised.exception.code, 2)
+                self.assertIn("one-shot execution/finalization unavailable",
+                              errors.getvalue())
+                self.assertNotIn(private_path, errors.getvalue())
+
+
+if __name__ == "__main__":
+    unittest.main()

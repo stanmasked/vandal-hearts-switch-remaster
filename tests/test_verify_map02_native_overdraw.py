@@ -123,8 +123,10 @@ class NativeOverdrawTests(unittest.TestCase):
         write_word(pre,31,31,0x7fff)
         self.base.override_snapshots[4]=bytes(pre)
         self.save()
+        # The shared 1-MiB native GPU capture validator rejects the
+        # unobserved transition before the source-keyed overdraw join.
         with self.assertRaisesRegex(
-            ValueError,"unobserved VRAM difference between consecutive"
+            ValueError,"native GPU VRAM continuity broken between event pairs"
         ):
             verify_native_overdraw(self.source,self.native)
 

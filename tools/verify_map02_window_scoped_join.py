@@ -71,9 +71,10 @@ def verify_window_scoped_join(native_windows, scoped_capture, *,
         fields(cd, (
             "schema", "capture_session", "source", "cdf", "lba",
             "sectors", "bytes", "raw_user_crc32",
-            "returned_user_crc32", "loader_completed",
+            "returned_user_crc32", "raw_user_sha256",
+            "returned_user_sha256", "loader_completed",
         ), CD_READ)
-        if (cd["schema"] != "vh.map02.original-cd-read.v1" or
+        if (cd["schema"] != "vh.map02.original-cd-read.v2" or
                 cd["source"] != "original-CdRead-and-ContinueLoadingCdFile" or
                 cd["capture_session"] != token or
                 cd["cdf"] != "CDF_M_MAP02_PRS" or
@@ -87,7 +88,13 @@ def verify_window_scoped_join(native_windows, scoped_capture, *,
             if (type(word) is not str or len(word) != 8 or
                     any(c not in "0123456789abcdef" for c in word)):
                 raise ValueError("invalid original MAP02 CdRead checksum")
-        if cd["raw_user_crc32"] != cd["returned_user_crc32"]:
+        for key in ("raw_user_sha256", "returned_user_sha256"):
+            digest = cd[key]
+            if (type(digest) is not str or len(digest) != 64 or
+                    any(c not in "0123456789abcdef" for c in digest)):
+                raise ValueError("invalid original MAP02 CdRead SHA256")
+        if (cd["raw_user_crc32"] != cd["returned_user_crc32"] or
+                cd["raw_user_sha256"] != cd["returned_user_sha256"]):
             raise ValueError("original MAP02 CdRead transfer modified source data")
     if {p.name for p in scoped.iterdir()} != expected_files:
         raise ValueError("scoped witness contains unlisted/mixed-session files")

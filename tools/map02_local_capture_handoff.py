@@ -170,6 +170,9 @@ def _publish(root, name, raw):
         temporary = _prepare_private_file(target, raw)
         os.link(temporary, target)
         linked = True
+        # End the temporary hardlink lifetime before strict readback:
+        # the published proof must have exactly one directory entry.
+        temporary.unlink()
         if private_file(root, name, max_bytes=4096) != raw:
             raise ValueError("private MAP02 local capture readback changed")
     except BaseException:
@@ -374,8 +377,12 @@ def main():
                 a.native_windows, a.scoped_capture,
                 a.pc_binary, a.owned_game_image,
                 upstream=a.upstream_checkout, compiler=a.compiler)
-    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
-        p.error(str(exc))
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        # Exceptions from private source, executable, image and capture paths
+        # may expose caller-owned locations; preserve only a fixed message.
+        # The underlying Python API still raises the original exception for
+        # local debugging without printing sensitive bytes to CI/terminal.
+        p.error("private MAP02 capture handoff preparation or verification failed")
     print(json.dumps(result, sort_keys=True, indent=2))
 
 

@@ -4,7 +4,10 @@ The production final GTE/DrawOTag verifier is mocked here ONLY. Original
 game assets are never included; binary and game image are synthetic bytes.
 """
 import hashlib
+import io
 import json
+import subprocess
+from contextlib import redirect_stderr
 import os
 from pathlib import Path
 import stat
@@ -225,6 +228,48 @@ class LocalMap02CaptureHandoffTests(unittest.TestCase):
             "schema": "vh.map02.local-capture-handoff.v1",
             "owned_game_binary_executed_proven": True,
         })
+
+    def test_cli_prepare_seal_verify_redact_private_input_exception_paths(self):
+        import sys
+        import tools.map02_local_capture_handoff as handoff_cli
+
+        private_path = str(self.game)
+        for operation, action, failure in (
+            ("prepare", "prepare_local_capture",
+             OSError("cannot open original image " + private_path)),
+            ("seal", "seal_local_capture",
+             ValueError("private ELF path changed: " + str(self.binary))),
+            ("verify", "verify_local_capture",
+             subprocess.TimeoutExpired([str(self.binary)], 2)),
+        ):
+            with self.subTest(operation=operation):
+                arguments = [
+                    "map02-local-capture-handoff", operation, str(self.handoff),
+                    "--pc-binary", str(self.binary),
+                    "--owned-game-image", str(self.game),
+                    "--upstream-checkout", str(self.upstream),
+                ]
+                if operation == "prepare":
+                    arguments.extend(("--frame", "7"))
+                else:
+                    arguments.extend((
+                        "--source-bundle", str(self.source),
+                        "--native-windows", str(self.windows),
+                        "--scoped-capture", str(self.scoped),
+                    ))
+                stderr = io.StringIO()
+                with (patch.object(sys, "argv", arguments),
+                      patch.object(handoff_cli, action, side_effect=failure),
+                      redirect_stderr(stderr)):
+                    with self.assertRaises(SystemExit) as thrown:
+                        handoff_cli.main()
+                self.assertEqual(thrown.exception.code, 2)
+                self.assertIn(
+                    "private MAP02 capture handoff preparation or verification failed",
+                    stderr.getvalue())
+                for path in (str(self.binary), str(self.game),
+                             str(self.handoff), str(self.upstream)):
+                    self.assertNotIn(path, stderr.getvalue())
 
     def test_exclusive_link_error_rolls_back(self):
         self.prepare()

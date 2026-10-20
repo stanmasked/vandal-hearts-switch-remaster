@@ -114,10 +114,12 @@ def publish_blendg1_witness(source_dir, native_dir, *, compiler="gcc"):
         manifest_temp = _prepare_private_file(manifest_final, manifest_raw)
         os.link(log_temp, log_final)  # atomic, exclusive: no clobber
         published_log = True
+        log_temp.unlink()  # downstream witnesses require nlink=1
         if log_final.read_bytes() != staged_raw:
             raise ValueError("published BlendG1 log failed readback")
         os.link(manifest_temp, manifest_final)  # publish completion marker LAST
         published_manifest = True
+        manifest_temp.unlink()  # retain single-linked completion marker
         if manifest_final.read_bytes() != manifest_raw:
             raise ValueError("published BlendG1 manifest failed readback")
     except BaseException:
