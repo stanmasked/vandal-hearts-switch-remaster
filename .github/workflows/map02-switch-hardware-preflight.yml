@@ -1,0 +1,87 @@
+name: MAP02 Switch hardware-format readiness without console
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-switch-hardware-preflight.yml'
+      - 'tools/audit_map02_nro_hardware.py'
+      - 'tests/test_map02_nro_hardware.py'
+      - 'docs/MAP02_SWITCH_HARDWARE_READINESS.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  adversarial-parser:
+    name: Reject fake NRO0, MOD0, segment and NACP metadata
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run synthetic malformed-format tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/audit_map02_nro_hardware.py tests/test_map02_nro_hardware.py
+          python3 -m unittest discover -s tests -p 'test_map02_nro_hardware.py' -v
+          echo 'VH_MAP02_HARDWARE_FORMAT_ORACLE_PASS synthetic_tests=13 real_hardware_claim=0 retail=0'
+
+  verified-native-nro:
+    name: Inspect real libnx NRO and match prior NeXium-tested bytes
+    needs: adversarial-parser
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Build real homebrew and check original map generators
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/opt/devkitpro/devkitA64/bin:/opt/devkitpro/tools/bin:$PATH"
+          python3 tools/generate_map02_fixture.py --all --check
+          python3 tools/generate_map02_roster8.py --output /tmp/map02-hardware-original.h
+          cmp source/map02_roster8_smoke_data.h /tmp/map02-hardware-original.h
+          python3 tools/generate_map02_roster8.py --scene secondary --output /tmp/map02-hardware-second.h
+          cmp source/map02_roster8_second_data.h /tmp/map02-hardware-second.h
+          make verify-nro
+          test -s build/vandal-hearts-prototype.nro
+      - name: Check NRO executable loader, MOD0 and NACP assets
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+          LAST_NEXIUM_NRO_SHA256: 564c29e4c6c47eaf80e356733b8bdb8e298f1e0c938575b20be0ae9d48680539
+        run: |
+          set -euo pipefail
+          tree_sha="$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD^{tree})"
+          test "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          python3 tools/audit_map02_nro_hardware.py \
+            --nro build/vandal-hearts-prototype.nro \
+            --report build/map02-hardware-format.json \
+            | tee build/map02-hardware-preflight.log
+          python3 tools/map02_candidate_receipt.py create \
+            --nro build/vandal-hearts-prototype.nro \
+            --receipt build/map02-hardware-receipt.json \
+            --source-commit "$EXPECTED_SOURCE" \
+            --source-tree "$tree_sha"
+          python3 tools/map02_candidate_receipt.py verify \
+            --nro build/vandal-hearts-prototype.nro \
+            --receipt build/map02-hardware-receipt.json \
+            --source-commit "$EXPECTED_SOURCE" \
+            --source-tree "$tree_sha"
+          printf '%s  %s\n' "$LAST_NEXIUM_NRO_SHA256" build/vandal-hearts-prototype.nro | sha256sum -c -
+          echo 'VH_MAP02_HARDWARE_BYTE_PARITY_PASS prior_NeXium_SHA256=1 original_maps=1 physical_boot=0'
+      - name: Save executable and read-only hardware-format report
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-switch-hardware-format-evidence
+          path: |
+            build/vandal-hearts-prototype.nro
+            build/map02-hardware-format.json
+            build/map02-hardware-receipt.json
+            build/map02-hardware-preflight.log
+          if-no-files-found: error
