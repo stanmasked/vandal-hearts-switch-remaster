@@ -49,8 +49,8 @@ when present, the **existing** `audio-exit-probe-context-000.csv`
 with their SHA-256. Those two optional files are only inventoried;
 their values are **not interpreted** in Stage371. Missing optional
 sources remain `present=false, sha256=null`. The tests reject
-ambiguous multiple numbered copies, symlinks, and a missing source
-silently reported as zero. A failure preserves any partial source
+ambiguous multiple numbered copies, symlinks, hardlinked evidence that
+aliases another path's inode, and a missing source silently reported as zero. A failure preserves any partial source
 files **as unverified evidence only**; no zero/empty queue,
 returned descriptor count or success is fabricated.
 
