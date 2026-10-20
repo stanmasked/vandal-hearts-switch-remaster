@@ -30,7 +30,26 @@ sframes_t snd_pcm_writei(void *pcm, const void *src, uframes_t n)
   {(void)pcm;(void)src;return (sframes_t)n;}
 sframes_t snd_pcm_mmap_commit(void *pcm, uframes_t offset, uframes_t n)
   {(void)pcm;(void)offset;return (sframes_t)n;}
+int snd_pcm_close(void *pcm) {(void)pcm;return 0;}
 """
+REUSE_C=r"""
+typedef unsigned long uframes_t;
+typedef long sframes_t;
+extern int snd_pcm_hw_params(void *,void *);
+extern int snd_pcm_close(void *);
+extern sframes_t snd_pcm_writei(void *,const void *,uframes_t);
+int main(void) {
+  char pcm[64]={0};
+  if(snd_pcm_hw_params(pcm,pcm))return 1;
+  if(snd_pcm_writei(pcm,pcm,512)!=512)return 2;
+  if(snd_pcm_close(pcm))return 3;
+  /* Reused storage address is a NEW PCM lifetime after close. */
+  if(snd_pcm_hw_params(pcm,pcm))return 4;
+  if(snd_pcm_writei(pcm,pcm,256)!=256)return 5;
+  return 0;
+}
+"""
+
 HOST_C=r"""
 typedef unsigned long uframes_t;
 typedef long sframes_t;
@@ -57,6 +76,7 @@ class Map02HostAlsaProbeTests(unittest.TestCase):
         for path,src in paths.values():
             path.write_text(src,encoding="ascii")
         cls.shim=cls.work/"libmap02_alsa_trace.so"
+        cls.reuse=cls.work/"alsa-test-reuse"
         cls.fake=cls.work/"libfakeasound.so"
         cls.host=cls.work/"alsa-test-host"
         subprocess.run(["gcc","-std=c11","-O2","-fPIC","-shared",
@@ -70,6 +90,13 @@ class Map02HostAlsaProbeTests(unittest.TestCase):
                        check=True,capture_output=True,text=True)
         subprocess.run(["gcc","-std=c11","-O2","-Wall","-Wextra","-Werror",
                         "-o",str(cls.host),str(paths["host"][0]),
+                        "-L",str(cls.work),"-lfakeasound",
+                        "-Wl,-rpath,"+str(cls.work)],
+                       check=True,capture_output=True,text=True)
+        reuse_source=cls.work/"reuse.c"
+        reuse_source.write_text(REUSE_C,encoding="ascii")
+        subprocess.run(["gcc","-std=c11","-O2","-Wall","-Wextra","-Werror",
+                        "-o",str(cls.reuse),str(reuse_source),
                         "-L",str(cls.work),"-lfakeasound",
                         "-Wl,-rpath,"+str(cls.work)],
                        check=True,capture_output=True,text=True)
@@ -104,6 +131,16 @@ class Map02HostAlsaProbeTests(unittest.TestCase):
         self.assertFalse(r["guest_audout_service_deadlock_proven"])
         self.assertFalse(r["physical_switch_audio_proven"])
         self.assertFalse(r["raw_audio_data_collected"])
+
+    def test_close_then_reuse_same_address_gets_new_anonymous_stream_id(self):
+        env=os.environ.copy()
+        env["LD_PRELOAD"]=str(self.shim)
+        env["VH_MAP02_ALSA_TRACE_PATH"]=str(self.file)
+        subprocess.run([str(self.reuse)],env=env,check=True,timeout=10)
+        r=parse(self.file)
+        self.assertEqual(r["record_count"],4)
+        self.assertEqual(r["48k_stereo_stream_ids"],[1,2])
+        self.assertEqual(r["48k_stereo_attributed_transfer_count"],2)
 
     def test_opt_in_absence_records_no_trace(self):
         env=os.environ.copy()
