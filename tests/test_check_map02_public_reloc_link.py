@@ -91,6 +91,33 @@ class PublicRelocatableELFTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "strong code export"):
             inspect_relocatable(obj)
 
+    def test_global_text_label_without_func_type_is_not_a_function(self):
+        missing = REQUIRED_SYMBOLS[0]
+        # This provides an nm type T label, but readelf must reveal NOTYPE.
+        obj = self.compile(
+            "\n".join(f"void {name}(void) {{}}"
+                      for name in REQUIRED_SYMBOLS if name != missing) +
+            f'\n__asm__(".globl {missing}\\n{missing}:\\n nop\\n");\n',
+            name="notype-impostor")
+        direct = subprocess.run(
+            ["nm", "-g", "--defined-only", str(obj)],
+            capture_output=True, text=True, check=True)
+        self.assertTrue(any(line.split()[-2:] == ["T", missing]
+                            for line in direct.stdout.splitlines()))
+        with self.assertRaisesRegex(ValueError, "ELF FUNC export"):
+            inspect_relocatable(obj)
+
+    def test_zero_sized_func_label_is_not_an_original_c_function(self):
+        missing = REQUIRED_SYMBOLS[-1]
+        obj = self.compile(
+            "\n".join(f"void {name}(void) {{}}"
+                      for name in REQUIRED_SYMBOLS if name != missing) +
+            f'\n__asm__(".globl {missing}\\n.type {missing}, @function'
+            f'\\n{missing}:\\n.size {missing}, .-{missing}\\n");\n',
+            name="empty-function-impostor")
+        with self.assertRaisesRegex(ValueError, "ELF FUNC export"):
+            inspect_relocatable(obj)
+
     def test_unresolved_capture_hook_rejected_even_if_other_exports_present(self):
         obj = self.compile(
             self.all_exports() +
@@ -272,7 +299,7 @@ class PublicRelocatableELFTests(unittest.TestCase):
             report = audit_public_link(root, self.root / "bundle-unused",
                                        self.root / "sealed-link-result")
         self.assertEqual(observed, [True])
-        self.assertEqual(inspectors, ["readelf", "nm", "nm"])
+        self.assertEqual(inspectors, ["readelf", "nm", "nm", "readelf", "readelf"])
         self.assertEqual(len(set(witness_fds)), 1)
         self.assertEqual(report["public_game_object_count"], 1)
         self.assertEqual(report["backend_and_observer_object_count"], 1)
@@ -377,7 +404,7 @@ class PublicRelocatableELFTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "differs from linked proof"):
                 audit_public_link(root, self.root / "bundle-unused", output_dir)
         self.assertTrue(swapped)
-        self.assertEqual(readers, ["readelf", "nm", "nm"])
+        self.assertEqual(readers, ["readelf", "nm", "nm", "readelf", "readelf"])
 
     def test_partial_elf_double_read_proof_is_stable(self):
         obj = self.compile(self.all_exports(), name="stable")
