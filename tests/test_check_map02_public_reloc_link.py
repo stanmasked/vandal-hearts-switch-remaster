@@ -16,7 +16,7 @@ import unittest
 from unittest.mock import patch
 
 from tools.check_map02_elf_code_witness import (
-    compare_function_images, function_images,
+    EHDR, SHDR, RELA, compare_function_images, function_images,
 )
 
 from tools.check_map02_public_reloc_link import (
@@ -363,6 +363,59 @@ class PublicRelocatableELFTests(unittest.TestCase):
                     with_sizes=True)
         finally:
             os.close(fd)
+
+    def make_relocation_mutation_fixture(self, *, name):
+        obj = self.compile(
+            "extern int outside(void);\n"
+            "int LoadCdFile(void) { return outside() + outside(); }\n",
+            name=name)
+        raw = bytearray(obj.read_bytes())
+        header = EHDR.unpack_from(raw)
+        section_offset, count = header[6], header[12]
+        sections = [SHDR.unpack_from(raw, section_offset + i * SHDR.size)
+                    for i in range(count)]
+        for section in sections:
+            if (section[1] == 4 and section[5] >= 2 * RELA.size
+                    and section[9] == RELA.size
+                    and section[7] < count
+                    and sections[section[7]][2] & 0x4):
+                return obj, raw, section, sections[section[7]]
+        self.fail("expected at least two real executable-section ELF relocations")
+
+    def test_elf_relocation_outside_executable_section_is_rejected(self):
+        obj, raw, reloc, target = self.make_relocation_mutation_fixture(
+            name="relocation-outside")
+        position, info, addend = RELA.unpack_from(raw, reloc[4])
+        self.assertLess(position, target[5])
+        RELA.pack_into(raw, reloc[4], target[5] + 8, info, addend)
+        obj.write_bytes(raw)
+        with obj.open("rb") as fp:
+            with self.assertRaisesRegex(ValueError, "out-of-section relocation"):
+                function_images(fp.fileno(), ("LoadCdFile",))
+
+    def test_duplicate_overlapping_elf_relocations_are_rejected(self):
+        obj, raw, reloc, _ = self.make_relocation_mutation_fixture(
+            name="relocation-overlap")
+        position, _, _ = RELA.unpack_from(raw, reloc[4])
+        _, other_info, other_addend = RELA.unpack_from(
+            raw, reloc[4] + RELA.size)
+        RELA.pack_into(raw, reloc[4] + RELA.size,
+                       position, other_info, other_addend)
+        obj.write_bytes(raw)
+        with obj.open("rb") as fp:
+            with self.assertRaisesRegex(ValueError, "overlapping relocations"):
+                function_images(fp.fileno(), ("LoadCdFile",))
+
+    def test_unsupported_elf_relocation_kind_is_rejected(self):
+        obj, raw, reloc, _ = self.make_relocation_mutation_fixture(
+            name="relocation-unsupported")
+        position, info, addend = RELA.unpack_from(raw, reloc[4])
+        RELA.pack_into(raw, reloc[4], position,
+                       (info & ~0xffffffff) | 0xfffffffe, addend)
+        obj.write_bytes(raw)
+        with obj.open("rb") as fp:
+            with self.assertRaisesRegex(ValueError, "unsupported/out-of-function"):
+                function_images(fp.fileno(), ("LoadCdFile",))
 
     def test_real_relocatable_link_matches_nonrelocated_code(self):
         first = self.compile(
