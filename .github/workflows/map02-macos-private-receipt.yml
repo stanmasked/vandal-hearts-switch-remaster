@@ -1,0 +1,62 @@
+name: MAP02 macOS private receipt compatibility
+
+on:
+  push:
+    branches:
+      - 'work/map02-macos-private-receipt-ci'
+    paths:
+      - '.github/workflows/map02-macos-private-receipt.yml'
+      - 'tools/emit_map02_local_disc_receipt.py'
+      - 'tools/check_map02_local_disc_receipt.py'
+      - 'tests/test_emit_map02_local_disc_receipt.py'
+      - 'tests/test_check_map02_local_disc_receipt.py'
+  pull_request:
+    paths:
+      - '.github/workflows/map02-macos-private-receipt.yml'
+      - 'tools/emit_map02_local_disc_receipt.py'
+      - 'tools/check_map02_local_disc_receipt.py'
+      - 'tests/test_emit_map02_local_disc_receipt.py'
+      - 'tests/test_check_map02_local_disc_receipt.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos-private-receipt:
+    name: macOS synthetic BIN-CUE and atomic receipt
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - name: Check out source only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check platform and required no-follow descriptor primitives
+        run: |
+          python3 - <<'PY'
+          import os
+          import platform
+          import sys
+          print(platform.platform(), sys.version)
+          assert os.O_NOFOLLOW
+          assert os.O_DIRECTORY
+          assert os.O_EXCL
+          assert os.stat in os.supports_dir_fd
+          assert os.open in os.supports_dir_fd
+          assert os.unlink in os.supports_dir_fd
+          assert os.link in os.supports_dir_fd
+          print("descriptor-relative no-follow operations available")
+          PY
+      - name: Verify receipt schema and atomic producer on synthetic CD-XA data
+        run: |
+          python3 -m unittest -v \
+            tests.test_check_map02_local_disc_receipt \
+            tests.test_emit_map02_local_disc_receipt
