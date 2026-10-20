@@ -274,6 +274,8 @@ def verify_native_windows(directory, *, target_frame):
     # At the end of BOTH window audits, reject persistent mutations on disk.
     # A report can then be tied to one coherent, privately rechecked file
     # tree rather than a mixture of earlier hashes and later reads.
+    if private_window_file(root, INDEX, max_bytes=4096) != raw:
+        raise ValueError("native GPU window index changed during audit")
     for window, bound_files in inventory_digests:
         for name, digest in bound_files:
             fresh = private_window_file(
