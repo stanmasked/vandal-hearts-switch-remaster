@@ -29,9 +29,11 @@ def run_private_link_gap_audit(manifest, partial, archives, output_root,
     """Create sealed original-link comparison and recheck saved ELF evidence."""
     # Fail without side effects if there is no actionable provider set.
     candidates = [Path(value) for value in archives]
-    if not 2 <= len(candidates) <= 64 or any(
-            item.suffix != ".a" for item in candidates):
-        raise ValueError("private MAP02 link gap audit requires 2..64 archives")
+    archive_count = sum(item.suffix == ".a" for item in candidates)
+    if (not 2 <= len(candidates) <= 64 or archive_count < 2
+            or any(item.suffix not in (".o", ".a") for item in candidates)):
+        raise ValueError(
+            "private MAP02 link gap audit requires 2..64 inputs and two archives")
     original = read_private_manifest(manifest)
     initial_count = len(original["strong_symbols"])
     if expected_initial_strong_imports is not None and (
@@ -61,7 +63,7 @@ def run_private_link_gap_audit(manifest, partial, archives, output_root,
     if (independently_verified["source_partial_elf_sha256"] !=
             original["relocatable_elf_sha256"]
             or independently_verified["candidate_archive_count"] !=
-               len(candidates)
+               archive_count
             or independently_verified["single_pass_remaining_strong_imports"] !=
                report["single_pass_final_strong_import_count"]
             or independently_verified["grouped_remaining_strong_imports"] !=
@@ -82,7 +84,10 @@ def run_private_link_gap_audit(manifest, partial, archives, output_root,
     return {
         "schema": SCHEMA,
         "initial_strong_import_count": initial_count,
-        "candidate_archive_count": len(candidates),
+        "candidate_archive_count": archive_count,
+        "candidate_direct_object_count": len(candidates) - archive_count,
+        "group_strategy_reorders_direct_objects_before_archives":
+            archive_count != len(candidates),
         "expected_initial_import_count_confirmed":
             expected_initial_strong_imports is not None,
         "single_pass_original_imports_resolved":
@@ -115,7 +120,7 @@ def main():
     parser.add_argument("private_undefined_manifest", type=Path)
     parser.add_argument("private_original_partial_elf", type=Path)
     parser.add_argument("new_private_output_root", type=Path)
-    parser.add_argument("native_archive", type=Path, nargs="+")
+    parser.add_argument("native_candidate", type=Path, nargs="+")
     parser.add_argument(
         "--expect-initial-strong-imports", type=int, default=None,
         help="fail before creating output if the original strong-import count differs")
@@ -123,7 +128,7 @@ def main():
     try:
         summary = run_private_link_gap_audit(
             args.private_undefined_manifest, args.private_original_partial_elf,
-            args.native_archive, args.new_private_output_root,
+            args.native_candidate, args.new_private_output_root,
             expected_initial_strong_imports=args.expect_initial_strong_imports)
     except (OSError, ValueError, subprocess.TimeoutExpired):
         parser.error("private MAP02 one-shot link gap audit failed")
