@@ -24,6 +24,7 @@ from tools.check_map02_public_reloc_link import (
     stable_relocatable_output, stable_object_input, sealed_input_fd,
     audit_public_link, BUILD, OUTPUT, inspect_sealed_export_origins,
     function_code_sha256, summarize_partial_elf_undefined_symbols,
+    save_private_undefined_manifest, PRIVATE_UNDEFINED_MANIFEST,
 )
 
 
@@ -110,6 +111,60 @@ class PublicRelocatableELFTests(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 with self.assertRaisesRegex(ValueError, "unexpected undefined nm row"):
                     summarize_partial_elf_undefined_symbols(invalid)
+
+    def test_private_undefined_manifest_written_only_in_owner_directory(self):
+        code = (self.all_exports() +
+                "\nextern void needed_for_link(void);"
+                "\nvoid caller(void) { needed_for_link(); }")
+        obj = self.compile(code, "private-nm-export")
+        checked = inspect_relocatable(obj)
+        report_dir = self.root / "private-manifest-output"
+        report_dir.mkdir(mode=0o700)
+        proof = stable_object_input(obj)
+        fd = sealed_input_fd(obj, proof, index=8)
+        try:
+            save_private_undefined_manifest(
+                report_dir, fd, checked, proof[0])
+            with self.assertRaisesRegex(ValueError, "already exists"):
+                save_private_undefined_manifest(
+                    report_dir, fd, checked, proof[0])
+        finally:
+            os.close(fd)
+        path = report_dir / PRIVATE_UNDEFINED_MANIFEST
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        report = json.loads(path.read_text())
+        self.assertEqual(report["strong_symbols"], ["needed_for_link"])
+        self.assertEqual(report["weak_symbols"], [])
+        self.assertEqual(report["relocatable_elf_sha256"], proof[0])
+        self.assertEqual(
+            report["partial_elf_unresolved_strong_symbols_sha256"],
+            checked["partial_elf_unresolved_strong_symbols_sha256"])
+        self.assertNotIn("needed_for_link", json.dumps(checked))
+
+    def test_private_undefined_manifest_fails_closed_on_wrong_audit_or_mode(self):
+        code = (self.all_exports() +
+                "\nextern void unresolved_private_probe(void);"
+                "\nvoid caller(void) { unresolved_private_probe(); }")
+        obj = self.compile(code, "private-nm-deny")
+        checked = inspect_relocatable(obj)
+        report_dir = self.root / "private-report-reject"
+        report_dir.mkdir(mode=0o700)
+        proof = stable_object_input(obj)
+        fd = sealed_input_fd(obj, proof, index=12)
+        try:
+            altered = dict(checked)
+            altered["partial_elf_unresolved_strong_symbol_count"] += 1
+            with self.assertRaisesRegex(ValueError, "differ from sealed audit"):
+                save_private_undefined_manifest(
+                    report_dir, fd, altered, proof[0])
+            self.assertFalse((report_dir / PRIVATE_UNDEFINED_MANIFEST).exists())
+            report_dir.chmod(0o755)
+            with self.assertRaisesRegex(ValueError, "not owner-only"):
+                save_private_undefined_manifest(
+                    report_dir, fd, checked, proof[0])
+            self.assertFalse((report_dir / PRIVATE_UNDEFINED_MANIFEST).exists())
+        finally:
+            os.close(fd)
 
     def test_missing_cd_gpu_or_capture_export_rejected(self):
         missing = REQUIRED_SYMBOLS[-1]
