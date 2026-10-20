@@ -18,6 +18,7 @@ from tools.check_map02_private_provider_coverage import (
 )
 from tools.check_map02_private_incremental_link import (
     _check_abi, _confirm_owned, _open_owned, _unresolved,
+    probe_private_incremental_link,
 )
 
 SCHEMA = "vh.map02.public-sdl2-saved-elf-recount.v1"
@@ -85,7 +86,8 @@ def _read_aggregate(path):
 
 def verify_saved_sdl2_recount(manifest, original_partial, copied_archive,
                               linked_partial, saved_aggregate,
-                              *, expected_initial_strong_imports=520):
+                              *, expected_initial_strong_imports=520,
+                              relink_output_dir=None):
     """Re-read both ET_REL files, archive export coverage and saved totals."""
     if (type(expected_initial_strong_imports) is not int
             or expected_initial_strong_imports < 0):
@@ -134,8 +136,34 @@ def verify_saved_sdl2_recount(manifest, original_partial, copied_archive,
             raise ValueError("MAP02 saved SDL2 import recount differs")
         for entry in entries:
             _confirm_owned(entry)
+        # A read-only recount alone cannot attest that the saved linked ELF
+        # was produced from the supplied archive. A second real GNU ld -r
+        # must byte-reproduce the saved ELF in a fresh 0700 directory.
+        replay = None
+        if relink_output_dir is not None:
+            replay = probe_private_incremental_link(
+                manifest, original_partial, [copied_archive],
+                relink_output_dir,
+                expected_initial_strong_imports=expected_initial_strong_imports)
+            if (replay["archive_selection_strategy"] != "single_pass_user_order"
+                    or replay["candidate_archive_count"] != 1
+                    or replay["source_partial_elf_sha256"] != source[3]
+                    or replay["linked_candidate_elf_sha256"] != linked[3]
+                    or replay["original_strong_import_count"] !=
+                       report["initial_strong_undefined"]
+                    or replay["original_strong_imports_resolved_by_ld_r"] !=
+                       report["original_imports_resolved_by_actual_ld_r"]
+                    or replay["new_strong_imports_introduced_by_candidates"] !=
+                       report["new_undefined_imports_introduced_by_sdl2"]
+                    or replay["final_strong_import_count"] !=
+                       report["final_undefined_strong_count"]):
+                raise ValueError("MAP02 independent relink differs from saved ELF")
+            for entry in entries:
+                _confirm_owned(entry)
         return {
             "schema": SCHEMA,
+            "independent_native_relink_executed": replay is not None,
+            "byte_identical_native_relink_verified": replay is not None,
             "baseline_strong_imports": counted["initial_strong_undefined"],
             "candidate_strong_export_matches":
                 counted["sdl2_candidate_strong_exports_matching_initial"],
@@ -161,6 +189,9 @@ def main():
     parser.add_argument("private_copied_system_archive", type=Path)
     parser.add_argument("private_linked_partial_elf", type=Path)
     parser.add_argument("saved_aggregate_json", type=Path)
+    parser.add_argument(
+        "--relink-private-output-dir", type=Path,
+        help="repeat GNU ld -r with the exact saved archive in a new private dir")
     args = parser.parse_args()
     try:
         report = verify_saved_sdl2_recount(
@@ -168,7 +199,8 @@ def main():
             args.private_original_partial_elf,
             args.private_copied_system_archive,
             args.private_linked_partial_elf,
-            args.saved_aggregate_json)
+            args.saved_aggregate_json,
+            relink_output_dir=args.relink_private_output_dir)
     except (ValueError, OSError, subprocess.TimeoutExpired):
         parser.error("MAP02 saved SDL2 evidence recount failed")
     print(json.dumps(report, sort_keys=True, indent=2))
