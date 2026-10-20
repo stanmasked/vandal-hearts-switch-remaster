@@ -47,10 +47,15 @@ compiler or package-not-found errors as HTTP 403.
 
 ## Verification boundaries
 
-Until a new CI run completes, this change is **not** claimed to have
-preserved an actual artifact. The next run must show both the original
-failed install step and the upload step separately before Stage366
-artifact capture is confirmed.
+The original Stage366 workflow [#39384172009](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39384172009)
+has now completed. The installer still failed with external HTTP 403,
+but GitHub's always-running upload step succeeded, publishing artifact
+[#12246243370](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39384172009/artifacts/12246243370)
+with both original diagnostic files. The corresponding host workflow
+[#39384171792](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39384171792)
+passed, including the three Stage366 regression cases. The independent
+native audout/PCM/tactical NRO workflows on this commit passed separately.
+This success is **diagnostic retention**, not successful SDL2 installation.
 
 Stage365 remains independently successful on
 [GitHub Actions #39351366143](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39351366143).
