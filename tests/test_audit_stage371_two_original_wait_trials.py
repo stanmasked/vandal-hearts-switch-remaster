@@ -140,6 +140,32 @@ class Stage371Tests(unittest.TestCase):
         (nested/"audio-lease-reconciliation-001.csv").write_bytes(lease.read_bytes())
         with self.assertRaises(ValueError):
             self.verify()
+    def test_hardlinked_evidence_does_not_prove_isolated_guest_sessions(self):
+        # A second path to the same inode is not a second independent capture.
+        left=self.temp/f"vh-nexium-stage266-{RUN}-a"/a.RUN_GUEST_PATH
+        right=self.temp/f"vh-nexium-stage266-{RUN}-b"/a.RUN_GUEST_PATH
+        original=right/"audio-exit-tail-reason-000.csv"
+        bytes_b=original.read_bytes()
+        original.unlink()
+        original.hardlink_to(left/original.name)
+        try:
+            with self.assertRaises(ValueError):
+                self.verify()
+        finally:
+            original.unlink()
+            original.write_bytes(bytes_b)
+        # The optical trace must also be unique to its purported run.
+        image=self.two/"scene-optical-trace.png"
+        bytes_img=image.read_bytes()
+        image.unlink()
+        image.hardlink_to(self.one/image.name)
+        try:
+            with self.assertRaises(ValueError):
+                self.verify()
+        finally:
+            image.unlink()
+            image.write_bytes(bytes_img)
+
     def test_no_unproven_guest_capture_can_be_backfilled(self):
         x=self.two/"guest-sd-root.txt"
         text=x.read_text()
