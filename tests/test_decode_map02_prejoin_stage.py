@@ -58,7 +58,7 @@ class PrejoinOpticalTests(unittest.TestCase):
 
     def test_mutated_module_fails_checksum(self):
         im=panel()
-        im.putpixel((250+4,160+3*10+4),(255,255,255))
+        im.putpixel((250+2*10+4,160+3*10+4),(255,255,255))
         with self.assertRaisesRegex(ValueError,"checksum"):
             self.read(im)
 
