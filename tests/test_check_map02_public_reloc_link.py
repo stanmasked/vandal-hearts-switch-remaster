@@ -7,6 +7,7 @@ from contextlib import redirect_stderr
 import fcntl
 import hashlib
 import io
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -263,6 +264,19 @@ class PublicRelocatableELFTests(unittest.TestCase):
         self.assertEqual(observed, [True])
         self.assertEqual(report["public_game_object_count"], 1)
         self.assertEqual(report["backend_and_observer_object_count"], 1)
+        self.assertEqual(report["total_compiled_elf_objects"], 2)
+        expected_input_manifest = [
+            {"path": path, "sha256": stable_object_input(source)[0]}
+            for path, source in (
+                (f"{BUILD}/original-cd.o", game),
+                (f"{BUILD}/original-gpu.o", gpu),
+            )
+        ]
+        expected_hash = hashlib.sha256(json.dumps(
+            expected_input_manifest, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")).hexdigest()
+        self.assertEqual(report["ordered_object_input_manifest_sha256"],
+                         expected_hash)
         self.assertFalse(report["fully_linked_game_executable"])
         self.assertFalse(report["actual_gameplay_executed"])
 
