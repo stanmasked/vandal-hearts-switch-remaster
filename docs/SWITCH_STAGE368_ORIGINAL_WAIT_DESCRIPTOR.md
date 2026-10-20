@@ -52,6 +52,17 @@ runs GCC/Clang C11 optimized and UBSan synthetic controls plus Python
 source integration checks that require exactly one original 12-ms wait,
 a new exclusive post-join CSV and no extra audout/clock calls.
 
+The companion `tools/audit_nexium_stage368_wait_descriptor.py` is a
+**source-format validator for future captures**, not a NeXium attestor:
+it requires exact ordered Stage351/357/368 CSV rows, matches their
+software result and release counts, rejects ambiguous duplicates,
+symlinks, mixed directories and false descriptor-return claims, and
+reports SHA-256 for all three input files. It explicitly outputs
+`original_neXium_archive_proven=false` until a new workflow independently
+proves the original capture's source/run identity.
+
+The related negative-control tests execute in the Stage368 workflow.
+
 The new schema is **not proof of a real captured `0xEA01` run**.
 Independent NeXium evidence from a newly built NRO must still establish
 whether a real timed-out tail returns zero or nonzero descriptors and
