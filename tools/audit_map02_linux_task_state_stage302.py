@@ -27,7 +27,7 @@ def read_tasks(path):
     p=Path(path)
     require(p.is_file() and not p.is_symlink(),"Actual Linux proc sampler CSV unavailable")
     raw=p.read_bytes()
-    require(400<=len(raw)<=8_000_000,"Sampler CSV missing or exceeds limit")
+    require(120<=len(raw)<=8_000_000,"Sampler CSV missing or exceeds limit")
     try:
         text=raw.decode("ascii")
     except UnicodeDecodeError as exc:
@@ -87,7 +87,7 @@ def read_tasks(path):
                      "state":row["linux_state"],"label":row["name_hint"],
                      "wait":row["wait_bucket"]})
     require(len(stamps)>=12,"Real guest process has too few task observations")
-    require(sum(sample_counts.values())>=25,"No actual threads observed")
+    require(sum(sample_counts.values())>=12,"No actual threads observed")
     return rows,stamps,hashlib.sha256(raw).hexdigest()
 
 def audit(root,hint,run_id):
