@@ -85,6 +85,16 @@ def trial(root:Path,run_id:int,tag:str,dwell:int,runner_temp:Path)->dict:
     sd=expected_sd_root/RUN_GUEST_PATH
     demand(sd.is_dir() and not any(p.is_symlink() for p in (sd,*sd.parents)),
            "missing/linked original guest data")
+    # Stage368's reusable parser selects exact canonical filenames. A fresh
+    # Stage371 guest must additionally have EXACTLY ONE file in each numbered
+    # family: a second -001.csv may otherwise be silently ignored and the
+    # supposedly unambiguous source would be attributed to the wrong session.
+    for kind,name in NAMES.items():
+        family=name.rsplit("-000.csv",1)[0]+"-*.csv"
+        found=list(sd.glob(family))
+        demand(len(found)==1 and found[0].name==name
+               and regular(found[0],1024),
+               "ambiguous or missing fresh Stage371 original guest family: "+kind)
     checked=audit_directory(sd)  # stage351/357/368 genuine source bytes reread
     hashes=checked["source_sha256"]
     additional=supplemental_sources(sd)
