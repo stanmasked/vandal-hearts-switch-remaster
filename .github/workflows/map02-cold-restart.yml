@@ -170,6 +170,14 @@ jobs:
               --evidence-dir map02-cold-restart-evidence \
             | tee map02-cold-restart-evidence/result.log
           grep -Fx 'VH_MAP02_NEXIUM_COLD_RESTART_PASS emulator_processes=2 different_pids=1 first_exited_before_second=1 guard_both=1 medic_both=1 bow_both=1 two_resets_each=1 board_determinism=1 hud_determinism=1 legacy_preserved=1 retail=0' map02-cold-restart-evidence/result.log
+      - name: Independently audit all saved PNG and RGB digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/run_map02_nexium_cold_restart.py \
+            --audit-only --evidence-dir map02-cold-restart-evidence \
+            | tee map02-cold-restart-evidence/offline-audit.log
+          grep -Fx 'VH_MAP02_COLD_RESTART_OFFLINE_AUDIT_PASS frames=24 png_sha256=1 board_rgb_sha256=1 guard_hud_rgb_sha256=1' map02-cold-restart-evidence/offline-audit.log
       - name: Upload authentic emulator screenshots and execution log
         if: always()
         uses: actions/upload-artifact@v4
