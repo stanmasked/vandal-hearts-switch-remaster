@@ -12,7 +12,7 @@ import subprocess
 import sys
 import unittest
 
-from test_verify_map02_timeline_native_ft4_join import TimelineToNativeFt4JoinTests
+import test_verify_map02_timeline_native_ft4_join as synthetic_fixture
 
 ROOT = Path(__file__).resolve().parent.parent
 RASTER = os.environ.get("MAP02_PINNED_RASTER")
@@ -25,7 +25,7 @@ class Map02PrivateFt4MutationCliTests(unittest.TestCase):
             raise RuntimeError("pinned PUBLIC PC raster required for synthetic tests")
 
     def setUp(self):
-        self.fixture = TimelineToNativeFt4JoinTests(
+        self.fixture = synthetic_fixture.TimelineToNativeFt4JoinTests(
             "test_different_clocks_reversed_ot_order_and_per_face_clut"
         )
         self.fixture.setUp()
