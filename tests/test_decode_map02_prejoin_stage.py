@@ -51,10 +51,19 @@ class PrejoinOpticalTests(unittest.TestCase):
         self.assertFalse(result["physical_switch_speaker_output_verified"])
 
     def test_missing_border_rejected(self):
-        im=panel()
-        im.putpixel((244,154),(0,0,0))
+        im=Image.new("RGB",(1280,720),(0,0,0))
         with self.assertRaisesRegex(ValueError,"magenta"):
             self.read(im)
+
+    def test_letterboxed_scaled_panel_is_calibrated(self):
+        original=panel(phase=4,entered=250,returned=250,stop=1)
+        roi=original.crop((244,154,336,266))
+        frame=Image.new("RGB",(1280,720),(0,0,0))
+        frame.paste(roi.resize((83,101),Image.Resampling.NEAREST),
+                    (360,180))
+        result=self.read(frame)
+        self.assertEqual(result["stage"],4)
+        self.assertEqual(result["audout_playbuffer_call_returns"],250)
 
     def test_mutated_module_fails_checksum(self):
         im=panel()
