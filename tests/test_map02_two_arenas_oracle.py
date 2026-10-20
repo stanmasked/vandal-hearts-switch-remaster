@@ -32,7 +32,7 @@ def base_scene(allies, enemies, arena_b=False):
     for y in range(enemies):
         actor(im, ex, y, ENEMY)
     if arena_b:
-        ImageDraw.Draw(im).rectangle((993, 490, 1040, 495),
+        ImageDraw.Draw(im).rectangle((993, 471, 1040, 476),
                                      fill=(255, 219, 102))
     return im
 
@@ -125,7 +125,7 @@ class TwoArenasPixelOracleTests(unittest.TestCase):
 
     def test_refuse_forged_hud_identifier(self):
         def tamper(im):
-            ImageDraw.Draw(im).rectangle((993, 490, 1040, 495),
+            ImageDraw.Draw(im).rectangle((993, 471, 1040, 476),
                                          fill=BLACK)
         self.audit(lambda r: self.change_frame(r, "b_four", tamper),
                    "HUD identifier")
