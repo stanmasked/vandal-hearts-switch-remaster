@@ -1,0 +1,148 @@
+name: MAP02 Stage293 inventory REAL new-ELF CPAL stream errors at 21/22ms
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-cpal-error-message-inventory.yml'
+      - 'tools/audit_map02_cpal_error_messages_stage293.py'
+      - 'tests/test_audit_map02_cpal_error_messages_stage293.py'
+      - 'docs/MAP02_CPAL_ERROR_MESSAGES_STAGE293.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  VH_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_FROZEN_STAGE292: 'b00e4e5876f108d309da6edf9067fe54e9d190ad'
+
+jobs:
+  actual-cpal-log-audit:
+    name: Re-decode both RAW opt-in guests then inventory CPAL error reasons
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Enforce exact Stage292 parent and four ROM-free offline analysis files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_HEAD"
+          python3 - <<'PY'
+          import os,subprocess
+          changed=set(subprocess.check_output([
+              "git","diff","--name-only",os.environ["VH_FROZEN_STAGE292"],"HEAD"],
+              text=True).splitlines())
+          permitted={
+              ".github/workflows/map02-cpal-error-message-inventory.yml",
+              "tools/audit_map02_cpal_error_messages_stage293.py",
+              "tests/test_audit_map02_cpal_error_messages_stage293.py",
+              "docs/MAP02_CPAL_ERROR_MESSAGES_STAGE293.md",
+          }
+          assert changed and changed<=permitted,sorted(changed-permitted)
+          print("Only offline research analyses changed:",sorted(changed))
+          PY
+      - name: Install independent optical decoder
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends python3-pil
+      - name: Run 18 generated-only fail-closed CPAL reason and source tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_map02_cpal_error_messages_stage293.py' -v
+      - name: Download EXACT successful Stage291 real 21ms guest archive
+        uses: actions/download-artifact@v4
+        with:
+          name: map02-stage291-first-real-21ms-cpal-guest-evidence
+          run-id: 39497887866
+          github-token: ${{ github.token }}
+          path: real-21
+      - name: Download EXACT successful Stage290 real 22ms guest archive
+        uses: actions/download-artifact@v4
+        with:
+          name: map02-stage290-first-real-22ms-cpal-guest-evidence
+          run-id: 39495636729
+          github-token: ${{ github.token }}
+          path: real-22
+      - name: Independently re-decode raw guest PNG, CPAL L-counter and raw PCM then inspect stdout
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dir in real-21 real-22; do
+            test -s "$dir/guest-prejoin.png"
+            test -s "$dir/guest-final.png"
+            test -s "$dir/host-cpal-audioout-timeline.csv"
+            test -s "$dir/virtual-pulse-48k-stereo-s16le.pcm"
+            test -s "$dir/nexium-guest-stdout.log"
+            test -s "$dir/pinned-host-and-nro.json"
+          done
+          mkdir -p stage293-results
+          python3 tools/audit_map02_cpal_error_messages_stage293.py \
+            --run21 real-21 --run22 real-22 \
+            --output stage293-results/real-cpal-log-inventory.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("stage293-results/real-cpal-log-inventory.json").read_text())
+          assert r["result"]=="REAL_MATCHED_CPAL_HOST_ERROR_LOGS_AND_L_COUNTERS_INVENTORIED"
+          assert r["strict_existing_new_host_guest_contrast_verified"] is True
+          assert len(r["trials"])==2
+          assert r["trials"][0]["requested_pulse_hint_ms"]==21
+          assert r["trials"][1]["requested_pulse_hint_ms"]==22
+          assert r["trials"][0]["post_input_cpal_error_callback_counter_delta"]==0
+          assert r["trials"][1]["post_input_cpal_error_callback_counter_delta"]==36
+          assert r["stdout_error_lines_cannot_be_precisely_mapped_to_guest_window"] is True
+          assert r["no_cpal_root_cause_or_permanent_guest_deadlock_proven"] is True
+          assert r["physical_nintendo_switch_dac_proven"] is False
+          print("Original paired guest stdout and L-counter CPAL inventory independently verified")
+          PY
+      - name: Publish summarized CPAL error types without raw host logs or causal overclaim
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path("stage293-results/real-cpal-log-inventory.json")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              print("### Stage293 — real CPAL host stdout error messages vs L-counter errors",file=out)
+              if not p.exists():
+                  print("**UNVERIFIED**: actual raw pair audit unavailable.",file=out)
+              else:
+                  r=json.loads(p.read_text())
+                  print("Outcome: "+r["result"],file=out)
+                  if "trials" in r:
+                      print("| Requested hint | Host L-error count after input | "
+                            "CPAL error text lines in whole process stdout | "
+                            "Distinct sanitized error messages |",file=out)
+                      print("|---:|---:|---:|---:|",file=out)
+                      for v in r["trials"]:
+                          print(f'| {v["requested_pulse_hint_ms"]}ms | '
+                                f'{v["post_input_cpal_error_callback_counter_delta"]} | '
+                                f'{v["cpal_stream_error_log_line_count_all_times"]} | '
+                                f'{v["distinct_sanitized_cpal_error_messages"]} |',file=out)
+                          for msg in v["sanitized_error_message_groups"][:3]:
+                              print(f'- {v["requested_pulse_hint_ms"]}ms, '
+                                    f'{msg["times_in_entire_stdout"]} occurrences: '
+                                    f'{msg["normalized_message"]}',file=out)
+                  print("**Whole-process stdout error lines do NOT have verified per-event "
+                        "guest-input timestamps; do not equate them with the guest-window "
+                        "CPAL error count. This does NOT identify a causal ALSA/CPAL root "
+                        "cause, permanent deadlock, original PS1 game sound or physical "
+                        "Nintendo Switch audio.**",file=out)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage293-independent-cpal-error-message-inventory
+          path: stage293-results/
+          if-no-files-found: warn
