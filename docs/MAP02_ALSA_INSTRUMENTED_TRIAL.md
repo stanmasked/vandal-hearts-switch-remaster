@@ -24,6 +24,23 @@ The always-running final audit independently revalidates guest opt-in NRO hash, 
 
 A generated-only synthetic `libfakeasound.so` with independent fake host links verifies call delegation, successful params (48,000 Hz / 2 channels / 512-frame period / 2048-frame buffer), simulated `WRITEI` and `MMAP_COMMIT` calls, bounded traces and refusal to claim real CPAL callbacks or Switch DAC audio. Nine other tests reject absent data, forged events, impossible call durations, malformed frame counts, absent transfers and buffer configurations.
 
+## Stage270 first live-run parser correction
+
+The first instrumented [Actions #39452014152](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39452014152) validated the preload ABI (10/10 synthetic tests), built the NRO, then generated real per-guest CSV and PCM/PNG artifacts. Its initially overstrict parser rejected **every** successful `snd_pcm_hw_params` observation unless it was 48-kHz stereo, even though NeXium also negotiated a separate ALSA PCM configuration. This made guest jobs red because of an **auditor rule**, not necessarily the strict guest PCM acceptance gate. The first workflow's parser step also ran before the strict optical check; if parser failed, following default-condition steps were skipped. Both issues have been corrected in the new research commit.
+
+Actual original raw traces on 21-ms failure and 22-ms nonzero-PCM runs independently contained these successful ALSA configurations:
+
+| Rate | Channels | Period (frames) | Buffer (frames) | Scope |
+|---|---:|---:|---:|---|
+| 48000 | 2 | 512 | 524288 | Guest-audio-format ALSA configuration |
+| 48000 | 2 | 512 | 1536 | Guest-audio-format ALSA configuration |
+| 768000 | 32 | 32 | 32768 | Other NeXium host ALSA configuration; function unknown |
+| 768000 | 32 | 32 | 96 | Other NeXium host ALSA configuration; function unknown |
+
+The corrected parser **requires valid 48-kHz stereo params**, records other valid configurations separately, and sets `transfer_calls_directly_attributed_to_48k_pcm=false`: `snd_pcm_writei` calls currently have no unique ALSA device-ID attribution. Their duration statistics must not be mistaken for a *specific* 48-kHz CPAL callback. A new negative/positive test uses actual 768-kHz/32-channel observed parameter values.
+
+The trace decoder has been moved **after** the original guest strict CRC/PCM classification so a host-probe-only failure cannot silently bypass real guest acceptance tests. Instrumentation remains opt-in; no audio workaround or fix is inferred.
+
 ## Non-equivalence to older uninstrumented runs
 
 The probe calls the runtime linker for original functions, obtains monotonic timestamps and does bounded per-call CSV file writes. **Those operations can materially change host thread scheduling and audio behavior.** Do not combine results with Stage265 as if the guest host workload were unchanged or mistake any apparent recovered/failed 21-ms trials for a fix.
