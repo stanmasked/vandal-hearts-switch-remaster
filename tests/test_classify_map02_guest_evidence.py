@@ -82,5 +82,28 @@ class EvidenceTests(unittest.TestCase):
         self.assertTrue(r["unique_48k_stereo_pulse_client"])
         self.assertFalse(r["guest_join_deadlock_proven"])
 
+    def test_prejoin_in_flight_is_observation_not_deadlock(self):
+        result=e.classify(None,monitor(0),prejoin={
+            "schema":e.PREJOIN,
+            "result":"PREJOIN_STAGE_SNAPSHOT_CAPTURED",
+            "stage":3,"audout_playbuffer_call_entries":12,
+            "audout_playbuffer_call_returns":11,
+            "cooperative_stop_requested":True})
+        self.assertEqual(result["classification"],"OPTICAL_MISSING_ZERO_VIRTUAL_SINK")
+        self.assertEqual(result["prejoin_stage"],3)
+        self.assertTrue(result["prejoin_call_inflight_at_snapshot"])
+        self.assertFalse(result["audout_playbuffer_stall_proven"])
+        self.assertFalse(result["guest_join_deadlock_proven"])
+
+    def test_bad_prejoin_counters_do_not_impersonate_progress(self):
+        result=e.classify(None,monitor(0),prejoin={
+            "schema":e.PREJOIN,
+            "result":"PREJOIN_STAGE_SNAPSHOT_CAPTURED",
+            "stage":3,"audout_playbuffer_call_entries":4,
+            "audout_playbuffer_call_returns":5,
+            "cooperative_stop_requested":True})
+        self.assertIsNone(result["prejoin_stage"])
+        self.assertIsNone(result["prejoin_call_inflight_at_snapshot"])
+
 if __name__=="__main__":
     unittest.main()
