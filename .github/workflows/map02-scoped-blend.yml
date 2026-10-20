@@ -79,6 +79,7 @@ on:
       - 'tools/check_map02_cycle_object_inventory.py'
       - 'tests/test_check_map02_cycle_object_inventory.py'
       - 'tools/check_map02_public_reloc_link.py'
+      - 'tools/check_map02_elf_code_witness.py'
       - 'tools/inspect_map02_private_inputs.py'
       - 'tools/check_map02_private_pc_inputs.py'
       - 'tools/check_map02_original_font_c.py'
@@ -213,6 +214,7 @@ on:
       - 'tools/check_map02_cycle_object_inventory.py'
       - 'tests/test_check_map02_cycle_object_inventory.py'
       - 'tools/check_map02_public_reloc_link.py'
+      - 'tools/check_map02_elf_code_witness.py'
       - 'tools/inspect_map02_private_inputs.py'
       - 'tools/check_map02_private_pc_inputs.py'
       - 'tools/check_map02_original_font_c.py'
@@ -290,6 +292,8 @@ jobs:
           python-version: '3.11'
       - name: Verify Python diagnostics and tests parse
         run: python3 -m compileall -q tools tests
+      - name: Verify native ELF relocation witness regressions
+        run: python3 -m unittest -v tests.test_check_map02_public_reloc_link
       - name: Check synthetic source, sink, and generated-code integration
         run: |
           python3 -m unittest -v \
@@ -341,7 +345,6 @@ jobs:
             tests.test_check_map02_cycle_elf \
             tests.test_check_map02_cycle_make_plan \
             tests.test_check_map02_cycle_object_inventory \
-            tests.test_check_map02_public_reloc_link \
             tests.test_inspect_map02_private_inputs \
             tests.test_check_map02_private_pc_inputs \
             tests.test_check_map02_original_font_c \
