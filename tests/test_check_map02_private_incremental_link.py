@@ -175,6 +175,33 @@ class NativeIncrementalRelinkTests(unittest.TestCase):
                                  os.environ.get("PATH"))
                 self.assertEqual(execute.call_args.kwargs["umask"], 0o077)
 
+    def test_real_gnu_thin_archive_is_rejected_before_inspection(self):
+        """Thin archives can reference unpinned outside files; reject them."""
+        provider = self.compile(
+            "external-member", "int needed(void) {return 4;}\\n")
+        thin = self.root / "external-reference.a"
+        subprocess.run(
+            ["ar", "rcsT", str(thin), str(provider)],
+            check=True, capture_output=True, timeout=30)
+        self.assertEqual(thin.read_bytes()[:8], b"!<thin>\\n")
+        output = self.root / "no-thin-link"
+        with self.assertRaisesRegex(ValueError, "thin or invalid archive"):
+            probe_private_incremental_link(
+                self.manifest, self.base, [thin], output)
+        self.assertFalse(output.exists())
+
+    def test_renamed_object_is_not_accepted_as_archive(self):
+        """A fake .a whose bytes are ELF must not claim archive semantics."""
+        provider = self.compile(
+            "renamed-provider", "int needed(void) {return 4;}\\n")
+        fake_archive = self.root / "pretend-library.a"
+        fake_archive.write_bytes(provider.read_bytes())
+        output = self.root / "no-fake-archive"
+        with self.assertRaisesRegex(ValueError, "thin or invalid archive"):
+            probe_private_incremental_link(
+                self.manifest, self.base, [fake_archive], output)
+        self.assertFalse(output.exists())
+
     def test_repeated_input_inode_rejected_before_link(self):
         """Repeated archives must not inflate candidate counts in reports."""
         provider = self.compile("one-archive-member", "int needed(void) {return 5;}\n")
