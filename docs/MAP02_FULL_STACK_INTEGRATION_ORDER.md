@@ -15,6 +15,14 @@ PS1 game. No physical Nintendo Switch test or PS1 asset verification is claimed.
   candidate SHA. Verify all 26 PR heads, 25 edges, root `main` ancestry,
   four protected original fixture files, no added binary/retail images, and
   zero Git branch or worktree merges.
+- In the **same integration CI**, inspect authenticated GitHub Actions
+  `pull_request` workflow history for the **exact 25 pinned upstream
+  commit SHAs**. Require at least one completed-successful run on each SHA;
+  an observed completed failure or timeout blocks the audit. Exclude #352's
+  current HEAD from this upstream history requirement to avoid a circular
+  dependency on the still-running CI; its own native/NeXium jobs form a
+  separate required check. Record each evidence run URL in the report.
+  API errors, missing runs, or incomplete result pages block integration.
 - In the **same CI run**, query GitHub's authenticated read-only pull-request
   API for all 26 PRs. Require every PR to remain open, unmerged and Draft,
   with pinned head/base branch names, head SHAs, source repository and base
@@ -86,6 +94,10 @@ For each PR, beginning at #241:
   convert a Draft to ready-for-review from this audit workflow.
 
 ## Stop conditions and remaining gates
+
+**Stop** if any pinned upstream PR lacks completed-successful Actions evidence,
+if a known failed/timed-out workflow applies to its exact SHA, or if the
+workflow history cannot be verified completely.
 
 **Stop** if a PR is closed, marked ready, retargeted, moved to another
 repository or updated to an unpinned head/base SHA; if GitHub metadata cannot
