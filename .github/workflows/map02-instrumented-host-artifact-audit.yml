@@ -1,0 +1,126 @@
+name: MAP02 Stage278 verify actual Stage276 compiled CPAL host ELF identity
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-instrumented-host-artifact-audit.yml'
+      - 'tools/verify_map02_instrumented_nexium_host_artifact.py'
+      - 'tests/test_verify_map02_instrumented_nexium_host_artifact.py'
+      - 'docs/MAP02_STAGE278_HOST_ARTIFACT_AUDIT.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  VH_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_FROZEN_STAGE277: '6eecc49bcc243435ec971e03ab1dedcbe612daad'
+  VH_PINNED_HOST_BUILD_RUN: '39467347590'
+  VH_PINNED_HOST_SHA256: 'dd4ed55b6ce8477f19b77465f4ce6a0606b7a7315b3a0e2b8137b7d7ab5effd0'
+
+jobs:
+  audit-compiled-cpal-host:
+    name: Synthetic tampering suite + independently rehash actual Stage276 ELF
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact branch head and research-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_HEAD"
+          python3 - <<'PY'
+          import os,subprocess
+          observed=set(subprocess.check_output(
+              ["git","diff","--name-only",
+               os.environ["VH_FROZEN_STAGE277"],"HEAD"],
+              text=True).splitlines())
+          allowed={
+              ".github/workflows/map02-instrumented-host-artifact-audit.yml",
+              "tools/verify_map02_instrumented_nexium_host_artifact.py",
+              "tests/test_verify_map02_instrumented_nexium_host_artifact.py",
+              "docs/MAP02_STAGE278_HOST_ARTIFACT_AUDIT.md",
+          }
+          assert observed and observed<=allowed,sorted(observed-allowed)
+          print("Allowed independent research audit files:",sorted(observed))
+          PY
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run 17 generated-only adversarial ELF/source integrity tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_verify_map02_instrumented_nexium_host_artifact.py' -v
+      - name: Retrieve exact successful Stage276 compiled host from GitHub Actions
+        uses: actions/download-artifact@v4
+        with:
+          name: map02-stage276-experimental-nexium-linux-x86_64
+          path: stage278-host
+          run-id: 39467347590
+          github-token: ${{ github.token }}
+      - name: Verify actual hosted binary size, source SHA and digest without launching it
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s stage278-host/nexium
+          test -s stage278-host/manifest.json
+          # GitHub Actions artifact archive strips executable permissions.
+          # Restore *file mode* only; do not alter or execute binary contents.
+          chmod 0755 stage278-host/nexium
+          echo "$VH_PINNED_HOST_SHA256  stage278-host/nexium" | sha256sum --check -
+          file stage278-host/nexium
+          python3 tools/verify_map02_instrumented_nexium_host_artifact.py \
+            --artifact-dir stage278-host \
+            --output stage278-host-audit.json
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          data=json.loads(Path("stage278-host-audit.json").read_text())
+          assert data["schema"]=="vh-map02-nexium-instrumented-host-artifact-audit/v1"
+          assert data["result"]=="EXACT_SOURCE_INSTRUMENTED_HOST_ELF_ARTIFACT_VERIFIED"
+          assert data["observed_elf_sha256"]==os.environ["VH_PINNED_HOST_SHA256"]
+          assert data["pinned_nexium_source_sha"]=="089562567a0a8760dfdd8420e1f57c35159a9219"
+          assert data["pinned_cargo_lock_sha256"]=="e6e8fcb90624650afddd1f25327dd4e6b042b094e8336cb5f43d2dc370e28739"
+          assert data["guest_emulator_boot_or_cpal_execution_proven"] is False
+          assert data["historical_nightly_binary_equivalent"] is False
+          assert data["physical_switch_speaker_audio_proven"] is False
+          print("Exact Stage276 host ELF SHA and source/lock provenance VERIFIED")
+          PY
+      - name: Publish precise host-binary identity and the limits of this audit
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          path=Path("stage278-host-audit.json")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              print("### Stage278 compiled instrumented host identity audit",file=out)
+              if not path.is_file():
+                  print("**UNVERIFIED**: real Stage276 artifact comparison did not finish.",file=out)
+              else:
+                  r=json.loads(path.read_text())
+                  print("Result: "+r["result"],file=out)
+                  if r["result"]=="EXACT_SOURCE_INSTRUMENTED_HOST_ELF_ARTIFACT_VERIFIED":
+                      print("ELF SHA-256: "+r["observed_elf_sha256"],file=out)
+                      print("Pinned NeXium source SHA: "+r["pinned_nexium_source_sha"],file=out)
+                      print("Provenance verified **without executing the binary**. "
+                            "No 21/22ms guest experiment, CPAL callback activity, "
+                            "permanent AudioOut deadlock or Switch speaker proof.",file=out)
+                  else:
+                      print("**No positive claim:** "+r.get("reason",""),file=out)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage278-independent-exact-host-artifact-receipt
+          path: stage278-host-audit.json
+          if-no-files-found: warn
