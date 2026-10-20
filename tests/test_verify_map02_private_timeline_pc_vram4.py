@@ -32,7 +32,7 @@ class PrivatePerSubmissionPcVram4Tests(unittest.TestCase):
 
     def check(self, *, portable_header=None):
         return verify_private_timeline(
-            self.folder, Path(PUBLIC_RASTER),
+            self.folder, Path(PUBLIC_RASTER), compiler=os.environ.get('CC', 'gcc'),
             portable_header=portable_header,
         )
 
