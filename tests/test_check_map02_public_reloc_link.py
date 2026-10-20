@@ -15,6 +15,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from tools.check_map02_elf_code_witness import (
+    compare_function_images, function_images,
+)
+
 from tools.check_map02_public_reloc_link import (
     REQUIRED_SYMBOLS, inspect_relocatable, make_inventory, main,
     stable_relocatable_output, stable_object_input, sealed_input_fd,
@@ -360,6 +364,56 @@ class PublicRelocatableELFTests(unittest.TestCase):
         finally:
             os.close(fd)
 
+    def test_real_relocatable_link_matches_nonrelocated_code(self):
+        first = self.compile(
+            "extern int ext(int);\\n"
+            "int LoadCdFile(void) { return ext(3); }\\n"
+            "int CdRead(void) { return ext(7); }\\n",
+            name="reloc-code-source")
+        second = self.compile(
+            "int ext(int v) { return v + 2; }\\n"
+            "void DrawOTag(void) { (void)ext(4); }\\n",
+            name="reloc-code-backend")
+        combined = self.root / "reloc-code-combined.o"
+        subprocess.run(["ld", "-r", "-o", str(combined),
+                        str(first), str(second)],
+                       capture_output=True, check=True, text=True)
+        with first.open("rb") as fp:
+            cd = function_images(fp.fileno(), ("LoadCdFile", "CdRead"))
+        with second.open("rb") as fp:
+            gpu = function_images(fp.fileno(), ("DrawOTag",))
+        with combined.open("rb") as fp:
+            linked = function_images(fp.fileno(),
+                                     ("LoadCdFile", "CdRead", "DrawOTag"))
+        report = compare_function_images({**cd, **gpu}, linked)
+        self.assertGreater(report["source_link_function_code_bytes_checked"], 0)
+        self.assertGreater(report["source_link_relocation_bytes_excluded"], 0)
+        self.assertEqual(len(report["source_link_nonrelocated_function_code_sha256"]), 64)
+
+        # A relocation displacement may be legitimately rewritten by ld.
+        code, mask = linked["LoadCdFile"]
+        self.assertTrue(mask)
+        adjusted = bytearray(code)
+        pos = min(mask)
+        adjusted[pos] ^= 0x55
+        changed = dict(linked)
+        changed["LoadCdFile"] = (bytes(adjusted), mask)
+        self.assertEqual(compare_function_images({**cd, **gpu}, changed), report)
+
+        # Changing an actual non-relocation instruction must fail closed.
+        bad = bytearray(code)
+        good_pos = next(i for i in range(len(bad)) if i not in mask)
+        bad[good_pos] ^= 0x11
+        changed["LoadCdFile"] = (bytes(bad), mask)
+        with self.assertRaisesRegex(ValueError, "unrelocated instruction bytes changed"):
+            compare_function_images({**cd, **gpu}, changed)
+
+    def test_relocation_mask_cannot_cover_entire_function(self):
+        with self.assertRaisesRegex(ValueError, "no unrelocated function code"):
+            compare_function_images(
+                {"LoadCdFile": (b"AB", frozenset({0, 1}))},
+                {"LoadCdFile": (b"CD", frozenset({0, 1}))})
+
     def test_machine_code_sha256_equal_before_and_after_real_ld_r(self):
         names = list(REQUIRED_SYMBOLS)
         first = self.compile(
@@ -504,8 +558,11 @@ class PublicRelocatableELFTests(unittest.TestCase):
         self.assertEqual(report["backend_and_observer_object_count"], 1)
         self.assertEqual(report["total_compiled_elf_objects"], 2)
         self.assertTrue(report["original_cd_gpu_source_function_sizes_matched"])
-        self.assertTrue(report["original_cd_gpu_machine_code_bytes_matched"])
-        self.assertEqual(len(report["ordered_original_function_code_sha256"]), 64)
+        self.assertTrue(report["original_cd_gpu_relocation_normalized_code_matched"])
+        self.assertGreater(report["source_link_function_code_bytes_checked"], 0)
+        self.assertGreater(report["source_link_function_code_bytes_checked"],
+                           report["source_link_relocation_bytes_excluded"])
+        self.assertEqual(len(report["source_link_nonrelocated_function_code_sha256"]), 64)
         self.assertEqual(report["verified_original_export_input_owners"], {
             name: f"{BUILD}/original-cd.o" if i < 5 else f"{BUILD}/original-gpu.o"
             for i, name in enumerate(REQUIRED_SYMBOLS)
