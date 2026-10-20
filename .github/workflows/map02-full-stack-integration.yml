@@ -101,6 +101,14 @@ jobs:
           r = json.loads(Path("build/map02-full-stack-audit/virtual-merge.json").read_text())
           assert r["stages"] == 26 and r["unchanged_trees"] == 26
           assert r["virtual_object_only_commits"] == 26
+          assert r["intermediate_changes_checked"] == sum(
+              step["changed_file_count"] for step in r["steps"])
+          assert r["unique_changed_paths"] >= 1
+          assert not r["forbidden_intermediate_assets"]
+          assert all(step["changed_file_count"] == len(step["path_changes"])
+                     for step in r["steps"])
+          assert all(change["status"] in ("A", "M", "D", "T")
+                     for step in r["steps"] for change in step["path_changes"])
           assert r["final_source_tree"] == r["final_virtual_tree"]
           assert r["git_refs_updated"] is False
           assert r["worktree_updated"] is False
