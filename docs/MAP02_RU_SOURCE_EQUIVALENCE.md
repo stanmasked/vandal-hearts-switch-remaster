@@ -207,3 +207,26 @@ runtime PC executable used this specific disc.
 The public `read_sectors(path, ...)` API is unchanged. The new
 `read_sectors_from_stream(handle, ...)` implementation lets trusted callers
 reuse their open handle while retaining the established Form1 EDC checks.
+
+
+### One-command macOS runner (optional)
+
+After checking out this PR's audit branch into a separate, clean directory,
+run **with Bash**, not as a directory or executable. This avoids the earlier
+`zsh: permission denied` error:
+
+```sh
+bash tools/run_local_map02_ru_owned_disc.sh \
+  "/path/to/Nintendo Switch Remakes — Originals"
+```
+
+The script defaults to the existing v10.1 private receipt at
+`~/Documents/NintendoSwitchRemakesAudit/map02_ru_source_reconciliation.json`
+(or takes an explicit second receipt path). It checks for real, non-symlink
+inputs, writes a temporary report using `umask 077`, and atomically publishes
+an exclusive private result to
+`~/Documents/NintendoSwitchRemakesAudit/private-map02/map02_ru_owned_disc_verified.json`.
+It **does not overwrite** an existing result. Failures leave no published
+success report, and no original resources are copied or extracted. Keep this
+command on the Mac with the owned BIN; never run it in public CI against
+original game assets.
