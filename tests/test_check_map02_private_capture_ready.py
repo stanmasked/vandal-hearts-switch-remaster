@@ -1,12 +1,18 @@
 """Asset-free MAP02 private capture readiness tests (structure, not provenance)."""
 import hashlib
+import io
 import json
 import os
+from contextlib import redirect_stderr
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from tools.check_map02_private_capture_ready import inspect_staged_capture
+import tools.check_map02_private_capture_ready as preflight_module
+from tools.check_map02_private_capture_ready import (
+    _snapshot_word, inspect_staged_capture, main as preflight_main,
+)
 from tools.verify_map02_frame_bundle import MAP_BYTES, PINNED_PC_SOURCE, VRAM_BYTES
 
 
@@ -139,6 +145,139 @@ class PrivateCapturePreflightTests(unittest.TestCase):
         self.assertFalse(result["original_gameplay_authenticated"])
         self.assertFalse(result["ps1_hardware_equivalence_proven"])
 
+    def test_sample_reads_correct_regular_vram_word(self):
+        self.assertEqual(
+            _snapshot_word(self.native, "gpu-0001-vram.bin", self.x, self.y),
+            992)
+
+    def test_sample_rejects_path_escape_and_noncanonical_snapshot_names(self):
+        for name in (
+                "../gpu-0001-vram.bin", "/tmp/gpu-0001-vram.bin",
+                "gpu-0001-vram.bin/../../other",
+                "gpu-1-vram.bin", "gpu-0001-vramXbin",
+                "gpu-0001-vram.bin/", 42, True):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, "snapshot filename"):
+                    _snapshot_word(self.native, name, self.x, self.y)
+
+    def test_sample_rejects_outside_vram_coordinates_and_bool(self):
+        for x, y in ((-1, 20), (1024, 20), (10, -1), (10, 512),
+                     (True, 20), (10, False), (10.0, 20)):
+            with self.subTest(x=x, y=y):
+                with self.assertRaisesRegex(ValueError, "sample coordinates"):
+                    _snapshot_word(self.native, "gpu-0001-vram.bin", x, y)
+
+    def test_sample_rejects_hardlinked_snapshot_inode(self):
+        target = self.native / "gpu-0001-vram.bin"
+        alias = self.native.parent / "foreign-hardlink"
+        os.link(target, alias)
+        try:
+            with self.assertRaisesRegex(ValueError, "wrong type or size"):
+                _snapshot_word(self.native, target.name, self.x, self.y)
+        finally:
+            alias.unlink()
+        self.assertEqual(
+            _snapshot_word(self.native, target.name, self.x, self.y),
+            992)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "requires POSIX FIFO")
+    def test_fifo_snapshot_rejected_without_blocking(self):
+        target = self.native / "gpu-0001-vram.bin"
+        target.unlink()
+        os.mkfifo(target, mode=0o600)
+        original_open = os.open
+
+        def guarded_open(path, flags, *args, **kwargs):
+            if (os.fspath(path) == os.fspath(target) and
+                    not flags & os.O_NONBLOCK):
+                raise AssertionError("FIFO open must be nonblocking")
+            return original_open(path, flags, *args, **kwargs)
+
+        with patch("tools.check_map02_private_capture_ready.os.open",
+                   side_effect=guarded_open):
+            with self.assertRaisesRegex(ValueError, "wrong type or size"):
+                _snapshot_word(self.native, target.name, self.x, self.y)
+
+    def test_rejects_byte_identical_snapshot_inode_swap_during_sample(self):
+        target = self.native / "gpu-0001-vram.bin"
+        replacement = self.native / "prebuilt-replacement"
+        replacement.write_bytes(target.read_bytes())
+        original_pread = os.pread
+        calls = [0]
+
+        def swap_on_first_read(fd, size, offset):
+            raw = original_pread(fd, size, offset)
+            calls[0] += 1
+            if calls[0] == 1:
+                os.replace(replacement, target)
+            return raw
+
+        with patch("tools.check_map02_private_capture_ready.os.pread",
+                   side_effect=swap_on_first_read):
+            with self.assertRaisesRegex(ValueError, "changed during sample"):
+                _snapshot_word(self.native, target.name, self.x, self.y)
+        self.assertEqual(calls[0], 2)
+
+    def test_rejects_two_distinct_words_on_same_inode(self):
+        original_pread = os.pread
+        calls = [0]
+
+        def change_second_read(fd, size, offset):
+            raw = original_pread(fd, size, offset)
+            calls[0] += 1
+            return b"\x01\x00" if calls[0] == 2 else raw
+
+        with patch("tools.check_map02_private_capture_ready.os.pread",
+                   side_effect=change_second_read):
+            with self.assertRaisesRegex(ValueError, "changed during sample"):
+                _snapshot_word(self.native, "gpu-0001-vram.bin",
+                               self.x, self.y)
+        self.assertEqual(calls[0], 2)
+
+    def test_rejects_identical_snapshot_inode_swap_between_sampling_passes(self):
+        # Each individual two-byte read succeeds. Only cross-pass inode
+        # pinning catches the byte-identical replacement between visits.
+        target = self.native / "gpu-0000-vram.bin"
+        original_sample = preflight_module._snapshot_word
+        swapped = [False]
+
+        def replace_after_first_sample(*args, **kwargs):
+            pixel = original_sample(*args, **kwargs)
+            if args[1] == target.name and not swapped[0]:
+                old = self.native.parent / "old-private-vram"
+                target.replace(old)
+                target.write_bytes(old.read_bytes())
+                swapped[0] = True
+            return pixel
+
+        with patch.object(preflight_module, "_snapshot_word",
+                          side_effect=replace_after_first_sample):
+            with self.assertRaisesRegex(ValueError, "changed between samples"):
+                self.run_preflight()
+        self.assertTrue(swapped[0])
+
+    def test_rejects_post_draw_snapshot_mutation_at_final_revisit(self):
+        # Change the snapshot only after its edge is already checked; the
+        # final re-read must detect drift before publishing a positive report.
+        target = self.native / "gpu-0001-vram.bin"
+        original_sample = preflight_module._snapshot_word
+        calls = [0]
+
+        def touch_after_draw_comparison(*args, **kwargs):
+            pixel = original_sample(*args, **kwargs)
+            if args[1] == target.name:
+                calls[0] += 1
+                if calls[0] == 2:
+                    st = target.stat()
+                    os.utime(target, ns=(st.st_atime_ns, st.st_mtime_ns + 10**9))
+            return pixel
+
+        with patch.object(preflight_module, "_snapshot_word",
+                          side_effect=touch_after_draw_comparison):
+            with self.assertRaisesRegex(ValueError, "changed between samples"):
+                self.run_preflight()
+        self.assertEqual(calls[0], 2)
+
     def test_catches_pixel_snapshot_drift_even_when_logs_and_sha_agree(self):
         snapshot = self.native / "gpu-0001-vram.bin"
         raw = bytearray(snapshot.read_bytes())
@@ -220,6 +359,102 @@ class PrivateCapturePreflightTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "incomplete"):
             self.run_preflight()
 
+    def test_rejects_source_or_gpu_log_inode_swap_after_initial_audit(self):
+        for target in (self.source / "bundle.json",
+                       self.native / "gpu-native-events.jsonl"):
+            with self.subTest(name=target.name):
+                original_sample = preflight_module._snapshot_word
+                altered = [False]
+                backup = self.source.parent / ("old-" + target.name)
+
+                def substitute_during_vram_sample(*args, **kwargs):
+                    word = original_sample(*args, **kwargs)
+                    if not altered[0]:
+                        target.replace(backup)
+                        target.write_bytes(backup.read_bytes())
+                        altered[0] = True
+                    return word
+
+                with patch.object(preflight_module, "_snapshot_word",
+                                  side_effect=substitute_during_vram_sample):
+                    with self.assertRaisesRegex(ValueError,
+                                                "input changed during preflight"):
+                        self.run_preflight()
+                self.assertTrue(altered[0])
+                target.unlink()
+                backup.replace(target)
+
+    def test_rejects_manifest_metadata_drift_after_initial_audit(self):
+        target = self.source / "gpu-putpixel-ot.json"
+        original_sample = preflight_module._snapshot_word
+        touched = [False]
+
+        def touch_before_recheck(*args, **kwargs):
+            word = original_sample(*args, **kwargs)
+            if not touched[0]:
+                st = target.stat()
+                os.utime(target, ns=(st.st_atime_ns,
+                                     st.st_mtime_ns + 10**9))
+                touched[0] = True
+            return word
+
+        with patch.object(preflight_module, "_snapshot_word",
+                          side_effect=touch_before_recheck):
+            with self.assertRaisesRegex(ValueError,
+                                        "input changed during preflight"):
+                self.run_preflight()
+        self.assertTrue(touched[0])
+
+    def test_rejects_hardlinked_native_event_log(self):
+        target = self.native / "gpu-native-events.jsonl"
+        alias = self.source.parent / "hardlinked-gpu-event-log"
+        os.link(target, alias)
+        try:
+            with self.assertRaisesRegex(ValueError, "type, owner or size"):
+                self.run_preflight()
+        finally:
+            alias.unlink()
+        self.assertTrue(self.run_preflight()["structural_preflight_passed"])
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "requires POSIX FIFO")
+    def test_input_fifo_rejected_without_blocking(self):
+        target = self.native / "gpu-native-events.jsonl"
+        target.unlink()
+        os.mkfifo(target, mode=0o600)
+        original_open = os.open
+
+        def guard_open(path, flags, *args, **kwargs):
+            if (os.fspath(path) == os.fspath(target) and
+                    not flags & os.O_NONBLOCK):
+                raise AssertionError("FIFO input must open nonblocking")
+            return original_open(path, flags, *args, **kwargs)
+
+        with patch("tools.check_map02_private_capture_ready.os.open",
+                   side_effect=guard_open):
+            with self.assertRaisesRegex(ValueError, "type, owner or size"):
+                self.run_preflight()
+
+    def test_rejects_aliased_or_nested_capture_roots(self):
+        with self.assertRaisesRegex(ValueError, "directories overlap"):
+            inspect_staged_capture(self.source, self.source)
+        nested = self.source / "nested-native-capture"
+        nested.mkdir(mode=0o700)
+        with self.assertRaisesRegex(ValueError, "directories overlap"):
+            inspect_staged_capture(self.source, nested)
+        reverse_nested = self.native / "nested-source-capture"
+        reverse_nested.mkdir(mode=0o700)
+        with self.assertRaisesRegex(ValueError, "directories overlap"):
+            inspect_staged_capture(reverse_nested, self.native)
+        self.assertTrue(self.run_preflight()["structural_preflight_passed"])
+
+    def test_preflight_rejects_roots_not_owned_by_current_user(self):
+        own_uid = os.geteuid()
+        with patch("tools.check_map02_private_capture_ready.os.geteuid",
+                   return_value=own_uid + 1):
+            with self.assertRaisesRegex(ValueError, "require current owner"):
+                self.run_preflight()
+        self.assertTrue(self.run_preflight()["structural_preflight_passed"])
+
     def test_refuses_world_readable_or_symlinked_capture_directories(self):
         os.chmod(self.native, 0o755)
         with self.assertRaises(ValueError):
@@ -277,6 +512,28 @@ class PrivateCapturePreflightTests(unittest.TestCase):
         self.source_file("bundle.json", self.bundle)
         with self.assertRaisesRegex(ValueError, "exceed captured native draws"):
             self.run_preflight()
+
+    def test_cli_redacts_private_paths_and_untrusted_errors(self):
+        private_path = "/private/owned-game/MAP02/restricted-disc-image.bin"
+        argv = ["map02-preflight", str(self.source), str(self.native)]
+        errors = (
+            OSError(13, "access denied to original game image", private_path),
+            ValueError("untrusted source claims " + private_path),
+        )
+        for error in errors:
+            with self.subTest(error=type(error).__name__):
+                output = io.StringIO()
+                with (patch("sys.argv", argv),
+                      patch("tools.check_map02_private_capture_ready.inspect_staged_capture",
+                            side_effect=error),
+                      redirect_stderr(output)):
+                    with self.assertRaises(SystemExit) as exited:
+                        preflight_main()
+                self.assertEqual(exited.exception.code, 2)
+                self.assertIn("private MAP02 structural preflight unavailable",
+                              output.getvalue())
+                self.assertNotIn(private_path, output.getvalue())
+                self.assertNotIn("restricted-disc-image", output.getvalue())
 
     def test_never_creates_a_manifest_or_promotes_pending_logs(self):
         before_source = set(self.source.iterdir())

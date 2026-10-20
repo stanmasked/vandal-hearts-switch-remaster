@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import stat
 
 from tools.map02_blendg1_witness import compare_blendg1_witnesses
@@ -25,8 +26,7 @@ from tools.verify_map02_frame_bundle import (
     fields, number, parse_json, sha_check,
 )
 from tools.verify_map02_native_gpu_capture import (
-    LOG as NATIVE_LOG, MAX_RECORDS, private_file, validate_meta,
-    verify_capture_receipt,
+    LOG as NATIVE_LOG, MAX_RECORDS, validate_meta, verify_capture_receipt,
 )
 from tools.verify_map02_putpixel_scope import FIELDS, SCHEMA as PIXEL_SCHEMA
 
@@ -35,24 +35,102 @@ STAGED_BLEND = "blendg1-native-events.pending.jsonl"
 STAGED_EDGES = "vram-edges-native-events.pending.jsonl"
 
 
-def _snapshot_word(directory, filename, x, y):
-    """Read 2 bytes, not a game screenshot; refuse links/nonregular files."""
+def _snapshot_word(directory, filename, x, y, *, observed=None):
+    """Read one native VRAM sample without accepting an inode substitution.
+
+    This checks only a two-byte sample, NOT the provenance of a whole frame.
+    O_NONBLOCK ensures a FIFO substituted at open cannot hang the preflight.
+    """
+    # Treat the event-supplied name as untrusted, including at direct
+    # call sites: never allow a slash, dot segment or another file type.
+    if (type(filename) is not str or
+            re.fullmatch(r"gpu-[0-9]{4}-vram\.bin", filename) is None):
+        raise ValueError("invalid native VRAM snapshot filename")
+    if (type(x) is not int or type(y) is not int or
+            not 0 <= x < 1024 or not 0 <= y < 512):
+        raise ValueError("invalid native VRAM sample coordinates")
     path = directory / filename
-    if path.is_symlink() or not path.is_file():
-        raise ValueError("missing or linked native VRAM snapshot")
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-    flags |= getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(path, flags)
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) |
+             getattr(os, "O_NOFOLLOW", 0) |
+             getattr(os, "O_NONBLOCK", 0))
     try:
+        fd = os.open(path, flags)
+    except OSError:
+        raise ValueError("native VRAM snapshot unavailable or linked") from None
+    try:
+        def identity(info):
+            return (info.st_dev, info.st_ino, info.st_uid, info.st_mode,
+                    info.st_nlink, info.st_size, info.st_mtime_ns,
+                    info.st_ctime_ns)
+
         info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode) or info.st_size != VRAM_BYTES:
+        if (not stat.S_ISREG(info.st_mode) or
+                info.st_uid != os.geteuid() or info.st_nlink != 1 or
+                info.st_size != VRAM_BYTES):
             raise ValueError("native VRAM snapshot has wrong type or size")
         address = (y * 1024 + x) * 2
-        os.lseek(fd, address, os.SEEK_SET)
-        raw = os.read(fd, 2)
-        if len(raw) != 2:
+        first = os.pread(fd, 2, address)
+        second = os.pread(fd, 2, address)
+        if len(first) != 2 or len(second) != 2:
             raise ValueError("truncated native VRAM pixel")
-        return int.from_bytes(raw, "little")
+        if (first != second or identity(os.fstat(fd)) != identity(info) or
+                identity(os.stat(path, follow_symlinks=False)) != identity(info)):
+            raise ValueError("native VRAM snapshot changed during sample")
+        if observed is not None:
+            # Bind all visits to this capture snapshot to one exact inode,
+            # not just two reads within each individual visit.
+            if filename in observed and observed[filename] != identity(info):
+                raise ValueError("native VRAM snapshot changed between samples")
+            observed[filename] = identity(info)
+        return int.from_bytes(first, "little")
+    except OSError:
+        raise ValueError("native VRAM snapshot sample unavailable") from None
+    finally:
+        os.close(fd)
+
+
+def _input_snapshot(directory, name, *, expected=None, max_bytes=None):
+    """Read a private input twice from one inode; return bytes and identity.
+
+    Keep the source-log and manifest audit separate from sampled VRAM:
+    the latter reads only a selected two-byte pixel at each DRAW edge.
+    """
+    if (type(name) is not str or not name or
+            name in (".", "..") or "/" in name or "\\" in name):
+        raise ValueError("invalid private MAP02 input name")
+    path = directory / name
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) |
+             getattr(os, "O_NOFOLLOW", 0) |
+             getattr(os, "O_NONBLOCK", 0))
+    try:
+        fd = os.open(path, flags)
+    except OSError:
+        raise ValueError("private MAP02 input unavailable") from None
+    try:
+        def identity(st):
+            return (st.st_dev, st.st_ino, st.st_uid, st.st_mode,
+                    st.st_nlink, st.st_size, st.st_mtime_ns,
+                    st.st_ctime_ns)
+
+        before = os.fstat(fd)
+        size = before.st_size
+        if (not stat.S_ISREG(before.st_mode) or
+                before.st_uid != os.geteuid() or before.st_nlink != 1 or
+                (expected is not None and size != expected) or
+                (max_bytes is not None and not 0 < size <= max_bytes) or
+                (expected is None and max_bytes is None)):
+            raise ValueError("private MAP02 input type, owner or size invalid")
+        first = os.pread(fd, size, 0)
+        second = os.pread(fd, size, 0)
+        if len(first) != size or first != second:
+            raise ValueError("private MAP02 input changed or truncated")
+        if (identity(os.fstat(fd)) != identity(before) or
+                identity(os.stat(path, follow_symlinks=False)) !=
+                identity(before)):
+            raise ValueError("private MAP02 input inode changed")
+        return first, identity(before)
+    except OSError:
+        raise ValueError("private MAP02 input verification unavailable") from None
     finally:
         os.close(fd)
 
@@ -73,8 +151,29 @@ def inspect_staged_capture(source_dir, native_dir):
     """Preflight only, never promote/modify files or authenticate retail MAP02."""
     source = _private_directory(source_dir)
     native = _private_directory(native_dir)
+    # The source evidence and executed GPU capture must be independent
+    # private directories. Alias/nesting invalidates that assumption even
+    # when both folders individually meet the 0700 mode requirement.
+    source_real, native_real = source.resolve(), native.resolve()
+    if (source_real == native_real or source_real in native_real.parents or
+            native_real in source_real.parents):
+        raise ValueError("MAP02 source and native capture directories overlap")
+    if (source.stat().st_uid != os.geteuid() or
+            native.stat().st_uid != os.geteuid()):
+        raise ValueError("MAP02 private capture directories require current owner")
 
-    bundle_raw = private_file(source, "bundle.json", max_bytes=64 * 1024)
+    inputs = {}
+
+    def read_input(directory, name, *, expected=None, max_bytes=None):
+        raw, inode = _input_snapshot(
+            directory, name, expected=expected, max_bytes=max_bytes)
+        key = (directory, name)
+        if key in inputs and inputs[key][:2] != (raw, inode):
+            raise ValueError("private MAP02 input changed between reads")
+        inputs[key] = (raw, inode, expected, max_bytes)
+        return raw
+
+    bundle_raw = read_input(source, "bundle.json", max_bytes=64 * 1024)
     bundle = parse_json(bundle_raw, "bundle.json")
     fields(bundle, ("schema", "frame", "vram_snapshot_frame", "ot_size",
                     "pc_source_commit", "decoded_map_sha256", "vram_sha256",
@@ -89,11 +188,11 @@ def inspect_staged_capture(source_dir, native_dir):
               1, 2**32 - 1) != source_frame:
         raise ValueError("source VRAM and MAP02 frame labels differ")
     number(bundle["ot_size"], "source OT size", 5, 4096)
-    sha_check(private_file(source, "map02.decoded.bin", expected=MAP_BYTES),
+    sha_check(read_input(source, "map02.decoded.bin", expected=MAP_BYTES),
               bundle["decoded_map_sha256"], "source MAP02 decoded map")
-    sha_check(private_file(source, "gpu-vram-le.bin", expected=VRAM_BYTES),
+    sha_check(read_input(source, "gpu-vram-le.bin", expected=VRAM_BYTES),
               bundle["vram_sha256"], "source VRAM snapshot")
-    events_raw = private_file(source, "gpu-events.jsonl", max_bytes=256 * 1024)
+    events_raw = read_input(source, "gpu-events.jsonl", max_bytes=256 * 1024)
     sha_check(events_raw, bundle["events_sha256"], "source GTE FT4 events")
     events = _jsonl(events_raw, "source FT4", max_rows=32)
     if any(e.get("stage") != "map02_ft4_submit" or
@@ -106,7 +205,7 @@ def inspect_staged_capture(source_dir, native_dir):
                 any(ch not in "0123456789abcdef" for ch in digest)):
             raise ValueError("invalid supplied original game fingerprint")
 
-    pixel_manifest_raw = private_file(source, "gpu-putpixel-ot.json",
+    pixel_manifest_raw = read_input(source, "gpu-putpixel-ot.json",
                                       max_bytes=64 * 1024)
     pixel_meta = parse_json(pixel_manifest_raw, "gpu-putpixel-ot.json")
     fields(pixel_meta, ("schema", "source_frame", "gpu_draw_frame",
@@ -118,7 +217,7 @@ def inspect_staged_capture(source_dir, native_dir):
         raise ValueError("PutPixel source frame or schema mismatch")
     gpu_frame = number(pixel_meta["gpu_draw_frame"], "GPU DrawOTag frame",
                        1, 2**32 - 1)
-    overdraw_raw = private_file(source, "gpu-native-overdraw.json",
+    overdraw_raw = read_input(source, "gpu-native-overdraw.json",
                                 max_bytes=64 * 1024)
     sha_check(overdraw_raw, pixel_meta["overdraw_manifest_sha256"],
               "overdraw evidence")
@@ -132,12 +231,12 @@ def inspect_staged_capture(source_dir, native_dir):
             number(overdraw["gpu_draw_frame"], "overdraw GPU frame",
                    1, 2**32 - 1) != gpu_frame):
         raise ValueError("overdraw frame or schema differs")
-    ot_raw = private_file(source, "gpu-ot-order-join.json",
+    ot_raw = read_input(source, "gpu-ot-order-join.json",
                           max_bytes=64 * 1024)
     sha_check(ot_raw, overdraw["ot_order_manifest_sha256"],
               "original AddPrim/OT join")
 
-    native_raw = private_file(native, NATIVE_LOG, max_bytes=128 * 1024)
+    native_raw = read_input(native, NATIVE_LOG, max_bytes=128 * 1024)
     sha_check(native_raw, pixel_meta["native_events_sha256"],
               "native original-PC GPU log")
     sha_check(native_raw, overdraw["native_events_sha256"],
@@ -158,9 +257,9 @@ def inspect_staged_capture(source_dir, native_dir):
                 raise ValueError("native GPU before/after provenance changed")
         pairs.append((before, after))
 
-    pixels_raw = private_file(native, STAGED_PIXEL, max_bytes=16 * 1024)
-    blend_raw = private_file(native, STAGED_BLEND, max_bytes=16 * 1024)
-    edge_raw = private_file(native, STAGED_EDGES, max_bytes=MAX_EDGE_BYTES)
+    pixels_raw = read_input(native, STAGED_PIXEL, max_bytes=16 * 1024)
+    blend_raw = read_input(native, STAGED_BLEND, max_bytes=16 * 1024)
+    edge_raw = read_input(native, STAGED_EDGES, max_bytes=MAX_EDGE_BYTES)
     sha_check(pixels_raw, pixel_meta["putpixel_events_sha256"],
               "independently supplied PutPixel digest")
     pixels = complete_events(pixels_raw, "staged native PutPixel")
@@ -181,26 +280,45 @@ def inspect_staged_capture(source_dir, native_dir):
     if len(events) > len(native_draws):
         raise ValueError("source-keyed FT4 submissions exceed captured native draws")
     x, y = edges[0]["x"], edges[0]["y"]
+    sampled_inodes = {}
+
+    def sample(filename):
+        return _snapshot_word(native, filename, x, y,
+                              observed=sampled_inodes)
+
     # Every snapshot referenced by transfer AND draw pairs must exist, be
     # regular and be full-size. Read only the selected native word.
     for before, after in pairs:
-        _snapshot_word(native, before["snapshot"], x, y)
-        _snapshot_word(native, after["snapshot"], x, y)
+        sample(before["snapshot"])
+        sample(after["snapshot"])
         if before["operation"] == "load" and after["upload"]:
             rect = after["rect"]
             area = rect[2] * rect[3]
             if not 0 < area <= 16384:
                 raise ValueError("invalid source VRAM upload extent")
-            private_file(native, after["upload"], expected=area * 2)
+            read_input(native, after["upload"], expected=area * 2)
     for ordinal, (pair, edge) in enumerate(zip(native_draws, edges)):
         before, after = pair
         if (before["primitive_type"] != edge["primitive_type"] or
                 before["frame"] != edge["frame"] or
                 edge["primitive_ordinal"] != ordinal):
             raise ValueError("direct edge differs from GPU draw-pair identity")
-        if (_snapshot_word(native, before["snapshot"], x, y) != edge["before"] or
-                _snapshot_word(native, after["snapshot"], x, y) != edge["after"]):
+        if (sample(before["snapshot"]) != edge["before"] or
+                sample(after["snapshot"]) != edge["after"]):
             raise ValueError("edge differs from independent full native VRAM snapshot")
+
+    # A final revisit also catches inode swaps after a snapshot's last
+    # draw-edge comparison but before the structural result is returned.
+    for filename in tuple(sampled_inodes):
+        sample(filename)
+
+    # Verify original manifests, events and transfers again after GPU
+    # samples. A byte-identical inode replacement or metadata drift is
+    # not equivalent to the file used for the initial consistency check.
+    for (directory, name), (raw, inode, expected, max_bytes) in inputs.items():
+        if _input_snapshot(directory, name, expected=expected,
+                           max_bytes=max_bytes) != (raw, inode):
+            raise ValueError("private MAP02 input changed during preflight")
 
     # Source files may still be synthetic despite perfect hashes.
     return {
@@ -233,8 +351,10 @@ def main():
     args = parser.parse_args()
     try:
         report = inspect_staged_capture(args.source_bundle, args.native_capture)
-    except (OSError, ValueError) as exc:
-        parser.error(str(exc))
+    except (OSError, ValueError):
+        # Errors from private files and JSON may contain absolute image paths
+        # or untrusted input. Do not expose them in CLI stderr or CI logs.
+        parser.error("private MAP02 structural preflight unavailable")
     print(json.dumps(report, sort_keys=True, indent=2))
 
 

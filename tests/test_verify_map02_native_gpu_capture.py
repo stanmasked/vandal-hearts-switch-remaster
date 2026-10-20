@@ -1,10 +1,17 @@
 """Synthetic checker for bounded native GPU command/VRAM capture files."""
+import io
 import json
+import os
+from contextlib import redirect_stderr
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from tools.verify_map02_native_gpu_capture import verify_capture, VRAM_BYTES
+import tools.verify_map02_native_gpu_capture as gpu_module
+from tools.verify_map02_native_gpu_capture import (
+    main as gpu_cli_main, private_file, verify_capture, VRAM_BYTES,
+)
 
 class NativeGpuCaptureValidationTests(unittest.TestCase):
     def setUp(self):
@@ -46,6 +53,216 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
             (self.root/f"gpu-{i:04d}-vram.bin").write_bytes(payload)
         (self.root/"gpu-native-events.jsonl").write_text(
             "".join(json.dumps(e,sort_keys=True)+"\n" for e in self.events))
+
+    def test_pinned_private_snapshot_rejects_path_escape(self):
+        for name in ("../gpu-0000-vram.bin", "/tmp/foreign-vram.bin",
+                     "gpu-0000-vram.bin/extra", "..", True):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, "input name"):
+                    private_file(self.root, name, expected=VRAM_BYTES)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "requires POSIX FIFO")
+    def test_pinned_private_snapshot_rejects_fifo_without_blocking(self):
+        target = self.root / "gpu-0000-vram.bin"
+        target.unlink()
+        os.mkfifo(target, mode=0o600)
+        original_open = os.open
+
+        def nonblocking_open(path, flags, *args, **kwargs):
+            if (os.fspath(path) == os.fspath(target) and
+                    not flags & os.O_NONBLOCK):
+                raise AssertionError("FIFO open must be nonblocking")
+            return original_open(path, flags, *args, **kwargs)
+
+        with patch("tools.verify_map02_native_gpu_capture.os.open",
+                   side_effect=nonblocking_open):
+            with self.assertRaisesRegex(ValueError, "non-regular file"):
+                private_file(self.root, target.name, expected=VRAM_BYTES)
+
+    def test_pinned_snapshot_rejects_identical_inode_swap_during_read(self):
+        target = self.root / "gpu-0000-vram.bin"
+        backup = self.root / "before-swap"
+        original_pread = os.pread
+        calls = [0]
+
+        def replace_after_first_pread(fd, size, offset):
+            raw = original_pread(fd, size, offset)
+            calls[0] += 1
+            if calls[0] == 1:
+                target.replace(backup)
+                target.write_bytes(backup.read_bytes())
+            return raw
+
+        with patch("tools.verify_map02_native_gpu_capture.os.pread",
+                   side_effect=replace_after_first_pread):
+            with self.assertRaisesRegex(ValueError, "changed during private read"):
+                private_file(self.root, target.name, expected=VRAM_BYTES)
+        self.assertEqual(calls[0], 2)
+
+    def test_pinned_snapshot_rejects_metadata_drift_during_read(self):
+        target = self.root / "gpu-0000-vram.bin"
+        original_pread = os.pread
+        calls = [0]
+
+        def touch_after_first_pread(fd, size, offset):
+            raw = original_pread(fd, size, offset)
+            calls[0] += 1
+            if calls[0] == 1:
+                st = target.stat()
+                os.utime(target, ns=(st.st_atime_ns,
+                                     st.st_mtime_ns + 10**9))
+            return raw
+
+        with patch("tools.verify_map02_native_gpu_capture.os.pread",
+                   side_effect=touch_after_first_pread):
+            with self.assertRaisesRegex(ValueError, "changed during private read"):
+                private_file(self.root, target.name, expected=VRAM_BYTES)
+        self.assertEqual(calls[0], 2)
+
+    def test_pinned_private_snapshot_rejects_hardlink(self):
+        target = self.root / "gpu-0000-vram.bin"
+        alias = self.root / "hardlinked-vram"
+        os.link(target, alias)
+        try:
+            with self.assertRaisesRegex(ValueError, "non-regular file"):
+                private_file(self.root, target.name, expected=VRAM_BYTES)
+        finally:
+            alias.unlink()
+        self.assertEqual(
+            len(private_file(self.root, target.name, expected=VRAM_BYTES)),
+            VRAM_BYTES)
+
+    def test_full_audit_rejects_byte_identical_snapshot_swap_after_read(self):
+        # All individual reads succeed, and the new file contains the same
+        # bytes. The late whole-audit recheck must still reject its new inode.
+        target=self.root/"gpu-0000-vram.bin"
+        backup=self.root/"old-vram-for-test"
+        original=gpu_module.private_file
+        replaced=[False]
+
+        def swap_after_last_snapshot(root,name,**kwargs):
+            result=original(root,name,**kwargs)
+            if (name=="gpu-0003-vram.bin" and kwargs.get("_with_identity")
+                    and not replaced[0]):
+                target.replace(backup)
+                target.write_bytes(backup.read_bytes())
+                replaced[0]=True
+            return result
+
+        with patch.object(gpu_module,"private_file",
+                          side_effect=swap_after_last_snapshot):
+            with self.assertRaisesRegex(ValueError,
+                                        "evidence changed during full audit"):
+                verify_capture(self.root,target_frame=12)
+        self.assertTrue(replaced[0])
+
+    def test_full_audit_rejects_snapshot_drift_after_read(self):
+        target=self.root/"gpu-0002-vram.bin"
+        original=gpu_module.private_file
+        changed=[False]
+
+        def mutate_after_last_snapshot(root,name,**kwargs):
+            result=original(root,name,**kwargs)
+            if (name=="gpu-0003-vram.bin" and kwargs.get("_with_identity")
+                    and not changed[0]):
+                st=target.stat()
+                os.utime(target,ns=(st.st_atime_ns,st.st_mtime_ns+10**9))
+                changed[0]=True
+            return result
+
+        with patch.object(gpu_module,"private_file",
+                          side_effect=mutate_after_last_snapshot):
+            with self.assertRaisesRegex(ValueError,
+                                        "evidence changed during full audit"):
+                verify_capture(self.root,target_frame=12)
+        self.assertTrue(changed[0])
+
+    def test_full_audit_rechecks_terminal_receipt_after_validation(self):
+        receipt=dict(
+            schema="vh.map02.native-capture-status.v1",
+            gpu_draw_frame=12,observed_hooks=4,before_hooks=2,after_hooks=2,
+            draw_before_hooks=1,transfer_before_hooks=1,indexed_hooks=4,
+            written_hooks=4,limit_reached=False,walk_finished=True,
+            hooks_balanced=True,observed_window_closed_without_detected_loss=True)
+        target=self.root/"gpu-native-capture-status.json"
+        target.write_text(json.dumps(receipt)+"\n",encoding="utf-8")
+        original=gpu_module.verify_capture_receipt
+        swapped=[False]
+
+        def swap_receipt_after_validation(*args,**kwargs):
+            result=original(*args,**kwargs)
+            if not swapped[0]:
+                backup=self.root/"old-receipt-for-test"
+                target.replace(backup)
+                target.write_bytes(backup.read_bytes())
+                swapped[0]=True
+            return result
+
+        with patch.object(gpu_module,"verify_capture_receipt",
+                          side_effect=swap_receipt_after_validation):
+            with self.assertRaisesRegex(ValueError,
+                                        "evidence changed during full audit"):
+                verify_capture(self.root,target_frame=12)
+        self.assertTrue(swapped[0])
+
+    def test_recorder_rejects_unterminated_or_noncanonical_jsonl(self):
+        target = self.root / "gpu-native-events.jsonl"
+        complete = target.read_bytes()
+        self.assertTrue(complete.endswith(b"\n"))
+        cases = (
+            complete[:-1],                  # valid final JSON without LF
+            complete.replace(b"\n", b"\r\n"),  # CRLF
+            complete + b"\n",             # unpaired blank row
+            complete.replace(b"\n", b"\v", 1),  # alternative delimiter
+        )
+        for altered in cases:
+            with self.subTest(suffix=altered[-8:]):
+                target.write_bytes(altered)
+                with self.assertRaises(ValueError):
+                    verify_capture(self.root, target_frame=12)
+        target.write_bytes(complete)
+        self.assertEqual(
+            verify_capture(self.root, target_frame=12)["native_gpu_pairs_verified"],
+            2)
+
+    def test_cli_redacts_private_paths_in_capture_errors(self):
+        private_path = "/private/owned-game/MAP02/source-image.bin"
+        argv = ["native-gpu-audit", str(self.root), "--frame", "12"]
+        for error in (OSError(13, "private file unavailable", private_path),
+                      ValueError("untrusted GPU event: " + private_path)):
+            with self.subTest(kind=type(error).__name__):
+                stderr = io.StringIO()
+                with (patch("sys.argv", argv),
+                      patch.object(gpu_module, "verify_capture", side_effect=error),
+                      redirect_stderr(stderr)):
+                    with self.assertRaises(SystemExit) as exit_result:
+                        gpu_cli_main()
+                self.assertEqual(exit_result.exception.code, 2)
+                self.assertIn("private native GPU capture verification unavailable",
+                              stderr.getvalue())
+                self.assertNotIn(private_path, stderr.getvalue())
+                self.assertNotIn("source-image.bin", stderr.getvalue())
+
+    def test_full_capture_rejects_unobserved_vram_write_between_pairs(self):
+        report=verify_capture(self.root,target_frame=12)
+        self.assertEqual(report["native_gpu_vram_pair_bridge_checks"],1)
+        # The second pair still contains two correctly sized snapshots and
+        # valid JSON, but its BEFORE diverges from the first pair's AFTER.
+        # This is an unobserved change to the original native VRAM state.
+        path=self.root/"gpu-0002-vram.bin"
+        mutated=bytearray(path.read_bytes())
+        mutated[10:12]=b"\x1f\x00"
+        path.write_bytes(mutated)
+        with self.assertRaisesRegex(ValueError,
+                                    "VRAM continuity broken between event pairs"):
+            verify_capture(self.root,target_frame=12)
+
+    def test_single_gpu_pair_needs_no_inter_pair_bridge(self):
+        self.events=self.events[:2]
+        self.save()
+        report=verify_capture(self.root,target_frame=12)
+        self.assertEqual(report["native_gpu_pairs_verified"],1)
+        self.assertEqual(report["native_gpu_vram_pair_bridge_checks"],0)
 
     def test_two_native_pairs_and_hashes(self):
         result=verify_capture(self.root,target_frame=12)

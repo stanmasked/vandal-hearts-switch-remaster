@@ -8,6 +8,7 @@ snapshots. Returns only count and hashes, not screenshots or game bytes.
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import stat
@@ -22,16 +23,50 @@ MAX_RECORDS = 64
 MAX_EVENT_BYTES = 128 * 1024
 
 
-def private_file(root: Path, name: str, *, expected=None, max_bytes=None):
+def private_file(root: Path, name: str, *, expected=None, max_bytes=None,
+                 _with_identity=False):
+    """Double-read a bounded native GPU input from a pinned regular inode.
+
+    The recorder may be audited after a private process exits; refuse links,
+    FIFOs, inode replacement and mid-read changes before using any bytes.
+    """
+    if (type(name) is not str or not name or
+            name in (".", "..") or "/" in name or "\\" in name):
+        raise ValueError("invalid native GPU input name")
     path = root / name
-    if path.is_symlink() or not path.is_file() or not stat.S_ISREG(path.stat().st_mode):
-        raise ValueError(f"{name}: missing, symlinked or non-regular file")
-    size = path.stat().st_size
-    if expected is not None and size != expected:
-        raise ValueError(f"{name}: wrong file size")
-    if max_bytes is not None and (size < 1 or size > max_bytes):
-        raise ValueError(f"{name}: over size limit or empty")
-    return path.read_bytes()
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) |
+             getattr(os, "O_NOFOLLOW", 0) |
+             getattr(os, "O_NONBLOCK", 0))
+    try:
+        fd = os.open(path, flags)
+    except OSError:
+        raise ValueError(f"{name}: missing, symlinked or non-regular file") from None
+    try:
+        def identity(st):
+            return (st.st_dev, st.st_ino, st.st_uid, st.st_mode,
+                    st.st_nlink, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+
+        before = os.fstat(fd)
+        if (not stat.S_ISREG(before.st_mode) or
+                before.st_uid != os.geteuid() or before.st_nlink != 1):
+            raise ValueError(f"{name}: missing, symlinked or non-regular file")
+        size = before.st_size
+        if expected is not None and size != expected:
+            raise ValueError(f"{name}: wrong file size")
+        if max_bytes is not None and (size < 1 or size > max_bytes):
+            raise ValueError(f"{name}: over size limit or empty")
+        first = os.pread(fd, size, 0)
+        second = os.pread(fd, size, 0)
+        if (len(first) != size or first != second or
+                identity(os.fstat(fd)) != identity(before) or
+                identity(os.stat(path, follow_symlinks=False)) !=
+                identity(before)):
+            raise ValueError(f"{name}: input changed during private read")
+        return (first, identity(before)) if _with_identity else first
+    except OSError:
+        raise ValueError(f"{name}: private input verification unavailable") from None
+    finally:
+        os.close(fd)
 
 
 def sha(raw):
@@ -165,8 +200,28 @@ def verify_capture(directory: Path, *, target_frame: int):
     if directory.is_symlink() or not directory.is_dir():
         raise ValueError("capture directory is missing or is a symlink")
     number(target_frame,"target DrawOTag frame",1,2**32-1)
-    log_raw=private_file(directory,LOG,max_bytes=MAX_EVENT_BYTES)
-    lines=log_raw.splitlines()
+    # Track both complete bytes and the precise inode used by the audit.
+    # Checks inside private_file alone cannot detect replacement after
+    # one capture file was audited but before the final positive report.
+    evidence={}
+
+    def read_evidence(name, *, expected=None, max_bytes=None):
+        raw, identity = private_file(
+            directory, name, expected=expected, max_bytes=max_bytes,
+            _with_identity=True)
+        token=(sha(raw), identity, expected, max_bytes)
+        if name in evidence and evidence[name] != token:
+            raise ValueError("native GPU evidence changed between audit passes")
+        evidence[name]=token
+        return raw
+
+    log_raw=read_evidence(LOG,max_bytes=MAX_EVENT_BYTES)
+    # Recorder events are newline-terminated JSONL. splitlines() silently
+    # accepted a missing final LF and alternative line separators, making
+    # a truncated event log appear complete when its JSON remained valid.
+    if not log_raw.endswith(b"\n") or b"\r" in log_raw:
+        raise ValueError("incomplete or noncanonical native GPU event stream")
+    lines=log_raw.split(b"\n")[:-1]
     if (len(lines)<2 or len(lines)>MAX_RECORDS or len(lines)%2 or
             any(not line.strip() for line in lines)):
         raise ValueError("incomplete, blank or oversized native GPU event stream")
@@ -174,6 +229,8 @@ def verify_capture(directory: Path, *, target_frame: int):
     pairs=0;draws=loads=moves=clears=0
     assignments=0;draw_changed_words=transfer_changed_words=0
     snapshot_hashes=[]
+    previous_after=None
+    bridge_checks=0
     for i in range(0,len(events),2):
         before,after=events[i:i+2]
         validate_meta(before,i,target_frame)
@@ -182,8 +239,16 @@ def verify_capture(directory: Path, *, target_frame: int):
                     "semi","ft4","draw_env"):
             if before.get(key)!=after.get(key):
                 raise ValueError(f"GPU event {i}: before/after metadata diverges ({key})")
-        a=private_file(directory,before["snapshot"],expected=VRAM_BYTES)
-        b=private_file(directory,after["snapshot"],expected=VRAM_BYTES)
+        a=read_evidence(before["snapshot"],expected=VRAM_BYTES)
+        b=read_evidence(after["snapshot"],expected=VRAM_BYTES)
+        # Consecutive operations in a captured native window must share
+        # the same complete 1-MiB VRAM endpoint. An unobserved GPU write
+        # between them means the stream is not a complete transition log.
+        if previous_after is not None:
+            if a != previous_after:
+                raise ValueError("native GPU VRAM continuity broken between event pairs")
+            bridge_checks+=1
+        previous_after=b
         snapshot_hashes.extend((sha(a),sha(b)))
         changed=sum(a[j:j+2]!=b[j:j+2] for j in range(0,VRAM_BYTES,2))
         assignments+=changed
@@ -205,7 +270,7 @@ def verify_capture(directory: Path, *, target_frame: int):
                     area=rect[2]*rect[3]
                     if not 0<area<=16384:
                         raise ValueError("LoadImage payload exists for invalid/oversized rectangle")
-                    private_file(directory,upload,expected=area*2)
+                    read_evidence(upload,expected=area*2)
             elif kind=="move":
                 moves+=1
             elif kind=="clear":
@@ -215,6 +280,7 @@ def verify_capture(directory: Path, *, target_frame: int):
     # supplied, it must agree with every observed native GPU event and cap.
     status_path = directory / STATUS
     if status_path.exists() or status_path.is_symlink():
+        read_evidence(STATUS,max_bytes=4096)
         status_report = verify_capture_receipt(
             directory, target_frame=target_frame, events=events)
     else:
@@ -223,12 +289,21 @@ def verify_capture(directory: Path, *, target_frame: int):
             "capture_window_closed_without_detected_loss": False,
             "full_original_gameplay_frame_proven": False,
         }
+    # Re-open every manifest, event stream, VRAM snapshot and upload. Hashes
+    # and inode/metadata must match the exact files used for the result.
+    for name,(digest,identity,expected,max_bytes) in evidence.items():
+        rechecked,latest = private_file(
+            directory,name,expected=expected,max_bytes=max_bytes,
+            _with_identity=True)
+        if sha(rechecked)!=digest or latest!=identity:
+            raise ValueError("native GPU evidence changed during full audit")
     return {
         **status_report,
         "native_gpu_events_sha256":sha(log_raw),
         "vram_snapshot_sha256_list_sha256":sha("".join(snapshot_hashes).encode("ascii")),
         "frame":target_frame,
         "native_gpu_pairs_verified":pairs,
+        "native_gpu_vram_pair_bridge_checks":bridge_checks,
         "draw_otag_primitive_pairs":draws,
         "load_image_pairs":loads,
         "move_image_pairs":moves,
@@ -251,8 +326,10 @@ def main():
     args=p.parse_args()
     try:
         report=verify_capture(args.private_directory,target_frame=args.frame)
-    except (ValueError,OSError) as exc:
-        p.error(str(exc))
+    except (ValueError, OSError):
+        # Filesystem exceptions and untrusted JSON may contain private game
+        # paths; do not echo the exception payload into terminal/CI logs.
+        p.error("private native GPU capture verification unavailable")
     print(json.dumps(report,sort_keys=True,indent=2))
 
 if __name__=="__main__":

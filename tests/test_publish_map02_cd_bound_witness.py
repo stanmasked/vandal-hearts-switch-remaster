@@ -7,6 +7,7 @@ No retail bytes are ever used or uploaded.
 """
 import hashlib
 import json
+import os
 from pathlib import Path
 import stat
 import unittest
@@ -57,18 +58,23 @@ class OriginalCdBoundFinalWitnessTests(unittest.TestCase):
         self.binary.chmod(0o700)
 
         crc = 0
+        payload_sha = hashlib.sha256()
         with self.image.open("rb") as fd:
             for lba in range(0x1bcc, 0x1bcc + 12):
                 fd.seek(lba * 2352 + 24)
-                crc = zlib.crc32(fd.read(2048), crc)
+                data = fd.read(2048)
+                crc = zlib.crc32(data, crc)
+                payload_sha.update(data)
         self.cd_receipt = {
-            "schema": "vh.map02.original-cd-read.v1",
+            "schema": "vh.map02.original-cd-read.v2",
             "capture_session": "bc" * 16,
             "source": "original-CdRead-and-ContinueLoadingCdFile",
             "cdf": "CDF_M_MAP02_PRS",
             "lba": 0x1bcc, "sectors": 12, "bytes": 24576,
             "raw_user_crc32": f"{crc:08x}",
             "returned_user_crc32": f"{crc:08x}",
+            "raw_user_sha256": payload_sha.hexdigest(),
+            "returned_user_sha256": payload_sha.hexdigest(),
             "loader_completed": True,
         }
         self.stage_cd()
@@ -192,6 +198,79 @@ class OriginalCdBoundFinalWitnessTests(unittest.TestCase):
             fd.write(b"\n")
         with self.assertRaises(ValueError):
             self.verify()
+
+    def test_final_audit_rejects_identical_bytes_source_or_process_inode_swap(self):
+        for folder, filename in (
+                (self.source, GPU_FINAL), (self.handoff, RECEIPT)):
+            with self.subTest(file=filename):
+                target = folder / filename
+                backup = folder.parent / ("original-" + folder.name + "-" + filename)
+                original = target.read_bytes()
+                initial_inode = target.stat().st_ino
+
+                def same_bytes_swap(*args, **kwargs):
+                    target.replace(backup)
+                    target.write_bytes(original)
+                    target.chmod(0o600)
+                    self.assertNotEqual(initial_inode, target.stat().st_ino)
+                    return self.process_report(*args, **kwargs)
+
+                try:
+                    with patch(
+                            "tools.publish_map02_cd_bound_witness.verify_observed_process",
+                            side_effect=same_bytes_swap):
+                        with self.assertRaisesRegex(
+                                ValueError, "evidence identity changed during final CD audit"):
+                            self.publish()
+                finally:
+                    if backup.exists():
+                        target.unlink(missing_ok=True)
+                        backup.replace(target)
+                self.assertFalse((self.source / MANIFEST).exists())
+                self.assertEqual(initial_inode, target.stat().st_ino)
+
+    def test_final_manifest_recheck_rejects_identical_bytes_inode_swap(self):
+        self.publish()
+        target = self.source / MANIFEST
+        original = target.read_bytes()
+        saved = self.source.parent / "original-final-cd-gpu-manifest"
+        payload = json.loads(original)
+        initial_inode = target.stat().st_ino
+
+        def switch_while_reverifying(*args, **kwargs):
+            target.replace(saved)
+            target.write_bytes(original)
+            target.chmod(0o600)
+            self.assertNotEqual(initial_inode, target.stat().st_ino)
+            return payload
+
+        try:
+            with patch("tools.publish_map02_cd_bound_witness._verified",
+                       side_effect=switch_while_reverifying):
+                with self.assertRaisesRegex(ValueError, "witness identity changed"):
+                    self.verify()
+        finally:
+            if saved.exists():
+                target.unlink(missing_ok=True)
+                saved.replace(target)
+        self.assertEqual(initial_inode, target.stat().st_ino)
+
+    def test_final_manifest_rejects_hardlinks_and_world_readable_mode(self):
+        self.publish()
+        target = self.source / MANIFEST
+        alias = self.source.parent / "original-final-witness-hardlink"
+        os.link(target, alias)
+        try:
+            with self.assertRaisesRegex(ValueError, "owner-only 0600"):
+                self.verify()
+        finally:
+            alias.unlink()
+        target.chmod(0o644)
+        try:
+            with self.assertRaisesRegex(ValueError, "owner-only 0600"):
+                self.verify()
+        finally:
+            target.chmod(0o600)
 
     def test_manifest_cannot_claim_ps1_or_full_map_rendering(self):
         self.publish()

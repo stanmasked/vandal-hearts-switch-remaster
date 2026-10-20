@@ -66,6 +66,8 @@ def promote_staged_putpixel(source_dir, native_dir, *, compiler="gcc"):
         temp = _prepare_private_file(target, raw)
         os.link(temp, target)  # exclusive: cannot replace existing log
         created = True
+        # The verified log must be single-linked during downstream audits.
+        temp.unlink()
         report = verify_pixel_ot(source_dir, native_dir, compiler=compiler)
         if report["observed_native_putpixel_calls"] != len(rows):
             raise ValueError("verified original PutPixel event count disagrees")
