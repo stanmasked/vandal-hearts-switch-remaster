@@ -111,14 +111,22 @@ def function_images(fd, names):
         for i in range(0, len(entries), relfmt.size):
             offset, info = relfmt.unpack_from(entries, i)[:2]
             kind = info & 0xffffffff
-            if kind == 0:  # R_X86_64_NONE
+            if kind == 0:  # R_X86_64_NONE, writes no bytes
                 continue
+            # A relocation cannot refer beyond the executable section that
+            # owns our mandatory functions. Otherwise it could evade
+            # function-local validation merely by moving its r_offset.
+            if offset >= sections[target][5]:
+                raise ValueError("original PC ELF witness out-of-section relocation")
             for name, (_, _, start, length) in relevant.items():
                 if start <= offset < start + length:
                     width = WIDTH.get(kind)
                     if width is None or offset + width > start + length:
                         raise ValueError("original PC ELF witness unsupported/out-of-function relocation")
-                    masks[name].update(range(offset - start, offset - start + width))
+                    affected = set(range(offset - start, offset - start + width))
+                    if masks[name] & affected:
+                        raise ValueError("original PC ELF witness overlapping relocations")
+                    masks[name].update(affected)
     return {name: (found[name][0], frozenset(masks[name])) for name in names}
 
 
