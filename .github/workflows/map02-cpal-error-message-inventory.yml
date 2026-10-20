@@ -82,7 +82,11 @@ jobs:
             test -s "$dir/guest-final.png"
             test -s "$dir/host-cpal-audioout-timeline.csv"
             test -s "$dir/virtual-pulse-48k-stereo-s16le.pcm"
-            test -s "$dir/nexium-guest-stdout.log"
+            # Valid guest startup may produce zero bytes on stdout.
+            # The log must exist as a regular file, but no messages is evidence.
+            test -f "$dir/nexium-guest-stdout.log"
+            test ! -L "$dir/nexium-guest-stdout.log"
+            stat -c "Captured %n bytes=%s" "$dir/nexium-guest-stdout.log"
             test -s "$dir/pinned-host-and-nro.json"
           done
           mkdir -p stage293-results
