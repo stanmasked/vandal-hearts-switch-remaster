@@ -7,6 +7,7 @@
 #include "map02_battle8.h"
 #include "map02_roster8_variants.h"
 #include "map02_ranged8.h"
+#include "map02_medic8.h"
 #include "game_renderer.h"
 #include "platform_input.h"
 #include "software_renderer.h"
@@ -490,6 +491,7 @@ static void draw_map02_battle8(u32 *pixels, u32 stride,
     if (battle8_scene == 1) {
         draw_text(pixels, stride, 985, 489, "SECOND ARENA", COLOR_CURSOR, 1);
         draw_text(pixels, stride, 985, 513, "ALLY 1 BOW: B", COLOR_HERO, 1);
+        draw_text(pixels, stride, 985, 536, "ALLY 2 HEAL: B", COLOR_HERO, 1);
     }
     draw_text(pixels, stride, 70, 622,
               "ZR OR L+R RETURN  MINUS DEMO  PLUS EXIT", COLOR_MUTED, 2);
@@ -605,10 +607,21 @@ int main(int argc, char **argv) {
                                                    battle8.roster.cursor_y);
                     if (battle8_scene == 1 &&
                         battle8.selected == VH_B8_ARCHER_SLOT &&
-                        occ >= VH_R8_SIDE_CAP)
+                        occ >= VH_R8_SIDE_CAP) {
                         (void)vh_b8_shoot(&battle8);
-                    else
+                    } else if (battle8_scene == 1 &&
+                               battle8.selected == VH_B8_MEDIC_SLOT &&
+                               occ >= 0 && occ < battle8.roster.ally_count &&
+                               occ != VH_B8_MEDIC_SLOT &&
+                               battle8.roster.units[occ].hp > 0 &&
+                               battle8.roster.units[occ].hp < VH_B8_HEAL_HP_CAP) {
+                        /* A damaged allied target requests a support action.
+                         * Out-of-range support cannot spend the medic's turn. */
+                        (void)vh_b8_heal(&battle8);
+                    } else {
+                        /* Existing B cancel unchanged for all other cases. */
                         (void)vh_b8_cancel(&battle8);
+                    }
                 }
                 if (buttons_down & HidNpadButton_X)
                     (void)vh_b8_end_turn(&battle8);
