@@ -15,6 +15,8 @@ on:
       - 'tests/test_report_pulse_sink_input_latency.py'
       - 'tests/test_report_map02_guest_raster_sequence.py'
       - 'tools/report_map02_guest_raster_sequence.py'
+      - 'tools/classify_map02_guest_evidence.py'
+      - 'tests/test_classify_map02_guest_evidence.py'
       - 'source/vh_switch_game_audio.c'
       - 'source/vh_switch_game_audio.h'
       - 'source/main.c'
@@ -195,6 +197,11 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests -p 'test_report_map02_guest_raster_sequence.py' -v
+      - name: Reject false correlations between receipt, PCM and screen
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_classify_map02_guest_evidence.py' -v
       - name: Download pinned NeXium nightly asset
         shell: bash
         env:
@@ -437,6 +444,23 @@ jobs:
           if [ "$result" = NO_EXACT_EIGHT_PAGE_SINK_MATCH ]; then
             echo "Exact virtual sink attribution NOT YET proven" >> "$GITHUB_STEP_SUMMARY"
           fi
+      - name: Classify observed guest evidence without claiming stalled audout
+        shell: bash
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 tools/classify_map02_guest_evidence.py \
+            --directory runtime-evidence \
+            --output runtime-evidence/presubmit-guest-evidence-conjunction.json
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          path=Path('runtime-evidence/presubmit-guest-evidence-conjunction.json')
+          verdict=json.loads(path.read_text())['classification']
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as stream:
+              print('Guest multi-evidence classification: '+verdict,file=stream)
+              print('(observational; does not override the strict optical test)',file=stream)
+          PY
       - name: Archive actual guest evidence even if decode fails
         if: always()
         uses: actions/upload-artifact@v4
