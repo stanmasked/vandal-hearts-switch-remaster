@@ -56,6 +56,14 @@ def _object_only_commit(repo: Path, tree: str, parent: str,
     return sha
 
 
+def _head_reference(repo: Path) -> tuple[int, str]:
+    """Capture symbolic branch or detached HEAD without assuming either."""
+    result = git(repo, "symbolic-ref", "--quiet", "HEAD", allow_failure=True)
+    if result.returncode not in (0, 1):
+        raise AuditError("unable to inspect current HEAD reference")
+    return (result.returncode, result.stdout.strip())
+
+
 def rehearse(repo: Path, main_sha: str, pinned_prs: list[dict],
              expected_last_sha: str | None = None) -> dict:
     """Simulate one isolated merge object per stage and verify ALL trees."""
@@ -63,7 +71,7 @@ def rehearse(repo: Path, main_sha: str, pinned_prs: list[dict],
     if not SHA.fullmatch(main_sha) or not isinstance(pinned_prs, list) or not pinned_prs:
         raise AuditError("invalid virtual merge input or empty PR list")
     before_head = git(repo, "rev-parse", "HEAD").stdout.strip()
-    before_branch = git(repo, "symbolic-ref", "HEAD").stdout.strip()
+    before_branch = _head_reference(repo)
     before_status = git(repo, "status", "--porcelain").stdout
     parent = main_sha
     items = []
@@ -101,7 +109,7 @@ def rehearse(repo: Path, main_sha: str, pinned_prs: list[dict],
     if _tree(repo, parent) != _tree(repo, final_sha):
         raise AuditError("full virtual integration tree differs from final HEAD")
     if (git(repo, "rev-parse", "HEAD").stdout.strip() != before_head
-            or git(repo, "symbolic-ref", "HEAD").stdout.strip() != before_branch
+            or _head_reference(repo) != before_branch
             or git(repo, "status", "--porcelain").stdout != before_status):
         raise AuditError("virtual merge unexpectedly changed worktree or ref")
     return {
