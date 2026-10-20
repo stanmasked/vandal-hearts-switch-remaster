@@ -96,7 +96,10 @@ class Map02HostAlsaProbeTests(unittest.TestCase):
         self.assertEqual(r["buffer_frames_values"],[2048])
         self.assertEqual(r["transfer_kinds"],["MMAP_COMMIT","WRITEI"])
         self.assertEqual(r["other_successful_alsa_hw_params_count"],0)
-        self.assertFalse(r["transfer_calls_directly_attributed_to_48k_pcm"])
+        self.assertTrue(r["transfer_calls_directly_attributed_to_48k_pcm"])
+        self.assertEqual(r["48k_stereo_stream_ids"],[1])
+        self.assertEqual(r["48k_stereo_attributed_transfer_count"],2)
+        self.assertEqual(r["unattributed_transfer_count"],0)
         self.assertFalse(r["rust_cpal_callback_period_proven"])
         self.assertFalse(r["guest_audout_service_deadlock_proven"])
         self.assertFalse(r["physical_switch_audio_proven"])
@@ -125,36 +128,36 @@ class Map02HostAlsaProbeTests(unittest.TestCase):
             parse(self.file)
 
     def test_negative_duration_rejected(self):
-        self.file.write_text("HW_PARAMS,22,21,123,0,0,48000,2,512,2048\n")
+        self.file.write_text("HW_PARAMS,22,21,123,0,0,48000,2,512,2048,1\n")
         with self.assertRaisesRegex(ValueError,"Impossible ALSA"):
             parse(self.file)
 
     def test_no_transfer_does_not_claim_callback(self):
-        self.file.write_text("HW_PARAMS,10,11,123,0,0,48000,2,512,2048\n")
+        self.file.write_text("HW_PARAMS,10,11,123,0,0,48000,2,512,2048,1\n")
         with self.assertRaisesRegex(ValueError,"No ALSA write"):
             parse(self.file)
 
     def test_invalid_buffer_geometry_rejected(self):
         self.file.write_text(
-            "HW_PARAMS,10,11,123,0,0,48000,2,2048,512\n"
-            "WRITEI,12,13,123,512,512,0,0,0,0\n")
+            "HW_PARAMS,10,11,123,0,0,48000,2,2048,512,1\n"
+            "WRITEI,12,13,123,512,512,0,0,0,0,1\n")
         with self.assertRaisesRegex(ValueError,"Target 48k stereo"):
             parse(self.file)
 
     def test_overreturned_transfer_rejected(self):
         self.file.write_text(
-            "HW_PARAMS,10,11,123,0,0,48000,2,512,2048\n"
-            "WRITEI,12,13,123,512,513,0,0,0,0\n")
+            "HW_PARAMS,10,11,123,0,0,48000,2,512,2048,1\n"
+            "WRITEI,12,13,123,512,513,0,0,0,0,1\n")
         with self.assertRaisesRegex(ValueError,"more frames"):
             parse(self.file)
 
     def test_secondary_768k_32ch_alsa_config_not_mislabeled_as_guest_output(self):
         # Found in live NeXium, with *different* ALSA PCM parameters.
         self.file.write_text(
-            "HW_PARAMS,10,11,123,0,0,48000,2,512,1536\n"
-            "HW_PARAMS,12,13,124,0,0,768000,32,32,32768\n"
-            "HW_PARAMS,14,15,124,0,0,768000,32,32,96\n"
-            "WRITEI,16,17,125,512,512,0,0,0,0\n")
+            "HW_PARAMS,10,11,123,0,0,48000,2,512,1536,1\n"
+            "HW_PARAMS,12,13,124,0,0,768000,32,32,32768,2\n"
+            "HW_PARAMS,14,15,124,0,0,768000,32,32,96,2\n"
+            "WRITEI,16,17,125,512,512,0,0,0,0,1\n")
         report=parse(self.file)
         self.assertEqual(report["period_frames_values"],[512])
         self.assertEqual(report["buffer_frames_values"],[1536])
@@ -164,11 +167,53 @@ class Map02HostAlsaProbeTests(unittest.TestCase):
              "buffer_frames":96},
             {"rate_hz":768000,"channels":32,"period_frames":32,
              "buffer_frames":32768}])
-        self.assertFalse(report["transfer_calls_directly_attributed_to_48k_pcm"])
+        self.assertTrue(report["transfer_calls_directly_attributed_to_48k_pcm"])
+        self.assertEqual(report["48k_stereo_stream_ids"],[1])
+        self.assertEqual(report["other_hw_stream_ids"],[2])
+
+    def test_transfer_on_secondary_alsa_ordinal_not_guest_48k(self):
+        self.file.write_text(
+            "HW_PARAMS,10,11,123,0,0,48000,2,512,1536,1\n"
+            "HW_PARAMS,12,13,124,0,0,768000,32,32,96,2\n"
+            "WRITEI,14,15,123,512,512,0,0,0,0,1\n"
+            "WRITEI,16,17,124,32,32,0,0,0,0,2\n")
+        r=parse(self.file)
+        self.assertEqual(r["48k_stereo_attributed_transfer_count"],1)
+        self.assertEqual(r["other_config_attributed_transfer_count"],1)
+        self.assertEqual(r["unattributed_transfer_count"],0)
+        self.assertTrue(r["transfer_calls_directly_attributed_to_48k_pcm"])
+
+    def test_unknown_ordinal_remains_unattributed(self):
+        self.file.write_text(
+            "HW_PARAMS,10,11,123,0,0,48000,2,512,1536,1\n"
+            "WRITEI,12,13,124,512,512,0,0,0,0,0\n")
+        r=parse(self.file)
+        self.assertEqual(r["unattributed_transfer_count"],1)
+        self.assertEqual(r["48k_stereo_attributed_transfer_count"],0)
+        self.assertFalse(r["transfer_calls_directly_attributed_to_48k_pcm"])
+
+    def test_reconfigured_same_pcm_stream_not_overclaimed(self):
+        self.file.write_text(
+            "HW_PARAMS,10,11,123,0,0,48000,2,512,1536,1\n"
+            "WRITEI,12,13,123,512,512,0,0,0,0,1\n"
+            "HW_PARAMS,14,15,123,0,0,768000,32,32,96,1\n"
+            "WRITEI,16,17,123,32,32,0,0,0,0,1\n")
+        r=parse(self.file)
+        self.assertEqual(r["mixed_configuration_stream_ids"],[1])
+        self.assertEqual(r["48k_stereo_attributed_transfer_count"],1)
+        self.assertEqual(r["other_config_attributed_transfer_count"],1)
+        self.assertFalse(r["transfer_calls_directly_attributed_to_48k_pcm"])
+
+    def test_false_stream_id_negative_rejected(self):
+        self.file.write_text(
+            "HW_PARAMS,10,11,123,0,0,48000,2,512,1536,-1\n"
+            "WRITEI,12,13,123,512,512,0,0,0,0,1\n")
+        with self.assertRaisesRegex(ValueError,"Impossible ALSA"):
+            parse(self.file)
 
     def test_hard_upper_bound_event_records(self):
         self.file.write_text(
-            "HW_PARAMS,10,11,123,0,0,48000,2,512,2048\n" * 257)
+            "HW_PARAMS,10,11,123,0,0,48000,2,512,2048,1\n" * 257)
         with self.assertRaisesRegex(ValueError,"Unbounded ALSA trace"):
             parse(self.file)
 
