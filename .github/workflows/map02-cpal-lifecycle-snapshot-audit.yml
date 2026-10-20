@@ -1,0 +1,117 @@
+name: MAP02 Stage288 validate CPAL lifecycle error snapshots independently
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-cpal-lifecycle-snapshot-audit.yml'
+      - 'tools/audit_map02_cpal_lifecycle_snapshots.py'
+      - 'tests/test_audit_map02_cpal_lifecycle_snapshots.py'
+      - 'docs/MAP02_CPAL_LIFECYCLE_SNAPSHOT_AUDIT.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VH_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_FROZEN_STAGE287: '0301b4def224a76905fdb2af5007d1ea73e73f92'
+
+jobs:
+  lifecycle-synthetic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    name: Test and falsify monotonic CPAL lifecycle/error reporter semantics
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Ensure only four offline ROM-free analyzer files changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_HEAD"
+          python3 - <<'PY'
+          import os,subprocess
+          observed=set(subprocess.check_output(
+              ["git","diff","--name-only",
+               os.environ["VH_FROZEN_STAGE287"],"HEAD"],
+              text=True).splitlines())
+          allowed={
+              ".github/workflows/map02-cpal-lifecycle-snapshot-audit.yml",
+              "tools/audit_map02_cpal_lifecycle_snapshots.py",
+              "tests/test_audit_map02_cpal_lifecycle_snapshots.py",
+              "docs/MAP02_CPAL_LIFECYCLE_SNAPSHOT_AUDIT.md",
+          }
+          assert observed and observed<=allowed,sorted(observed-allowed)
+          print("Only offline source/receipt validation added:",sorted(observed))
+          PY
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Falsify false callback/lifecycle/error observations using 18 generated cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_map02_cpal_lifecycle_snapshots.py' -v
+      - name: Execute actual standalone parser CLI on ROM-free generated samples
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stage288-generated
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path("stage288-generated")
+          rows=[]
+          for i in range(16):
+              ns=1_000_000_000+200_000_000*i
+              rows.append(
+                  f"L,{ns},3,0,{2*i},{2*i},{1024*i},{768*i},{i},{512*i},{i}\n")
+          (root/"generated-lifecycle.csv").write_text("".join(rows),encoding="ascii")
+          (root/"first-guest-input-monotonic-ns.txt").write_text("2000000000\n")
+          (root/"last-guest-observation-monotonic-ns.txt").write_text("3800000000\n")
+          PY
+          python3 tools/audit_map02_cpal_lifecycle_snapshots.py \
+            --trace stage288-generated/generated-lifecycle.csv \
+            --first-input-marker stage288-generated/first-guest-input-monotonic-ns.txt \
+            --final-observation-marker stage288-generated/last-guest-observation-monotonic-ns.txt \
+            --output stage288-generated/generated-lifecycle-audit.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("stage288-generated/generated-lifecycle-audit.json").read_text())
+          assert r["result"]=="BOUNDED_LIFECYCLE_ATOMIC_SNAPSHOTS_PARSED"
+          assert r["guest_window_atomic_counter_deltas"]["cpal_entries"]==18
+          assert r["final_lifecycle_state"]==3
+          assert r["physical_switch_dac_proven"] is False
+          assert r["exact_nexium_elf_source_sha_verified_by_this_parser"] is False
+          assert r["permanent_guest_audioout_deadlock_or_cpal_root_cause_proven"] is False
+          print("18 synthetic source-falsification tests + CLI receipt pass")
+          PY
+      - name: Report only synthetic parser success or incomplete validation
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path("stage288-generated/generated-lifecycle-audit.json")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
+              print("### Stage288 generated-only CPAL lifecycle integrity",file=f)
+              if p.exists():
+                  x=json.loads(p.read_text())
+                  print("Result: "+x["result"],file=f)
+                  print("**Offline synthetic trace only**. No new instrumented "
+                        "ELF runtime, guest AudioOut, 21/22ms boundary, "
+                        "permanent deadlock or physical Switch audio.",file=f)
+              else:
+                  print("**UNVERIFIED**: synthetic parser did not pass.",file=f)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage288-generated-lifecycle-parser-receipt
+          path: stage288-generated/
+          if-no-files-found: warn
