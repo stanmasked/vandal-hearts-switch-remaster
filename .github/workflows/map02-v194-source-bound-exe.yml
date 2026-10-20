@@ -1,0 +1,31 @@
+name: MAP02 v194 source-built synthetic PS-X EXE native input identity
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v194-source-bound-exe.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/check_map02_v194_source_bound_exe.py'
+      - 'tests/test_map02_v194_source_bound_exe.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-source-rebuild:
+    name: Canonical MIPS machine-code input regeneration (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject self-consistent but incorrect native synthetic guest bytes
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/check_map02_v194_source_bound_exe.py tests/test_map02_v194_source_bound_exe.py
+          python3 -m unittest discover -s tests -p 'test_map02_v194_source_bound_exe.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v193_guest_exe_identity.py' -v
+          echo 'VH194_INDEPENDENT_NATIVE_SOURCE_REBUILD_PASS variants=3 refused_forged=2 original_retail_executed=0'
