@@ -91,6 +91,19 @@ class NativeGpuProbeTests(unittest.TestCase):
         self.assertIn('VH_MAP02_GPU_CAPTURE_WINDOW_COUNT', rendered)
         self.assertIn('gpu-native-window-index.json', rendered)
 
+    def test_private_window_file_writer_ignores_permissive_umask(self):
+        rendered = instrument(minimal_source())
+        self.assertIn('VH_CapturePrivateWindowFile(snapshot_path, 0)', rendered)
+        self.assertIn('VH_CapturePrivateWindowFile(upload_path, 0)', rendered)
+        self.assertIn('VH_CapturePrivateWindowFile(log_path, 1)', rendered)
+        self.assertIn('VH_CapturePrivateWindowFile(status_path, 0)', rendered)
+        self.assertIn('O_NOFOLLOW | O_CLOEXEC', rendered)
+        self.assertIn('open(path, flags, 0600)', rendered)
+        self.assertIn('st.st_nlink != 1', rendered)
+        # The standalone legacy observer and combined joint probe
+        # retain their original compile-time guarded call-site anchors.
+        self.assertEqual(rendered.count('file = fopen(status_path, "wx");'), 2)
+
     def test_injection_is_fail_closed_and_unique(self):
         once=instrument(minimal_source())
         with self.assertRaisesRegex(ValueError,'already instrumented'):

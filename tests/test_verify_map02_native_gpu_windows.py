@@ -1,5 +1,6 @@
 """Negative structural tests for the asset-free same-run GPU window witness."""
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -13,6 +14,11 @@ from tools.verify_map02_vram_timeline import VRAM_BYTES
 
 def jsonline(obj):
     return (json.dumps(obj, separators=(",", ":"), sort_keys=True) + "\n").encode()
+
+
+def private_bytes(path, content):
+    path.write_bytes(content)
+    path.chmod(0o600)
 
 
 class NativeGpuWindowEvidenceTests(unittest.TestCase):
@@ -40,8 +46,8 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
                 "upload": "", "ft4": None,
             }
             self.events.append(event)
-            (self.window / event["snapshot"]).write_bytes(self.snapshots[step])
-        (self.window / "gpu-native-events.jsonl").write_bytes(
+            private_bytes(self.window / event["snapshot"], self.snapshots[step])
+        private_bytes(self.window / "gpu-native-events.jsonl", 
             b"".join(jsonline(e) for e in self.events)
         )
         self.status = {
@@ -58,7 +64,7 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
         self.save_status()
 
     def save_status(self):
-        (self.root / INDEX).write_bytes(jsonline(self.status))
+        private_bytes(self.root / INDEX, jsonline(self.status))
 
     def verify(self):
         return verify_native_windows(self.root, target_frame=7)
@@ -74,7 +80,7 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
         name = self.window / "gpu-0002-vram.bin"
         data = bytearray(self.snapshots[2])
         data[:2] = (99).to_bytes(2, "little")
-        name.write_bytes(data)
+        private_bytes(name, data)
         with self.assertRaisesRegex(ValueError, "discontinuous VRAM|continuity broken"):
             self.verify()
 
@@ -89,9 +95,9 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
         after = dict(before, step=1, phase="after",
                      snapshot="gpu-0001-vram.bin", draw_mode=[1, 0, 0])
         for event in (before, after):
-            (next_window / event["snapshot"]).write_bytes(self.snapshots[3])
+            private_bytes(next_window / event["snapshot"], self.snapshots[3])
         logfile = next_window / "gpu-native-events.jsonl"
-        logfile.write_bytes(jsonline(before) + jsonline(after))
+        private_bytes(logfile, jsonline(before) + jsonline(after))
         self.status.update(window_capacity_events=4, windows_written=2,
                            observed_hooks=6, before_hooks=3, after_hooks=3,
                            draw_before_hooks=3, indexed_hooks=6,
@@ -105,7 +111,7 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
             # Forging both local DR_MODE phases leaves local VRAM/state
             # consistent. Only the cross-window GPU bridge rejects it.
             before["draw_mode"] = [1, 0, 0]
-            logfile.write_bytes(jsonline(before) + jsonline(after))
+            private_bytes(logfile, jsonline(before) + jsonline(after))
             with self.assertRaisesRegex(
                     ValueError, "GPU state continuity broken"):
                 self.verify()
@@ -117,7 +123,7 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
         clip = [0, 0, 1024, 512, 0, 0]
         for event in self.events:
             event["draw_env"] = clip[:]
-        (self.window / "gpu-native-events.jsonl").write_bytes(
+        private_bytes(self.window / "gpu-native-events.jsonl", 
             b"".join(jsonline(e) for e in self.events))
 
         second = self.root / "window-001"
@@ -126,9 +132,9 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
         after = dict(before, step=1, phase="after",
                      snapshot="gpu-0001-vram.bin")
         for event in (before, after):
-            (second / event["snapshot"]).write_bytes(self.snapshots[3])
+            private_bytes(second / event["snapshot"], self.snapshots[3])
         log = second / "gpu-native-events.jsonl"
-        log.write_bytes(jsonline(before) + jsonline(after))
+        private_bytes(log, jsonline(before) + jsonline(after))
         self.status.update(window_capacity_events=4, windows_written=2,
                            observed_hooks=6, before_hooks=3, after_hooks=3,
                            draw_before_hooks=3, indexed_hooks=6,
@@ -139,13 +145,13 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
             self.assertEqual(self.verify()["native_draw_pairs"], 3)
             before["draw_env"] = [1, 0, 1023, 512, 0, 0]
             after["draw_env"] = before["draw_env"][:]
-            log.write_bytes(jsonline(before) + jsonline(after))
+            private_bytes(log, jsonline(before) + jsonline(after))
             with self.assertRaisesRegex(ValueError, "DRAWENV continuity broken"):
                 self.verify()
 
             del before["draw_env"]
             del after["draw_env"]
-            log.write_bytes(jsonline(before) + jsonline(after))
+            private_bytes(log, jsonline(before) + jsonline(after))
             with self.assertRaisesRegex(ValueError, "DRAWENV continuity broken"):
                 self.verify()
 
@@ -162,8 +168,8 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
         after = dict(before, step=1, phase="after",
                      snapshot="gpu-0001-vram.bin")
         for event in (before, after):
-            (second / event["snapshot"]).write_bytes(self.snapshots[3])
-        (second / "gpu-native-events.jsonl").write_bytes(
+            private_bytes(second / event["snapshot"], self.snapshots[3])
+        private_bytes(second / "gpu-native-events.jsonl", 
             jsonline(before) + jsonline(after))
         self.status.update(window_capacity_events=4, windows_written=2,
                            observed_hooks=6, before_hooks=3, after_hooks=3,
@@ -188,8 +194,8 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
         ]
         empty = bytes(VRAM_BYTES)
         for step, event in enumerate(self.events):
-            (self.window / event["snapshot"]).write_bytes(empty)
-        (self.window / "gpu-native-events.jsonl").write_bytes(
+            private_bytes(self.window / event["snapshot"], empty)
+        private_bytes(self.window / "gpu-native-events.jsonl", 
             b"".join(jsonline(event) for event in self.events))
         next_window = self.root / "window-001"
         next_window.mkdir(mode=0o700)
@@ -200,9 +206,9 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
                      snapshot="gpu-0001-vram.bin")
         changed = bytearray(VRAM_BYTES)
         changed[0] = 1
-        (next_window / before["snapshot"]).write_bytes(empty)
-        (next_window / after["snapshot"]).write_bytes(changed)
-        (next_window / "gpu-native-events.jsonl").write_bytes(
+        private_bytes(next_window / before["snapshot"], empty)
+        private_bytes(next_window / after["snapshot"], changed)
+        private_bytes(next_window / "gpu-native-events.jsonl", 
             jsonline(before) + jsonline(after))
         self.status.update(window_capacity_events=4, windows_written=2,
                            observed_hooks=6, before_hooks=3, after_hooks=3,
@@ -230,8 +236,8 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
         ]
         empty = bytes(VRAM_BYTES)
         for event in self.events:
-            (self.window / event["snapshot"]).write_bytes(empty)
-        (self.window / "gpu-native-events.jsonl").write_bytes(
+            private_bytes(self.window / event["snapshot"], empty)
+        private_bytes(self.window / "gpu-native-events.jsonl", 
             b"".join(jsonline(event) for event in self.events))
         self.status.update(draw_before_hooks=0, transfer_before_hooks=2)
         self.save_status()
@@ -271,14 +277,44 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
     def test_invalid_log_and_snapshot_link_rejected(self):
         log = self.window / "gpu-native-events.jsonl"
         original = log.read_bytes()
-        log.write_bytes(original[:-1])
+        private_bytes(log, original[:-1])
         with self.assertRaises(ValueError):
             self.verify()
-        log.write_bytes(original)
+        private_bytes(log, original)
         snapshot = self.window / "gpu-0003-vram.bin"
         snapshot.unlink()
         snapshot.symlink_to(self.window / "gpu-0001-vram.bin")
         with self.assertRaises(ValueError):
+            self.verify()
+
+    def test_capture_files_require_0600_and_single_link(self):
+        snapshot = self.window / "gpu-0000-vram.bin"
+        snapshot.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "owner-only 0600"):
+            self.verify()
+        snapshot.chmod(0o600)
+        self.assertEqual(self.verify()["native_draw_pairs"], 2)
+
+        index = self.root / INDEX
+        index.chmod(0o640)
+        with self.assertRaisesRegex(ValueError, "owner-only 0600"):
+            self.verify()
+        index.chmod(0o600)
+
+        alias = Path(self.tmp.name) / "duplicate-snapshot.bin"
+        os.link(snapshot, alias)
+        with self.assertRaisesRegex(ValueError, "one link"):
+            self.verify()
+        alias.unlink()
+        self.assertEqual(self.verify()["native_draw_pairs"], 2)
+
+    def test_unhashable_event_filename_fails_closed(self):
+        event = dict(self.events[0])
+        event["snapshot"] = ["unexpected", "list"]
+        private_bytes(self.window / "gpu-native-events.jsonl",
+                      jsonline(event) +
+                      b"".join(jsonline(item) for item in self.events[1:]))
+        with self.assertRaisesRegex(ValueError, "nonstring file metadata"):
             self.verify()
 
     def test_root_and_windows_must_be_private_directories(self):

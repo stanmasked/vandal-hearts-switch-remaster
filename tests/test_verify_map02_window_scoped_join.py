@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from tests.test_verify_map02_native_gpu_windows import (
-    NativeGpuWindowEvidenceTests, jsonline,
+    NativeGpuWindowEvidenceTests, jsonline, private_bytes,
 )
 from tools.verify_map02_window_scoped_join import verify_window_scoped_join
 
@@ -94,9 +94,9 @@ class WindowScopedJoinTests(unittest.TestCase):
         for idx, payload in enumerate(
                 (bytes(VRAM_BYTES), bytes(VRAM_BYTES),
                  *self.fixture.snapshots)):
-            (self.fixture.window / f"gpu-{idx:04d}-vram.bin").write_bytes(payload)
+            private_bytes(self.fixture.window / f"gpu-{idx:04d}-vram.bin", payload)
         self.fixture.events = events
-        (self.fixture.window / "gpu-native-events.jsonl").write_bytes(
+        private_bytes(self.fixture.window / "gpu-native-events.jsonl", 
             b"".join(jsonline(e) for e in events))
         self.fixture.status.update(
             observed_hooks=6, before_hooks=3, after_hooks=3,
@@ -114,7 +114,7 @@ class WindowScopedJoinTests(unittest.TestCase):
         # must reject such a forgery before the scoped evidence joins.
         changed = bytearray(VRAM_BYTES)
         changed[4] = 1
-        (self.fixture.window / "gpu-0001-vram.bin").write_bytes(changed)
+        private_bytes(self.fixture.window / "gpu-0001-vram.bin", changed)
         with self.assertRaisesRegex(ValueError,
                                     "DR_MODE DrawOTag primitive modified VRAM"):
             self.check()
@@ -143,8 +143,8 @@ class WindowScopedJoinTests(unittest.TestCase):
                 bytes(same_at_mode_boundary), bytes(same_at_mode_boundary),
                 *self.fixture.snapshots[2:],
         )):
-            (self.fixture.window / f"gpu-{idx:04d}-vram.bin").write_bytes(payload)
-        (self.fixture.window / "gpu-native-events.jsonl").write_bytes(
+            private_bytes(self.fixture.window / f"gpu-{idx:04d}-vram.bin", payload)
+        private_bytes(self.fixture.window / "gpu-native-events.jsonl", 
             b"".join(jsonline(e) for e in events))
         self.fixture.status.update(observed_hooks=6, before_hooks=3,
                                    after_hooks=3, draw_before_hooks=3,
@@ -162,7 +162,7 @@ class WindowScopedJoinTests(unittest.TestCase):
         # The native validator must fail instead of masking the evidence
         # as if DR_MODE were merely a skipped edge.
         events[4]["draw_mode"] = [0, 0, 0]
-        (self.fixture.window / "gpu-native-events.jsonl").write_bytes(
+        private_bytes(self.fixture.window / "gpu-native-events.jsonl", 
             b"".join(jsonline(e) for e in events))
         with self.assertRaisesRegex(ValueError, "discontinuous GPU state"):
             self.check()
