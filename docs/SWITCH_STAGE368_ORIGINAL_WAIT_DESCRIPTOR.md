@@ -89,11 +89,24 @@ The wrapper's six adversarial tests reject forged prior receipt
 digests, swapped original bytes, wrong NRO source/run/attempt and
 false kernel-timeout causal claims.
 
-The [integrated runtime run #39388027581](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39388027581)
-was queued at the time this capture path was added. This is therefore
-**an implemented verification path, not yet a proven genuine new
-NeXium observation**. If its earlier mandatory host recorder or guest
-source auditors fail, Stage368 must not be promoted to verified.
+The [integrated NeXium run #39388027581](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39388027581)
+is now **complete and successful**, including the original guest
+Stage351/357/368 source-attestation steps and later runtime tests.
+Its preserved [original evidence artifact #12249301260](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39388027581/artifacts/12249301260)
+contains the original per-run source receipts. From the completed
+original job log:
+
+- Stage351 reason: `return_confirmed` (code 7);
+- Stage357 original service `Result`: `0`;
+- Stage368 original service `Result`: `0`;
+- Stage368 `released_count`: `1`;
+- Stage368 returned descriptor matched the submitted descriptor: `true`.
+
+This is real **software-level NeXium evidence of a successful exit**,
+not a newly reproduced timeout or physical sound confirmation.
+Stage369 adds a separate GitHub-artifact re-download and byte-for-byte
+cross-check to guard against mistaking the CI step for a replay of
+independently preserved original files.
 
 
 The new schema is **not proof of a real captured `0xEA01` run**.
