@@ -17,7 +17,7 @@ def panel(phase=3,entered=11,returned=10,stop=1):
             returned&255,returned>>8,stop]
     crc=0
     for b in bytes_:crc^=b
-    bytes_.extend((crc,crc^0xc3))
+    bytes_.extend((crc,stage.crc8_atm(bytes_)))
     im=Image.new("RGB",(1280,720),(0,0,0))
     d=ImageDraw.Draw(im)
     d.rectangle((244,154,335,265),fill=(255,0,255))
@@ -69,6 +69,15 @@ class PrejoinOpticalTests(unittest.TestCase):
         im=panel()
         im.putpixel((250+2*10+4,160+3*10+4),(255,255,255))
         with self.assertRaisesRegex(ValueError,"checksum"):
+            self.read(im)
+
+    def test_two_bit_corruption_evading_xor_is_rejected_by_crc8(self):
+        im=panel()
+        # Toggle the same previously zero bit in two different byte
+        # rows. Equal XOR flips cancel, but CRC-8 must still reject.
+        im.putpixel((250+2*10+4,160+3*10+4),(255,255,255))
+        im.putpixel((250+2*10+4,160+4*10+4),(255,255,255))
+        with self.assertRaisesRegex(ValueError,"CRC-8"):
             self.read(im)
 
     def test_return_count_cannot_exceed_enter(self):
