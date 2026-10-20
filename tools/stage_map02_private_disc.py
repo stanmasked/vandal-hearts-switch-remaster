@@ -242,8 +242,9 @@ def stage_disc(bin_path, cue_path, destination_parent, *,
             or stage_name.endswith(".pending")):
         raise ValueError("unsafe destination directory name")
     _assert_local_only_destination(parent, source, cue)
-    # Retain the CUE inode and timestamps from before the potentially long
-    # 665-MB BIN copy. Drive sync can replace a file while copy is in flight.
+    # Pin both mounted file identities before lengthy source and staged reads.
+    # Any File Provider replacement must fail closed before publication.
+    source_initial = source.lstat()
     cue_initial = cue.lstat()
     cue_bytes = _read_cue(cue)
     if _stamp(cue_initial) != _stamp(cue.lstat()):
@@ -309,6 +310,18 @@ def stage_disc(bin_path, cue_path, destination_parent, *,
             # actual copied bytes under their anchored private directory FDs.
             _verify_staged_copy(stagedfd, copied_sha, expected_bytes, cue_bytes)
             os.fsync(stagedfd)
+            # Local SHA-256 readback can also take substantial time. Catch a
+            # Drive replacement during that window immediately before publish.
+            # This is an identity/metadata guard, not a second source hash.
+            sourcefd, _ = _open_source(source)
+            try:
+                _check_unchanged(sourcefd, source_initial, source)
+            finally:
+                os.close(sourcefd)
+            cue_final = _read_cue(cue)
+            if (cue_final != cue_bytes or
+                    _stamp(cue_initial) != _stamp(cue.lstat())):
+                raise ValueError("mounted CUE changed before private publication")
             now = parent.lstat()
             stable = lambda info: (info.st_dev, info.st_ino,
                                    info.st_uid, info.st_mode)
