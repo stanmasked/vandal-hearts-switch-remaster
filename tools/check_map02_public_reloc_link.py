@@ -3,7 +3,7 @@
 
 This is intentionally *not* a complete executable: the pinned public port
 requires user-owned retail assets and PsyQ KROMDAT for four omitted objects.
-Only the 85 public game modules and 32 backend/diagnostic objects are linked
+Only 85 public game modules and 33 backend/diagnostic objects are linked
 by ld -r. Undefined ordinary original-game symbols are expected; unresolved
 vh_map02_ observer symbols, missing original API exports, source drift or a
 linked executable fail closed. No original image or private journal is used.
@@ -319,6 +319,15 @@ def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
             raise ValueError("invalid original object passed to partial linker")
         sources.append(candidate)
     initial = [stable_object_input(path) for path in sources]
+    # The public manifest contains only relative object names and hashes of
+    # asset-free compiler outputs, never private original game data or paths.
+    ordered_objects = [
+        {"path": name, "sha256": proof[0]}
+        for name, proof in zip(names, initial)
+    ]
+    input_manifest_sha256 = hashlib.sha256(json.dumps(
+        ordered_objects, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")).hexdigest()
     if (out_dir == upstream or upstream in out_dir.parents
             or out_dir.exists() or out_dir.is_symlink()):
         raise ValueError("original partial link requires a NEW private external directory")
@@ -379,6 +388,8 @@ def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
         "schema": "vh.map02.public-source-partial-elf-link.v1",
         "public_game_object_count": len(objects[0]),
         "backend_and_observer_object_count": len(objects[1]),
+        "total_compiled_elf_objects": len(names),
+        "ordered_object_input_manifest_sha256": input_manifest_sha256,
         "relocatable_elf_sha256": output_proof[0],
         **checked,
         "fully_linked_game_executable": False,
