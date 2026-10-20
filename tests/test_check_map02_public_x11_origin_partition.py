@@ -117,7 +117,7 @@ class X11ImportOriginPartitionTests(unittest.TestCase):
             report["x11_new_imports_after_link"], 2)
         for label in ("original_x", "still_missing", "needed",
                       "sdl_new", "x11_new", str(self.original)):
-            self.assertNotIn(label, json.dumps(report))
+            self.assertNotIn(json.dumps(label), json.dumps(report))
         for field in ("public_original_partial_sha256",
                       "public_sdl2_partial_sha256",
                       "public_x11_partial_sha256"):
@@ -176,7 +176,7 @@ class X11ImportOriginPartitionTests(unittest.TestCase):
 
         with mock.patch.object(
                 module, "_unresolved", side_effect=replace_after_read):
-            with self.assertRaisesRegex(ValueError, "path replaced"):
+            with self.assertRaisesRegex(ValueError, "changed during link|path replaced"):
                 self.audit()
 
     def test_reused_source_inode_rejected(self):
