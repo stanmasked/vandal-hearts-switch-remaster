@@ -11,6 +11,7 @@ from PIL import Image
 
 import run_map02_nexium_reentry_stress as run
 from test_map02_interrupts_oracle import fixtures as interruption_fixtures
+from test_map02_single_session_oracle import tag, READY
 
 
 def fixtures(root: Path):
@@ -111,8 +112,11 @@ class ReentryStressOracle(unittest.TestCase):
             p, "cycle1_one", "second"), "retained absent ally")
 
     def test_reject_fake_guard_not_unavailable_in_1v4(self):
-        self.scenario(lambda p: self.replace(
-            p, "cycle1_one", "roster_three"), "unavailable guard")
+        def forge(root):
+            frame = run.read(root, "cycle1_one")
+            tag(frame, READY)
+            frame.save(root / "cycle1_one.png")
+        self.scenario(forge, "unavailable guard")
 
     def test_reject_scene_a_contamination_during_l(self):
         self.scenario(lambda p: self.replace(
