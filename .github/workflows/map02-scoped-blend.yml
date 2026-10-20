@@ -87,6 +87,8 @@ on:
       - 'tests/test_check_map02_public_sdl2_archive_witness.py'
       - 'tools/check_map02_public_x11_after_sdl2.py'
       - 'tests/test_check_map02_public_x11_after_sdl2.py'
+      - 'tools/check_map02_public_xcb_after_x11.py'
+      - 'tests/test_check_map02_public_xcb_after_x11.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -236,6 +238,8 @@ on:
       - 'tests/test_check_map02_public_sdl2_archive_witness.py'
       - 'tools/check_map02_public_x11_after_sdl2.py'
       - 'tests/test_check_map02_public_x11_after_sdl2.py'
+      - 'tools/check_map02_public_xcb_after_x11.py'
+      - 'tests/test_check_map02_public_xcb_after_x11.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -328,6 +332,7 @@ jobs:
             tests.test_check_map02_private_incremental_link \
             tests.test_check_map02_public_sdl2_archive_witness \
             tests.test_check_map02_public_x11_after_sdl2 \
+            tests.test_check_map02_public_xcb_after_x11 \
             tests.test_check_map02_private_archive_strategy_compare \
             tests.test_verify_map02_private_archive_comparison \
             tests.test_run_map02_private_link_gap_audit
@@ -621,6 +626,44 @@ jobs:
           assert x11["authentic_map02_execution_proven"] is False
           print("Original public PC ELF: genuine SDL2.a followed by genuine X11.a GNU ld-r.")
           print("Second-stage unresolved counts independently checked without retail data.")
+          PY
+      - name: Measure real XCB.a after X11-linked original public 996-import ELF
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Ubuntu libxcb1-dev provides a normal libxcb.a; no retail assets.
+          sudo apt-get install -y --no-install-recommends libxcb1-dev
+          xcb_static="$(pkg-config --variable=libdir xcb)/libxcb.a"
+          test -s "${xcb_static}"
+          python3 -m tools.check_map02_public_xcb_after_x11 \
+            "${RUNNER_TEMP}/map02-real-x11-native-provider/linked/map02-private-candidate-linked.o" \
+            "${xcb_static}" \
+            "${RUNNER_TEMP}/map02-real-xcb-native-provider" \
+            | tee "${RUNNER_TEMP}/map02-real-xcb-aggregate.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          x11 = json.loads((root / "map02-real-x11-aggregate.json").read_text())
+          xcb = json.loads((root / "map02-real-xcb-aggregate.json").read_text())
+          assert x11["initial_after_sdl2_undefined"] == 1085
+          assert x11["final_strong_undefined_after_x11"] == 996
+          assert xcb["initial_after_x11_strong_undefined"] == 996
+          assert xcb["input_x11_partial_sha256"] == x11["output_x11_partial_sha256"]
+          assert (xcb["original_after_x11_imports_resolved"] +
+                  xcb["original_after_x11_imports_remaining"] == 996)
+          assert (xcb["original_after_x11_imports_remaining"] +
+                  xcb["new_imports_introduced_by_xcb"] ==
+                  xcb["final_strong_undefined_after_xcb"])
+          assert xcb["xcb_strong_export_matches"] >= xcb["original_after_x11_imports_resolved"]
+          assert xcb["ordinary_native_static_archive_tested"] is True
+          assert xcb["system_archive_package_origin_independently_attested"] is False
+          assert xcb["retail_assets_linked"] is False
+          assert xcb["fully_linked_game_executable"] is False
+          assert xcb["authentic_map02_execution_proven"] is False
+          print("Original public PC ELF tested sequentially with real Ubuntu SDL2, X11, and XCB static archives.")
+          print("All XCB native partial-link import changes counted without original game media.")
           PY
       - name: Fail closed on upstream rasterizer source drift
         run: |
