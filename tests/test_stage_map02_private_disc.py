@@ -330,6 +330,42 @@ class PrivateLocalCopyTests(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in self.private.iterdir()),
                          sorted((STAGE_NAME, unrelated.name)))
 
+    def test_mounted_cue_replaced_during_bin_copy_refuses_publication(self):
+        old_cue = self.cue.read_bytes()
+        real_copy = staging._copy_image
+
+        def replace_cue_after_image_stream(source, fd, **kwargs):
+            copied_sha = real_copy(source, fd, **kwargs)
+            # Same original contents but NEW inode: must still refuse.
+            self.cue.unlink()
+            self.cue.write_bytes(old_cue)
+            return copied_sha
+
+        with patch("tools.stage_map02_private_disc._copy_image",
+                   side_effect=replace_cue_after_image_stream):
+            with self.assertRaisesRegex(ValueError, "mounted CUE changed during BIN copy"):
+                self.run_stage()
+        self.assertEqual(list(self.private.iterdir()), [])
+        self.assertEqual(self.bin.read_bytes(), self.data)
+        self.assertEqual(self.cue.read_bytes(), old_cue)
+
+    def test_mounted_cue_content_edit_during_copy_refuses_publication(self):
+        real_copy = staging._copy_image
+        def modify_cue_after_image_stream(source, fd, **kwargs):
+            copied_sha = real_copy(source, fd, **kwargs)
+            cue_bytes = self.cue.read_bytes()
+            # Keep track shape valid, change only the trailing newline byte:
+            # the original cue bytes must still be compared byte-for-byte.
+            self.cue.write_bytes(cue_bytes.rstrip(b"\\r\\n") + b"\\n")
+            return copied_sha
+
+        with patch("tools.stage_map02_private_disc._copy_image",
+                   side_effect=modify_cue_after_image_stream):
+            with self.assertRaisesRegex(ValueError, "mounted CUE changed during BIN copy"):
+                self.run_stage()
+        self.assertEqual(list(self.private.iterdir()), [])
+        self.assertEqual(self.bin.read_bytes(), self.data)
+
     def test_rejects_unsafe_destination_name(self):
         for label in ("..", "../external", ".hidden", "f" * 90):
             with self.subTest(label=label), self.assertRaises(ValueError):
