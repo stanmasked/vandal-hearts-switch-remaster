@@ -128,6 +128,45 @@ static void blocked_route_and_real_movement(void) {
     assert(!s.roster.units[0].acted);
 }
 
+/* For both unchanged approved placeholder maps, the new engine must
+ * reproduce all path distances and one complete enemy phase exactly. */
+static void legacy_two_map_path_and_ai_parity(void) {
+    int scene;
+    for (scene = 0; scene < VH_BSCENARIOS; ++scene) {
+        const VhBattleScenario *cfg = vh_bscenario_by_index(scene);
+        VhRoster8 converted;
+        VhBattle8 extended;
+        VhMap02Battle original;
+        int x, y, unit;
+        assert(cfg);
+        assert(vh_r8_from_legacy(&converted, cfg));
+        assert(vh_b8_init(&extended, &converted,
+                          cfg->move_range, cfg->attack_damage));
+        assert(vh_binit_scenario(&original, cfg));
+        for (unit = 0; unit < cfg->ally_count; ++unit) {
+            for (y = 0; y < VH_BH; ++y)
+                for (x = 0; x < VH_BW; ++x)
+                    assert(vh_b8_path(&extended, unit, x, y, -1,
+                                      NULL, NULL) ==
+                           vh_bpath(&original, unit, x, y, -1,
+                                    NULL, NULL));
+        }
+        assert(vh_b8_end_turn(&extended) == VH_BEND);
+        assert(vh_bend_turn(&original) == VH_BEND);
+        for (unit = 0; unit < cfg->ally_count; ++unit)
+            assert(memcmp(&extended.roster.units[unit],
+                          &original.units[unit],
+                          sizeof(VhBattleUnit)) == 0);
+        for (unit = 0; unit < cfg->enemy_count; ++unit)
+            assert(memcmp(&extended.roster.units[4 + unit],
+                          &original.units[2 + unit],
+                          sizeof(VhBattleUnit)) == 0);
+        assert(extended.status == original.status);
+        assert(extended.turns_completed == original.turns_completed);
+        assert(extended.selected == original.selected);
+    }
+}
+
 static void invalid_init_cannot_mutate_live_game(void) {
     VhRoster8 r = adjacent(3, 3, 2);
     VhBattle8 s, before;
@@ -158,6 +197,7 @@ int main(void) {
     one_ally_two_foes_no_premature_victory();
     enemy_path_and_defeat_across_turns();
     blocked_route_and_real_movement();
+    legacy_two_map_path_and_ai_parity();
     invalid_init_cannot_mutate_live_game();
     puts("VH_MAP02_BATTLE8_PASS slots=8 ally_victory=4 enemy_defeat=4 "
          "multi_turn=1 pathfinding=1 no_mutation=1 switch_integration=0");
