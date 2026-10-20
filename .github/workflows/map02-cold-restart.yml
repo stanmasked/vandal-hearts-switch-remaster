@@ -123,20 +123,27 @@ jobs:
             libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
             libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
             libvulkan1 mesa-vulkan-drivers
-      - name: Download pinned current NeXium nightly release
+      - name: Download and fingerprint NeXium nightly release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           release_json="$(curl -fsSL --retry 3 --retry-all-errors -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
-          asset_url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
-          test -n "$asset_url"
+          asset_url="$(printf '%s' "$release_json" | jq -er '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          printf '%s' "$release_json" | jq -e '{id, tag_name, published_at, assets: [.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | {id, name, size, digest, updated_at}]}' > map02-cold-restart-evidence/nexium-release.json
           curl -fL --retry 3 --retry-all-errors "$asset_url" -o /tmp/nexium-linux.tar.gz
+          archive_hash="$(sha256sum /tmp/nexium-linux.tar.gz | cut -d ' ' -f1)"
+          expected_digest="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .digest // empty')"
+          if test -n "$expected_digest"; then
+            test "$expected_digest" = "sha256:$archive_hash"
+          fi
+          printf '%s  %s\n' "$archive_hash" 'nexium-linux-x86_64.tar.gz' > map02-cold-restart-evidence/nexium-archive.sha256
           mkdir -p /tmp/nexium
           tar -xzf /tmp/nexium-linux.tar.gz -C /tmp/nexium
           emu_bin="$(find /tmp/nexium -type f -executable \( -name nexium -o -name nexium-gui \) -print -quit)"
           test -n "$emu_bin"
+          sha256sum "$emu_bin" > map02-cold-restart-evidence/nexium-executable.sha256
           echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
       - name: Boot, close, cold-reboot and compare all genuine tactical frames
         shell: bash
