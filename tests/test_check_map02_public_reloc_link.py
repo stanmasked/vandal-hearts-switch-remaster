@@ -402,8 +402,11 @@ class PublicRelocatableELFTests(unittest.TestCase):
                 self.assertEqual(command[-1], f"/proc/self/fd/{fds[0]}")
                 self.assertTrue(fcntl.fcntl(fds[0], fcntl.F_GET_SEALS)
                                 & fcntl.F_SEAL_WRITE)
-                witness_fds.append(fds[0])
-                inspectors.append(command[0])
+                # Only ELF inspection after the ld -r step contributes to
+                # the output witness. Earlier nm calls audit the two inputs.
+                if observed:
+                    witness_fds.append(fds[0])
+                    inspectors.append(command[0])
             return real_run(command, *args, **kwargs)
 
         with patch("tools.check_map02_public_reloc_link.preflight"), patch(
@@ -416,7 +419,7 @@ class PublicRelocatableELFTests(unittest.TestCase):
             report = audit_public_link(root, self.root / "bundle-unused",
                                        self.root / "sealed-link-result")
         self.assertEqual(observed, [True])
-        self.assertEqual(inspectors, ["nm", "nm", "readelf", "nm", "nm", "readelf", "readelf"])
+        self.assertEqual(inspectors, ["readelf", "nm", "nm", "readelf", "readelf"])
         self.assertEqual(len(set(witness_fds)), 1)
         self.assertEqual(report["public_game_object_count"], 1)
         self.assertEqual(report["backend_and_observer_object_count"], 1)
@@ -500,7 +503,10 @@ class PublicRelocatableELFTests(unittest.TestCase):
 
         def swap_after_header(command, *args, **kwargs):
             nonlocal swapped
-            if command[0] in ("readelf", "nm"):
+            if command[0] in ("readelf", "nm") and (
+                    command[0] == "readelf" or readers):
+                # Only the output ELF inspectors are counted; separate nm
+                # passes on sealed inputs occur before the first readelf.
                 fds = kwargs.get("pass_fds", ())
                 self.assertEqual(len(fds), 1)
                 self.assertEqual(command[-1], f"/proc/self/fd/{fds[0]}")
@@ -525,7 +531,7 @@ class PublicRelocatableELFTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "differs from linked proof"):
                 audit_public_link(root, self.root / "bundle-unused", output_dir)
         self.assertTrue(swapped)
-        self.assertEqual(readers, ["nm", "nm", "readelf", "nm", "nm", "readelf", "readelf"])
+        self.assertEqual(readers, ["readelf", "nm", "nm", "readelf", "readelf"])
 
     def test_partial_elf_double_read_proof_is_stable(self):
         obj = self.compile(self.all_exports(), name="stable")
