@@ -1,0 +1,103 @@
+name: MAP02 Intel Mac 10.15 minimum Mach-O compatibility probe
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-intel-catalina-macho-minos.yml'
+      - 'tools/map02_intel_mac_offline_selfcheck.py'
+      - 'tests/test_map02_intel_macos_minos.py'
+      - 'docs/MAP02_INTEL_CATALINA_BUILD_PROBE.md'
+      - 'tests/test_map02_vram4_frame.c'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  intel-macos-catalina-target:
+    name: "x86_64 Mach-O minos 10.15 (Python ${{ matrix.python }})"
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.11']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: upstream
+          sparse-checkout: |
+            platform/pc/src/pc_raster.c
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Validate Intel Mac and Mach-O minimum OS guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          python -m unittest discover -s tests \
+            -p 'test_map02_intel_macos_minos.py' -v \
+            2>&1 | tee /tmp/vh-map02-catalina-parser.log
+          grep -F 'Ran 5 tests' /tmp/vh-map02-catalina-parser.log
+      - name: Run synthetic full offline CLI, compile 10.15 Mach-O and inspect load commands
+        shell: bash
+        env:
+          CC: clang
+        run: |
+          set -euo pipefail
+          python -m tools.map02_intel_mac_offline_selfcheck \
+            upstream/platform/pc/src/pc_raster.c \
+            --deployment-target 10.15 \
+            > /tmp/vh-map02-catalina-minos-report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/vh-map02-catalina-minos-report.json').read_text())
+          assert r["intel_macos_host_checked"] is True
+          assert r["pinned_public_pc_raster_verified"] is True
+          assert r["synthetic_regressions_total"] == 49
+          assert r["private_format_real_cli_tests_passed"] == 3
+          assert r["private_format_adversarial_cli_tests_passed"] == 7
+          assert r["synthetic_c11_ft4_frame_passed"] is True
+          assert r["c11_macho_macos_minimum"] == "10.15"
+          assert r["c11_macho_minimum_verified"] is True
+          assert r["catalina_10_15_runtime_executed"] is False
+          assert r["owner_ps1_disc_or_capture_read"] is False
+          assert r["real_retail_map02_authenticated"] is False
+          assert r["nintendo_switch_hardware_proven"] is False
+          print("VH_MAP02_CATALINA_MACHO_MINOS_PASS python=${{ matrix.python }} minos=10.15 architecture=x86_64 synthetic=49 retail=0 actual_catalina=0")
+          PY
+
+  host-and-parser-negative:
+    name: Linux refused and malformed Mach-O guards
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Reject fake macOS and malformed build metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_map02_intel_macos_minos.py' -v \
+            2>&1 | tee /tmp/vh-map02-minos-negative.log
+          grep -F 'Ran 5 tests' /tmp/vh-map02-minos-negative.log
+          if python3 -m tools.map02_intel_mac_offline_selfcheck \
+              /does/not/exist --deployment-target 10.15 \
+              > /tmp/vh-map02-not-mac.out 2>/tmp/vh-map02-not-mac.err; then
+            exit 1
+          fi
+          test ! -s /tmp/vh-map02-not-mac.out
+          grep -F 'offline synthetic MAP02 checks unavailable' \
+            /tmp/vh-map02-not-mac.err
+          echo "VH_MAP02_CATALINA_FAKE_HOST_REJECTED retail=0"
