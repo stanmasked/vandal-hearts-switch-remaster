@@ -124,7 +124,13 @@ def inspect(image, cue, *, expected_bytes=RAW_BYTES,
 
 
 def publish(report, directory):
-    """Exclusively publish a 0600 JSON beneath a pinned 0700 directory."""
+    """Atomically publish a complete 0600 receipt beneath a pinned 0700 dir.
+
+    The final filename is created ONLY after the temporary file has been
+    written and fsynced. Same-directory hard linking is exclusive: another
+    writer cannot replace an existing receipt. An interrupted or failed
+    write cannot leave partial JSON under the final name.
+    """
     root = Path(directory).absolute()
     data = (json.dumps(report, sort_keys=True, indent=2) + "\n").encode("ascii")
     if not 0 < len(data) <= 4096:
@@ -141,36 +147,68 @@ def publish(report, directory):
             raise ValueError("private output directory must be 0700")
         if os.listdir(dirfd):
             raise ValueError("private output directory must be initially empty")
+
+        def same_inode(name, saved):
+            try:
+                current = os.stat(name, dir_fd=dirfd, follow_symlinks=False)
+            except FileNotFoundError:
+                return False
+            return (stat.S_ISREG(current.st_mode) and
+                    (current.st_dev, current.st_ino) ==
+                    (saved.st_dev, saved.st_ino))
+
+        def directory_unchanged():
+            current = root.lstat()
+            return (stat.S_ISDIR(current.st_mode) and
+                    (original.st_dev, original.st_ino, original.st_uid,
+                     original.st_mode) ==
+                    (current.st_dev, current.st_ino, current.st_uid,
+                     current.st_mode))
+
         file_flags = (os.O_WRONLY | os.O_CREAT | os.O_EXCL
                       | getattr(os, "O_NOFOLLOW", 0)
                       | getattr(os, "O_CLOEXEC", 0))
-        fd = os.open(RECEIPT, file_flags, 0o600, dir_fd=dirfd)
+        temporary = "." + RECEIPT + "." + os.urandom(12).hex() + ".pending"
+        fd = os.open(temporary, file_flags, 0o600, dir_fd=dirfd)
         created = os.fstat(fd)
-        completed = False
+        linked = False
+        committed = False
         try:
             with os.fdopen(fd, "wb") as stream:
                 stream.write(data)
                 stream.flush()
                 os.fsync(stream.fileno())
+            if (not directory_unchanged()
+                    or not same_inode(temporary, created)
+                    or stat.S_IMODE(created.st_mode) != 0o600):
+                raise ValueError("private receipt directory or temporary file changed")
+            # This creates the final name in one atomic filesystem operation.
+            # If it already exists (including as a symlink) the link fails.
+            os.link(temporary, RECEIPT, src_dir_fd=dirfd,
+                    dst_dir_fd=dirfd, follow_symlinks=False)
+            linked = True
             os.fsync(dirfd)
-            now = root.lstat()
-            if (not stat.S_ISDIR(now.st_mode)
-                    or (original.st_dev, original.st_ino,
-                        original.st_uid, original.st_mode) !=
-                    (now.st_dev, now.st_ino, now.st_uid, now.st_mode)):
-                raise ValueError("private output directory changed")
-            completed = True
+            if not same_inode(temporary, created):
+                raise ValueError("private temporary receipt replaced")
+            os.unlink(temporary, dir_fd=dirfd)
+            os.fsync(dirfd)
+            current = os.stat(RECEIPT, dir_fd=dirfd, follow_symlinks=False)
+            if (not directory_unchanged()
+                    or not same_inode(RECEIPT, created)
+                    or stat.S_IMODE(current.st_mode) != 0o600
+                    or current.st_nlink != 1):
+                raise ValueError("private receipt changed during publication")
+            committed = True
+            return root / RECEIPT
         finally:
-            if not completed:
-                try:
-                    now = os.stat(RECEIPT, dir_fd=dirfd, follow_symlinks=False)
-                    if (stat.S_ISREG(now.st_mode)
-                            and (now.st_dev, now.st_ino) ==
-                            (created.st_dev, created.st_ino)):
-                        os.unlink(RECEIPT, dir_fd=dirfd)
-                except FileNotFoundError:
-                    pass
-        return root / RECEIPT
+            if not committed:
+                # Only clean up the inode created by THIS publisher, never a
+                # competing file at either path.
+                if linked and same_inode(RECEIPT, created):
+                    os.unlink(RECEIPT, dir_fd=dirfd)
+                if same_inode(temporary, created):
+                    os.unlink(temporary, dir_fd=dirfd)
+                os.fsync(dirfd)
     finally:
         os.close(dirfd)
 
