@@ -273,7 +273,7 @@ def function_code_sha256(path, symbols, *, pass_fds=()):
         raise ValueError("original PC ELF code fingerprint metadata unavailable")
     sections = {}
     for line in section_result.stdout.splitlines():
-        matched = re.match(r"^\\s*\\[\\s*(\\d+)\\]\\s+(.+)$", line)
+        matched = re.match(r"^\s*\[\s*(\d+)\]\s+(.+)$", line)
         if not matched:
             continue
         cells = matched.group(2).split()
