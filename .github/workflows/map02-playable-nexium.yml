@@ -19,6 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Compile/test NRO
+        shell: bash
         run: |
           set -euo pipefail
           export PATH="/opt/devkitpro/devkitA64/bin:/opt/devkitpro/tools/bin:$PATH"
