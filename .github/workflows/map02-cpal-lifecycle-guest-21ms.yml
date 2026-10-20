@@ -1,0 +1,321 @@
+name: MAP02 Stage291 first real 21ms NRO on instrumented CPAL host
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-cpal-lifecycle-guest-21ms.yml'
+      - 'tools/run_map02_lifecycle_guest_21ms.sh'
+      - 'docs/MAP02_CPAL_LIFECYCLE_GUEST_21MS.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  VH_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_FROZEN_STAGE290: '4a789d841f276cf0cc8656ad32b04de61272e8ad'
+  VH_NEW_HOST_SHA: 'c3803abd7a06fd4081d7d49367cfbd2cedc4bb1650996f1e09fca5788c881b65'
+  VH_ORIGINAL_NRO_SHA: '04b20024a50327091cff430eb5c28e4722d4ec76'
+
+jobs:
+  one-real-guest:
+    name: 21ms source-pinned CPAL runtime and generated NRO guest evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Enforce strictly isolated three-file research route and synthetic CPAL audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_HEAD"
+          python3 - <<'PY'
+          import os,subprocess
+          paths=set(subprocess.check_output(
+              ["git","diff","--name-only",os.environ["VH_FROZEN_STAGE290"],"HEAD"],
+              text=True).splitlines())
+          allowed={
+              ".github/workflows/map02-cpal-lifecycle-guest-21ms.yml",
+              "tools/run_map02_lifecycle_guest_21ms.sh",
+              "docs/MAP02_CPAL_LIFECYCLE_GUEST_21MS.md",
+          }
+          assert paths and paths<=allowed,sorted(paths-allowed)
+          PY
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_map02_cpal_lifecycle_snapshots.py' -v
+          # The newly compiled ELF contains *only* backend-rustarmic.
+          # Prevent silently falling back to the NeXium GUI Dynarmic default.
+          grep -Fx 'export NEXIUM_CPU_BACKEND=rustarmic' tools/run_map02_lifecycle_guest_21ms.sh
+          grep -Fx 'export PULSE_LATENCY_MSEC=21' tools/run_map02_lifecycle_guest_21ms.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          orig=Path("tools/run_map02_lifecycle_guest_22ms.sh").read_text()
+          current=Path("tools/run_map02_lifecycle_guest_21ms.sh").read_text()
+          assert current==orig.replace("stage290","stage291").replace(
+              "export PULSE_LATENCY_MSEC=22","export PULSE_LATENCY_MSEC=21"), (
+              "Real guest sequence must match successful 22ms control except hint and evidence paths")
+          print("Stage291 identical host, NRO, controller timing and test route")
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-stage287-experimental-nexium-linux-x86_64
+          run-id: 39492859181
+          github-token: ${{ github.token }}
+          path: host
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-audout-presubmit-research-nro
+          run-id: 39460035568
+          github-token: ${{ github.token }}
+          path: guest
+      - name: Verify actual experimental ELF and ROM-free generated research NRO bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          chmod 0755 host/nexium
+          echo "$VH_NEW_HOST_SHA  host/nexium" | sha256sum -c -
+          python3 - <<'PY'
+          import hashlib,json,os,struct
+          from pathlib import Path
+          raw=Path("host/nexium").read_bytes()
+          m=json.loads(Path("host/manifest.json").read_text())
+          assert len(raw)==292009536 and raw[:4]==b"\x7fELF"
+          assert struct.unpack_from("<H",raw,18)[0]==62
+          assert b"VH_MAP02_CPAL_TRACE_PATH" in raw and b"map02-cpal-counts" in raw
+          digest=hashlib.sha256(raw).hexdigest()
+          assert digest==os.environ["VH_NEW_HOST_SHA"]
+          assert m["executable_sha256"]==digest
+          assert m["research_head_sha"]=="0301b4def224a76905fdb2af5007d1ea73e73f92"
+          assert m["pinned_upstream_source_sha"]=="089562567a0a8760dfdd8420e1f57c35159a9219"
+          assert m["cargo_lock_sha256"]=="e6e8fcb90624650afddd1f25327dd4e6b042b094e8336cb5f43d2dc370e28739"
+          assert m["lifecycle_instrumented_audio_source_sha256"]=="27014ef42f80300f62034d46219c5ac82b9fdc647d23a5c5417b6018548ad78b"
+          assert m["stage286_lifecycle_overlay_source_sha"]=="95a89aa0e43f1a28b8d4e25b477f7aa7e4045ee7"
+          assert m["cpu_backend"]=="rustarmic" and m["build_profile"]=="release"
+          assert m["cpal_lifecycle_csv_prefix"]=="L"
+          assert m["cpal_lifecycle_state_reporter_added"] is True
+          assert m["cpal_error_callback_counter_added"] is True
+          assert m["physical_nintendo_switch_audio_proven"] is False
+          receipt={
+            "schema":"vh-map02-stage291-lifecycle-host-identity/v1",
+            "result":"EXACT_STAGE287_LIFECYCLE_HOST_SHA_VERIFIED",
+            "observed_elf_sha256":digest,
+            "pinned_upstream_source_sha":m["pinned_upstream_source_sha"],
+            "guest_boot_proven":False,
+            "physical_switch_speaker_proven":False,
+          }
+          Path("evidence/host-identity.json").write_text(
+              json.dumps(receipt,sort_keys=True,indent=2)+"\n")
+          PY
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          d=Path("guest")
+          m=json.loads((d/"manifest.json").read_text())
+          nro=(d/"vandal-hearts-map02-audio.nro").read_bytes()
+          assert m["schema"]=="vh-map02-presubmit-guest-nro/v1"
+          assert m["source_sha"]==os.environ["VH_ORIGINAL_NRO_SHA"]
+          assert m["run_id"]==39460035568
+          assert nro[16:20]==b"NRO0"
+          assert hashlib.sha256(nro).hexdigest()==m["nro_sha256"]
+          assert (d/"nro.sha256").read_text().split()[0]==m["nro_sha256"]
+          host=json.loads(Path("evidence/host-identity.json").read_text())
+          assert host["result"]=="EXACT_STAGE287_LIFECYCLE_HOST_SHA_VERIFIED"
+          assert host["observed_elf_sha256"]==os.environ["VH_NEW_HOST_SHA"]
+          report={
+              "schema":"vh-map02-stage291-guest-host-pair/v1",
+              "new_host_executable_sha256":host["observed_elf_sha256"],
+              "guest_nro_sha256":m["nro_sha256"],
+              "guest_original_research_source_sha":m["source_sha"],
+              "old_guest_artifact_run_id":m["run_id"],
+              "actual_new_trial_run_id":int(os.environ["GITHUB_RUN_ID"]),
+              "trial_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "pulse_hint_ms":21,
+              "rom_or_licensed_audio_used":False,
+              "physical_switch_audio_proven":False,
+          }
+          Path("evidence/pinned-host-and-nro.json").write_text(
+              json.dumps(report,sort_keys=True,indent=2)+"\n")
+          PY
+      - name: Install audio/graphics libraries for genuine guest optical and virtual PCM
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 \
+            libxkbcommon0 libxkbcommon-x11-0 libx11-xcb1 \
+            libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers libgl1-mesa-dri \
+            pulseaudio pulseaudio-utils libasound2-plugins
+          ldd host/nexium >evidence/host-linked-libraries.txt
+          ! grep -F 'not found' evidence/host-linked-libraries.txt
+          python3 -m unittest discover -s tests \
+            -p 'test_decode_map02_prejoin_stage.py' -v
+      - name: Run actual 21ms generated NRO with newly compiled CPAL callback counters
+        shell: bash
+        timeout-minutes: 6
+        run: |
+          set -euo pipefail
+          export MAP02_HOST="$PWD/host/nexium"
+          export MAP02_NRO="$PWD/guest/vandal-hearts-map02-audio.nro"
+          export MAP02_EVIDENCE="$PWD/evidence"
+          bash tools/run_map02_lifecycle_guest_21ms.sh
+      - name: Independently parse REAL callback entry/return and AudioOut counters
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_map02_cpal_lifecycle_snapshots.py \
+            --trace evidence/host-cpal-audioout-timeline.csv \
+            --first-input-marker evidence/guest-first-input-monotonic-ns.txt \
+            --final-observation-marker evidence/guest-final-observation-monotonic-ns.txt \
+            --output evidence/host-cpal-lifecycle-audit.json
+      - name: Decode optical guest stage from actual prejoin screenshot
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/decode_map02_prejoin_stage.py \
+            --image evidence/guest-prejoin.png \
+            --output evidence/guest-prejoin-stage.json
+      - name: Record actual final optical guest status without assuming 21ms completion
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if python3 tools/decode_map02_audout_presubmit.py \
+            --image evidence/guest-final.png \
+            --output evidence/guest-final-receipt.json; then
+            echo GUEST_EIGHT_PAGE_CRC_VALID > evidence/final-optical-verification-status.txt
+          else
+            echo GUEST_FINAL_OPTICAL_UNVERIFIED > evidence/final-optical-verification-status.txt
+            echo "::notice::21ms requested hint did not complete optical eight-page guest proof in observed window."
+          fi
+      - name: Preserve and digest raw 48k virtual PCM even on failure
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from array import array
+          import hashlib,json,sys
+          from pathlib import Path
+          root=Path("evidence")
+          path=root/"virtual-pulse-48k-stereo-s16le.pcm"
+          out={"schema":"vh-map02-stage291-virtual-pcm/v1",
+               "physical_switch_dac_proven":False,
+               "new_host_origin_from_stage287":True}
+          if path.is_file():
+              raw=path.read_bytes()
+              out["raw_sha256"]=hashlib.sha256(raw).hexdigest()
+              out["bytes"]=len(raw)
+              out["valid_pcm16le_stereo"]=len(raw)>0 and len(raw)%4==0
+              if out["valid_pcm16le_stereo"]:
+                  samples=array("h");samples.frombytes(raw)
+                  if sys.byteorder!="little":samples.byteswap()
+                  out["nonzero_pcm16_samples"]=sum(v!=0 for v in samples)
+          else:
+              out["capture_missing"]=True
+          (root/"virtual-pcm-health.json").write_text(
+              json.dumps(out,indent=2,sort_keys=True)+"\n")
+          print(json.dumps(out,sort_keys=True))
+          PY
+      - name: Classify 21ms guest lifecycle and virtual PCM without claiming a deadlock
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          d=Path("evidence")
+          h=json.loads((d/"host-cpal-lifecycle-audit.json").read_text())
+          p=json.loads((d/"guest-prejoin-stage.json").read_text())
+          f=json.loads((d/"guest-final-receipt.json").read_text())
+          v=json.loads((d/"virtual-pcm-health.json").read_text())
+          ids=json.loads((d/"pinned-host-and-nro.json").read_text())
+          assert ids["new_host_executable_sha256"]==os.environ["VH_NEW_HOST_SHA"]
+          assert ids["pulse_hint_ms"]==21
+          assert h["result"]=="BOUNDED_LIFECYCLE_ATOMIC_SNAPSHOTS_PARSED"
+          assert h["guest_monotonic_window_verified"] is True
+          assert p["result"]=="PREJOIN_STAGE_SNAPSHOT_CAPTURED"
+          assert v.get("valid_pcm16le_stereo") is True
+          entered=p["audout_playbuffer_call_entries"]
+          returned=p["audout_playbuffer_call_returns"]
+          strict=f["result"]=="GUEST_PRESUBMIT_PCM_PAGES_MATCHED"
+          if strict:
+              assert f["observed_pages"]==8 and f["mismatches"]==0
+              assert v["nonzero_pcm16_samples"]>0
+              label="GUEST_21MS_EIGHT_PAGE_CRC_AND_VIRTUAL_PCM_COMPLETED"
+          elif entered>returned and f["result"]=="GUEST_PRESUBMIT_UNVERIFIED":
+              label="GUEST_21MS_AUDOUT_RETURN_PENDING_AT_FINITE_PREJOIN"
+          else:
+              label="UNVERIFIED_21MS_GUEST_AUDIO"
+          result={
+              "schema":"vh-map02-stage291-new-lifecycle-21ms-guest/v1",
+              "outcome":label,
+              "requested_pulse_hint_ms":21,
+              "exact_new_host_sha256":ids["new_host_executable_sha256"],
+              "exact_opt_in_guest_nro_sha256":ids["guest_nro_sha256"],
+              "guest_audout_entry_count_at_prejoin":entered,
+              "guest_audout_return_count_at_prejoin":returned,
+              "guest_final_optical_result":f["result"],
+              "host_lifecycle_state_at_end":h["final_lifecycle_state"],
+              "host_lifecycle_status":h["guest_window_observation"],
+              "host_lifecycle_error_delta":h["guest_window_atomic_counter_deltas"]["error_callbacks"],
+              "host_cpal_entry_delta":h["guest_window_atomic_counter_deltas"]["cpal_entries"],
+              "host_cpal_return_delta":h["guest_window_atomic_counter_deltas"]["cpal_returns"],
+              "host_audioout_append_delta":h["guest_window_atomic_counter_deltas"]["audioout_appends"],
+              "virtual_pcm_nonzero_samples":v.get("nonzero_pcm16_samples"),
+              "single_run_does_not_prove_repeatability":True,
+              "pending_call_not_a_permanent_deadlock_proof":True,
+              "play_state_does_not_prove_running_stream":True,
+              "requested_pulse_hint_not_device_latency":True,
+              "physical_switch_audio_proven":False,
+          }
+          (d/"stage291-observation.json").write_text(json.dumps(
+              result,sort_keys=True,indent=2)+"\n")
+          print(json.dumps(result,sort_keys=True,indent=2))
+          assert label!="UNVERIFIED_21MS_GUEST_AUDIO", (
+              "Neither completed optical CRC nor finite pending audout observed")
+          PY
+      - name: Report only observations actually supported by this guest run
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path("evidence")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as fp:
+              print("### Stage291 first real NRO on CPAL-instrumented NeXium",file=fp)
+              for filename in ("stage291-observation.json",
+                               "host-cpal-lifecycle-audit.json",
+                               "guest-prejoin-stage.json",
+                               "guest-final-receipt.json",
+                               "virtual-pcm-health.json"):
+                  p=root/filename
+                  if not p.is_file():
+                      print(filename+": **UNVERIFIED**",file=fp)
+                  else:
+                      x=json.loads(p.read_text())
+                      print(filename+": "+x.get("result","recorded"),file=fp)
+                      if filename=="host-cpal-lifecycle-audit.json":
+                          print("Host CPAL status: "+
+                                x.get("guest_window_observation","unverified"),file=fp)
+              print("One bounded negative-control 21ms request only; not a verified "
+                    "CPAL/ALSA hardware period, permanent deadlock, production "
+                    "audio repair or physical Switch speaker test.",file=fp)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage291-first-real-21ms-cpal-guest-evidence
+          path: evidence/
+          if-no-files-found: warn
