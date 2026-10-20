@@ -55,10 +55,10 @@ class VirtualPCMTests(unittest.TestCase):
         # real sink capture: every page is byte-exact, but the full stream
         # has extra monitor frames between guest buffers.
         injected=[13,0,128,0,7,0,23]
-        raw=b"\\0"*4*59
+        raw=b"\0"*4*59
         for i,p in enumerate(pages):
             raw+=p
-            if i<7:raw+=b"\\0"*4*injected[i]
+            if i<7:raw+=b"\0"*4*injected[i]
         result=sink.audit(receipt,raw)
         self.assertEqual(result["result"],"NO_EXACT_EIGHT_PAGE_SINK_MATCH")
         self.assertTrue(result["all_eight_pages_found_once"])
