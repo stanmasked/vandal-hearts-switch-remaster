@@ -7,6 +7,50 @@ their owned, private `Vandal_Hearts_(RU)_v1.6.bin` and matching single-track
 only**, never sectors, pixels, private paths, PS-X executable bytes or game
 textures. Do not upload the BIN/CUE or private captures to public GitHub.
 
+## One-command private handoff on Mac (recommended)
+
+When the **complete owned RU v1.6 BIN and CUE** are visible as mounted
+ordinary files in Google Drive for desktop, open Terminal inside your
+local checkout of this repository and create a **new local-only parent**.
+Do **not** put this output in Google Drive, iCloud, Dropbox, or
+`~/Library/CloudStorage`.
+
+```sh
+mkdir -m 700 "$HOME/vh-private"
+BIN="/path/to/mounted/GoogleDrive/Vandal_Hearts_(RU)_v1.6.bin"
+CUE="/path/to/mounted/GoogleDrive/Vandal_Hearts_(RU)_v1.6.cue"
+
+python3 -m tools.run_map02_private_disc_audit "$BIN" \
+  --cue "$CUE" \
+  --private-parent "$HOME/vh-private"
+```
+
+The command invokes the **already tested** secured staging,
+full-byte SHA-256 copy/readback, 2352-byte CD-XA Form 1 boot and MAP02 sector
+EDC checks, pinned compressed PRS SHA-256, receipt-schema validation,
+atomic owner-private JSON publication and final readback.
+It refuses to overwrite an existing local stage directory.
+It prints **only** a success marker and the JSON basename, not original
+game sectors or local source paths.
+
+On success the only report to consider sharing privately is:
+
+`$HOME/vh-private/vh-map02-private/receipt/vh-map02-local-disc-digest-receipt.json`
+
+The local 665-MB BIN and CUE remain `0600` in the private
+`0700` directory and **must not be committed or uploaded to GitHub**.
+A JSON report itself is self-reported evidence of local checks, **not**
+proof of exact original-US executable identity or a true PlayStation
+DrawOTag/VRAM framebuffer. If CD-XA/PRS checks fail, **no receipt is
+published**; the private local staged copy remains for deliberate
+investigation, and a later attempt must use a fresh local staging parent.
+Do not modify source Drive permissions or delete the original disc.
+
+The dedicated asset-free CI for this one-command orchestration mocks only
+the unavailable original-CD inspection. It does **not** claim that synthetic
+input has passed real retail sector checks; those checks retain their
+separate independent CI tests.
+
 ## Safe Mac staging from a mounted Google Drive (no changes to Drive originals)
 
 If the original BIN/CUE are available through a mounted Drive volume and
