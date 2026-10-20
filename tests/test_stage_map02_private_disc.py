@@ -416,6 +416,8 @@ class PrivateLocalCopyTests(unittest.TestCase):
                 os.fsync(writer.fileno())
             os.utime(self.bin, ns=(before.st_atime_ns,
                                    before.st_mtime_ns + 1000000000))
+            self.assertEqual(self.bin.stat().st_ino, before.st_ino)
+            self.assertEqual(self.bin.stat().st_size, before.st_size)
 
         with patch("tools.stage_map02_private_disc._verify_staged_copy",
                    side_effect=edit_after_readback):
@@ -441,6 +443,9 @@ class PrivateLocalCopyTests(unittest.TestCase):
                 os.fsync(writer.fileno())
             os.utime(self.cue, ns=(before.st_atime_ns,
                                    before.st_mtime_ns + 1000000000))
+            self.assertEqual(self.cue.stat().st_ino, before.st_ino)
+            self.assertEqual(self.cue.stat().st_size, before.st_size)
+            self.assertEqual(staging._read_cue(self.cue), changed)
 
         with patch("tools.stage_map02_private_disc._verify_staged_copy",
                    side_effect=edit_after_readback):
