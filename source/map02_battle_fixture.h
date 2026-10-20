@@ -29,6 +29,7 @@ typedef struct {
     int move_range, attack_damage;
     VhBattleEvent events[2];             /* validated win and defeat */
     int event_count;
+    int ally_count, enemy_count;          /* active 1..2; remaining slots inert */
 } VhBattleScenario;
 
 #include "map02_encounter_data.h"
@@ -53,6 +54,7 @@ typedef struct {
     int move_range, attack_damage;
     VhBattleEvent events[2];
     int event_count;
+    int ally_count, enemy_count;
 } VhMap02Battle;
 
 static inline int vh_btile_inside(int x, int y) {
@@ -77,18 +79,37 @@ static inline int vh_bscenario_valid(const VhBattleScenario *cfg) {
     if (!cfg || !vh_btile_inside(cfg->cursor_x, cfg->cursor_y) ||
         cfg->move_range < 1 || cfg->move_range > 7 ||
         cfg->attack_damage < 1 || cfg->attack_damage > 20 ||
-        cfg->event_count != 2)
+        cfg->event_count != 2 ||
+        cfg->ally_count < 1 || cfg->ally_count > VH_BALLIES ||
+        cfg->enemy_count < 1 || cfg->enemy_count > VH_BUNITS - VH_BALLIES)
         return 0;
     for (i = 0; i < VH_BUNITS; ++i) {
         const VhBattleUnit *u = &cfg->spawn[i];
+        const int active = (i < cfg->ally_count ||
+                            (i >= VH_BALLIES &&
+                             i < VH_BALLIES + cfg->enemy_count));
+        if (!active) {
+            /* Canonical zero padding prevents a hidden, forged unit. */
+            if (u->x != 0 || u->y != 0 || u->hp != 0 || u->acted != 0)
+                return 0;
+            continue;
+        }
         if (!vh_btile_inside(u->x, u->y) ||
             !!(cfg->walls[u->y] & (1u << u->x)) ||
             u->hp < 1 || u->hp > 20 || u->acted != 0)
             return 0;
-        for (j = 0; j < i; ++j)
-            if (u->x == cfg->spawn[j].x && u->y == cfg->spawn[j].y)
+        for (j = 0; j < i; ++j) {
+            const int prev_active = (j < cfg->ally_count ||
+                                     (j >= VH_BALLIES &&
+                                      j < VH_BALLIES + cfg->enemy_count));
+            if (prev_active &&
+                u->x == cfg->spawn[j].x && u->y == cfg->spawn[j].y)
                 return 0;
+        }
     }
+    if (cfg->cursor_x != cfg->spawn[0].x ||
+        cfg->cursor_y != cfg->spawn[0].y)
+        return 0;
     for (i = 0; i < cfg->event_count; ++i) {
         const VhBattleEvent *e = &cfg->events[i];
         if (e->when == VH_BEVENT_ENEMIES_DOWN && e->result == VH_BWIN)
@@ -187,6 +208,8 @@ static inline int vh_binit_scenario(VhMap02Battle *s,
     memcpy(s->walls, cfg->walls, sizeof(s->walls));
     memcpy(s->events, cfg->events, sizeof(s->events));
     s->event_count = cfg->event_count;
+    s->ally_count = cfg->ally_count;
+    s->enemy_count = cfg->enemy_count;
     s->move_range = cfg->move_range;
     s->attack_damage = cfg->attack_damage;
     s->cursor_x = cfg->cursor_x;
@@ -216,10 +239,12 @@ static inline void vh_bcursor(VhMap02Battle *s, int dx, int dy) {
 }
 
 static inline void vh_bupdate_status(VhMap02Battle *s) {
-    int allies, enemies, i;
+    int allies = 0, enemies = 0, i;
     if (!s || s->status != VH_BONGOING) return;
-    allies = vh_balive(&s->units[0]) + vh_balive(&s->units[1]);
-    enemies = vh_balive(&s->units[2]) + vh_balive(&s->units[3]);
+    for (i = 0; i < s->ally_count; ++i)
+        allies += vh_balive(&s->units[i]);
+    for (i = VH_BALLIES; i < VH_BALLIES + s->enemy_count; ++i)
+        enemies += vh_balive(&s->units[i]);
     for (i = 0; i < s->event_count; ++i) {
         if ((s->events[i].when == VH_BEVENT_ENEMIES_DOWN && enemies == 0) ||
             (s->events[i].when == VH_BEVENT_ALLIES_DOWN && allies == 0)) {
@@ -240,17 +265,18 @@ static inline int vh_bchoose(VhMap02Battle *s) {
     if (!s || s->status != VH_BONGOING) return VH_BINVALID;
     occ = vh_boccupant(s, s->cursor_x, s->cursor_y, -1);
     if (s->selected < 0) {
-        if (occ >= 0 && occ < VH_BALLIES && !s->units[occ].acted) {
+        if (occ >= 0 && occ < s->ally_count && !s->units[occ].acted) {
             s->selected = occ;
             return s->last_action = VH_BSELECT;
         }
         return VH_BINVALID;
     }
     src = s->selected;
-    if (src < 0 || src >= VH_BALLIES ||
+    if (src < 0 || src >= s->ally_count ||
         !vh_balive(&s->units[src]) || s->units[src].acted)
         return VH_BINVALID;
-    if (occ >= VH_BALLIES && vh_bdistance(s->units[src].x, s->units[src].y,
+    if (occ >= VH_BALLIES && occ < VH_BALLIES + s->enemy_count &&
+        vh_bdistance(s->units[src].x, s->units[src].y,
                                            s->cursor_x, s->cursor_y) == 1) {
         s->units[occ].hp -= s->attack_damage;
         s->units[src].acted = 1;
@@ -272,12 +298,12 @@ static inline int vh_bend_turn(VhMap02Battle *s) {
     int enemy;
     if (!s || s->status != VH_BONGOING) return VH_BINVALID;
     s->selected = -1;
-    for (enemy = VH_BALLIES; enemy < VH_BUNITS; ++enemy) {
+    for (enemy = VH_BALLIES; enemy < VH_BALLIES + s->enemy_count; ++enemy) {
         int hero, closest = -1, shortest = 1000;
         int step_x = -1, step_y = -1;
         VhBattleUnit *foe = &s->units[enemy];
         if (!vh_balive(foe)) continue;
-        for (hero = 0; hero < VH_BALLIES; ++hero) {
+        for (hero = 0; hero < s->ally_count; ++hero) {
             int d;
             if (!vh_balive(&s->units[hero])) continue;
             d = vh_bpath(s, enemy, s->units[hero].x, s->units[hero].y,
@@ -301,8 +327,8 @@ static inline int vh_bend_turn(VhMap02Battle *s) {
         }
     }
     ++s->turns_completed;
-    s->units[0].acted = 0;
-    s->units[1].acted = 0;
+    for (enemy = 0; enemy < s->ally_count; ++enemy)
+        s->units[enemy].acted = 0;
     return s->last_action = VH_BEND;
 }
 
