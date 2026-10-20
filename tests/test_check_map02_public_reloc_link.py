@@ -582,19 +582,21 @@ class PublicRelocatableELFTests(unittest.TestCase):
         real_run = subprocess.run
         readers = []
         swapped = False
+        linked_ready = False
 
         def swap_after_header(command, *args, **kwargs):
-            nonlocal swapped
-            if command[0] in ("readelf", "nm") and (
-                    command[0] == "readelf" or readers):
-                # Only the output ELF inspectors are counted; separate nm
-                # passes on sealed inputs occur before the first readelf.
+            nonlocal swapped, linked_ready
+            # Source readelf/nm probes now run before ld -r. Only output
+            # probes may trigger the simulated malicious path replacement.
+            if command[0] in ("readelf", "nm") and linked_ready:
                 fds = kwargs.get("pass_fds", ())
                 self.assertEqual(len(fds), 1)
                 self.assertEqual(command[-1], f"/proc/self/fd/{fds[0]}")
                 readers.append(command[0])
             result = real_run(command, *args, **kwargs)
-            if command[0] == "readelf" and not swapped:
+            if command[0] == "ld" and "-r" in command:
+                linked_ready = True
+            elif command[0] == "readelf" and linked_ready and not swapped:
                 linked = output_dir / OUTPUT
                 foreign = output_dir / "same-byte-foreign-inode.o"
                 foreign.write_bytes(linked.read_bytes())
