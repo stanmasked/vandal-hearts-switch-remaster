@@ -48,6 +48,9 @@ jobs:
           PY
           python3 -m unittest discover -s tests \
             -p 'test_audit_map02_cpal_audioout_timeline.py' -v
+          # The newly compiled ELF contains *only* backend-rustarmic.
+          # Prevent silently falling back to the NeXium GUI Dynarmic default.
+          grep -Fx 'export NEXIUM_CPU_BACKEND=rustarmic' tools/run_map02_new_cpal_guest_22ms.sh
       - uses: actions/download-artifact@v4
         with:
           name: map02-stage276-experimental-nexium-linux-x86_64
