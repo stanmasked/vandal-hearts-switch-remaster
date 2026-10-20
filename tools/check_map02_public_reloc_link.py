@@ -301,6 +301,7 @@ def check_elf_function_sections(path, *, pass_fds=()):
         name = cells[7]
         if name in exported:
             exported[name].append(cells)
+    ranges_by_section = {}
     for name, candidates in exported.items():
         if (len(candidates) != 1
                 or candidates[0][3:5] != ["FUNC", "GLOBAL"]
@@ -318,6 +319,16 @@ def check_elf_function_sections(path, *, pass_fds=()):
                 or start >= section_start + section_size
                 or size > section_start + section_size - start):
             raise ValueError("original CD/GPU or observer ELF FUNC bounds invalid")
+        ranges_by_section.setdefault(candidates[0][6], []).append(
+            (start, start + size, name))
+    # A global FUNC alias may have its own nonzero size and legal .text
+    # section index while sharing bytes with an unrelated original export.
+    # The required entrypoints must identify disjoint executable spans.
+    for section_ranges in ranges_by_section.values():
+        section_ranges.sort()
+        for previous, current in zip(section_ranges, section_ranges[1:]):
+            if current[0] < previous[1]:
+                raise ValueError("original CD/GPU or observer ELF FUNC ranges overlap")
     return len(exported)
 
 
