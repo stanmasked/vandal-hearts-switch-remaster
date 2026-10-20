@@ -132,6 +132,10 @@ class OwnedMap02DiscExtentTests(unittest.TestCase):
             with self.subTest(message=message):
                 forged = bytearray(original)
                 forged[at] = value
+                if message == "Form 2":
+                    # Repeat the same XA subheader, so the mode gate
+                    # rather than the duplicate-header gate rejects it.
+                    forged[22] = value
                 with self.image.open("r+b") as f:
                     f.seek(offset)
                     f.write(forged)
