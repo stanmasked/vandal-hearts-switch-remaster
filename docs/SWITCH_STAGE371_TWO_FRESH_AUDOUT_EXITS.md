@@ -37,9 +37,12 @@ guest root instead of reusing old captures.
 guest's *actual*, independently generated Stage351 reason, Stage357 raw
 Result, Stage368 descriptor count and pointer identity using the
 existing fail-closed Stage368 canonical CSV parser. It also requires
-two distinct original root locators and a corresponding nonempty
-1280×720 optical frame from each run (the pixels have not been decoded
-as a semantic receipt, and do not establish speaker playback).
+two distinct original root locators and a corresponding
+1280×720 PNG optical frame from each run. The auditor verifies the full
+bounded PNG chunk stream, individual chunk CRCs, image-data presence and
+terminal IEND with no trailing bytes. This is **structural PNG integrity
+only**: pixels have not been decoded into an optical scene receipt and
+the file does not establish speaker playback.
 All three original CSV byte sequences and their SHA-256 digests are
 preserved under separate `stage371-originals/a` and
 `stage371-originals/b` directories. Additionally the exporter saves,
