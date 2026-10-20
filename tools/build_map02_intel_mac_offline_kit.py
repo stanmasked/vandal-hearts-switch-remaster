@@ -68,14 +68,16 @@ line tools installed, from the extracted directory, run:
 For a sanitized *locally observed* operating-system compatibility receipt
 that reruns all synthetic tests:
 
-    python3 -m tools.map02_intel_mac_local_acceptance
+    python3 -B -m tools.map02_intel_mac_local_acceptance
 
 On the physical Catalina 10.15.7 Mac, require that OS explicitly:
 
-    python3 -m tools.map02_intel_mac_local_acceptance --require-catalina-10-15-7
+    python3 -B -m tools.map02_intel_mac_local_acceptance --require-catalina-10-15-7
 
 The strict mode refuses GitHub macOS 15. This receipt is self-reported
 local runtime evidence, not remote attestation or proof of retail PS1 parity.
+The Python -B switch prevents creation of unlisted __pycache__ files
+before the kit integrity check runs.
 
 The script performs synthetic FT4/VRAM and source/native CLI checks,
 compiles C helper binaries, and validates their x86_64 Mach-O minimum
