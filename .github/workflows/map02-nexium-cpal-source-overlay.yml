@@ -1,0 +1,145 @@
+name: MAP02 Stage274 pinned NeXium CPAL source instrumentation overlay
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-nexium-cpal-source-overlay.yml'
+      - 'tools/prepare_map02_nexium_cpal_overlay.py'
+      - 'tests/test_prepare_map02_nexium_cpal_overlay.py'
+      - 'docs/MAP02_NEXIUM_CPAL_SOURCE_OVERLAY.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VH_RESEARCH_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_FROZEN_PARENT: '04b20024a50327091cff430eb5c28e4722d4ec76'
+  NEXIUM_UPSTREAM_REV: '089562567a0a8760dfdd8420e1f57c35159a9219'
+
+jobs:
+  source-patch-audit:
+    name: Exact NeXium upstream, fail-closed CPAL overlay, Rust syntax only
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exactly this research PR source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_RESEARCH_HEAD }}
+          fetch-depth: 0
+          path: research
+          persist-credentials: false
+      - name: Checkout independent immutable NeXium source (not nightly binary)
+        uses: actions/checkout@v4
+        with:
+          repository: nexium-emu/nexium
+          ref: 089562567a0a8760dfdd8420e1f57c35159a9219
+          path: upstream
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Audit frozen parent and exact upstream revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C research rev-parse HEAD)" = "$VH_RESEARCH_HEAD"
+          test "$(git -C upstream rev-parse HEAD)" = "$NEXIUM_UPSTREAM_REV"
+          python3 - <<'PY'
+          import os,subprocess
+          base=os.environ["VH_FROZEN_PARENT"]
+          names=set(subprocess.check_output(
+              ["git","-C","research","diff","--name-only",base,"HEAD"],
+              text=True).splitlines())
+          allowed={
+              ".github/workflows/map02-nexium-cpal-source-overlay.yml",
+              "tools/prepare_map02_nexium_cpal_overlay.py",
+              "tests/test_prepare_map02_nexium_cpal_overlay.py",
+              "docs/MAP02_NEXIUM_CPAL_SOURCE_OVERLAY.md",
+          }
+          assert names and names<=allowed,sorted(names-allowed)
+          assert not subprocess.check_output(
+              ["git","-C","upstream","status","--porcelain"],text=True).strip()
+          print("Verified isolated research source changes:",sorted(names))
+          PY
+      - name: Run ROM-free source patch provenance and callback placement tests
+        shell: bash
+        working-directory: research
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_prepare_map02_nexium_cpal_overlay.py' -v
+      - name: Patch only three declared upstream files and save receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 research/tools/prepare_map02_nexium_cpal_overlay.py \
+            --upstream upstream --manifest stage274-upstream-receipt.json
+      - name: Verify overlay scope and Rust parser accepts both source files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,subprocess
+          from pathlib import Path
+          m=json.loads(Path("stage274-upstream-receipt.json").read_text())
+          assert m["compiled_instrumented_emulator_verified"] is False
+          assert m["historical_nightly_build_source_sha_verified"] is False
+          assert m["host_callback_only_relaxed_atomic"] is True
+          expected={"nexium-runner/src/audio.rs",
+                    "nexium-kernel/src/services/audio_out/handlers.rs",
+                    "nexium-runner/Cargo.toml"}
+          changed=set(subprocess.check_output(
+              ["git","-C","upstream","diff","--name-only"],text=True).splitlines())
+          assert changed==expected,(sorted(changed),sorted(expected))
+          for entry in m["source_files"]:
+              assert entry["path"] in expected
+              assert entry["sha256_after"]!=entry["sha256_before"]
+          print("Pinned exact source diff:",sorted(changed))
+          PY
+          rustfmt --edition 2021 --emit stdout \
+            upstream/nexium-runner/src/audio.rs > /dev/null
+          rustfmt --edition 2021 --emit stdout \
+            upstream/nexium-kernel/src/services/audio_out/handlers.rs > /dev/null
+          # Syntax parsing + metadata are NOT a cargo check/build.
+          cargo metadata --no-deps --format-version 1 \
+            --manifest-path upstream/Cargo.toml \
+            > /tmp/map02-stage274-cargo-metadata.json
+          test -s /tmp/map02-stage274-cargo-metadata.json
+          git -C upstream diff -- \
+            nexium-runner/src/audio.rs \
+            nexium-kernel/src/services/audio_out/handlers.rs \
+            nexium-runner/Cargo.toml \
+            > stage274-upstream-overlay.patch
+          test -s stage274-upstream-overlay.patch
+      - name: Report exact supported conclusions
+        shell: bash
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          receipt=Path("stage274-upstream-receipt.json")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              print("### Stage274 CPAL source overlay",file=out)
+              if not receipt.is_file():
+                  print("**UNVERIFIED**: upstream source patching failed.",file=out)
+              else:
+                  x=json.loads(receipt.read_text())
+                  print("Fixed upstream NeXium source revision: "
+                        +x["upstream_git_sha_expected"],file=out)
+                  print("Callback entry/return atomics plus AudioOut "
+                        "append/accepted frame/release counters prepared.",file=out)
+                  print("**Experimental source patch only**: no instrumented "
+                        "NeXium build, CPAL runtime measurement, successful "
+                        "21ms audio, permanent deadlock, physical Switch "
+                        "speaker evidence or verified equivalence to the "
+                        "previous nightly build.",file=out)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: map02-stage274-pinned-upstream-cpal-source-overlay
+          path: |
+            stage274-upstream-receipt.json
+            stage274-upstream-overlay.patch
+          if-no-files-found: error
