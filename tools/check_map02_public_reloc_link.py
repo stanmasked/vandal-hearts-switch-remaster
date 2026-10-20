@@ -256,19 +256,21 @@ def make_inventory(upstream, bundle, *, make="make"):
     return [line.split() for line in lines]
 
 
-def inspect_relocatable(path):
+def inspect_relocatable(path, *, pass_fds=()):
     header = subprocess.run(
         ["readelf", "-h", str(path)], capture_output=True,
-        text=True, timeout=30, check=False)
+        text=True, timeout=30, check=False, pass_fds=pass_fds)
     if header.returncode or not re.search(
             r"^\s*Type:\s+REL\s", header.stdout, re.M):
         raise ValueError("public code proof must be a relocatable ELF, not a game")
     exports = subprocess.run(
         ["nm", "-g", "--defined-only", str(path)],
-        capture_output=True, text=True, timeout=30, check=False)
+        capture_output=True, text=True, timeout=30, check=False,
+        pass_fds=pass_fds)
     undefined = subprocess.run(
         ["nm", "-u", str(path)],
-        capture_output=True, text=True, timeout=30, check=False)
+        capture_output=True, text=True, timeout=30, check=False,
+        pass_fds=pass_fds)
     if exports.returncode or undefined.returncode:
         raise ValueError("cannot examine linked original code symbols")
     # nm -g --defined-only includes weak functions (W) and global data
@@ -376,7 +378,15 @@ def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
     finally:
         os.close(fd)
     output_proof = stable_relocatable_output(output)
-    checked = inspect_relocatable(output)
+    # readelf and both nm passes must inspect exactly the same immutable
+    # bytes. A stable pathname check before/after each separate process is
+    # insufficient if an owner can swap it while symbol tools execute.
+    witness_fd = sealed_input_fd(output, output_proof, index=len(sources))
+    try:
+        checked = inspect_relocatable(
+            f"/proc/self/fd/{witness_fd}", pass_fds=(witness_fd,))
+    finally:
+        os.close(witness_fd)
     stable_relocatable_output(output, expected=output_proof)
     if [stable_object_input(path) for path in sources] != initial:
         raise ValueError("original PC objects changed or swapped during public partial link")
