@@ -356,7 +356,7 @@ class PrivateLocalCopyTests(unittest.TestCase):
             cue_bytes = self.cue.read_bytes()
             # Keep track shape valid, change only the trailing newline byte:
             # the original cue bytes must still be compared byte-for-byte.
-            self.cue.write_bytes(cue_bytes.rstrip(b"\\r\\n") + b"\\n")
+            self.cue.write_bytes(cue_bytes.rstrip(bytes((13, 10))) + bytes((10,)))
             return copied_sha
 
         with patch("tools.stage_map02_private_disc._copy_image",
