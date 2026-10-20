@@ -35,6 +35,7 @@ class Map02OfflineKitTests(unittest.TestCase):
         closure = source_closure(REPO)
         for necessary in (
             "tools/map02_intel_mac_offline_selfcheck.py",
+            "tools/map02_intel_mac_local_acceptance.py",
             "tools/map02_catalina_helper_macho_audit.py",
             "tools/verify_map02_private_pc_native_ft4.py",
             "tests/test_map02_private_ft4_cli_mutations.py",
