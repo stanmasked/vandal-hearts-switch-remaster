@@ -116,6 +116,8 @@ class PublicRelocatableELFTests(unittest.TestCase):
 
     def test_partial_elf_rejects_world_readable_symlink_and_hardlink(self):
         obj = self.compile(self.all_exports(), name="untrusted")
+        # Do not depend on the runner's default umask.
+        obj.chmod(0o644)
         with self.assertRaisesRegex(ValueError, "metadata"):
             stable_relocatable_output(obj)
         obj.chmod(0o600)
