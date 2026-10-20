@@ -615,6 +615,36 @@ int main(int argc, char **argv) {
                     (void)unlink(wait_result_path);
             }
         }
+        /* Stage368: separate, exclusive post-join return-descriptor
+         * observation from the original one 12-ms audout wait. No new
+         * service calls, no raw pointer addresses, no PCM mutation. */
+        int wait_descriptor_fd=-1;
+        char wait_descriptor_path[256];
+        for(unsigned slot=0;slot<32u;slot++) {
+            const int n=snprintf(wait_descriptor_path,
+                sizeof wait_descriptor_path,
+                VH_SCENE_TRACE_SD_DIRECTORY
+                "/audio-exit-wait-descriptor-%03u.csv",slot);
+            if(n<=0 || (size_t)n>=sizeof wait_descriptor_path) break;
+            wait_descriptor_fd=open(wait_descriptor_path,
+                O_WRONLY|O_CREAT|O_EXCL,0600);
+            if(wait_descriptor_fd>=0) break;
+            if(errno!=EEXIST) break;
+        }
+        if(wait_descriptor_fd>=0) {
+            FILE *wait_descriptor_stream=fdopen(wait_descriptor_fd,"w");
+            if(!wait_descriptor_stream) {
+                (void)close(wait_descriptor_fd);
+                (void)unlink(wait_descriptor_path);
+            } else {
+                const int rows=vh_switch_game_audio_wait_descriptor_dump(
+                    wait_descriptor_stream);
+                const int flushed=fflush(wait_descriptor_stream);
+                const int closed=fclose(wait_descriptor_stream);
+                if(rows!=8 || flushed!=0 || closed!=0)
+                    (void)unlink(wait_descriptor_path);
+            }
+        }
         /* Stage360: an independent post-join guest source using the
          * EXISTING pre-submit audout query history and tail timestamps.
          * No queue query is made at shutdown. */
