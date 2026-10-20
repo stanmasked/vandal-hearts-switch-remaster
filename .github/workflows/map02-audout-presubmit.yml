@@ -117,7 +117,10 @@ jobs:
         # The NRO, PulseAudio sink and recording remain identical.
         # Only the guest host-audio client receives this OPTIONAL hint;
         # the separate parec monitor recorder uses default settings.
-        latency_ms: [default, 20]
+        # The parent A/B already repeated default and 20 twice each.
+        # This child tests the next longer requested host latency points
+        # without changing the guest NRO, null sink or capture pipeline.
+        latency_ms: [40, 80]
         repeat: [1, 2]
     steps:
       - uses: actions/checkout@v4
