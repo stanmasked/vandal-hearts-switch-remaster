@@ -1,0 +1,31 @@
+name: MAP02 v195 independent literal guest MIPS opcode proof
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v195-independent-mips-opcodes.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/check_map02_v195_independent_mips_opcodes.py'
+      - 'tests/test_map02_v195_independent_mips_opcodes.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  independently-decoded-mips-opcodes:
+    name: Independent signed guest MIPS SW/LW words (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refuse nine-word MIPS guest mutation even if generator is compromised
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/check_map02_v195_independent_mips_opcodes.py tests/test_map02_v195_independent_mips_opcodes.py
+          python3 -m unittest discover -s tests -p 'test_map02_v195_independent_mips_opcodes.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v194_source_bound_exe.py' -v
+          echo 'VH195_INDEPENDENT_OPCODE_MODEL_PASS words=9 builder_compromise_refused=1 original_retail_executed=0'
