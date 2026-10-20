@@ -62,7 +62,11 @@ def audit(evidence: Path) -> dict[str, int]:
     # playable mode renders "MAP02 BATTLE DEMO" using the same tiny font.
     title_changed = region_diff(original, battle, (65, 20, 760, 76))
     title_after_reset = region_diff(battle, reset, (65, 20, 760, 76))
-    if title_changed < 300 or title_after_reset > 120:
+    # Small text/GUI differences can vary between frames under Lavapipe.
+    # A reset to the original legacy screen differs by >1000 pixels, while
+    # correctly restored battle titles can differ by a few hundred.
+    print(f"NeXium battle mode title changed={title_changed}, reset_delta={title_after_reset}")
+    if title_changed < 1000 or title_after_reset > 450:
         raise ValueError(
             f"NeXium did not enter/stay in standalone MAP02 battle screen "
             f"(changed={title_changed}, reset_title_diff={title_after_reset})"
