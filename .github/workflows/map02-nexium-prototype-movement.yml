@@ -1,0 +1,111 @@
+name: MAP02 asset-free prototype real NeXium movement
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-nexium-prototype-movement.yml'
+      - 'tests/run_map02_nexium_prototype_move.py'
+      - 'tests/test_map02_nexium_prototype_move_oracle.py'
+      - 'source/main.c'
+      - 'source/game_state.h'
+      - 'source/platform_input.h'
+      - 'source/game_rules.h'
+      - 'Makefile'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  build-nro:
+    name: Compile asset-free prototype NRO
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify native game state, sanitized engine and real NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/opt/devkitpro/devkitA64/bin:/opt/devkitpro/tools/bin:$PATH"
+          python3 -m py_compile tests/run_map02_nexium_prototype_move.py tests/test_map02_nexium_prototype_move_oracle.py
+          make test
+          make test-sanitize
+          make verify-nro
+          test -s build/vandal-hearts-prototype.nro
+          echo 'VH_MAP02_PROTOTYPE_NRO_READY retail=0'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: map02-asset-free-prototype-nro
+          path: build/vandal-hearts-prototype.nro
+          if-no-files-found: error
+
+  real-nexium-move:
+    name: Real NeXium boot select legal move cancel and return
+    needs: build-nro
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-asset-free-prototype-nro
+          path: nros
+      - name: Install native X11 and Vulkan screenshot dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl jq xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 libxkbcommon-x11-0 \
+            libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers
+      - name: Reject fabricated or malformed synthetic screenshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tests/run_map02_nexium_prototype_move.py tests/test_map02_nexium_prototype_move_oracle.py
+          python3 -m unittest discover -s tests -p 'test_map02_nexium_prototype_move_oracle.py' -v
+          echo 'VH_MAP02_PROTOTYPE_FORGERY_REJECTED synthetic_cases=3 real_emulator_claim=0'
+      - name: Download original NeXium nightly executable
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="$(curl -fsSL --retry 3 --retry-all-errors -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+          asset_url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          test -n "$asset_url"
+          curl -fL --retry 3 --retry-all-errors "$asset_url" -o /tmp/nexium-linux.tar.gz
+          sha256sum /tmp/nexium-linux.tar.gz
+          mkdir -p /tmp/nexium
+          tar -xzf /tmp/nexium-linux.tar.gz -C /tmp/nexium
+          emu_bin="$(find /tmp/nexium -type f -executable \( -name nexium -o -name nexium-gui \) -print -quit)"
+          test -n "$emu_bin"
+          echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
+      - name: Test actual mapped buttons and authentic framebuffer images
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p map02-prototype-move-evidence
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          timeout --kill-after=5s 180s xvfb-run -a -s "-screen 0 1280x720x24" \
+            python3 tests/run_map02_nexium_prototype_move.py \
+              --nro "$PWD/nros/vandal-hearts-prototype.nro" \
+              --evidence-dir map02-prototype-move-evidence \
+            | tee map02-prototype-move-evidence/result.log
+          grep -Fx 'VH_MAP02_NEXIUM_PROTOTYPE_MOVE_PASS boot=1 select=1 cursor=1 invalid_range=1 move=1 cancel=1 return=1 enemy_preserved=1 frame_replay=1 retail=0' map02-prototype-move-evidence/result.log
+      - name: Preserve screenshots and emulator log on both pass and fail
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-nexium-actual-prototype-move-evidence
+          path: map02-prototype-move-evidence/
+          if-no-files-found: warn
