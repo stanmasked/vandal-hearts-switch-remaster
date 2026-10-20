@@ -106,6 +106,50 @@ class RehearsalTests(unittest.TestCase):
             self.assertEqual(git(root, "rev-parse", "HEAD"), before)
             self.assertEqual(git(root, "status", "--porcelain"), "")
 
+    def test_reject_binary_added_then_deleted_before_final_tree(self):
+        with tempfile.TemporaryDirectory(prefix="map02-transient-") as tmp:
+            root = Path(tmp)
+            original = self.start(root)
+            transient = self.commit_file(
+                root, "private-retail.iso", "mock bytes only\\n",
+                "temporary prohibited asset")
+            (root / "private-retail.iso").unlink()
+            git(root, "add", "-u")
+            git(root, "commit", "-qm", "remove temporary asset")
+            cleaned = git(root, "rev-parse", "HEAD")
+            self.assertEqual(git(root, "rev-parse", f"{original}^{{tree}}"),
+                             git(root, "rev-parse", f"{cleaned}^{{tree}}"))
+            with self.assertRaisesRegex(
+                AuditError, "forbidden intermediate retail/binary assets"
+            ):
+                rehearse(root, original, [
+                    {"number": 241, "sha": transient},
+                    {"number": 243, "sha": cleaned},
+                ], cleaned)
+            self.assertEqual(git(root, "rev-parse", "HEAD"), cleaned)
+
+    def test_report_counts_each_added_modified_and_deleted_path(self):
+        with tempfile.TemporaryDirectory(prefix="map02-deltas-") as tmp:
+            root = Path(tmp)
+            original = self.start(root)
+            first = self.commit_file(root, "fixture.txt", "safe\\n",
+                                     "add new fixture")
+            (root / "fixture.txt").unlink()
+            git(root, "add", "-u")
+            git(root, "commit", "-qm", "remove fixture in later step")
+            second = git(root, "rev-parse", "HEAD")
+            report = rehearse(root, original, [
+                {"number": 241, "sha": first},
+                {"number": 243, "sha": second},
+            ], second)
+            self.assertEqual(report["intermediate_changes_checked"], 2)
+            self.assertEqual(report["unique_changed_paths"], 1)
+            self.assertEqual(report["forbidden_intermediate_assets"], [])
+            self.assertEqual(report["steps"][0]["path_changes"],
+                             [{"status": "A", "path": "fixture.txt"}])
+            self.assertEqual(report["steps"][1]["path_changes"],
+                             [{"status": "D", "path": "fixture.txt"}])
+
     def test_true_conflicting_merger_is_rejected(self):
         with tempfile.TemporaryDirectory(prefix="map02-virtual-") as tmp:
             root = Path(tmp)
