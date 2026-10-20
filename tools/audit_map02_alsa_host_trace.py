@@ -12,7 +12,7 @@ from pathlib import Path
 SCHEMA = "vh-map02-host-alsa-transfer-trace/v1"
 FIELDS = ("event","start_monotonic_ns","end_monotonic_ns","tid",
           "requested_frames","returned_frames","rate_hz","channels",
-          "period_frames","buffer_frames")
+          "period_frames","buffer_frames","stream_id")
 KINDS = {"HW_PARAMS","WRITEI","MMAP_COMMIT"}
 MAX_EVENTS = 256
 
@@ -39,7 +39,8 @@ def parse(path):
             data["requested_frames"] < 0 or data["requested_frames"] > 1_000_000 or
             data["returned_frames"] < -4096 or data["returned_frames"] > 1_000_000 or
             min(data["rate_hz"],data["channels"],data["period_frames"],
-                data["buffer_frames"]) < 0):
+                data["buffer_frames"]) < 0 or
+            not (0 <= data["stream_id"] <= 1000000)):
             raise ValueError(f"Impossible ALSA event counters/timing at row {idx}")
         entries.append({"event": values[0], **data,
                         "duration_ns":
@@ -68,6 +69,37 @@ def parse(path):
            if r["returned_frames"]>=0):
         raise ValueError("ALSA transfer returned more frames than requested")
     successful = [r for r in xfers if r["returned_frames"]>0]
+    # Reconstruct the latest successfully applied configuration for each
+    # anonymous snd_pcm_t ordinal BEFORE each transfer. The raw pointer
+    # itself is never stored and an unrecognized ordinal remains unknown.
+    # If recording hit 256 events this covers only the captured prefix.
+    hw_sorted=sorted(hw,key=lambda r:r["end_monotonic_ns"])
+    latest={}
+    stream_48=set()
+    stream_other=set()
+    by_stream={}
+    for h in hw_sorted:
+        ident=h["stream_id"]
+        if ident==0: continue
+        if h in valid_hw: stream_48.add(ident)
+        else: stream_other.add(ident)
+        by_stream.setdefault(ident,[]).append(h)
+    classified={"48k_stereo":0,"other_or_unknown":0}
+    unknown=0
+    for transfer in xfers:
+        ident=transfer["stream_id"]
+        preceding=[h for h in by_stream.get(ident,[]) if
+                   h["end_monotonic_ns"]<=transfer["start_monotonic_ns"]]
+        if not ident or not preceding:
+            unknown+=1
+            continue
+        latest_cfg=max(preceding,key=lambda x:x["end_monotonic_ns"])
+        if latest_cfg in valid_hw:
+            classified["48k_stereo"]+=1
+        else:
+            classified["other_or_unknown"]+=1
+    if sum(classified.values())+unknown!=len(xfers):
+        raise ValueError("ALSA ordinal transfer partition is inconsistent")
     period_values=sorted({r["period_frames"] for r in valid_hw})
     buffer_values=sorted({r["buffer_frames"] for r in valid_hw})
     return {
@@ -83,7 +115,17 @@ def parse(path):
                 (r["rate_hz"],r["channels"],
                  r["period_frames"],r["buffer_frames"])
                 for r in other_hw})],
-        "transfer_calls_directly_attributed_to_48k_pcm":False,
+        "anonymous_pcm_stream_ordinals_available":True,
+        "capture_prefix_only_if_event_limit_reached":len(entries)==MAX_EVENTS,
+        "48k_stereo_stream_ids":sorted(stream_48),
+        "other_hw_stream_ids":sorted(stream_other),
+        "mixed_configuration_stream_ids":sorted(stream_48 & stream_other),
+        "48k_stereo_attributed_transfer_count":classified["48k_stereo"],
+        "other_config_attributed_transfer_count":classified["other_or_unknown"],
+        "unattributed_transfer_count":unknown,
+        "transfer_calls_directly_attributed_to_48k_pcm":(
+            classified["48k_stereo"]>0 and unknown==0 and
+            not (stream_48 & stream_other)),
         "transfer_call_count":len(xfers),
         "positive_frame_transfer_count":len(successful),
         "transfer_kinds":sorted({r["event"] for r in xfers}),
