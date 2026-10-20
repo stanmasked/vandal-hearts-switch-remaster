@@ -1,0 +1,808 @@
+name: MAP02 Stage270 instrumented ALSA host transfers 21/22ms
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-alsa-instrumented-guest.yml'
+      - 'tools/map02_alsa_host_trace.c'
+      - 'tools/audit_map02_alsa_host_trace.py'
+      - 'tools/audit_map02_six_alsa_traces.py'
+      - 'tests/test_map02_alsa_host_trace.py'
+      - 'docs/MAP02_ALSA_INSTRUMENTED_TRIAL.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VH_EXACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  probe-build:
+    name: Compile opt-in Linux ALSA hook and 10 synthetic tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Verify source and run generated-only ALSA ABI tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
+          python3 -m unittest discover -s tests -p 'test_map02_alsa_host_trace.py' -v
+      - name: Build one opt-in Linux ALSA shared library
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p host-probe
+          gcc -std=c11 -O2 -fPIC -shared -Wall -Wextra -Werror \
+            tools/map02_alsa_host_trace.c -o host-probe/libmap02_alsa_trace.so -ldl
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          target=Path("host-probe/libmap02_alsa_trace.so")
+          assert target.read_bytes()[:4]==b"\x7fELF"
+          obj={
+            "schema":"vh-map02-alsa-host-probe-artifact/v1",
+            "source_sha":os.environ["VH_EXACT_SOURCE_SHA"],
+            "run_id":int(os.environ["GITHUB_RUN_ID"]),
+            "attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
+            "sha256":hashlib.sha256(target.read_bytes()).hexdigest(),
+            "max_sampled_events":256,
+            "samples_or_rom_content_captured":False,
+            "instrumentation_changes_host_timing":True,
+            "cpal_rust_callback_directly_intercepted":False
+          }
+          Path("host-probe/manifest.json").write_text(
+              json.dumps(obj,indent=2,sort_keys=True)+"\n")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: map02-host-alsa-probe
+          path: host-probe/
+          if-no-files-found: error
+
+  nexiom-host:
+    name: Download NeXium exactly once, record byte identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Reject temporary GitHub merge commit
+        run: test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
+      - name: Resolve one release asset and hash the actual binary
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p host-binary /tmp/vh-map02-nexium-host
+          curl -fsSL --retry 3 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly" \
+            > host-binary/release.json
+          count="$(jq '[.assets[] | select(.name=="nexium-linux-x86_64.tar.gz")] | length' host-binary/release.json)"
+          test "$count" -eq 1
+          url="$(jq -r '.assets[] | select(.name=="nexium-linux-x86_64.tar.gz") | .browser_download_url' host-binary/release.json)"
+          test -n "$url" && test "$url" != null
+          curl -fL --retry 3 --retry-all-errors "$url" \
+            -o host-binary/nexium-linux-x86_64.tar.gz
+          tar -xzf host-binary/nexium-linux-x86_64.tar.gz \
+            -C /tmp/vh-map02-nexium-host
+          emulator="$(find /tmp/vh-map02-nexium-host -type f -executable \
+            \( -name nexium-gui -o -name nexium \) -print -quit)"
+          test -n "$emulator"
+          export HOST_BINARY_REL="${emulator#/tmp/vh-map02-nexium-host/}"
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          root=Path('host-binary')
+          release=json.loads((root/'release.json').read_text())
+          assets=[a for a in release['assets'] if a['name']=='nexium-linux-x86_64.tar.gz']
+          assert len(assets)==1
+          asset=assets[0]
+          binary=Path('/tmp/vh-map02-nexium-host')/os.environ['HOST_BINARY_REL']
+          raw=(root/'nexium-linux-x86_64.tar.gz').read_bytes()
+          assert raw and binary.is_file() and binary.stat().st_size>0
+          manifest={
+              'schema':'vh-map02-nexium-one-host-binary/v1',
+              'source_sha':os.environ['VH_EXACT_SOURCE_SHA'],
+              'event_sha':os.environ['GITHUB_SHA'],
+              'run_id':int(os.environ['GITHUB_RUN_ID']),
+              'attempt':int(os.environ['GITHUB_RUN_ATTEMPT']),
+              'upstream_release_id':release['id'],
+              'upstream_release_tag':release['tag_name'],
+              'upstream_release_published_at':release.get('published_at'),
+              'upstream_asset_id':asset['id'],
+              'upstream_asset_name':asset['name'],
+              'host_archive_sha256':hashlib.sha256(raw).hexdigest(),
+              'executable_relative_path':os.environ['HOST_BINARY_REL'],
+              'host_executable_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),
+              'upstream_source_commit_verified':False,
+              'cross_run_release_immutability_proven':False
+          }
+          (root/'manifest.json').write_text(
+              json.dumps(manifest,indent=2,sort_keys=True)+'\n')
+          print('Single downloaded host executable SHA-256:',manifest['host_executable_sha256'])
+          PY
+          rm host-binary/release.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: map02-nexium-once-binary
+          path: host-binary/
+          if-no-files-found: error
+
+  host-witness:
+    name: Fail-closed dual PCM digest and retry checks (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Reject unintended temporary PR merge commit
+        run: test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
+      - name: Reject forged and damaged guest optical packets
+        run: python3 -m unittest discover -s tests -p 'test_decode_map02_audout_presubmit.py' -v
+      - name: Run generated-only host witness with sanitizers
+        shell: bash
+        run: |
+          set -euo pipefail
+          "${{ matrix.compiler }}" -std=c11 -O1 -g -Wall -Wextra -Werror \
+            -fsanitize=address,undefined -fno-sanitize-recover=all \
+            -fno-omit-frame-pointer -Isource \
+            tests/test_vh_audout_presubmit_witness.c \
+            source/vh_audout_presubmit_witness.c \
+            source/vh_audout_presubmit_optical.c \
+            -o /tmp/vh-audout-presubmit-test
+          ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+            /tmp/vh-audout-presubmit-test
+
+  research-nro:
+    name: Build separately opt-in libnx audout pre-submit witness NRO
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Verify exact source commit inside devkitPro
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
+      - name: Build gated native research-only NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO=/opt/devkitpro
+          export DEVKITA64=/opt/devkitpro/devkitA64
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          make -f Makefile -f Makefile.map02-audio \
+            MAP02_AUDIO_BUILD=build/map02-presubmit \
+            MAP02_AUDIO_PRESUBMIT_WITNESS=1 map02-audio-nro
+          test -s build/map02-presubmit/vandal-hearts-map02-audio.nro
+          sha256sum build/map02-presubmit/vandal-hearts-map02-audio.nro \
+            > build/map02-presubmit/nro.sha256
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          root=Path('build/map02-presubmit')
+          binary=(root/'vandal-hearts-map02-audio.nro').read_bytes()
+          assert binary[16:20]==b'NRO0'
+          receipt={'schema':'vh-map02-presubmit-guest-nro/v1',
+                   'source_sha':os.environ['VH_EXACT_SOURCE_SHA'],
+                   'event_sha':os.environ['GITHUB_SHA'],
+                   'run_id':int(os.environ['GITHUB_RUN_ID']),
+                   'attempt':int(os.environ['GITHUB_RUN_ATTEMPT']),
+                   'nro_sha256':hashlib.sha256(binary).hexdigest()}
+          (root/'manifest.json').write_text(
+              json.dumps(receipt,sort_keys=True,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: map02-audout-presubmit-research-nro
+          path: |
+            build/map02-presubmit/vandal-hearts-map02-audio.nro
+            build/map02-presubmit/nro.sha256
+            build/map02-presubmit/manifest.json
+          if-no-files-found: error
+
+  nexiom-presubmit:
+    name: Guest virtual sink PCM (${{ matrix.latency_ms }} ms, repeat ${{ matrix.repeat }})
+    needs: [host-witness, research-nro, nexiom-host, probe-build]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        # The NRO, PulseAudio sink and recording remain identical.
+        # Only the guest host-audio client receives this OPTIONAL hint;
+        # the separate parec monitor recorder uses default settings.
+        # The parent A/B already repeated default and 20 twice each.
+        # This child tests the next longer requested host latency points
+        # without changing the guest NRO, null sink or capture pipeline.
+        # Narrow the observed virtual-backend latency boundary after the
+        # 20-ms trial failed twice and both 40/80-ms trials passed twice.
+        # The actual 48-kHz sink-input buffer latency is observed below,
+        # not assumed to equal the requested client hint.
+        # Previous 20ms all-zero failures (3 trials) versus 24ms success
+        # (2 trials) leave a 21..23ms guest-host boundary to investigate.
+        # This hint is on NeXium only, never the parec monitor recorder.
+        # Confirm the observed 21ms (zero PCM) / 22ms (PCM present)
+        # distinction with three independent trials per setting.
+        latency_ms: [21, 22]
+        repeat: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Verify precise commit
+        run: test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-audout-presubmit-research-nro
+          path: nros
+      - name: Verify same-run opt-in executable identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          root=Path('nros')
+          manifest=json.loads((root/'manifest.json').read_text())
+          assert manifest['schema']=='vh-map02-presubmit-guest-nro/v1'
+          assert manifest['source_sha']==os.environ['VH_EXACT_SOURCE_SHA']
+          assert manifest['event_sha']==os.environ['GITHUB_SHA']
+          assert manifest['run_id']==int(os.environ['GITHUB_RUN_ID'])
+          assert manifest['attempt']==int(os.environ['GITHUB_RUN_ATTEMPT'])
+          binary=(root/'vandal-hearts-map02-audio.nro').read_bytes()
+          assert binary[16:20]==b'NRO0'
+          digest=hashlib.sha256(binary).hexdigest()
+          assert manifest['nro_sha256']==digest
+          assert (root/'nro.sha256').read_text().split()[0]==digest
+          PY
+      - name: Prepare headless graphics, Python imaging and Vulkan
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl jq xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 libxkbcommon-x11-0 \
+            libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers pulseaudio pulseaudio-utils libasound2-plugins
+      - name: Validate generated optical pixels and calibrated PNG decoding
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_presubmit_optical_pixels.py' -v
+      - name: Reject false-positive monitor alignment fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_audit_presubmit_virtual_sink.py' -v
+      - name: Test observed sink-input parser against false target selection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_report_pulse_sink_input_latency.py' -v
+      - name: Verify generated guest raster metrics are not liveness claims
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_report_map02_guest_raster_sequence.py' -v
+      - name: Reject false correlations between receipt, PCM and screen
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_classify_map02_guest_evidence.py' -v
+      - name: Validate synthetic pre-join atomic stage pixels and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_decode_map02_prejoin_stage.py' -v
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-nexium-once-binary
+          path: host-binary
+      - name: Verify same-run immutable NeXium archive and executable SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/nexium-presubmit
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          root=Path('host-binary')
+          m=json.loads((root/'manifest.json').read_text())
+          assert m['schema']=='vh-map02-nexium-one-host-binary/v1'
+          assert m['source_sha']==os.environ['VH_EXACT_SOURCE_SHA']
+          assert m['event_sha']==os.environ['GITHUB_SHA']
+          assert m['run_id']==int(os.environ['GITHUB_RUN_ID'])
+          assert m['attempt']==int(os.environ['GITHUB_RUN_ATTEMPT'])
+          assert m['upstream_asset_name']=='nexium-linux-x86_64.tar.gz'
+          raw=(root/'nexium-linux-x86_64.tar.gz').read_bytes()
+          assert hashlib.sha256(raw).hexdigest()==m['host_archive_sha256']
+          PY
+          tar -xzf host-binary/nexium-linux-x86_64.tar.gz -C /tmp/nexium-presubmit
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          m=json.loads(Path('host-binary/manifest.json').read_text())
+          root=Path('/tmp/nexium-presubmit').resolve()
+          candidate=(root/m['executable_relative_path']).resolve()
+          assert candidate.is_relative_to(root) and candidate.is_file()
+          assert candidate.name in ('nexium-gui','nexium')
+          assert os.access(candidate,os.X_OK)
+          assert hashlib.sha256(candidate.read_bytes()).hexdigest()==m['host_executable_sha256']
+          with open(os.environ['GITHUB_ENV'],'a') as fp:
+              print('NEXIUM_BIN='+str(candidate),file=fp)
+          print('Verified SAME NeXium executable SHA-256:',m['host_executable_sha256'])
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-host-alsa-probe
+          path: host-probe
+      - name: Verify same-run host ALSA hook binary identity before launch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          directory=Path("host-probe")
+          m=json.loads((directory/"manifest.json").read_text())
+          raw=(directory/"libmap02_alsa_trace.so").read_bytes()
+          assert m["schema"]=="vh-map02-alsa-host-probe-artifact/v1"
+          assert m["source_sha"]==os.environ["VH_EXACT_SOURCE_SHA"]
+          assert m["run_id"]==int(os.environ["GITHUB_RUN_ID"])
+          assert m["attempt"]==int(os.environ["GITHUB_RUN_ATTEMPT"])
+          assert m["max_sampled_events"]==256
+          assert m["instrumentation_changes_host_timing"] is True
+          assert m["cpal_rust_callback_directly_intercepted"] is False
+          assert raw[:4]==b"\x7fELF"
+          assert hashlib.sha256(raw).hexdigest()==m["sha256"]
+          with open(os.environ["GITHUB_ENV"],"a") as file:
+              print("VH_MAP02_ALSA_SO="+str(
+                  (directory/"libmap02_alsa_trace.so").resolve()),file=file)
+          PY
+      - name: Run opt-in NRO and capture its guest framebuffer proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          cp nros/manifest.json runtime-evidence/
+          cp host-binary/manifest.json runtime-evidence/nexium-host-build.json
+          cp host-probe/manifest.json runtime-evidence/host-alsa-probe-manifest.json
+          export VH_PULSE_CLIENT_LATENCY_TRIAL="${{ matrix.latency_ms }}"
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          manifest=json.loads(Path('runtime-evidence/manifest.json').read_text())
+          trial={'schema':'vh-map02-pulse-client-latency-trial/v1',
+                 'variant':os.environ['VH_PULSE_CLIENT_LATENCY_TRIAL'],
+                 'independent_repeat':int('${{ matrix.repeat }}'),
+                 'latency_hint_only_not_verified_effect':True,
+                 'monitor_recorder_uses_default_latency':True,
+                 'source_sha':manifest['source_sha'],
+                 'nro_sha256':manifest['nro_sha256'],
+                 'run_id':int(os.environ['GITHUB_RUN_ID']),
+                 'attempt':int(os.environ['GITHUB_RUN_ATTEMPT']),
+                 '48k_sink_and_guest_audio_c_code_unchanged':True,
+                 'same_run_host_binary_sha256_verified':True,
+                 'host_binary_sha256':json.loads(Path('runtime-evidence/nexium-host-build.json').read_text())['host_executable_sha256']}
+          Path('runtime-evidence/pulse-client-trial.json').write_text(
+              json.dumps(trial,indent=2,sort_keys=True)+'\n')
+          PY
+          # NeXium must see a functioning 48-kHz device. Mirror the
+          # already-green STUDIO_C virtual audout environment; otherwise
+          # audio initialization can fail before the eight-page witness.
+          rt="$RUNNER_TEMP/vh-map02-presubmit-pulse"
+          mkdir -p "$rt"
+          chmod 700 "$rt"
+          export XDG_RUNTIME_DIR="$rt"
+          pulseaudio --daemonize=yes --exit-idle-time=-1 \
+            --log-target=file:runtime-evidence/pulseaudio.log
+          export PULSE_SERVER="unix:$rt/pulse/native"
+          pactl load-module module-null-sink sink_name=vh_map02_presubmit \
+            rate=48000 channels=2 >runtime-evidence/pulse-module-id.txt
+          pactl set-default-sink vh_map02_presubmit
+          pactl list short sources > runtime-evidence/pulse-sources.txt
+          pactl list sinks > runtime-evidence/pulse-sinks-before.txt
+          pactl info > runtime-evidence/pulse-server-info.txt
+          grep -F 'vh_map02_presubmit.monitor' runtime-evidence/pulse-sources.txt
+          cat >"$RUNNER_TEMP/map02-presubmit-asound.conf" <<'ASOUND'
+          pcm.!default { type pulse }
+          ctl.!default { type pulse }
+          ASOUND
+          export ALSA_CONFIG_PATH="$RUNNER_TEMP/map02-presubmit-asound.conf"
+          export SDL_AUDIODRIVER=pulse
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          export ROOT="$PWD/runtime-evidence"
+          export NRO="$PWD/nros/vandal-hearts-map02-audio.nro"
+          # Record the very same 48-kHz virtual output used by this
+          # guest, including unknown warm-up delay. The guest optical
+          # receipt remains the independent source of PCM digests.
+          parec --device=vh_map02_presubmit.monitor --format=s16le \
+            --rate=48000 --channels=2 \
+            >"$ROOT/presubmit-virtual-sink-s16le-48k.pcm" \
+            2>"$ROOT/parec.log" &
+          capture_pid=$!
+          trap 'kill -TERM "$capture_pid" 2>/dev/null || true' EXIT
+          sleep 1
+          kill -0 "$capture_pid"
+          timeout --kill-after=5s 45s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+            set -euo pipefail
+            # Set the optional hint only on NeXium, *after* launching
+            # the baseline parec recorder. It may be ignored by the
+            # backend: a changed gap is not automatic causal proof.
+            if [ "$VH_PULSE_CLIENT_LATENCY_TRIAL" != default ]; then
+              export PULSE_LATENCY_MSEC="$VH_PULSE_CLIENT_LATENCY_TRIAL"
+            else
+              unset PULSE_LATENCY_MSEC || true
+            fi
+            env LD_PRELOAD="$VH_MAP02_ALSA_SO" VH_MAP02_ALSA_TRACE_PATH="$ROOT/host-alsa-events.csv" \
+              "$NEXIUM_BIN" "$NRO" >"$ROOT/nexium-presubmit.log" 2>&1 &
+            guest=$!
+            trap "kill -KILL $guest 2>/dev/null || true" EXIT
+            window=""
+            for n in $(seq 1 30); do
+              sleep 1
+              window="$(xdotool search --onlyvisible --name NeXium 2>/dev/null | tail -n1 || true)"
+              [ -z "$window" ] || break
+              kill -0 "$guest" 2>/dev/null || exit 1
+            done
+            test -n "$window"
+            sleep 4
+            # Capture real PulseAudio sink-input request attributes,
+            # not only an intended environment knob.
+            (pactl list sink-inputs > "$ROOT/pulse-sink-inputs-during.txt") || true
+            (pactl list short sink-inputs > "$ROOT/pulse-sink-inputs-short.txt") || true
+            # If no optical receipt is generated, these screenshots keep
+            # the actual UI stage visible rather than reporting only CRC.
+            import -window "$window" "$ROOT/presubmit-guest-before-input.png" || true
+            timeout 3 xdotool windowfocus --sync "$window" || true
+            timeout 3 xdotool keydown --window "$window" c
+            sleep 0.15
+            timeout 3 xdotool keyup --window "$window" c
+            sleep 3
+            timeout 3 xdotool keydown --window "$window" x
+            sleep 0.15
+            timeout 3 xdotool keyup --window "$window" x
+            sleep 3
+            timeout 3 xdotool keydown --window "$window" m
+            sleep 0.15
+            timeout 3 xdotool keyup --window "$window" m
+            sleep 3
+            # NEW research-only screen, rendered after cooperative stop
+            # request but BEFORE main enters threadWaitForExit().
+            import -window "$window" "$ROOT/presubmit-guest-prejoin-stage.png" || true
+            sleep 9
+            # After the bounded 8s prejoin panel, successful guest audio
+            # joins and shows the original strict VHPRE001 packet.
+            import -window "$window" "$ROOT/presubmit-guest.png"
+            test -s "$ROOT/presubmit-guest.png"
+            sleep 5
+            import -window "$window" "$ROOT/presubmit-guest-late.png" || true
+            # Recheck sink input; a 20ms hint may change the ALSA client
+            # buffers or cause it to stop feeding the sink altogether.
+            (pactl list sink-inputs > "$ROOT/pulse-sink-inputs-after-input.txt") || true
+            # Do not block forever on a GUI that ignores SIGINT:
+            # retain the captured PNG as evidence and reap boundedly.
+            kill -INT "$guest" 2>/dev/null || true
+            sleep 1
+            kill -KILL "$guest" 2>/dev/null || true
+            wait "$guest" 2>/dev/null || true
+          '
+          kill -TERM "$capture_pid" 2>/dev/null || true
+          sleep 1
+          kill -KILL "$capture_pid" 2>/dev/null || true
+          wait "$capture_pid" 2>/dev/null || true
+          trap - EXIT
+          test -s "$ROOT/presubmit-virtual-sink-s16le-48k.pcm"
+          pactl list sinks > "$ROOT/pulse-sinks-after.txt" || true
+      - name: Independently decode ALSA hw params and bounded write durations
+        shell: bash
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 tools/audit_map02_alsa_host_trace.py \
+            --trace runtime-evidence/host-alsa-events.csv \
+            --output runtime-evidence/host-alsa-trace-report.json
+      - name: Report raw monitor signal independently of guest optical state
+        shell: bash
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from array import array
+          import hashlib,json,math,sys
+          from pathlib import Path
+          root=Path("runtime-evidence")
+          pcm=root/"presubmit-virtual-sink-s16le-48k.pcm"
+          result={"schema":"vh-map02-latency-monitor-health/v1",
+                  "variant":"${{ matrix.latency_ms }}",
+                  "repeat":int("${{ matrix.repeat }}"),
+                  "virtual_sink_hardware_proof":False}
+          if pcm.is_file():
+              raw=pcm.read_bytes()
+              result["raw_pcm_sha256"]=hashlib.sha256(raw).hexdigest()
+              result["raw_bytes"]=len(raw)
+              result["valid_pcm16le_stereo"]=len(raw)>0 and len(raw)%4==0
+              if result["valid_pcm16le_stereo"]:
+                  samples=array("h");samples.frombytes(raw)
+                  if sys.byteorder!="little":samples.byteswap()
+                  result["stereo_frames"]=len(samples)//2
+                  result["seconds"]=round((len(samples)//2)/48000,6)
+                  result["nonzero_pcm16_samples"]=sum(x!=0 for x in samples)
+                  result["rms"]=round(math.sqrt(
+                      sum(float(x)*x for x in samples)/len(samples)),6)
+                  result["all_zero_monitor_pcm"]=result["nonzero_pcm16_samples"]==0
+          else:
+              result["capture_missing"]=True
+          (root/"presubmit-monitor-health.json").write_text(
+              json.dumps(result,sort_keys=True,indent=2)+"\n")
+          print(json.dumps(result,sort_keys=True,indent=2))
+          PY
+      - name: Record the actual 48k stereo host-client buffer delay
+        shell: bash
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 tools/report_pulse_sink_input_latency.py \
+            --during runtime-evidence/pulse-sink-inputs-during.txt \
+            --after runtime-evidence/pulse-sink-inputs-after-input.txt \
+            --output runtime-evidence/pulse-sink-input-observed.json
+      - name: Preserve actual GUI raster sequence without making liveness claims
+        shell: bash
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 tools/report_map02_guest_raster_sequence.py \
+            --before runtime-evidence/presubmit-guest-before-input.png \
+            --final runtime-evidence/presubmit-guest.png \
+            --late runtime-evidence/presubmit-guest-late.png \
+            --output runtime-evidence/presubmit-guest-raster-sequence.json
+      - name: Decode atomic guest stage BEFORE the potentially blocking join
+        shell: bash
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 tools/decode_map02_prejoin_stage.py \
+            --image runtime-evidence/presubmit-guest-prejoin-stage.png \
+            --output runtime-evidence/presubmit-guest-prejoin-stage.json
+      - name: Decode actual guest CRC and assert eight descriptor identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/decode_map02_audout_presubmit.py \
+            --image runtime-evidence/presubmit-guest.png \
+            --output runtime-evidence/presubmit-guest.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('runtime-evidence/presubmit-guest.json').read_text())
+          assert report['result']=='GUEST_PRESUBMIT_PCM_PAGES_MATCHED'
+          assert report['observed_pages']==8
+          assert report['mismatches']==0
+          assert all(p['descriptor_released_returns']==1 for p in report['pages'])
+          assert not report['live_dac_samples_proven']
+          assert not report['physical_switch_speaker_audio_verified']
+          PY
+      - name: Classify guest PCM fingerprint presence in the 48k monitor
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The pre-join stage adds 9s to guest exit. Bounded 45s
+          # monitor scan prevents false rejection by the old 30s limit.
+          python3 tools/audit_presubmit_virtual_sink.py \
+            --guest runtime-evidence/presubmit-guest.json \
+            --monitor runtime-evidence/presubmit-virtual-sink-s16le-48k.pcm \
+            --max-seconds 45 \
+            --output runtime-evidence/presubmit-sink-parity.json
+          result="$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result=json.loads(Path('runtime-evidence/presubmit-sink-parity.json').read_text())
+          print(result['result'])
+          PY
+          )"
+          echo "PulseAudio client latency hint: ${{ matrix.latency_ms }} ms (effect not assumed)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Virtual sink PCM page classifier: $result" >> "$GITHUB_STEP_SUMMARY"
+          # An inconclusive byte-match is not 'no sound' or a test pass.
+          # Preserve real capture for follow-up gain/timing analysis.
+          if [ "$result" = NO_EXACT_EIGHT_PAGE_SINK_MATCH ]; then
+            echo "Exact virtual sink attribution NOT YET proven" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Classify observed guest evidence without claiming stalled audout
+        shell: bash
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 tools/classify_map02_guest_evidence.py \
+            --directory runtime-evidence \
+            --output runtime-evidence/presubmit-guest-evidence-conjunction.json
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          path=Path('runtime-evidence/presubmit-guest-evidence-conjunction.json')
+          verdict=json.loads(path.read_text())['classification']
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as stream:
+              print('Guest multi-evidence classification: '+verdict,file=stream)
+              print('(observational; does not override the strict optical test)',file=stream)
+          PY
+      - name: Archive actual guest evidence even if decode fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-presubmit-nexium-guest-proof-${{ matrix.latency_ms }}-r${{ matrix.repeat }}
+          path: runtime-evidence/
+          if-no-files-found: warn
+
+  compare-all-six-exact-host-binaries:
+    name: Audit six verified host SHA-256 and raw guest PCM receipts
+    if: always()
+    needs: [nexiom-presubmit, nexiom-host, research-nro]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Verify exact source commit and create Python environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
+          python3 -m pip install --disable-pip-version-check pillow
+      - name: Reject forged or missing host identity in eight generated trials
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_verify_map02_nexium_one_binary.py' -v
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-nexium-once-binary
+          path: same-run/map02-nexium-once-binary
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-audout-presubmit-research-nro
+          path: same-run/map02-audout-presubmit-research-nro
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: map02-presubmit-nexium-guest-proof-*
+          path: same-run
+          merge-multiple: false
+      - name: Verify original guest PNG CRC8, PCM SHA256, NRO and host identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/verify_map02_nexium_one_binary.py \
+            --root same-run --source-sha "$VH_EXACT_SOURCE_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --output stage265-six-host-identity.json
+      - name: Preserve causal limits and trial report even on failure
+        shell: bash
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          path=Path('stage265-six-host-identity.json')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as stream:
+              if not path.is_file():
+                  print("Stage265 audit not executed; **UNVERIFIED**.",file=stream)
+              else:
+                  result=json.loads(path.read_text())
+                  print("### Stage265 exact host binary cross-trial audit",file=stream)
+                  print("Result: "+result["result"],file=stream)
+                  if result.get("same_host_executable_sha256_all_six_verified"):
+                      print("One NeXium binary SHA-256: "+result["host_executable_sha256"],file=stream)
+                  else:
+                      print("**No six-run host identity claim.** "+result.get("reason",""),file=stream)
+                  print("Requested latency hint is not an observed host period. "
+                        "CPAL root cause, infinite guest deadlock and physical "
+                        "Switch DAC are **not proven**.",file=stream)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage265-six-host-identity
+          path: stage265-six-host-identity.json
+          if-no-files-found: warn
+
+  compare-six-instrumented-alsa-traces:
+    name: Verify six real ALSA traces, guest PNG/PCM and exact host binaries
+    if: always()
+    needs: [nexiom-presubmit, research-nro, nexiom-host, probe-build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Verify source and set up optical PNG decoder
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
+          python3 -m pip install --disable-pip-version-check pillow
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-host-alsa-probe
+          path: current-run/map02-host-alsa-probe
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-nexium-once-binary
+          path: current-run/map02-nexium-once-binary
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-audout-presubmit-research-nro
+          path: current-run/map02-audout-presubmit-research-nro
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: map02-presubmit-nexium-guest-proof-*
+          path: current-run
+          merge-multiple: false
+      - name: Recompute ALSA host timings, PNG CRC8, virtual PCM and SHA hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_map02_six_alsa_traces.py \
+            --root current-run --run-id "$GITHUB_RUN_ID" \
+            --source-sha "$VH_EXACT_SOURCE_SHA" \
+            --output stage270-host-alsa-sixrun.json
+      - name: Publish actual host ALSA measurements and limits
+        shell: bash
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          f=Path("stage270-host-alsa-sixrun.json")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as stream:
+              print("### Stage270 opt-in ALSA host interposition",file=stream)
+              if not f.is_file():
+                  print("**UNVERIFIED**: six-run trace auditor did not execute.",file=stream)
+              else:
+                  obj=json.loads(f.read_text())
+                  print("Result: "+obj["result"],file=stream)
+                  if obj["result"]=="SIX_HOST_ALSA_INTERPOSITION_TRACES_VERIFIED":
+                      print("**Host timing changed** by LD_PRELOAD instrument; "
+                            "do not directly compare Stage265 timings.",file=stream)
+                      print("| Hint | Rep | ALSA period/buffer frames | "
+                            "Transfer samples | Max call ms | Guest audout calls |",file=stream)
+                      print("|---|---:|---|---:|---:|---:|",file=stream)
+                      for r in obj["trials"]:
+                          print(f'| {r["hint_ms"]} | {r["repeat"]} | '
+                                f'{r["observed_alsa_period_frames"]}/'
+                                f'{r["observed_alsa_buffer_frames"]} | '
+                                f'{r["alsa_transfer_calls_sampled"]} | '
+                                f'{r["alsa_transfer_duration_ns_max"]/1e6:.3f} | '
+                                f'{r["guest_audout_calls_entered"]}/'
+                                f'{r["guest_audout_calls_returned"]} |',file=stream)
+                  else:
+                      print("**NO SUCCESS CLAIM:** "+obj.get("reason",""),file=stream)
+                  print("ALSA API calls only: NOT direct CPAL callbacks, "
+                        "guest deadlock, physical DAC or speaker proof.",file=stream)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage270-instrumented-alsa-sixrun
+          path: stage270-host-alsa-sixrun.json
+          if-no-files-found: warn
