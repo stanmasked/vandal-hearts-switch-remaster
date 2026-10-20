@@ -12,6 +12,22 @@
 #include "../source/map02_guard8.h"
 #include "../source/map02_guard_hud.h"
 
+static void same_roster_fields(const VhRoster8 *a, const VhRoster8 *b) {
+    int i;
+    assert(a->ally_count == b->ally_count);
+    assert(a->enemy_count == b->enemy_count);
+    assert(a->cursor_x == b->cursor_x);
+    assert(a->cursor_y == b->cursor_y);
+    for (i = 0; i < VH_BH; ++i)
+        assert(a->walls[i] == b->walls[i]);
+    for (i = 0; i < VH_R8_CAPACITY; ++i) {
+        assert(a->units[i].x == b->units[i].x);
+        assert(a->units[i].y == b->units[i].y);
+        assert(a->units[i].hp == b->units[i].hp);
+        assert(a->units[i].acted == b->units[i].acted);
+    }
+}
+
 static void all_six_variants(void) {
     int scene, variant;
     for (scene = 0; scene < VH_R8_SCENES; ++scene) {
@@ -81,8 +97,7 @@ static void guard_plus_medic_plus_bow_same_fixture(void) {
     assert(vh_b8_guard_hud_state(&battle, &guard, 1) == VH_GHUD_READY);
     assert(battle.roster.units[0].hp == 3);
     assert(battle.roster.units[4].hp == 2);
-    assert(memcmp(&battle.roster, &VH_MAP02_ROSTER8_SECOND,
-                  sizeof(VhRoster8)) == 0);
+    same_roster_fields(&battle.roster, &VH_MAP02_ROSTER8_SECOND);
 }
 
 static void old_scene_and_padding_unchanged(void) {
@@ -90,7 +105,7 @@ static void old_scene_and_padding_unchanged(void) {
     VhRoster8 r;
     int i;
     assert(vh_r8_scene_variant(&r, 0, 0));
-    assert(memcmp(&r, &VH_MAP02_ROSTER8_SMOKE, sizeof(r)) == 0);
+    same_roster_fields(&r, &VH_MAP02_ROSTER8_SMOKE);
     assert(vh_b8_init_scene_variant(&b, 0, 0));
     assert(vh_b8_choose(&b) == VH_BSELECT);
     b.roster.cursor_x = 1;
