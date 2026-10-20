@@ -120,11 +120,13 @@ def inspect_trial(directory, source_sha, run_id, nro_hash, decode=decode_image):
                           optional["raster"], optional["sink"], pulse, stage)
     require(conjunction.get("schema") ==
             "vh-map02-guest-evidence-conjunction/v1" and
-            conjunction.get("classification") == recomputed["classification"] and
+            all(type(conjunction.get(k)) is type(v) and
+                conjunction.get(k) == v for k, v in recomputed.items()) and
             conjunction.get("prejoin_audout_call_entries") == entered and
             conjunction.get("prejoin_audout_call_returns") == returned and
             conjunction.get("audout_playbuffer_stall_proven") is False and
-            conjunction.get("guest_join_deadlock_proven") is False,
+            conjunction.get("guest_join_deadlock_proven") is False and
+            conjunction.get("physical_switch_dac_samples_proven") is False,
             "Stored correlation report contradicts independent evidence")
 
     return {
