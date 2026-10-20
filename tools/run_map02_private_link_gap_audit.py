@@ -24,7 +24,8 @@ SCHEMA = "vh.map02.private-one-shot-link-gap-audit.v1"
 REPORT = "paired.private.json"
 
 
-def run_private_link_gap_audit(manifest, partial, archives, output_root):
+def run_private_link_gap_audit(manifest, partial, archives, output_root,
+                               *, expected_initial_strong_imports=None):
     """Create sealed original-link comparison and recheck saved ELF evidence."""
     # Fail without side effects if there is no actionable provider set.
     candidates = [Path(value) for value in archives]
@@ -32,6 +33,12 @@ def run_private_link_gap_audit(manifest, partial, archives, output_root):
             item.suffix != ".a" for item in candidates):
         raise ValueError("private MAP02 link gap audit requires 2..64 archives")
     original = read_private_manifest(manifest)
+    initial_count = len(original["strong_symbols"])
+    if expected_initial_strong_imports is not None and (
+            type(expected_initial_strong_imports) is not int
+            or expected_initial_strong_imports < 0
+            or initial_count != expected_initial_strong_imports):
+        raise ValueError("private MAP02 expected original strong import count differs")
     parent, parent_identity = _private_output_dir(output_root)
     child = parent / "linked"
     receipt_dir = parent / "receipts"
@@ -62,14 +69,34 @@ def run_private_link_gap_audit(manifest, partial, archives, output_root):
             or independently_verified["verified_both_output_elf_files"] is not True
             or independently_verified["verified_report_arithmetic"] is not True):
         raise ValueError("private MAP02 final independent verification inconsistent")
+    for prefix in ("single_pass", "grouped"):
+        resolved = report[prefix + "_original_imports_resolved"]
+        newly_introduced = report[prefix + "_new_imports"]
+        total_unresolved = independently_verified[
+            prefix + "_remaining_strong_imports"]
+        if (type(resolved) is not int or type(newly_introduced) is not int
+                or not 0 <= resolved <= initial_count
+                or newly_introduced < 0
+                or total_unresolved != initial_count - resolved + newly_introduced):
+            raise ValueError("private MAP02 import gap decomposition inconsistent")
     return {
         "schema": SCHEMA,
-        "initial_strong_import_count": len(original["strong_symbols"]),
+        "initial_strong_import_count": initial_count,
         "candidate_archive_count": len(candidates),
+        "expected_initial_import_count_confirmed":
+            expected_initial_strong_imports is not None,
         "single_pass_original_imports_resolved":
             report["single_pass_original_imports_resolved"],
         "grouped_original_imports_resolved":
             report["grouped_original_imports_resolved"],
+        "single_pass_original_imports_remaining":
+            initial_count - report["single_pass_original_imports_resolved"],
+        "grouped_original_imports_remaining":
+            initial_count - report["grouped_original_imports_resolved"],
+        "single_pass_new_strong_imports":
+            report["single_pass_new_imports"],
+        "grouped_new_strong_imports":
+            report["grouped_new_imports"],
         "single_pass_final_strong_import_count":
             independently_verified["single_pass_remaining_strong_imports"],
         "grouped_final_strong_import_count":
@@ -89,11 +116,15 @@ def main():
     parser.add_argument("private_original_partial_elf", type=Path)
     parser.add_argument("new_private_output_root", type=Path)
     parser.add_argument("native_archive", type=Path, nargs="+")
+    parser.add_argument(
+        "--expect-initial-strong-imports", type=int, default=None,
+        help="fail before creating output if the original strong-import count differs")
     args = parser.parse_args()
     try:
         summary = run_private_link_gap_audit(
             args.private_undefined_manifest, args.private_original_partial_elf,
-            args.native_archive, args.new_private_output_root)
+            args.native_archive, args.new_private_output_root,
+            expected_initial_strong_imports=args.expect_initial_strong_imports)
     except (OSError, ValueError, subprocess.TimeoutExpired):
         parser.error("private MAP02 one-shot link gap audit failed")
     print(json.dumps(summary, indent=2, sort_keys=True))
