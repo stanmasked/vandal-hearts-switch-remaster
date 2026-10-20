@@ -1,0 +1,100 @@
+name: MAP02 Stage297 source-pinned CPAL callback timing forensic audit
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-cpal-timing-stage297.yml'
+      - 'tools/audit_map02_cpal_timing_stage297.py'
+      - 'tests/test_audit_map02_cpal_timing_stage297.py'
+      - 'docs/MAP02_CPAL_TIMING_STAGE297.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  VH_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_PINNED_STAGE296_RUN: '39506142824'
+  VH_PINNED_STAGE296_HEAD: '3734b12fc2556481a702117175401d80b360db20'
+
+jobs:
+  stage297-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_HEAD }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify isolated ROM-free analysis-only diff and run time-window falsification
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_HEAD"
+          python3 - <<'PY'
+          import subprocess
+          permitted={
+              ".github/workflows/map02-cpal-timing-stage297.yml",
+              "tools/audit_map02_cpal_timing_stage297.py",
+              "tests/test_audit_map02_cpal_timing_stage297.py",
+              "docs/MAP02_CPAL_TIMING_STAGE297.md",
+          }
+          paths=set(subprocess.check_output(
+              ["git","diff","--name-only","3734b12fc2556481a702117175401d80b360db20","HEAD"],
+              text=True).splitlines())
+          assert paths and paths<=permitted,sorted(paths-permitted)
+          PY
+          python3 -m unittest discover -s tests -p 'test_audit_map02_cpal_timing_stage297.py' -v
+          python3 -m unittest discover -s tests -p 'test_audit_map02_cpal_lifecycle_snapshots.py' -v
+          python3 -m unittest discover -s tests -p 'test_audit_map02_filelogger_repeatability_stage296.py' -v
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: map02-stage296-hint*-r*-evidence
+          run-id: 39506142824
+          github-token: ${{ github.token }}
+          path: original-evidence
+          merge-multiple: false
+      - name: Independently verify real original cohort and localize last CPAL increments
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          python3 tools/audit_map02_cpal_timing_stage297.py \
+            --root original-evidence \
+            --output results/stage297-real-cpal-temporal-audit.json
+      - name: Publish source-grounded temporal bounds and unproven hypotheses
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          path=Path("results/stage297-real-cpal-temporal-audit.json")
+          if not path.is_file():
+              path.parent.mkdir(exist_ok=True,parents=True)
+              path.write_text(json.dumps({
+                "result":"UNVERIFIED",
+                "reason":"Stage297 audit not executed"},indent=2)+"\n")
+          result=json.loads(path.read_text())
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
+              print("### MAP02 Stage297 real monotonic CPAL lifecycle temporal audit",file=f)
+              print("Result: **"+result["result"]+"**",file=f)
+              if result["result"]!="FIVE_SOURCE_PINNED_REAL_CPAL_TEMPORAL_TRACES_REPARSED":
+                  print("No verified inference: "+result.get("reason","Unknown"),file=f)
+              else:
+                  print("| Hint | Replica | Input-window CPAL entries | Observed whole-window changes | Last positive entry increment bracket relative to input | Conservatively observed quiet tail (ms) |",file=f)
+                  print("|---:|---:|---:|---:|---|---:|",file=f)
+                  for record in result["trials"]:
+                      t=record["temporal_analysis"]
+                      m=t["metrics"]["cpal_entries"]
+                      print(f'| {record["hint_ms"]} | {record["replica"]} | {m["increments_unambiguously_after_input"]} | {m["observed_increment_total"]} | {m["last_positive_increment_relation_to_input"]} | {m["observed_no_new_increment_tail_ms"]} |',file=f)
+                  print("No exact callback timestamps, stream pause/drop event, permanent deadlock, original PS1 soundtrack fidelity or physical Switch audio established.",file=f)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage297-real-cpal-temporal-audit
+          path: results/
+          if-no-files-found: error
