@@ -73,7 +73,7 @@ class VirtualPCMTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"stereo frames"):
             sink.audit(receipt,b"123")
         with self.assertRaisesRegex(ValueError,"bounded"):
-            sink.audit(receipt,b"\0"*192001,max_seconds=1)
+            sink.audit(receipt,b"\0"*192004,max_seconds=1)
 
     def test_refuse_malformed_guest(self):
         receipt,pages=fixture()
