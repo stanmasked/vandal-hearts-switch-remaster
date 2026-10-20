@@ -5,12 +5,17 @@ is mocked in this fixture. Actual window full-VRAM and texture/OT checks run.
 No synthetic result is evidence of authentic MAP02 gameplay.
 """
 import hashlib
+import io
 import json
+from contextlib import redirect_stderr
 from pathlib import Path
 import stat
 import tempfile
 import unittest
 from unittest.mock import patch
+
+import tools.verify_map02_source_native_windows as source_module
+import tools.publish_map02_native_window_source_witness as witness_module
 
 from tests.test_verify_map02_native_gpu_windows import (
     NativeGpuWindowEvidenceTests, jsonline,
@@ -267,6 +272,43 @@ class WindowSourceWitnessTests(unittest.TestCase):
         path.write_bytes(data)
         with self.assertRaises(ValueError):
             verify_published_window_source_witness(self.source, self.native)
+
+
+class PrivateSourceWindowCliRedactionTests(unittest.TestCase):
+    def test_source_join_cli_never_logs_private_capture_paths(self):
+        private_path = "/private/owned-vandal-hearts/MAP02/raw-vram.bin"
+        with patch("sys.argv", ["window-source-join", private_path, "/private/windows"]), \
+             patch.object(source_module, "verify_window_source_join",
+                          side_effect=ValueError("bad private source: " + private_path)), \
+             redirect_stderr(io.StringIO()) as error:
+            with self.assertRaises(SystemExit) as outcome:
+                source_module.main()
+        self.assertEqual(outcome.exception.code, 2)
+        self.assertIn("private MAP02 source/native window join unavailable",
+                      error.getvalue())
+        self.assertNotIn(private_path, error.getvalue())
+
+    def test_window_witness_publish_and_verify_cli_redact_private_paths(self):
+        private_path = "/private/owned-vandal-hearts/MAP02/game-image.bin"
+        for publish in (False, True):
+            with self.subTest(publish=publish):
+                argv = ["window-witness", private_path, "/private/windows"]
+                if publish:
+                    argv.append("--publish")
+                function = (
+                    "publish_window_source_witness" if publish
+                    else "verify_published_window_source_witness"
+                )
+                with patch("sys.argv", argv), \
+                     patch.object(witness_module, function,
+                                  side_effect=ValueError("private asset: " + private_path)), \
+                     redirect_stderr(io.StringIO()) as error:
+                    with self.assertRaises(SystemExit) as outcome:
+                        witness_module.main()
+                self.assertEqual(outcome.exception.code, 2)
+                self.assertIn("private MAP02 native window witness unavailable",
+                              error.getvalue())
+                self.assertNotIn(private_path, error.getvalue())
 
 
 if __name__ == "__main__":
