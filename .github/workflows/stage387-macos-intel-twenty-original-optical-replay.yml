@@ -44,6 +44,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # macOS /var is a symlink to /private/var; Stage373 explicitly
+          # rejects ANY symlink parent for original-source file reads.
+          # Give synthetic unit fixtures a canonical, local temporary root
+          # without weakening original source validation or changing game code.
+          mkdir -p .stage387-temp
+          export TMPDIR="$(cd .stage387-temp && pwd -P)"
+          python3 - <<'PY'
+          import pathlib, tempfile
+          p=pathlib.Path(tempfile.mkdtemp(prefix='stage387-'))
+          try:
+              assert p.is_dir()
+              assert not any(x.is_symlink() for x in (p,*p.parents))
+              print("Canonical Intel macOS temporary source root:",p)
+          finally:
+              p.rmdir()
+          PY
           for pair in 373:six 374:eight 378:twelve 382:sixteen 383:eighteen; do
             stage="${pair%%:*}"
             suffix="${pair#*:}"
