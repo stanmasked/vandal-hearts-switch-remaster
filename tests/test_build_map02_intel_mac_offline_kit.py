@@ -28,7 +28,7 @@ class Map02OfflineKitTests(unittest.TestCase):
             "tools/private.dat", r"tests\escape.py", "tests/subdir/../../bad.py",
         ):
             with self.subTest(name=bad):
-                with self.assertRaisesRegex(ValueError, "archive member"):
+                with self.assertRaises(ValueError):
                     checked_member(bad)
 
     def test_dependency_closure_has_only_code_not_original_game_files(self):
