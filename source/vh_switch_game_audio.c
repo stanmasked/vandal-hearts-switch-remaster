@@ -18,6 +18,7 @@
 #include "vh_audio_exit_tail_reason_stage351.h"
 #include "vh_audio_exit_tail_checks_stage353.h"
 #include "vh_audio_exit_tail_wait_result_stage357.h"
+#include "vh_audio_exit_wait_descriptor_stage368.h"
 #include "vh_audio_exit_probe_context_stage360.h"
 
 #include <stdio.h>
@@ -76,6 +77,7 @@ static VhAudioLastPlayBufferCall last_playbuffer_call; /* same owner, existing c
 static VhPlayBufferHistory last_playbuffer_history; /* last 16 real calls */
 static VhAudioExitTailReason exit_tail_reason; /* written only on cleanup */
 static VhAudioTailWaitResult357 exit_tail_wait_result; /* same owner; read after join */
+static VhAudioExitWaitDescriptor368 exit_tail_wait_descriptor; /* no new service calls */
 static VhTailProbeContext360 exit_tail_probe_context; /* old query history only */
 /* Audout worker is the sole writer. Main reads after thread join. */
 static VhAudoutQueueTelemetry audout_telemetry;
@@ -286,9 +288,15 @@ static int output_tail_submit_bounded(VhSwitchOutput *s, size_t frames) {
     /* Record only the actual already-returned service Result. Do not
      * issue another wait, poll, timestamp or PCM operation. */
     vh_tail357_record(&exit_tail_wait_result,(uint32_t)wait_result);
-    return vh_audio_tail_stage353_wait_checked(
+    const int decision=vh_audio_tail_stage353_wait_checked(
         &exit_tail_reason,&s->lease,
         R_FAILED(wait_result),released_count,released);
+    /* Stage368 only captures the count and pointer identity already
+     * returned by the SAME service call. Preserve the original lease
+     * decision and its 12-ms bound; never retain/export an address. */
+    (void)vh_tail368_record(&exit_tail_wait_descriptor,
+        (uint32_t)wait_result,(uint32_t)released_count,released,s->buffer);
+    return decision;
 }
 
 /* Called by the single audio owner; the render thread only takes
@@ -623,6 +631,7 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
     vh_playbuffer_history_reset(&last_playbuffer_history);
     vh_audio_tail_reason_reset(&exit_tail_reason);
     vh_tail357_reset(&exit_tail_wait_result);
+    vh_tail368_reset(&exit_tail_wait_descriptor);
     vh_tail360_reset(&exit_tail_probe_context);
     vh_audout_queue_reset(&audout_telemetry);
     if(vh_audout_queue_set_probe_phase(&audout_telemetry,
@@ -837,6 +846,16 @@ int vh_switch_game_audio_tail_wait_result_dump(FILE *stream) {
     if (!stream || thread_started) return -1;
     return vh_tail357_write_csv(
         &exit_tail_wait_result,&exit_tail_reason,stream);
+}
+
+/* Stage368: the original wait call's returned descriptor identity
+ * and count, validated against original Stage351 and Stage357 sources.
+ * No pointer addresses emitted; post-join only. */
+int vh_switch_game_audio_wait_descriptor_dump(FILE *stream) {
+    if (!stream || thread_started) return -1;
+    return vh_tail368_write_csv(
+        &exit_tail_wait_descriptor,&exit_tail_wait_result,
+        &exit_tail_reason,stream);
 }
 
 /* Stage360: pre-existing periodic *pre-submit* probe and exit tick,
