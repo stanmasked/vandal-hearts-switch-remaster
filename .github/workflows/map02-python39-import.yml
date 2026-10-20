@@ -6,12 +6,16 @@ on:
       - 'tools/audit_map02_disc_prs.py'
       - 'tools/compare_map02_variants.py'
       - 'tests/test_map02_audit_python39_import.py'
+      - 'tests/test_check_map02_ru_receipt.py'
+      - 'tools/check_map02_ru_receipt.py'
       - '.github/workflows/map02-python39-import.yml'
   pull_request:
     paths:
       - 'tools/audit_map02_disc_prs.py'
       - 'tools/compare_map02_variants.py'
       - 'tests/test_map02_audit_python39_import.py'
+      - 'tests/test_check_map02_ru_receipt.py'
+      - 'tools/check_map02_ru_receipt.py'
       - '.github/workflows/map02-python39-import.yml'
 
 jobs:
@@ -27,4 +31,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Import read-only MAP02 auditor without original game files
-        run: python -m unittest discover -s tests -p 'test_map02_audit_python39_import.py' -v
+        run: |
+          python -m unittest discover -s tests -p 'test_map02_audit_python39_import.py' -v
+          python -m unittest discover -s tests -p 'test_check_map02_ru_receipt.py' -v
