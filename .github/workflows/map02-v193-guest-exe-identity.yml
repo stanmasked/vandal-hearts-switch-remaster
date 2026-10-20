@@ -1,0 +1,31 @@
+name: MAP02 v193 synthetic PS-X guest EXE SHA-256 identity across native PCSX runs
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v193-guest-exe-identity.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/check_map02_v193_guest_exe_identity.py'
+      - 'tests/test_map02_v193_guest_exe_identity.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  guest-exe-provenance:
+    name: Native guest binary identity regression (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject changes in the actual native synthetic guest EXE
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/check_map02_v193_guest_exe_identity.py tests/test_map02_v193_guest_exe_identity.py
+          python3 -m unittest discover -s tests -p 'test_map02_v193_guest_exe_identity.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v192_native_process_exits.py' -v
+          echo 'VH193_INDEPENDENT_GUEST_EXE_IDENTITY_PASS modes=10 input_hashes=20 original_retail_executed=0'
