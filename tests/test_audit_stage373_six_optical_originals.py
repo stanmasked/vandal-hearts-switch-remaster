@@ -10,7 +10,7 @@ import tempfile
 import unittest
 import zlib
 from pathlib import Path
-sys.path.insert(0,str(Path(__file__).resolve().parents[0]))
+sys.path.insert(0,str(Path(__file__).resolve().parents[1] / "tools"))
 import audit_stage373_six_optical_originals as a
 
 def png_chunk(kind,data):
