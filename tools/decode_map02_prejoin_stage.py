@@ -15,16 +15,31 @@ def decode_image(path):
         if fp.format!="PNG" or fp.size!=SIZE:
             raise ValueError("Expected real 1280x720 NeXium PNG")
         im=fp.convert("RGB")
+    # NeXium can letterbox or scale the guest framebuffer. Calibrate
+    # from the magenta border actually rendered in this screenshot,
+    # then sample module centers relative to those real pixel bounds.
+    magenta=[]
+    for i,(red,green,blue) in enumerate(im.getdata()):
+        if red>=200 and green<=45 and blue>=200:
+            magenta.append((i%SIZE[0],i//SIZE[0]))
+    if len(magenta)<200:
+        raise ValueError("Missing pre-join magenta stage panel")
+    left=min(x for x,_ in magenta)
+    right=max(x for x,_ in magenta)
+    top=min(y for _,y in magenta)
+    bottom=max(y for _,y in magenta)
+    width=right-left+1
+    height=bottom-top+1
+    if not (68<=width<=118 and 88<=height<=145):
+        raise ValueError("Unexpected calibrated pre-join panel geometry")
     pixels=im.load()
-    for x,y in ((244,154),(334,154),(244,264),(334,264)):
-        color=pixels[x,y]
-        if not (color[0]>=200 and color[1]<=45 and color[2]>=200):
-            raise ValueError("Missing pre-join magenta stage panel")
     values=[]
     for row in range(10):
         value=0
         for bit in range(8):
-            r,g,b=pixels[LEFT+10*bit+4,TOP+10*row+4]
+            px=round(left+(10+10*bit)*width/BORDER[2])
+            py=round(top+(10+10*row)*height/BORDER[3])
+            r,g,b=pixels[px,py]
             if max(r,g,b)<=48:
                 continue
             if min(r,g,b)>=208:
