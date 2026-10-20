@@ -6,6 +6,7 @@
 #include "map02_battle_fixture.h"
 #include "map02_battle8.h"
 #include "map02_roster8_variants.h"
+#include "map02_ranged8.h"
 #include "game_renderer.h"
 #include "platform_input.h"
 #include "software_renderer.h"
@@ -486,8 +487,10 @@ static void draw_map02_battle8(u32 *pixels, u32 stride,
     draw_text(pixels, stride, 985, 418, "ZR OR L+R RETURN", COLOR_WHITE, 1);
     draw_text(pixels, stride, 985, 442, "R NEXT ROSTER", COLOR_WHITE, 1);
     draw_text(pixels, stride, 985, 466, "L NEXT ARENA", COLOR_WHITE, 1);
-    if (battle8_scene == 1)
+    if (battle8_scene == 1) {
         draw_text(pixels, stride, 985, 489, "SECOND ARENA", COLOR_CURSOR, 1);
+        draw_text(pixels, stride, 985, 513, "ALLY 1 BOW: B", COLOR_HERO, 1);
+    }
     draw_text(pixels, stride, 70, 622,
               "ZR OR L+R RETURN  MINUS DEMO  PLUS EXIT", COLOR_MUTED, 2);
     draw_text(pixels, stride, 70, 661,
@@ -592,7 +595,21 @@ int main(int argc, char **argv) {
                 if (actions & VH_INPUT_UP)    vh_b8_cursor(&battle8, 0, -1);
                 if (actions & VH_INPUT_DOWN)  vh_b8_cursor(&battle8, 0, 1);
                 if (actions & VH_INPUT_CONFIRM) (void)vh_b8_choose(&battle8);
-                if (actions & VH_INPUT_CANCEL) (void)vh_b8_cancel(&battle8);
+                if (actions & VH_INPUT_CANCEL) {
+                    /* Only the second independent arena grants the first
+                     * ally a line-of-sight bow. B on a ranged enemy fires;
+                     * B on an empty tile keeps the proven cancel behavior.
+                     * Invalid enemy shots cannot silently cancel selection. */
+                    const int occ = vh_r8_occupant(&battle8.roster,
+                                                   battle8.roster.cursor_x,
+                                                   battle8.roster.cursor_y);
+                    if (battle8_scene == 1 &&
+                        battle8.selected == VH_B8_ARCHER_SLOT &&
+                        occ >= VH_R8_SIDE_CAP)
+                        (void)vh_b8_shoot(&battle8);
+                    else
+                        (void)vh_b8_cancel(&battle8);
+                }
                 if (buttons_down & HidNpadButton_X)
                     (void)vh_b8_end_turn(&battle8);
             } else if (!toggle_8) {
