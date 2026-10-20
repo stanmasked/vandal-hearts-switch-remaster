@@ -31,6 +31,9 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
+          # Surface exact native diagnostic before test harness captures stderr.
+          gcc -std=c11 -O2 -fPIC -shared -Wall -Wextra -Werror -pthread \
+            tools/map02_alsa_lifetime_probe.c -o /tmp/map02-stage273-compile-test.so -ldl
           python3 -m unittest discover -s tests -p 'test_map02_alsa_lifetime.py' -v
       - name: Build one opt-in Linux ALSA shared library
         shell: bash
