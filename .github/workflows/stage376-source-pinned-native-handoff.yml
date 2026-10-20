@@ -1,0 +1,84 @@
+name: Stage376 verify pinned integrated native NRO handoff provenance
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage376-source-pinned-native-handoff.yml'
+      - 'tools/audit_stage376_native_handoff.py'
+      - 'tests/test_audit_stage376_native_handoff.py'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: stage376-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  handoff-proof:
+    name: Audit pinned current-generation NRO source and completed native CI jobs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject synthetic forged run, source ZIP and NRO cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_audit_stage376_native_handoff.py' -v
+          python3 -m py_compile tools/audit_stage376_native_handoff.py
+      - name: Download original CI metadata and pinned complete original ZIP
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p stage376-metadata
+          repo=stanmasked/vandal-hearts-switch-remaster
+          gh api "repos/$repo/actions/runs/39453952599" > stage376-metadata/integrated-run.json
+          gh api "repos/$repo/actions/runs/39453952599/jobs?per_page=100" > stage376-metadata/integrated-jobs.json
+          gh api "repos/$repo/actions/artifacts/12278869762" > stage376-metadata/integrated-artifact.json
+          gh api "repos/$repo/actions/runs/39453952411" > stage376-metadata/host_spu-run.json
+          gh api "repos/$repo/actions/runs/39453952443" > stage376-metadata/native_pcm-run.json
+          gh api "repos/$repo/actions/runs/39453952772" > stage376-metadata/stage374-run.json
+          gh api "repos/$repo/actions/runs/39453952461" > stage376-metadata/native_audout-run.json
+          gh api "repos/$repo/actions/runs/39453952566" > stage376-metadata/optional-sdl2-run.json
+          curl --fail --silent --show-error --location \
+            --retry 3 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$repo/actions/artifacts/12278869762/zip" \
+            --output stage376-original-actions.zip
+          test -s stage376-original-actions.zip
+      - name: Verify original byte-for-byte NRO and native CI provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_stage376_native_handoff.py \
+            --artifact-zip stage376-original-actions.zip \
+            --metadata stage376-metadata \
+            --output stage376-handoff-source-audit.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path('stage376-handoff-source-audit.json').read_text())
+          assert data['result']=='STAGE376_PINNED_INTEGRATED_NRO_BYTES_AND_NATIVE_CI_PROVENANCE_VERIFIED'
+          assert len(data['independent_native_ci'])==4
+          assert data['optional_sdl2']['status']=='FAILED_EXTERNAL_DEPENDENCY_NOT_RECLASSIFIED'
+          assert data['hardware_status']=='HARDWARE NOT TESTED'
+          assert data['physical_speaker_audio_tested'] is False
+          PY
+          {
+            echo '### Stage376 original-source integrated libnx/audout candidate'
+            echo 'Original pinned head: 7df0d02c93217b6f077e6ba30de9e1a554d95b9a (historical after this CI documentation commit).'
+            echo 'Original integrated build #39453952599 and artifact #12278869762 have been re-opened and verified.'
+            echo 'Host SPU, native PCM, native audout and eight-session Stage374 archival replay were separately green.'
+            echo 'Optional SDL2 is still RED (devkitPro HTTP 403); do NOT treat the full PR CI as green.'
+            echo 'Only an earlier pinned tactical NRO candidate; no Switch SD/hardware execution or audible sound observed.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve compact JSON receipt only, not NRO or source game assets
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage376-pinned-native-handoff-receipt
+          path: stage376-handoff-source-audit.json
+          if-no-files-found: warn
+          retention-days: 90
