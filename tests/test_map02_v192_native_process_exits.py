@@ -82,6 +82,12 @@ class V192NativeExitReceipts(unittest.TestCase):
             with self.assertRaises(ValueError):
                 verified_manifest(directory)
 
+    def test_fail_closed_entrypoint_even_with_python_optimized_mode(self):
+        source = (ROOT / "tools/check_map02_v192_native_process_exits.py").read_text()
+        self.assertNotIn("assert verify_exits(", source)
+        self.assertIn("if verify_exits(args.verify_dir) != (10, 9, 10):", source)
+        self.assertIn('raise ValueError("native process-exit receipt verification failed")', source)
+
     def test_native_ci_records_each_process_exit_before_v192_parser(self):
         native = (ROOT / ".github/workflows/map02-v104-content-guard.yml").read_text()
         independent = (ROOT / ".github/workflows/map02-v192-native-exit-log-receipts.yml").read_text()
