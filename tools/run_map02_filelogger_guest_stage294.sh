@@ -26,6 +26,11 @@ export NEXIUM_X11=1
 # Otherwise the GUI/audio CPAL can run without launching the research NRO.
 export NEXIUM_CPU_BACKEND=rustarmic
 export NEXIUM_LOG_LEVEL=info
+# Use the documented NeXium root override to pin the GUI FileLogger
+# to the SAME isolated per-run directory already expected by the auditor.
+# Do not change the immutable guest NRO, ELF or audio parameters.
+export NEXIUM_DATA_ROOT="$HOME/.config/NeXium"
+mkdir -p "$NEXIUM_DATA_ROOT"
 export LIBGL_ALWAYS_SOFTWARE=1
 export WGPU_BACKEND=vulkan
 icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
@@ -91,6 +96,9 @@ test -s "$MAP02_EVIDENCE/virtual-pulse-48k-stereo-s16le.pcm"
 # nexium_common::paths::root()/logs, with the temp HOME above on this runner.
 # Do not publish raw host logs; the separate audit will scan and sanitize them.
 logroot="$HOME/.config/NeXium/logs"
-test -d "$logroot"
+if [[ ! -d "$logroot" ]]; then
+  echo "ERROR: pinned NeXium GUI FileLogger directory is absent" >&2
+  exit 1
+fi
 find "$logroot" -maxdepth 1 -type f -name 'nexium-*.log' -print -quit |
   grep -q 'nexium-'
