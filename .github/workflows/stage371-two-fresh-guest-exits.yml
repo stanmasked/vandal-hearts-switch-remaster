@@ -15,6 +15,12 @@ on:
 permissions:
   contents: read
   actions: read
+# On a long-lived Draft PR, each additional commit queues another expensive
+# same-source native build and two NeXium guest runs. Keep only the latest
+# PR attempt; separately dispatched diagnostic runs remain opt-in.
+concurrency:
+  group: stage371-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   validate-source:
     name: Validate Stage371 isolated-source invariants before building NRO
