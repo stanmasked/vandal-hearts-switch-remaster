@@ -1,0 +1,83 @@
+name: MAP02 pinned PC VRAM4 texture window equivalence
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-pinned-vram4-boundaries.yml'
+      - 'tools/verify_map02_pc_vram4_equivalence.py'
+      - 'tests/test_verify_map02_pc_vram4_equivalence.py'
+      - 'source/map02_vram4_page.h'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pinned-pc-parity:
+    name: 32 PC source parity scenarios (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - name: Checkout portable MAP02 diagnostics
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout exact public pinned PC-port raster translation unit
+        uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: upstream
+          persist-credentials: false
+          sparse-checkout: |
+            platform/pc/src/pc_raster.c
+          sparse-checkout-cone-mode: false
+      - name: Verify exact compiled pinned SampleTexture parity, no retail data
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_verify_map02_pc_vram4_equivalence.py' -v
+          python3 -m tools.verify_map02_pc_vram4_equivalence \
+            upstream/platform/pc/src/pc_raster.c \
+            source/map02_vram4_page.h --compiler "$CC" \
+            > /tmp/vh-map02-pc-source-vram4-parity.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x = json.loads(Path("/tmp/vh-map02-pc-source-vram4-parity.json").read_text())
+          assert x["matches_pinned_pc_raster"] is True
+          assert x["compiled_pc_sampletexture_matches"] is True
+          assert x["scenarios"] == 32
+          assert x["pixels_compared"] == 2097152
+          assert x["real_gameplay_vram_verified"] is False
+          assert x["ps1_hardware_pixels_verified"] is False
+          print("VH_MAP02_PC_VRAM4_BOUNDARIES_PASS cases=32 texels=2097152 owned_disc=0")
+          PY
+      - name: Negative control — mutated portable texel addressing must fail
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          from tools.verify_map02_pc_vram4_equivalence import compare
+          source = Path("upstream/platform/pc/src/pc_raster.c").read_text(encoding="utf-8")
+          original = Path("source/map02_vram4_page.h").read_text(encoding="utf-8")
+          old = "unsigned tx=page_x+effective_u/4u;"
+          new = "unsigned tx=page_x+(effective_u^4u)/4u;"
+          assert original.count(old) == 1
+          corrupted = original.replace(old, new)
+          try:
+              compare(source, corrupted, compiler=os.environ["CC"])
+          except ValueError as exc:
+              if "PC 4bpp sample comparison failed" not in str(exc):
+                  raise
+          else:
+              raise AssertionError("mutated portable texel address falsely passed PC reference")
+          print("VH_MAP02_PC_VRAM4_MUTANT_REJECTED real_gameplay=0")
+          PY
