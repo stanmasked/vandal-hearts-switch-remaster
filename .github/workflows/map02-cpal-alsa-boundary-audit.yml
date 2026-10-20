@@ -21,7 +21,8 @@ env:
 jobs:
   original-six-artifact-audit:
     name: Verify original 21/22ms NRO, PNG CRC-8 and PCM in six runs
-    runs-on: ubuntu-26.04
+    # Offline Python validation: no NeXium, Vulkan or Ubuntu 26.04 needed.
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
