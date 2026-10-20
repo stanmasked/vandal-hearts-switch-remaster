@@ -24,6 +24,8 @@ The guest workload itself is copied from the previous fixed 21/22-ms × three-re
 
 The verifier also rejects host manifests from another run or source commit, forged trial hashes, missing 21-ms failure evidence, mismatching asset provenance, and assertions that an unverified upstream commit was authenticated.
 
+The Stage266 hardening adds a **cross-attempt check**: the host, research NRO and six guest manifests must all carry the identical `GITHUB_RUN_ATTEMPT`. Merely matching `GITHUB_RUN_ID` or the NRO digest is insufficient when GitHub retries individual jobs. Three new generated tests cover matching provenance, a stale guest archive and a stale NRO archive; an invalid or missing manifest fails closed.
+
 ## Scientific limits
 
 - One downloaded archive distributed to six jobs **proves the same host bytes within that run**, provided all six verifications and uploaded proofs pass. It does not pin the moving GitHub release to a fixed revision *across separate workflow runs*.
