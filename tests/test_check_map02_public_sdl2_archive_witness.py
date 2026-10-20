@@ -224,8 +224,15 @@ class PublicSdl2StaticWitnessTests(unittest.TestCase):
     def test_substituted_static_candidate_fails_digest_audit(self):
         _, saved, candidate, linked = self.make_saved_recount(
             "recount-changed-archive")
-        with candidate.open("ab") as output:
-            output.write(b"extra-bytes")
+        # Keep it a *valid* GNU archive with a new unselected ELF member.
+        # Appending arbitrary bytes instead only proves that readelf rejects
+        # malformed files before the independent saved-SHA comparison.
+        unused = self.compile(
+            "unused-archive-member", "int unrelated_archive_export(void) {return 9;}\n")
+        subprocess.run(
+            ["ar", "rcs", str(candidate), str(unused)],
+            capture_output=True, check=True, timeout=30)
+        candidate.chmod(0o600)
         with self.assertRaisesRegex(ValueError, "identity mismatch"):
             verify_saved_sdl2_recount(
                 self.manifest, self.partial, candidate, linked, saved,
