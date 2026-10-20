@@ -141,8 +141,10 @@ readback of the locally staged BIN, the tool again opens the source BIN
 read-only and checks its pinned inode/metadata, then reopens and checks the
 source CUE identity and bytes immediately before atomic publication. A
 late File Provider replacement fails closed and removes only this attempt's
-local staging directory. These checks are not an atomic snapshot of a live
-Google Drive filesystem and do not independently prove retail-disc identity.
+local staging directory. Synthetic regressions also exercise both inode replacement and in-place
+same-length source edits during staged readback. These checks are not an
+atomic snapshot of a live Google Drive filesystem and do not independently
+prove retail-disc identity.
 
 The stage command does **not** emit game bytes, upload files, make the original
 Drive files public or change their permissions. Only `$LOCAL/receipt`
