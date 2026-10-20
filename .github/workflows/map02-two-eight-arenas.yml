@@ -12,6 +12,7 @@ on:
       - 'source/map02_roster8_second_data.h'
       - 'data/map02_roster8_second_4v4.json'
       - 'tests/test_map02_two_arena_sources.py'
+      - 'tests/test_map02_two_arenas_oracle.py'
       - 'tests/test_map02_nexium_4v4_oracle.py'
       - 'tests/test_map02_two_eight_arenas.c'
       - 'data/map02_roster8_4v4.json'
@@ -57,6 +58,7 @@ jobs:
           python3 -m py_compile tests/run_map02_nexium_4v4.py tests/run_map02_nexium_two_eight_arenas.py tests/test_map02_nexium_4v4_oracle.py
           python3 -m unittest discover -s tests -p 'test_map02_nexium_4v4_oracle.py' -v
           python3 -m unittest discover -s tests -p 'test_map02_two_arena_sources.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_two_arenas_oracle.py' -v
           echo 'VH_MAP02_TWO_ARENAS_SOURCE_PASS strict_json=1 original_unchanged=1'
   build-4v4-nro:
     name: Build real optional 4v4 devkitPro/libnx NRO
