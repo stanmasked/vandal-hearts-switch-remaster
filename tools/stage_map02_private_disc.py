@@ -242,7 +242,12 @@ def stage_disc(bin_path, cue_path, destination_parent, *,
             or stage_name.endswith(".pending")):
         raise ValueError("unsafe destination directory name")
     _assert_local_only_destination(parent, source, cue)
+    # Retain the CUE inode and timestamps from before the potentially long
+    # 665-MB BIN copy. Drive sync can replace a file while copy is in flight.
+    cue_initial = cue.lstat()
     cue_bytes = _read_cue(cue)
+    if _stamp(cue_initial) != _stamp(cue.lstat()):
+        raise ValueError("mounted CUE changed while opening source")
     flags = (os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
              | getattr(os, "O_NOFOLLOW", 0)
              | getattr(os, "O_CLOEXEC", 0))
@@ -283,6 +288,13 @@ def stage_disc(bin_path, cue_path, destination_parent, *,
         try:
             stagedfd = os.open(pending, flags, dir_fd=parentfd)
             copied_sha = _copy_image(source, stagedfd, expected_bytes=expected_bytes)
+            # A Drive File Provider CUE could change while the large image is
+            # streamed. Reopen it with O_NOFOLLOW and compare BOTH bytes and
+            # original inode/metadata. A change must fail before publication.
+            cue_after = _read_cue(cue)
+            if (cue_after != cue_bytes or
+                    _stamp(cue_initial) != _stamp(cue.lstat())):
+                raise ValueError("mounted CUE changed during BIN copy")
             cuefd = os.open(CUE_NAME, os.O_CREAT | os.O_EXCL | os.O_WRONLY
                             | getattr(os, "O_NOFOLLOW", 0), 0o600,
                             dir_fd=stagedfd)
