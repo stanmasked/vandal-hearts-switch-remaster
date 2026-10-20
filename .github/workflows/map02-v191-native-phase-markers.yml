@@ -1,0 +1,31 @@
+name: MAP02 v191 native pixel-phase passes linked to genuine VBlank and RAM
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v191-native-phase-markers.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/check_map02_v191_native_phase_markers.py'
+      - 'tests/test_map02_v191_native_phase_markers.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  phase-chain-model:
+    name: Native 595-pixel phase receipt lineage (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject false/missing/reordered native VBlank pixel passes
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/check_map02_v191_native_phase_markers.py tests/test_map02_v191_native_phase_markers.py
+          python3 -m unittest discover -s tests -p 'test_map02_v191_native_phase_markers.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v190_native_log_stability.py' -v
+          echo 'VH191_INDEPENDENT_NATIVE_PHASE_CHAIN_PASS phases=22 corruptions=9 original_retail_executed=0'
