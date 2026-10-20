@@ -1,0 +1,47 @@
+name: MAP02 private PC texture and native FT4 unified proof
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-private-pc-native-ft4.yml'
+      - 'tools/verify_map02_private_pc_native_ft4.py'
+      - 'tests/test_verify_map02_private_pc_native_ft4.py'
+      - 'tools/verify_map02_private_timeline_pc_vram4.py'
+      - 'tools/verify_map02_source_native_ft4_join.py'
+      - 'source/map02_vram4_page.h'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  source-native-unified:
+    name: Private-format two-clock FT4 source and native (${{ matrix.compiler }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: upstream
+          sparse-checkout: |
+            platform/pc/src/pc_raster.c
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Compile isolated source/native verifier and run negative controls
+        shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
+          MAP02_PINNED_RASTER: upstream/platform/pc/src/pc_raster.c
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/verify_map02_private_pc_native_ft4.py
+          python3 -m unittest discover -s tests \
+            -p 'test_verify_map02_private_pc_native_ft4.py' -v
+          echo 'VH_MAP02_PRIVATE_PC_NATIVE_FT4_PASS new_tests=7 source_faces=2 original_vram=0'
