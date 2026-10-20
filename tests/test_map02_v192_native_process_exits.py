@@ -85,7 +85,10 @@ class V192NativeExitReceipts(unittest.TestCase):
     def test_native_ci_records_each_process_exit_before_v192_parser(self):
         native = (ROOT / ".github/workflows/map02-v104-content-guard.yml").read_text()
         independent = (ROOT / ".github/workflows/map02-v192-native-exit-log-receipts.yml").read_text()
-        self.assertIn('mode=$mode exit=$rc sha256=$log_hash', native)
+        self.assertEqual(native.count("printf 'mode=%s exit=%s sha256=%s\\n'"), 2)
+        self.assertEqual(native.count('>> proof/private/v192-native-exits.txt'), 2)
+        self.assertIn('sha256sum "proof/private/v185-$mode.log"', native)
+        self.assertIn('sha256sum "proof/private/v186-$mode.log"', native)
         self.assertIn('v192-native-exits.txt', native)
         self.assertIn("check_map02_v192_native_process_exits --verify-dir proof/private", native)
         self.assertIn(MARKER, native)
