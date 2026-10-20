@@ -59,8 +59,10 @@ jobs:
             -p 'test_verify_map02_private_timeline_pc_vram4.py' -v \
             2>&1 | tee /tmp/vh-map02-mac-timeline.log
           grep -F 'Ran 14 tests' /tmp/vh-map02-mac-timeline.log
-          grep -Fx 'VH_MAP02_PRIVATE_TIMELINE_SOURCE_TEST_PASS tests=6 original_vram=0' \
-            /dev/null && exit 41 || true
+          grep -F 'test_corrupted_portable_materializer_rejected_by_compiled_pc' \
+            /tmp/vh-map02-mac-timeline.log
+          grep -F 'test_after_verify_snapshot_change_refused_even_if_unreferenced' \
+            /tmp/vh-map02-mac-timeline.log
           python -m unittest discover -s tests \
             -p 'test_verify_map02_private_pc_native_ft4.py' -v \
             2>&1 | tee /tmp/vh-map02-mac-native.log
