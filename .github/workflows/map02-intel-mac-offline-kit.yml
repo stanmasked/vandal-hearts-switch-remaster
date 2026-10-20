@@ -5,6 +5,8 @@ on:
       - '.github/workflows/map02-intel-mac-offline-kit.yml'
       - 'tools/build_map02_intel_mac_offline_kit.py'
       - 'tests/test_build_map02_intel_mac_offline_kit.py'
+      - 'tests/test_verify_map02_offline_kit_integrity.py'
+      - 'tools/verify_map02_offline_kit.py'
       - 'tools/map02_intel_mac_offline_selfcheck.py'
       - 'tools/map02_catalina_helper_macho_audit.py'
       - 'tests/test_map02_private_ft4_cli_contract.py'
@@ -41,6 +43,10 @@ jobs:
             -p 'test_build_map02_intel_mac_offline_kit.py' -v \
             2>&1 | tee /tmp/vh-map02-offline-kit-tests.log
           grep -F 'Ran 5 tests' /tmp/vh-map02-offline-kit-tests.log
+          python3 -m unittest discover -s tests \
+            -p 'test_verify_map02_offline_kit_integrity.py' -v \
+            2>&1 | tee /tmp/vh-map02-preexec-integrity-tests.log
+          grep -F 'Ran 10 tests' /tmp/vh-map02-preexec-integrity-tests.log
           python3 -m tools.build_map02_intel_mac_offline_kit \
             upstream/platform/pc/src/pc_raster.c \
             /tmp/vh-map02-intel-catalina-offline-kit.zip \
@@ -59,11 +65,12 @@ jobs:
               names=z.namelist()
               assert all(
                   n.endswith(('.py','.h','.c'))
-                  or n in ('files.json', 'README.md', 'run-selfcheck.sh')
+                  or n in ('files.json', 'README.md', 'run-selfcheck.sh', 'verify-kit.py')
                   for n in names
               )
               assert not any(x.startswith('assets/') for x in names)
           print('VH_MAP02_OFFLINE_KIT_PROVENANCE_PASS public_only=1 private=0')
+          print('VH_MAP02_OFFLINE_KIT_INNER_ZIP_SHA256 ' + report['zip_sha256'])
           PY
       - name: Extract and run seven true CLI adversaries in the packaged tree
         shell: bash
@@ -73,6 +80,7 @@ jobs:
           cd /tmp/map02-clean-room
           unzip -q /tmp/vh-map02-intel-catalina-offline-kit.zip
           test -f upstream/platform/pc/src/pc_raster.c
+          python3 verify-kit.py --root . > /tmp/vh-map02-clean-kit-integrity.json
           MAP02_PINNED_RASTER=upstream/platform/pc/src/pc_raster.c CC=clang \
             python3 -m unittest discover -s tests \
             -p 'test_map02_private_ft4_cli_mutations.py' -v \
@@ -125,6 +133,7 @@ jobs:
           cd /tmp/vh-map02-isolated-mac-tree
           unzip -q /tmp/vh-map02-isolated-mac.zip
           test ! -d .git
+          python verify-kit.py --root . > /tmp/vh-map02-mac-preexec-integrity.json
           sh run-selfcheck.sh \
             > /tmp/vh-map02-extracted-report.txt
           python - <<'PY'

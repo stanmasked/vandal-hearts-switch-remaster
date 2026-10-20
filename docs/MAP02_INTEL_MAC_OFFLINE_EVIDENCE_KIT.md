@@ -38,6 +38,42 @@ fail closed. Source bytes are checked for embedded binary NULs. Archive
 entries have stable sorting, timestamp and permissions, ensuring two
 builds from identical inputs yield identical ZIP bytes.
 
+## Pre-execution integrity gate
+
+The extracted kit now includes a standalone **`verify-kit.py`** script
+implemented using only Python's standard library. Before the shell entrypoint
+imports any packaged diagnostic modules, it runs this checker and fails closed
+on a missing/changed source, C header, pinned public raster, README, entrypoint
+shell script or verifier; unexpected extra files/directories; path traversal;
+symlinks; nonregular files; malformed digests; and false provenance flags.
+All source/entrypoint files are SHA-256-pinned in `files.json`.
+
+You can check the freshly extracted directory independently with:
+
+```bash
+python3 verify-kit.py --root .
+sh run-selfcheck.sh
+```
+
+The shell executes the same verification automatically **before** running
+either C texture diagnostic. It disables local Python `__pycache__` output
+during testing so that rerunning the selfcheck does not silently introduce
+new unhashed files. Validation errors use generic text without printing
+private file paths or contents.
+
+**Trust boundary:** `files.json` is not digitally signed. An attacker able
+to replace the entire ZIP and its embedded manifest and verifier could forge
+consistent checksums. To authenticate the distribution, independently compare
+the downloaded ZIP's SHA-256 against the value reported in the **GitHub
+Actions run that created it** before extracting or executing anything.
+The built-in checker detects damaged/altered extracted files relative to that
+manifest; it does not establish cryptographic publisher identity.
+
+A separate CI suite changes the test Python source, public raster, shell,
+file manifest, adds an unlisted module, substitutes a symlink, and removes a
+required C fixture. It confirms the **real shell entrypoint fails before**
+the diagnostic commands execute in all cases.
+
 The `files.json` file stores per-file SHA-256 hashes, the pinned public
 source Git blob identity and explicit false provenance flags. The
 builder emits only an aggregate JSON report with total member count and
