@@ -1,0 +1,124 @@
+name: MAP02 historical CPAL/ALSA boundary evidence audit
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-cpal-alsa-boundary-audit.yml'
+      - 'tools/audit_map02_cpal_alsa_boundary.py'
+      - 'tests/test_audit_map02_cpal_alsa_boundary.py'
+      - 'docs/MAP02_CPAL_ALSA_BOUNDARY_AUDIT.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  VH_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_PRESUBMIT_SOURCE: '64a3e81b53d375fae3cfc93b4384ec8e18e68703'
+  VH_EVIDENCE_RUN: '39398087760'
+
+jobs:
+  original-six-artifact-audit:
+    name: Verify original 21/22ms NRO, PNG CRC-8 and PCM in six runs
+    # Offline Python validation: no NeXium, Vulkan or Ubuntu 26.04 needed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_SOURCE_HEAD }}
+          fetch-depth: 0
+      - name: Verify checkout and research-only child file boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_SOURCE_HEAD"
+          python3 - <<'PY'
+          import subprocess
+          allowed={
+              ".github/workflows/map02-cpal-alsa-boundary-audit.yml",
+              "tools/audit_map02_cpal_alsa_boundary.py",
+              "tests/test_audit_map02_cpal_alsa_boundary.py",
+              "docs/MAP02_CPAL_ALSA_BOUNDARY_AUDIT.md"}
+          base="64a3e81b53d375fae3cfc93b4384ec8e18e68703"
+          paths=set(subprocess.check_output(
+              ["git","diff","--name-only",base,"HEAD"],text=True).splitlines())
+          assert paths and paths<=allowed,sorted(paths-allowed)
+          assert not any(p.startswith("source/") for p in paths)
+          print("Verified host-only child files:",sorted(paths))
+          PY
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install optical decoder dependency
+        run: python3 -m pip install --disable-pip-version-check pillow
+      - name: Reject forged provenance, CRC image, PCM and classification fixtures
+        run: python3 -m unittest discover -s tests -p 'test_audit_map02_cpal_alsa_boundary.py' -v
+      - name: Download original run artifacts without re-running guest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "stanmasked/vandal-hearts-switch-remaster"
+          # Exactly the previous six independent NeXium trial ZIPs + the
+          # research NRO and its same-run SHA manifest, not PS1 game data.
+          gh run download "$VH_EVIDENCE_RUN" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir historical-evidence
+          test -d historical-evidence/map02-audout-presubmit-research-nro
+          test "$(find historical-evidence -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 7
+      - name: Independently verify all six original NeXium data sets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_map02_cpal_alsa_boundary.py \
+            --root historical-evidence \
+            --run-id "$VH_EVIDENCE_RUN" \
+            --source-sha "$VH_PRESUBMIT_SOURCE" \
+            --output boundary-audit.json
+      - name: Report measured host buffer and guest stages without causal claims
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path("boundary-audit.json")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              print("### Historical CPAL/ALSA host-buffer boundary audit",file=out)
+              if not p.is_file():
+                  print("Audit was not executed; **no successful claim**.",file=out)
+              else:
+                  x=json.loads(p.read_text())
+                  if not x.get("all_six_artifact_provenance_and_pcm_integrity_verified"):
+                      print("**UNVERIFIED:** "+x.get("reason","unknown"),file=out)
+                  else:
+                      print("Original NRO and six independently downloaded source-bound "
+                            "ZIPs: **integrity verified**.",file=out)
+                      print("| Host hint | Repeat | audout enters/returns | "
+                            "PCM16 nonzero | measured Pulse buffer (µs) | "
+                            "guest stage |",file=out)
+                      print("|---|---:|---:|---:|---:|---|",file=out)
+                      for r in x["trials"]:
+                          print(f'| {r["hint_ms"]} ms | {r["repeat"]} | '
+                                f'{r["audout_call_entries"]}/{r["audout_call_returns"]} | '
+                                f'{r["virtual_monitor_pcm_nonzero_samples"]} | '
+                                f'{r["buffer_latency_during_us"]} | '
+                                f'{r["stage_name"]} |',file=out)
+                      assert x["same_guest_nro_sha256_all_six_verified"] is True
+                      assert x["same_nexium_host_binary_all_six_verified"] is False
+                      print("\n**Host caveat:** identical research NRO confirmed; original "
+                            "guest jobs independently downloaded a mutable nightly NeXium "
+                            "asset without recording its SHA-256. Identical host NeXium "
+                            "binary across six runs is **UNVERIFIED**.",file=out)
+                      print("\n**Limit:** observational association only; not "
+                            "CPAL root-cause, guest deadlock or Switch DAC proof.",file=out)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-cpal-alsa-boundary-sixrun-audit
+          path: boundary-audit.json
+          if-no-files-found: warn
