@@ -25,7 +25,7 @@ NAMES = (
     "armed_before_roster", "roster_three", "roster_one",
     "second_after_roster", "armed_before_y", "after_y",
     "pre_hit", "armed_before_hit", "blocked", "legacy_after_block",
-    "primary_reentry", "second_reentry", "legacy_after_minus",
+    "primary_reentry", "second_reentry", "demo_off", "legacy_after_minus",
     "primary_after_minus", "second_after_minus", "final_legacy",
 )
 
@@ -80,6 +80,9 @@ def verify(folder: Path):
             f"no actual guarded AI attack: {start_hp}->{hit_before}->{hit_after}")
     if diff(f["armed_before_hit"], f["blocked"], GUARD_HUD) < 60:
         raise ValueError("GUARD ARMED never changed to BLOCKED")
+
+    if diff(old, f["demo_off"], BOARD) < 2000:
+        raise ValueError("MINUS did not actually disable battle demo")
 
     for label in ("legacy_after_block", "legacy_after_minus", "final_legacy"):
         if diff(old, f[label], BOARD) != 0:
@@ -184,6 +187,7 @@ def main():
             pad.snapshot("second_reentry")
 
             pad.press("n")          # MINUS disables battle demo entirely
+            pad.snapshot("demo_off")
             pad.press("n")          # MINUS reopens old MAP02 at scenario_id=0
             # Do not press L here: MINUS explicitly initializes Map 1, while
             # an extra L would accidentally cycle into the other legacy map.
