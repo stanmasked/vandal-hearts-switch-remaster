@@ -60,7 +60,10 @@ def run_synthetic_checks(raster: Path) -> dict:
     if not compiler:
         raise ValueError("local Clang compiler is required")
     env = dict(os.environ)
-    env["CC"] = compiler
+    # Keep the public CLI's --compiler value within its documented choices
+    # ("gcc" or "clang"). Use the resolved binary path only for the direct
+    # C11 build below; a full path is not a valid argparse choice.
+    env["CC"] = "clang"
     env["MAP02_PINNED_RASTER"] = str(raster)
     cases = 0
     for suite, expected in SUITES:
