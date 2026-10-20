@@ -129,6 +129,7 @@ def probe_private_incremental_link(manifest, partial, candidates, out_dir):
     if not 1 <= len(candidates) <= 64:
         raise ValueError("private MAP02 candidate count must be 1..64")
     inputs = []
+    seen_inodes = set()
     try:
         sources = [(partial, True), *((path, False) for path in candidates)]
         for path, is_partial in sources:
@@ -138,6 +139,11 @@ def probe_private_incremental_link(manifest, partial, candidates, out_dir):
                 raise ValueError("private MAP02 candidate must be native .o/.a")
             item = _open_owned(path, require_private=is_partial)
             inputs.append(item)
+            identity = item[2]
+            inode_key = (identity[0], identity[1])
+            if inode_key in seen_inodes:
+                raise ValueError("private MAP02 linker input repeated")
+            seen_inodes.add(inode_key)
             _check_abi(item)
         if inputs[0][3] != doc["relocatable_elf_sha256"]:
             raise ValueError("private MAP02 source ELF hash differs from manifest")
