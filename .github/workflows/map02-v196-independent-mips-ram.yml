@@ -1,0 +1,31 @@
+name: MAP02 v196 independent PS1 guest MIPS RAM dataflow and load-delay semantics
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v196-independent-mips-ram.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/check_map02_v196_independent_mips_ram_semantics.py'
+      - 'tests/test_map02_v196_independent_mips_ram_semantics.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  guest-ram-data-dependency:
+    name: Guest MIPS RAM SW-LW-XORI-SW semantic model (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject broken PS1 register, memory and load-delay dataflow
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/check_map02_v196_independent_mips_ram_semantics.py tests/test_map02_v196_independent_mips_ram_semantics.py
+          python3 -m unittest discover -s tests -p 'test_map02_v196_independent_mips_ram_semantics.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v195_independent_mips_opcodes.py' -v
+          echo 'VH196_INDEPENDENT_GUEST_RAM_MODEL_PASS instructions=9 paths=3 load_delay=1 original_retail_executed=0'
