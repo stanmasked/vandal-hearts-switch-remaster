@@ -1,4 +1,4 @@
-name: MAP02 Stage270 instrumented ALSA host transfers 21/22ms
+name: MAP02 Stage272 stream-scoped ALSA write tracing 21/22ms
 
 on:
   pull_request:
@@ -19,7 +19,7 @@ env:
 
 jobs:
   probe-build:
-    name: Compile opt-in Linux ALSA hook and 10 synthetic tests
+    name: Compile opt-in per-stream ALSA hook and synthetic tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -784,14 +784,16 @@ jobs:
                   if obj["result"]=="SIX_HOST_ALSA_INTERPOSITION_TRACES_VERIFIED":
                       print("**Host timing changed** by LD_PRELOAD instrument; "
                             "do not directly compare Stage265 timings.",file=stream)
-                      print("| Hint | Rep | ALSA period/buffer frames | "
-                            "Transfer samples | Max call ms | Guest audout calls |",file=stream)
-                      print("|---|---:|---|---:|---:|---:|",file=stream)
+                      print("| Hint | Rep | ALSA 48k stream IDs | "
+                            "48k / other / unknown write calls | "
+                            "Max host API ms | Guest audout calls |",file=stream)
+                      print("|---|---:|---|---|---:|---:|",file=stream)
                       for r in obj["trials"]:
                           print(f'| {r["hint_ms"]} | {r["repeat"]} | '
-                                f'{r["observed_alsa_period_frames"]}/'
-                                f'{r["observed_alsa_buffer_frames"]} | '
-                                f'{r["alsa_transfer_calls_sampled"]} | '
+                                f'{r["48k_stereo_alsa_stream_ids"]} | '
+                                f'{r["48k_attributed_transfer_calls"]}/'
+                                f'{r["other_attributed_transfer_calls"]}/'
+                                f'{r["unattributed_transfer_calls"]} | '
                                 f'{r["alsa_transfer_duration_ns_max"]/1e6:.3f} | '
                                 f'{r["guest_audout_calls_entered"]}/'
                                 f'{r["guest_audout_calls_returned"]} |',file=stream)
