@@ -9,6 +9,8 @@ on:
       - 'tools/decode_map02_audout_presubmit.py'
       - 'tests/test_decode_map02_audout_presubmit.py'
       - 'tests/test_presubmit_optical_pixels.py'
+      - 'tests/test_audit_presubmit_virtual_sink.py'
+      - 'tools/audit_presubmit_virtual_sink.py'
       - 'source/vh_switch_game_audio.c'
       - 'source/vh_switch_game_audio.h'
       - 'source/main.c'
@@ -154,6 +156,11 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests -p 'test_presubmit_optical_pixels.py' -v
+      - name: Reject false-positive monitor alignment fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_audit_presubmit_virtual_sink.py' -v
       - name: Download pinned NeXium nightly asset
         shell: bash
         env:
@@ -194,6 +201,8 @@ jobs:
           pactl load-module module-null-sink sink_name=vh_map02_presubmit \
             rate=48000 channels=2 >runtime-evidence/pulse-module-id.txt
           pactl set-default-sink vh_map02_presubmit
+          pactl list short sources > runtime-evidence/pulse-sources.txt
+          grep -F 'vh_map02_presubmit.monitor' runtime-evidence/pulse-sources.txt
           cat >"$RUNNER_TEMP/map02-presubmit-asound.conf" <<'ASOUND'
           pcm.!default { type pulse }
           ctl.!default { type pulse }
@@ -205,6 +214,17 @@ jobs:
           export VK_ICD_FILENAMES="$icd"
           export ROOT="$PWD/runtime-evidence"
           export NRO="$PWD/nros/vandal-hearts-map02-audio.nro"
+          # Record the very same 48-kHz virtual output used by this
+          # guest, including unknown warm-up delay. The guest optical
+          # receipt remains the independent source of PCM digests.
+          parec --device=vh_map02_presubmit.monitor --format=s16le \
+            --rate=48000 --channels=2 \
+            >"$ROOT/presubmit-virtual-sink-s16le-48k.pcm" \
+            2>"$ROOT/parec.log" &
+          capture_pid=$!
+          trap 'kill -TERM "$capture_pid" 2>/dev/null || true' EXIT
+          sleep 1
+          kill -0 "$capture_pid"
           timeout --kill-after=5s 45s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
             set -euo pipefail
             "$NEXIUM_BIN" "$NRO" >"$ROOT/nexium-presubmit.log" 2>&1 &
@@ -241,6 +261,12 @@ jobs:
             kill -KILL "$guest" 2>/dev/null || true
             wait "$guest" 2>/dev/null || true
           '
+          kill -TERM "$capture_pid" 2>/dev/null || true
+          sleep 1
+          kill -KILL "$capture_pid" 2>/dev/null || true
+          wait "$capture_pid" 2>/dev/null || true
+          trap - EXIT
+          test -s "$ROOT/presubmit-virtual-sink-s16le-48k.pcm"
       - name: Decode actual guest CRC and assert eight descriptor identities
         shell: bash
         run: |
@@ -259,6 +285,28 @@ jobs:
           assert not report['live_dac_samples_proven']
           assert not report['physical_switch_speaker_audio_verified']
           PY
+      - name: Classify guest PCM fingerprint presence in the 48k monitor
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_presubmit_virtual_sink.py \
+            --guest runtime-evidence/presubmit-guest.json \
+            --monitor runtime-evidence/presubmit-virtual-sink-s16le-48k.pcm \
+            --max-seconds 30 \
+            --output runtime-evidence/presubmit-sink-parity.json
+          result="$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result=json.loads(Path('runtime-evidence/presubmit-sink-parity.json').read_text())
+          print(result['result'])
+          PY
+          )"
+          echo "Virtual sink PCM page classifier: $result" >> "$GITHUB_STEP_SUMMARY"
+          # An inconclusive byte-match is not 'no sound' or a test pass.
+          # Preserve real capture for follow-up gain/timing analysis.
+          if [ "$result" = NO_EXACT_EIGHT_PAGE_SINK_MATCH ]; then
+            echo "Exact virtual sink attribution NOT YET proven" >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Archive actual guest evidence even if decode fails
         if: always()
         uses: actions/upload-artifact@v4
