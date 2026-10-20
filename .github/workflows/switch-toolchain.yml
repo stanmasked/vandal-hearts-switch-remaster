@@ -13,6 +13,17 @@ on:
       - 'tests/**'
       - 'src/**'
 
+  pull_request:
+    paths:
+      - '.github/workflows/switch-toolchain.yml'
+      - 'tools/**'
+      - 'docs/**'
+      - 'Makefile'
+      - 'makefile'
+      - 'source/**'
+      - 'tests/**'
+      - 'src/**'
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
