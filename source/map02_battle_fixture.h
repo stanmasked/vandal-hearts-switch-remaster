@@ -17,6 +17,22 @@ typedef struct {
     int x, y, hp, acted;
 } VhBattleUnit;
 
+enum { VH_BEVENT_ENEMIES_DOWN = 1, VH_BEVENT_ALLIES_DOWN = 2 };
+typedef struct {
+    int when, result;
+} VhBattleEvent;
+
+typedef struct {
+    unsigned char walls[VH_BH];          /* bit x of row y = blocked */
+    VhBattleUnit spawn[VH_BUNITS];       /* ally 0..1, enemy 2..3 */
+    int cursor_x, cursor_y;
+    int move_range, attack_damage;
+    VhBattleEvent events[2];             /* validated win and defeat */
+    int event_count;
+} VhBattleScenario;
+
+#include "map02_encounter_data.h"
+
 typedef struct {
     VhBattleUnit units[VH_BUNITS]; /* 0-1 allies; 2-3 enemies */
     int cursor_x, cursor_y;
@@ -24,15 +40,56 @@ typedef struct {
     int status;                   /* VH_BONGOING / WIN / LOSS */
     int turns_completed;
     int last_action;
+    unsigned char walls[VH_BH];
+    int move_range, attack_damage;
+    VhBattleEvent events[2];
+    int event_count;
 } VhMap02Battle;
 
 static inline int vh_btile_inside(int x, int y) {
     return x >= 0 && y >= 0 && x < VH_BW && y < VH_BH;
 }
 
-/* Deliberately authored prototype obstacles; not PS1 map tiles. */
+/* Backward-compatible default-layout query for legacy fixture tests. */
 static inline int vh_bwall(int x, int y) {
-    return (x == 3 && y >= 1 && y <= 3) || (x == 4 && y == 4);
+    return vh_btile_inside(x, y) &&
+           !!(VH_MAP02_DEFAULT_SCENARIO.walls[y] & (1u << x));
+}
+
+/* Active scenario's collision map, rather than hard-coded retail map tiles. */
+static inline int vh_bwall_at(const VhMap02Battle *s, int x, int y) {
+    return s && vh_btile_inside(x, y) &&
+           !!(s->walls[y] & (1u << x));
+}
+
+/* Fail closed before mutating the active battle on invalid authored input. */
+static inline int vh_bscenario_valid(const VhBattleScenario *cfg) {
+    int i, j, seen_win = 0, seen_loss = 0;
+    if (!cfg || !vh_btile_inside(cfg->cursor_x, cfg->cursor_y) ||
+        cfg->move_range < 1 || cfg->move_range > 7 ||
+        cfg->attack_damage < 1 || cfg->attack_damage > 20 ||
+        cfg->event_count != 2)
+        return 0;
+    for (i = 0; i < VH_BUNITS; ++i) {
+        const VhBattleUnit *u = &cfg->spawn[i];
+        if (!vh_btile_inside(u->x, u->y) ||
+            !!(cfg->walls[u->y] & (1u << u->x)) ||
+            u->hp < 1 || u->hp > 20 || u->acted != 0)
+            return 0;
+        for (j = 0; j < i; ++j)
+            if (u->x == cfg->spawn[j].x && u->y == cfg->spawn[j].y)
+                return 0;
+    }
+    for (i = 0; i < cfg->event_count; ++i) {
+        const VhBattleEvent *e = &cfg->events[i];
+        if (e->when == VH_BEVENT_ENEMIES_DOWN && e->result == VH_BWIN)
+            ++seen_win;
+        else if (e->when == VH_BEVENT_ALLIES_DOWN && e->result == VH_BLOSS)
+            ++seen_loss;
+        else
+            return 0;
+    }
+    return seen_win == 1 && seen_loss == 1;
 }
 
 static inline int vh_balive(const VhBattleUnit *unit) {
@@ -70,7 +127,7 @@ static inline int vh_bpath(const VhMap02Battle *s, int mover, int tx, int ty,
     const VhBattleUnit *u;
     if (!s || mover < 0 || mover >= VH_BUNITS ||
         !vh_balive(&s->units[mover]) || !vh_btile_inside(tx, ty) ||
-        vh_bwall(tx, ty))
+        vh_bwall_at(s, tx, ty))
         return -1;
     u = &s->units[mover];
     if (!vh_btile_inside(u->x, u->y)) return -1;
@@ -89,7 +146,7 @@ static inline int vh_bpath(const VhMap02Battle *s, int mover, int tx, int ty,
         for (dir = 0; dir < 4; ++dir) {
             const int nx = cx + dx[dir], ny = cy + dy[dir];
             int occ, index;
-            if (!vh_btile_inside(nx, ny) || vh_bwall(nx, ny)) continue;
+            if (!vh_btile_inside(nx, ny) || vh_bwall_at(s, nx, ny)) continue;
             index = ny * VH_BW + nx;
             if (dist[index] >= 0) continue;
             occ = vh_boccupant(s, nx, ny, mover);
@@ -113,16 +170,24 @@ static inline int vh_bpath(const VhMap02Battle *s, int mover, int tx, int ty,
     return dist[end];
 }
 
-static inline void vh_binit(VhMap02Battle *s) {
-    if (!s) return;
+static inline int vh_binit_scenario(VhMap02Battle *s,
+                                    const VhBattleScenario *cfg) {
+    if (!s || !vh_bscenario_valid(cfg)) return 0;
     memset(s, 0, sizeof(*s));
-    s->units[0] = (VhBattleUnit){1, 2, 5, 0};
-    s->units[1] = (VhBattleUnit){1, 4, 5, 0};
-    s->units[2] = (VhBattleUnit){5, 2, 2, 0};
-    s->units[3] = (VhBattleUnit){6, 4, 2, 0};
-    s->cursor_x = 1;
-    s->cursor_y = 2;
+    memcpy(s->units, cfg->spawn, sizeof(s->units));
+    memcpy(s->walls, cfg->walls, sizeof(s->walls));
+    memcpy(s->events, cfg->events, sizeof(s->events));
+    s->event_count = cfg->event_count;
+    s->move_range = cfg->move_range;
+    s->attack_damage = cfg->attack_damage;
+    s->cursor_x = cfg->cursor_x;
+    s->cursor_y = cfg->cursor_y;
     s->selected = -1;
+    return 1;
+}
+
+static inline void vh_binit(VhMap02Battle *s) {
+    (void)vh_binit_scenario(s, &VH_MAP02_DEFAULT_SCENARIO);
 }
 
 static inline void vh_bcursor(VhMap02Battle *s, int dx, int dy) {
@@ -137,10 +202,17 @@ static inline void vh_bcursor(VhMap02Battle *s, int dx, int dy) {
 }
 
 static inline void vh_bupdate_status(VhMap02Battle *s) {
-    int allies = vh_balive(&s->units[0]) + vh_balive(&s->units[1]);
-    int enemies = vh_balive(&s->units[2]) + vh_balive(&s->units[3]);
-    if (enemies == 0) s->status = VH_BWIN;
-    else if (allies == 0) s->status = VH_BLOSS;
+    int allies, enemies, i;
+    if (!s || s->status != VH_BONGOING) return;
+    allies = vh_balive(&s->units[0]) + vh_balive(&s->units[1]);
+    enemies = vh_balive(&s->units[2]) + vh_balive(&s->units[3]);
+    for (i = 0; i < s->event_count; ++i) {
+        if ((s->events[i].when == VH_BEVENT_ENEMIES_DOWN && enemies == 0) ||
+            (s->events[i].when == VH_BEVENT_ALLIES_DOWN && allies == 0)) {
+            s->status = s->events[i].result;
+            return;
+        }
+    }
 }
 
 static inline int vh_bcancel(VhMap02Battle *s) {
@@ -166,7 +238,7 @@ static inline int vh_bchoose(VhMap02Battle *s) {
         return VH_BINVALID;
     if (occ >= VH_BALLIES && vh_bdistance(s->units[src].x, s->units[src].y,
                                            s->cursor_x, s->cursor_y) == 1) {
-        s->units[occ].hp -= 1;
+        s->units[occ].hp -= s->attack_damage;
         s->units[src].acted = 1;
         s->selected = -1;
         vh_bupdate_status(s);
@@ -174,7 +246,7 @@ static inline int vh_bchoose(VhMap02Battle *s) {
     }
     if (occ >= 0) return VH_BINVALID;
     dist = vh_bpath(s, src, s->cursor_x, s->cursor_y, -1, 0, 0);
-    if (dist < 1 || dist > 2) return VH_BINVALID;
+    if (dist < 1 || dist > s->move_range) return VH_BINVALID;
     s->units[src].x = s->cursor_x;
     s->units[src].y = s->cursor_y;
     s->units[src].acted = 1;
@@ -203,7 +275,7 @@ static inline int vh_bend_turn(VhMap02Battle *s) {
         }
         if (closest < 0) continue;
         if (shortest == 1) {
-            s->units[closest].hp -= 1;
+            s->units[closest].hp -= s->attack_damage;
             vh_bupdate_status(s);
             if (s->status != VH_BONGOING) break;
         } else if (shortest > 1 && vh_bpath(s, enemy, s->units[closest].x,

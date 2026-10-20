@@ -344,7 +344,7 @@ static void draw_map02_battle(u32 *pixels, u32 stride,
         for (x = 0; x < VH_BW; ++x) {
             const int px = GRID_X + x * CELL_SIZE, py = GRID_Y + y * CELL_SIZE;
             u32 tile = ((x + y) & 1) ? COLOR_TILE_ALT : COLOR_TILE;
-            if (vh_bwall(x, y))
+            if (vh_bwall_at(battle, x, y))
                 tile = COLOR_PANEL;
             else if (battle->selected >= 0 &&
                      vh_boccupant(battle, x, y, -1) < 0) {
@@ -353,7 +353,7 @@ static void draw_map02_battle(u32 *pixels, u32 stride,
             }
             vh_render_grid_tile(&canvas, px, py, CELL_SIZE,
                                 (VhTilePalette){tile, COLOR_GRID});
-            if (vh_bwall(x, y)) {
+            if (vh_bwall_at(battle, x, y)) {
                 fill_rect(pixels, stride, px + 7, py + 7,
                           CELL_SIZE - 14, CELL_SIZE - 14, COLOR_GRID);
                 fill_rect(pixels, stride, px + 14, py + 14,
