@@ -118,6 +118,35 @@ class PublicRelocatableELFTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "ELF FUNC export"):
             inspect_relocatable(obj)
 
+    def test_nonzero_elf_func_extending_past_text_section_rejected(self):
+        impostor = REQUIRED_SYMBOLS[0]
+        # GNU as allows a FUNC's declared size to exceed its .text section.
+        obj = self.compile(
+            "\n".join(f"void {name}(void) {{}}"
+                      for name in REQUIRED_SYMBOLS if name != impostor) +
+            f'\n__asm__(".text\\n.globl {impostor}'
+            f'\\n.type {impostor}, @function'
+            f'\\n{impostor}:\\n nop'
+            f'\\n.size {impostor}, 0x100000\\n");\n',
+            name="oversized-func")
+        with self.assertRaisesRegex(ValueError, "ELF FUNC bounds"):
+            inspect_relocatable(obj)
+
+    def test_nonzero_elf_func_starting_outside_text_section_rejected(self):
+        impostor = REQUIRED_SYMBOLS[-1]
+        # An out-of-range .set label still appears as T in nm and FUNC in
+        # readelf. Its st_value cannot identify original bytes in .text.
+        obj = self.compile(
+            "\n".join(f"void {name}(void) {{}}"
+                      for name in REQUIRED_SYMBOLS if name != impostor) +
+            f'\n__asm__(".text\\n.globl {impostor}'
+            f'\\n.type {impostor}, @function'
+            f'\\n.set {impostor}, .+2048'
+            f'\\n.size {impostor}, 2\\n");\n',
+            name="out-of-range-func")
+        with self.assertRaisesRegex(ValueError, "ELF FUNC bounds"):
+            inspect_relocatable(obj)
+
     def test_unresolved_capture_hook_rejected_even_if_other_exports_present(self):
         obj = self.compile(
             self.all_exports() +
