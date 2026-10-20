@@ -139,6 +139,9 @@ def inspect_trial(directory, source_sha, run_id, nro_hash, decode=decode_image):
         "postjoin_guest_receipt_valid": recomputed["guest_8page_receipt_valid"],
         "all_8_pcm_pages_found": recomputed["exact_8_individual_sink_page_matches"],
         "original_artifact_directory": directory.name,
+        # The original workflow fetched a mutable release/tag/nightly URL
+        # independently in each guest job, without hashing NeXium itself.
+        "nexium_host_binary_sha256": None,
     }
 
 
@@ -185,6 +188,10 @@ def audit(root, source_sha=SOURCE, run_id=RUN, decode=decode_image):
         "original_run_id": run_id, "nro_sha256": digest,
         "trials": rows, "by_hint": by_hint,
         "all_six_artifact_provenance_and_pcm_integrity_verified": True,
+        "same_guest_nro_sha256_all_six_verified": True,
+        "nexium_release_asset_digest_pinned_in_original_workflow": False,
+        "same_nexium_host_binary_all_six_verified": False,
+        "nexium_host_binary_sha256_available_in_original_artifacts": False,
         "buffer_hint_causality_proven": False,
         "audout_service_deadlock_proven": False,
         "physical_nintendo_switch_audio_proven": False,
@@ -192,6 +199,8 @@ def audit(root, source_sha=SOURCE, run_id=RUN, decode=decode_image):
             "Observed association across six runs of the same research NRO; "
             "host ALSA/CPAL/PulseAudio buffer state was sampled, not actively "
             "controlled or synchronized to first guest audoutPlayBuffer. "
+            "The six guest workflows each fetched mutable NeXium nightly "
+            "without recording a SHA-256, so same emulator binary is UNVERIFIED. "
             "A single prejoin CRC-8 snapshot cannot prove an infinite deadlock."
         ),
     }
@@ -213,6 +222,8 @@ def main():
             "schema": SCHEMA, "result": "UNVERIFIED",
             "reason": str(exc),
             "all_six_artifact_provenance_and_pcm_integrity_verified": False,
+            "same_guest_nro_sha256_all_six_verified": False,
+            "same_nexium_host_binary_all_six_verified": False,
             "buffer_hint_causality_proven": False,
             "audout_service_deadlock_proven": False,
         }
