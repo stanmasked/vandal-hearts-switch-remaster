@@ -1,0 +1,95 @@
+name: MAP02 reconciled integration candidate
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-reconciled-stack.yml'
+      - 'tests/test_map02_stacked_integration.c'
+      - 'tools/audit_map02_stack.py'
+      - 'source/main.c'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  ancestry-content-proof:
+    name: Compare historical 4v4 fix to final integration tree without changing refs
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Read-only verify Git two-parent merge content is exactly unchanged
+        shell: bash
+        env:
+          PINNED_PARENT: e4c58b0429b605c66a6f7ce30875154e85ec942f
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            +refs/pull/262/head:refs/remotes/origin/map02-262 \
+            "+refs/pull/$PR_NUMBER/head:refs/remotes/origin/map02-current"
+          test "$(git rev-parse refs/remotes/origin/map02-262)" = "$PINNED_PARENT"
+          test "$(git rev-parse refs/remotes/origin/map02-current)" = "$PR_HEAD"
+          expected="$(git rev-parse "$PR_HEAD^{tree}")"
+          merged="$(git merge-tree --write-tree "$PINNED_PARENT" "$PR_HEAD")"
+          test "$merged" = "$expected"
+          for file in \
+            source/main.c \
+            tests/run_map02_nexium_4v4.py \
+            tests/test_map02_nexium_4v4_oracle.py \
+            .github/workflows/map02-switch-eight-slot.yml
+          do
+            test "$(git rev-parse "$PINNED_PARENT:$file")" = \
+                 "$(git rev-parse "$PR_HEAD:$file")"
+          done
+          if git merge-base --is-ancestor "$PINNED_PARENT" "$PR_HEAD"; then
+            echo 'VH_MAP02_RECONCILE_PASS historic_262_ancestor=1 tree_unchanged=1 shared_files=4 main_merge=0'
+          else
+            echo 'VH_MAP02_RECONCILE_PROBE_PASS safe_tree=1 shared_files=4 branch_still_unreconciled=1 main_merge=0'
+          fi
+      - name: Ensure original authored assets survive exact integrated branch
+        shell: bash
+        env:
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          for file in \
+            source/map02_battle_fixture.h \
+            source/map02_roster8_smoke_data.h \
+            source/map02_roster8.h \
+            data/map02_roster8_4v4.json
+          do
+            test "$(git rev-parse "e4c58b0429b605c66a6f7ce30875154e85ec942f:$file")" = \
+                 "$(git rev-parse "$PR_HEAD:$file")"
+          done
+          echo 'VH_MAP02_RECONCILE_DATA_PASS original_fixture_blobs=4'
+
+  combined-combat:
+    name: Integrated archer, guard, medic and both tactical arenas (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run same C implementation with and without undefined-behavior sanitizer
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            tests/test_map02_stacked_integration.c -o /tmp/map02-reconcile
+          /tmp/map02-reconcile | tee /tmp/map02-reconcile.log
+          grep -Fx 'VH_MAP02_STACK_NATIVE_PASS rosters=6 bow=1 medic=1 guard=1 original_scene=1 zero_retail=1' /tmp/map02-reconcile.log
+          "$CC" -std=c11 -O0 -g -Wall -Wextra -Werror -pedantic \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            tests/test_map02_stacked_integration.c -o /tmp/map02-reconcile-ubsan
+          /tmp/map02-reconcile-ubsan
