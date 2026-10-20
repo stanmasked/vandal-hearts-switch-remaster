@@ -66,7 +66,8 @@ class V195IndependentMipsOpcodeSequence(unittest.TestCase):
 
     def test_catches_compromised_builder_that_would_pass_v194(self):
         # Malicious source builder AND all twenty native EXE receipts agree
-        # on the same invalid input. The v194 source-rebuild hash check alone
+        # on a third distinct invalid input. The v194 source-rebuild hash
+        # check alone
         # would accept; the independent literal opcodes must still refuse it.
         with tempfile.TemporaryDirectory() as td:
             directory = Path(td)
@@ -74,7 +75,10 @@ class V195IndependentMipsOpcodeSequence(unittest.TestCase):
             canonical = make_variants()
             bad = bytearray(canonical["CORRECT"])
             off = find_signed_offset(bad)
-            bad[off + 4*3:off + 4*4] = b"\x00\x00\x00\x00"
+            # Alter the ORI immediate, rather than deleting SW: the forged
+            # CORRECT must remain different from MISSING_SW and MISSING_LW,
+            # otherwise the v194 three-distinct-digests guard catches it first.
+            bad[off + 4*2] ^= 1
             fake = bytes(bad)
             (directory / "V183_RAM_CORRECT.EXE").write_bytes(fake)
             sha = hashlib.sha256(fake).hexdigest()
