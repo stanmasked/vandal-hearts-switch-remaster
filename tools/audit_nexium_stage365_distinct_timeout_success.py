@@ -103,6 +103,12 @@ def compare(timeout:dict,success:dict)->dict:
         or success["guest_tail_reason_code"]!=7
         or type(success.get("guest_raw_audout_wait_result")) is not int
         or success["guest_raw_audout_wait_result"]!=0
+        or any(type(timeout.get(key)) is not int for key in (
+            "software_lease_pages_acquired","software_lease_pages_released",
+            "software_abandoned_sessions"))
+        or any(type(success.get(key)) is not int for key in (
+            "guest_audio_lease_acquired","guest_audio_lease_released",
+            "guest_abandoned_sessions"))
         or timeout.get("software_lease_pages_acquired")!=1414
         or timeout.get("software_lease_pages_released")!=1413
         or timeout.get("software_abandoned_sessions")!=1
