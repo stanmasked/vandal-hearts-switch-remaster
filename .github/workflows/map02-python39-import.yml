@@ -10,6 +10,8 @@ on:
       - 'tools/check_map02_ru_receipt.py'
       - 'tools/reconcile_map02_ru_runtime_trace.py'
       - 'tests/test_reconcile_map02_ru_runtime_trace.py'
+      - 'tools/verify_map02_ru_owned_disc.py'
+      - 'tests/test_verify_map02_ru_owned_disc.py'
       - '.github/workflows/map02-python39-import.yml'
   pull_request:
     paths:
@@ -20,6 +22,8 @@ on:
       - 'tools/check_map02_ru_receipt.py'
       - 'tools/reconcile_map02_ru_runtime_trace.py'
       - 'tests/test_reconcile_map02_ru_runtime_trace.py'
+      - 'tools/verify_map02_ru_owned_disc.py'
+      - 'tests/test_verify_map02_ru_owned_disc.py'
       - '.github/workflows/map02-python39-import.yml'
 
 jobs:
@@ -39,3 +43,4 @@ jobs:
           python -m unittest discover -s tests -p 'test_map02_audit_python39_import.py' -v
           python -m unittest discover -s tests -p 'test_check_map02_ru_receipt.py' -v
           python -m unittest discover -s tests -p 'test_reconcile_map02_ru_runtime_trace.py' -v
+          python -m unittest discover -s tests -p 'test_verify_map02_ru_owned_disc.py' -v
