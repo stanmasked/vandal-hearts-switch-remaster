@@ -83,6 +83,19 @@ def private_window_file(directory, name, *, expected=None, max_bytes=None):
             if (total != size or identity(before) != identity(after) or
                     identity(after) != identity(entry)):
                 raise ValueError("native GPU capture file changed during secure read")
+            # Keep the directory pathname pinned as well as the file's
+            # directory-relative name. Without this, an attacker could
+            # rename the entire capture directory and replace it with
+            # another owner-private directory while the held dirfd still
+            # points to the original inode.
+            try:
+                named_directory = os.stat(directory, follow_symlinks=False)
+            except OSError as exc:
+                raise ValueError(
+                    "native GPU capture directory moved during secure read") from exc
+            if (identity(d) != identity(os.fstat(dirfd)) or
+                    identity(d) != identity(named_directory)):
+                raise ValueError("native GPU capture directory changed during secure read")
             return b"".join(chunks)
         finally:
             os.close(fd)
