@@ -10,13 +10,14 @@ from audit_nexium_stage365_distinct_timeout_success import (
     compare, safe_files, old_capture, TIMEOUT_SOURCES, TIMEOUT_RUN,
     SUCCESS_RUN, TIMEOUT_VERIFIED, SUCCESS_VERIFIED, VERIFIED,
     TIMEOUT_TAIL_SHA, TIMEOUT_LEASE_SHA, TIMEOUT_REASON_SHA,
-    TIMEOUT_WAIT_SHA, SUCCESS_PINS,
+    TIMEOUT_WAIT_SHA, SUCCESS_PINS, TIMEOUT_ORIGINAL_RECEIPT_SHA256,
 )
 
 def fixture():
     failed={
         "result":TIMEOUT_VERIFIED,
         "original_neXium_run_id":TIMEOUT_RUN,
+        "original_timeout_guest_receipt_sha256":dict(TIMEOUT_ORIGINAL_RECEIPT_SHA256),
         "source_sha256":{
             "stage313":TIMEOUT_TAIL_SHA,
             "stage348":TIMEOUT_LEASE_SHA,
@@ -74,6 +75,22 @@ class Stage365Tests(unittest.TestCase):
         with self.assertRaises(ValueError):compare(a,b)
     def test_reject_fake_timeout_source_sha(self):
         a,b=fixture();a["source_sha256"]["stage357"]="0"*64
+        with self.assertRaises(ValueError):compare(a,b)
+    def test_reject_replaced_timeout_stage313_original_receipt(self):
+        a,b=fixture()
+        a["original_timeout_guest_receipt_sha256"]["stage313"]="0"*64
+        with self.assertRaises(ValueError):compare(a,b)
+    def test_reject_missing_timeout_stage314_receipt(self):
+        a,b=fixture()
+        del a["original_timeout_guest_receipt_sha256"]["stage314"]
+        with self.assertRaises(ValueError):compare(a,b)
+    def test_reject_forged_timeout_stage351_receipt(self):
+        a,b=fixture()
+        a["original_timeout_guest_receipt_sha256"]["stage351"]="f"*64
+        with self.assertRaises(ValueError):compare(a,b)
+    def test_reject_wrong_original_receipt_type(self):
+        a,b=fixture()
+        a["original_timeout_guest_receipt_sha256"]=None
         with self.assertRaises(ValueError):compare(a,b)
     def test_reject_timeout_abandoned_page_forgery(self):
         a,b=fixture();a["software_abandoned_sessions"]=0
