@@ -98,10 +98,41 @@ class LocalProviderCoverageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "provider input unavailable"):
             audit_provider_coverage(self.manifest, [alias])
 
+    def test_elf32_candidate_and_mixed_architecture_archive_rejected(self):
+        # This has a matching symbol name but cannot be linked with the
+        # x86-64 partial ELF. Use native GNU as instead of 32-bit libc.
+        assembly = self.root / "foreign.s"
+        assembly.write_text(
+            ".globl alpha\nalpha:\n ret\n", encoding="ascii")
+        foreign = self.root / "foreign.o"
+        subprocess.run(
+            ["as", "--32", str(assembly), "-o", str(foreign)],
+            check=True, capture_output=True, timeout=30)
+        with self.assertRaisesRegex(ValueError, "incompatible PC ELF ABI"):
+            audit_provider_coverage(self.manifest, [foreign])
+
+        native = self.compile("native-arch", "void beta(void) {}\n")
+        mixed = self.root / "mixed-arch.a"
+        subprocess.run(
+            ["ar", "rcs", str(mixed), str(native), str(foreign)],
+            check=True, capture_output=True, timeout=30)
+        with self.assertRaisesRegex(ValueError, "incompatible PC ELF ABI"):
+            audit_provider_coverage(self.manifest, [mixed])
+
+    def test_shared_library_disguised_as_object_rejected(self):
+        code = self.root / "shared-as-object.c"
+        code.write_text("void alpha(void) {}\n", encoding="ascii")
+        fake_object = self.root / "dynamic-file.o"
+        subprocess.run(
+            ["cc", "-shared", "-fPIC", str(code), "-o", str(fake_object)],
+            check=True, capture_output=True, timeout=30)
+        with self.assertRaisesRegex(ValueError, "incompatible PC ELF ABI"):
+            audit_provider_coverage(self.manifest, [fake_object])
+
     def test_invalid_candidate_not_mistaken_for_linked_symbol(self):
         fake = self.root / "broken.o"
         fake.write_bytes(b"not an ELF object")
-        with self.assertRaisesRegex(ValueError, "symbol inspection failed"):
+        with self.assertRaisesRegex(ValueError, "ELF inspection failed"):
             audit_provider_coverage(self.manifest, [fake])
         with self.assertRaisesRegex(ValueError, "candidate list is empty"):
             audit_provider_coverage(self.manifest, [])

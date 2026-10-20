@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import stat
 import subprocess
@@ -89,8 +90,32 @@ def read_private_manifest(path):
     return manifest
 
 
+def _require_native_pc_elf_headers(readelf_output):
+    """Require EVERY archive member to be link-compatible with host PC ELF.
+
+    GNU readelf -hW emits a separate ELF Header block for each archive
+    member, so a native member cannot hide a foreign-architecture one.
+    This is only the basic link target ABI, not proof of full linkage.
+    """
+    blocks = readelf_output.split("ELF Header:")
+    if len(blocks) < 2:
+        raise ValueError("private MAP02 provider has no ELF object headers")
+    for block in blocks[1:]:
+        def field(name):
+            match = re.search(
+                r"^\s*" + re.escape(name) + r":\s*(.*?)\s*$",
+                block, re.M)
+            return match.group(1) if match else None
+        if (field("Class") != "ELF64"
+                or field("Data") != "2's complement, little endian"
+                or field("Type") != "REL (Relocatable file)"
+                or field("Machine") != "Advanced Micro Devices X86-64"):
+            raise ValueError("private MAP02 provider has incompatible PC ELF ABI")
+    return len(blocks) - 1
+
+
 def _candidate_strong_exports(candidate):
-    """GNU nm -P over the same opened inode; no symbol names in errors."""
+    """Readelf ABI gate then GNU nm -P on same inode, no names in errors."""
     path = Path(candidate).absolute()
     if path.suffix not in (".o", ".a"):
         raise ValueError("private MAP02 provider input must be .o or .a")
@@ -109,6 +134,13 @@ def _candidate_strong_exports(candidate):
         before = (info.st_dev, info.st_ino, info.st_size,
                   info.st_mtime_ns, info.st_ctime_ns)
         try:
+            headers = subprocess.run(
+                ["readelf", "-hW", f"/proc/self/fd/{fd}"],
+                pass_fds=(fd,), capture_output=True, text=True,
+                check=False, timeout=45)
+            if headers.returncode:
+                raise ValueError("private MAP02 provider ELF inspection failed")
+            _require_native_pc_elf_headers(headers.stdout)
             res = subprocess.run(
                 ["nm", "-g", "-P", "--defined-only",
                  f"/proc/self/fd/{fd}"],
