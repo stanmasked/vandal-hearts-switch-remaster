@@ -1,0 +1,201 @@
+name: Stage371 two new isolated NeXium audout exit observations
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage371-two-fresh-guest-exits.yml'
+      - 'tools/capture_nexium_scene_audio.sh'
+      - 'tools/audit_stage371_two_original_wait_trials.py'
+      - 'tests/test_audit_stage371_two_original_wait_trials.py'
+      - 'tools/audit_nexium_stage368_wait_descriptor.py'
+      - 'source/vh_audio_exit_wait_descriptor_stage368.h'
+      - 'source/vh_switch_game_audio.c'
+      - 'source/main.c'
+      - 'Makefile'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  build-current-nro:
+    name: Build one original libnx NRO without SDL2
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile exact source revision and record NRO bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
+          make verify-nro
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          p=Path("build/vandal-hearts-prototype.nro")
+          original=p.read_bytes()
+          if len(original)<1024:raise SystemExit("original NeXium NRO absent")
+          document={
+            "schema":"vh-switch-same-run-nro/v1",
+            "git_sha":os.environ["GITHUB_SHA"],
+            "run_id":int(os.environ["GITHUB_RUN_ID"]),
+            "run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
+            "nro_name":p.name,"nro_bytes":len(original),
+            "nro_sha256":hashlib.sha256(original).hexdigest(),
+          }
+          Path("build/runtime-nro-manifest.json").write_text(
+            json.dumps(document,sort_keys=True)+"\n",encoding="ascii")
+          print(json.dumps(document,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage371-same-run-nro
+          path: |
+            build/vandal-hearts-prototype.nro
+            build/runtime-nro-manifest.json
+          if-no-files-found: error
+  two-original-exits:
+    name: Run two separate NeXium guest exits and audit original CSV files
+    runs-on: ubuntu-26.04
+    needs: build-current-nro
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: stage371-same-run-nro
+          path: nros
+      - name: Verify same-run source NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/verify_switch_runtime_nro.py nros \
+            --git-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" > stage371-nro-preflight.json
+      - name: Run host-only Stage371 anti-fabrication tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_stage371_two_original_wait_trials.py' -v
+          python3 -m py_compile tools/audit_stage371_two_original_wait_trials.py
+          bash -n tools/capture_nexium_scene_audio.sh
+      - name: Install virtual audio and headless NeXium requirements
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl jq xvfb xauth xdotool imagemagick \
+            libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 \
+            libxkbcommon-x11-0 libx11-xcb1 libxcb-cursor0 \
+            libxcb-xinerama0 libxcb-xfixes0 libxcb-randr0 libxcb-render0 \
+            libxcb-shape0 libxcb-xkb1 libvulkan1 mesa-vulkan-drivers \
+            pulseaudio pulseaudio-utils libasound2-plugins
+      - name: Download NeXium nightly executable for guest runs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="$(curl -fsSL --retry 3 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+          url="$(printf '%s' "$release_json" | jq -r \
+            '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          test -n "$url"
+          curl -fL --retry 3 --retry-all-errors "$url" -o /tmp/vh-stage371-nexium.tar.gz
+          mkdir -p /tmp/vh-stage371-nexium
+          tar -xzf /tmp/vh-stage371-nexium.tar.gz -C /tmp/vh-stage371-nexium
+          emu_bin="$(find /tmp/vh-stage371-nexium -type f -executable \
+            \( -name 'nexium-gui' -o -name 'nexium' \) -print -quit)"
+          test -n "$emu_bin"
+          echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
+      - name: Start isolated PulseAudio null-sink (no speaker)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          runtime_dir="$RUNNER_TEMP/vh-pulse-runtime"
+          mkdir -p "$runtime_dir"
+          chmod 700 "$runtime_dir"
+          export XDG_RUNTIME_DIR="$runtime_dir"
+          pulseaudio --daemonize=yes --exit-idle-time=-1 \
+            --log-target=file:runtime-evidence/pulseaudio-stage371.log
+          export PULSE_SERVER="unix:$runtime_dir/pulse/native"
+          pactl info > runtime-evidence/pulse-stage371.txt
+          pactl load-module module-null-sink \
+            sink_name=vh_nexium_capture rate=48000 channels=2 \
+            sink_properties=device.description=VH_Stage371 > runtime-evidence/pulse-module.txt
+      - name: First isolated original guest exit with baseline dwell
+        shell: bash
+        run: |
+          set -euo pipefail
+          SCENE_CAPTURE_TAG=a SCENE_CAPTURE_EXIT_DWELL_SECONDS=6 \
+            bash tools/capture_nexium_scene_audio.sh runtime-evidence/a
+          test -s runtime-evidence/a/scene-optical-trace.png
+      - name: Second isolated original guest exit with longer dwell
+        shell: bash
+        run: |
+          set -euo pipefail
+          SCENE_CAPTURE_TAG=b SCENE_CAPTURE_EXIT_DWELL_SECONDS=12 \
+            bash tools/capture_nexium_scene_audio.sh runtime-evidence/b
+          test -s runtime-evidence/b/scene-optical-trace.png
+      - name: Reopen BOTH original guest SD source families and bind to same NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_stage371_two_original_wait_trials.py \
+            --runner-temp "$RUNNER_TEMP" \
+            --nro-preflight stage371-nro-preflight.json \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --git-sha "$GITHUB_SHA" \
+            --trial-a runtime-evidence/a \
+            --trial-b runtime-evidence/b \
+            --output stage371-two-authentic-guest-exits.json \
+            --preserve-dir stage371-originals
+          {
+            echo '### Stage371 genuine two-session audout software evidence'
+            echo 'Two fresh, isolated guest filesystem sessions used the SAME NRO.'
+            echo 'Exit dwell only: 6 seconds versus 12 seconds.'
+            echo 'Actual Result and returned descriptor counts are in the source-bound JSON.'
+            echo 'Neither pair establishes old kernel failure cause, direct exit queue, or physical DAC playback.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve partial original traces even if source proof failed
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p stage371-unverified-partial
+          for tag in a b; do
+            source="$RUNNER_TEMP/vh-nexium-stage266-$GITHUB_RUN_ID-$tag/sdmc/switch/vandal-hearts-remake"
+            mkdir -p "stage371-unverified-partial/$tag"
+            if [ -d "$source" ]; then
+              find "$source" -maxdepth 1 -type f \
+                \( -name 'audio-exit-tail-reason-*.csv' \
+                -o -name 'audio-exit-tail-wait-result-*.csv' \
+                -o -name 'audio-exit-wait-descriptor-*.csv' \) \
+                -exec cp -n -- '{}' "stage371-unverified-partial/$tag/" \;
+            fi
+          done
+      - name: Upload original source receipts without raw sound assets
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage371-two-guest-exit-original-observations
+          if-no-files-found: warn
+          retention-days: 90
+          path: |
+            stage371-nro-preflight.json
+            stage371-two-authentic-guest-exits.json
+            stage371-originals/
+            stage371-unverified-partial/
+            runtime-evidence/a/guest-sd-root.txt
+            runtime-evidence/b/guest-sd-root.txt
+            runtime-evidence/a/scene-optical-trace.png
+            runtime-evidence/b/scene-optical-trace.png
+            runtime-evidence/a/scene-runner.log
+            runtime-evidence/b/scene-runner.log
