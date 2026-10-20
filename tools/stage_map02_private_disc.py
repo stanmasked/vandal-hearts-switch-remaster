@@ -23,6 +23,7 @@ SECTOR_BYTES = 2352
 STAGE_NAME = "vh-map02-private"
 CHUNK = 1024 * 1024
 MAX_CUE = 4096
+PRIVATE_FREE_MARGIN = 128 * 1024 * 1024  # Reserve room for receipt and other local operations.
 _SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}\Z")
 
 
@@ -203,6 +204,28 @@ def _rename_no_replace(dirfd, pending, final):
         raise OSError(code, os.strerror(code), final)
 
 
+def _require_private_disk_capacity(parentfd, expected_bytes):
+    """Fail before copying when destination space is plainly insufficient.
+
+    f_bavail counts only available blocks for an unprivileged Mac user.
+    This is a preflight, not a reservation: concurrent writes may still
+    exhaust capacity. We intentionally avoid any sparse-file assumptions.
+    """
+    if type(expected_bytes) is not int or expected_bytes <= 0:
+        raise ValueError("private BIN expected size must be positive")
+    fs = os.fstatvfs(parentfd)
+    if (type(fs.f_frsize) is not int or type(fs.f_bavail) is not int
+            or fs.f_frsize <= 0 or fs.f_bavail < 0):
+        raise ValueError("untrustworthy destination filesystem capacity")
+    remaining = fs.f_frsize * fs.f_bavail
+    minimum = expected_bytes + PRIVATE_FREE_MARGIN
+    if remaining < minimum:
+        raise ValueError(
+            "insufficient private destination space: need full BIN plus "
+            "128 MiB reserve before copying"
+        )
+
+
 def stage_disc(bin_path, cue_path, destination_parent, *,
                stage_name=STAGE_NAME, expected_bytes=RAW_BYTES):
     """Return (private_dir, image_sha256) after complete, atomic directory handoff.
@@ -236,6 +259,10 @@ def stage_disc(bin_path, cue_path, destination_parent, *,
             pass
         else:
             raise FileExistsError("private destination already exists")
+
+        # Evaluate filesystem capacity through the already pinned private
+        # directory descriptor. No original disc blocks have been read yet.
+        _require_private_disk_capacity(parentfd, expected_bytes)
 
         pending = "." + stage_name + "." + secrets.token_hex(12) + ".pending"
         os.mkdir(pending, 0o700, dir_fd=parentfd)
