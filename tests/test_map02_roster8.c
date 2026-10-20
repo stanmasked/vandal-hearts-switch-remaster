@@ -109,8 +109,13 @@ static void forged_rosters_are_rejected(void) {
     BAD(b.units[0].acted = 1);         /* spawn must be fresh */
 #undef BAD
     assert(vh_r8_valid(&r));
-    assert(!vh_r8_attack(&r, 0, 1, 1)); /* no friendly fire */
-    assert(!vh_r8_attack(&r, 0, 4, 0));
+    assert(vh_r8_result(NULL) == VH_R8_INVALID_STATUS);
+    {
+        VhRoster8 before = r;
+        assert(!vh_r8_attack(&r, 0, 1, 1)); /* no friendly fire */
+        assert(!vh_r8_attack(&r, 0, 4, 0));
+        assert(memcmp(&before, &r, sizeof(r)) == 0);
+    }
     assert(!vh_r8_attack(&r, 0, 6, 1)); /* not adjacent */
     assert(!vh_r8_attack(&r, 3, 4, 1)); /* forged hidden ally */
     assert(!vh_r8_attack(&r, 4, 7, 1)); /* forged hidden enemy */
