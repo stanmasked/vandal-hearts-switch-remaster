@@ -113,7 +113,7 @@ jobs:
                             "guest jobs independently downloaded a mutable nightly NeXium "
                             "asset without recording its SHA-256. Identical host NeXium "
                             "binary across six runs is **UNVERIFIED**.",file=out)
-                      print("\n**Limit:** observational association only; not 
+                      print("\n**Limit:** observational association only; not "
                             "CPAL root-cause, guest deadlock or Switch DAC proof.",file=out)
           PY
       - uses: actions/upload-artifact@v4
