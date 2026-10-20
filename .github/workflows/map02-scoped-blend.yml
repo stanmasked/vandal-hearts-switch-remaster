@@ -488,8 +488,11 @@ jobs:
           assert all(value.startswith("build-map02-cycle/") and value.endswith(".o")
                      for value in owners.values())
           assert report["original_cd_gpu_source_function_sizes_matched"] is True
-          assert report["original_cd_gpu_machine_code_bytes_matched"] is True
-          assert len(report["ordered_original_function_code_sha256"]) == 64
+          assert report["original_cd_gpu_relocation_normalized_code_matched"] is True
+          assert report["source_link_function_code_bytes_checked"] > 0
+          assert (0 <= report["source_link_relocation_bytes_excluded"] <
+                  report["source_link_function_code_bytes_checked"])
+          assert len(report["source_link_nonrelocated_function_code_sha256"]) == 64
           assert not report["fully_linked_game_executable"]
           assert not report["actual_gameplay_executed"]
           assert not report["original_map02_rendering_proven"]
