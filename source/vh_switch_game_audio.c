@@ -897,7 +897,18 @@ int vh_switch_game_audio_presubmit_stage_render(VhCanvas *canvas,
         (uint8_t)v,(uint8_t)(v>>8),(uint8_t)stop,0,0
     };
     for(unsigned i=0;i<8u;i++) byte[8]^=byte[i];
-    byte[9]=(uint8_t)(byte[8]^0xc3u);
+    /* Second independent integrity check. XOR alone misses paired
+     * equal bit flips; use CRC-8/ATM (poly 0x07, init 0, no reflect)
+     * over the exact eight source bytes, separate from the XOR. */
+    uint8_t crc8=0;
+    for(unsigned i=0;i<8u;i++) {
+        crc8^=byte[i];
+        for(unsigned bit=0;bit<8u;bit++)
+            crc8=(uint8_t)((crc8&0x80u)
+                ? (unsigned)((crc8<<1)^0x07u)
+                : (unsigned)(crc8<<1));
+    }
+    byte[9]=crc8;
     vh_canvas_fill_rect(canvas,0,0,1280,720,black);
     vh_canvas_fill_rect(canvas,244,154,92,112,marker);
     vh_canvas_fill_rect(canvas,246,156,88,108,black);
