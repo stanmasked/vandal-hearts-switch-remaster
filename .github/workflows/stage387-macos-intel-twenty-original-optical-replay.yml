@@ -1,0 +1,154 @@
+name: Stage387 Intel macOS independently recheck twenty archived NeXium guest exits
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage387-macos-intel-twenty-original-optical-replay.yml'
+      - 'tools/audit_stage386_twenty_optical_nexium_sources.py'
+      - 'tests/test_audit_stage386_twenty_optical_nexium_sources.py'
+      - 'tools/audit_stage383_eighteen_optical_originals.py'
+      - 'tests/test_audit_stage383_eighteen_optical_originals.py'
+      - 'tools/audit_stage382_sixteen_optical_originals.py'
+      - 'tools/audit_stage378_twelve_optical_originals.py'
+      - 'tools/audit_stage374_eight_optical_originals.py'
+      - 'tools/audit_stage373_six_optical_originals.py'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: stage387-intel-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  twenty-original-guest-sessions:
+    name: macOS Intel source-byte replay of ten original guest pairs
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select genuine x86-64 Python 3.9 for oldest supported Intel Mac
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.9'
+          architecture: x64
+      - name: Confirm actual macOS Intel runner and compatible Python
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          python3 - <<'PY'
+          import json,platform,sys
+          assert sys.version_info[:2] == (3,9)
+          assert platform.system() == 'Darwin'
+          assert platform.machine() == 'x86_64'
+          print(json.dumps({'platform':platform.platform(), 'architecture':platform.machine(),
+            'python':sys.version.split()[0], 'real_mac_hardware_audio_test':False},sort_keys=True))
+          PY
+          echo 'Intel macOS runner confirmed; this job only audits archived guest evidence.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Run Stage373/374/378/382/383/386 anti-substitution regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          # macOS /var is a symlink to /private/var; Stage373 explicitly
+          # rejects ANY symlink parent for original-source file reads.
+          # Give synthetic unit fixtures a canonical, local temporary root
+          # without weakening original source validation or changing game code.
+          mkdir -p .stage387-temp
+          export TMPDIR="$(cd .stage387-temp && pwd -P)"
+          python3 - <<'PY'
+          import pathlib, tempfile
+          p=pathlib.Path(tempfile.mkdtemp(prefix='stage387-'))
+          try:
+              assert p.is_dir()
+              assert not any(x.is_symlink() for x in (p,*p.parents))
+              print("Canonical Intel macOS temporary source root:",p)
+          finally:
+              p.rmdir()
+          PY
+          for pair in 373:six 374:eight 378:twelve 382:sixteen 383:eighteen; do
+            stage="${pair%%:*}"
+            suffix="${pair#*:}"
+            python3 -m unittest discover -s tests \
+              -p "test_audit_stage${stage}_${suffix}_optical_originals.py" -v
+            python3 -m py_compile "tools/audit_stage${stage}_${suffix}_optical_originals.py"
+          done
+          python3 -m unittest discover -s tests -p "test_audit_stage386_twenty_optical_nexium_sources.py" -v
+          python3 -m py_compile tools/audit_stage386_twenty_optical_nexium_sources.py
+      - name: Obtain ten independent original NeXium guest evidence families
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p stage386-originals stage386-metadata
+          repo=stanmasked/vandal-hearts-switch-remaster
+          for run_id in 39396243731 39398650528 39406193313 39451930021 \
+                        39459228340 39462294094 39466729315 39476667373 \
+                        39479476340 39489476524; do
+            case "$run_id" in
+              39396243731) artifact_id=12255245917; merge_sha=7322cd893638bdcbda168242093c7d20a20d5c85 ;;
+              39398650528) artifact_id=12257811667; merge_sha=14276a2b2326eff4b3d9c8a7de675205261048ed ;;
+              39406193313) artifact_id=12261315952; merge_sha=38318d3080a2813183704b2d9113015a3b51e464 ;;
+              39451930021) artifact_id=12279117713; merge_sha=3f213b94d25dc0d2b0687c27655fb823418732ed ;;
+              39459228340) artifact_id=12281898466; merge_sha=ba58bfb3190bda47e0c904a3684eb27a0c69fd1c ;;
+              39462294094) artifact_id=12283318074; merge_sha=a5deed8cea073a6c95e36eb94fda7b820ac0e0f1 ;;
+              39466729315) artifact_id=12286756628; merge_sha=1f361b89ccbfa50f85c0ea932f6a81e19fcecfba ;;
+              39476667373) artifact_id=12289084323; merge_sha=83d0252ec61274acb070bae74e49394992f44f4c ;;
+              39479476340) artifact_id=12290652201; merge_sha=c52dd353fe14f065cfe7c28f441509ec1f98587a ;;
+              39489476524) artifact_id=12296297012; merge_sha=c1fadb4a61b0e8219f6c02782d2d7531492bbc27 ;;
+              *) exit 2 ;;
+            esac
+            gh api "repos/$repo/actions/runs/$run_id" > "stage386-metadata/$run_id-run.json"
+            gh api "repos/$repo/actions/runs/$run_id/jobs?per_page=100" > "stage386-metadata/$run_id-jobs.json"
+            gh api "repos/$repo/git/commits/$merge_sha" > "stage386-metadata/$run_id-merge.json"
+            gh api "repos/$repo/actions/runs/$run_id/artifacts?per_page=100" \
+              --jq ".artifacts[] | select(.id == $artifact_id)" > "stage386-metadata/$run_id-artifact.json"
+            test -s "stage386-metadata/$run_id-artifact.json"
+            mkdir -p "stage386-originals/$run_id"
+            gh run download "$run_id" --repo "$repo" \
+              --name stage371-two-guest-exit-original-observations \
+              --dir "stage386-originals/$run_id"
+            test -s "stage386-originals/$run_id/stage371-two-authentic-guest-exits.json"
+          done
+      - name: Reopen original guest CSVs and independently decode twenty optical packets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_stage386_twenty_optical_nexium_sources.py \
+            --originals stage386-originals \
+            --metadata stage386-metadata \
+            --output stage386-twenty-original-optical-replay.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('stage386-twenty-original-optical-replay.json').read_text())
+          assert report['result']=='STAGE386_TWENTY_SOURCE_PINNED_NEIXUM_GUEST_EXITS_AND_TENTH_EMULATOR_FINGERPRINT'
+          assert report['original_guest_sessions']==20 and len(report['source_run_ids'])==10
+          assert len(report['sessions'])==20
+          assert report['guest_wait_result_zero']==20 and report['exact_returned_descriptors']==20
+          assert report['unique_crc_verified_optical_packets']==20
+          assert report['complete_music_scene_transitions']==80 and report['dropped_guest_events']==0
+          assert report['distinct_reason_counter_csv_sha256_count']==19
+          assert len(report['repeated_reason_counter_csv'])==1
+          assert report['tenth_run_neixum_emulator']['binary_sha256']=='5026f934ed7cd7d81a5901e536f5fe29b00e117861d432f9be351730afc7d964'
+          assert report['tenth_run_neixum_emulator']['same_binary_in_earlier_nine_runs_proven'] is False
+          assert report['physical_switch_speaker_audio_tested'] is False
+          assert report['cause_of_historical_0xEA01_proven'] is False
+          PY
+          {
+            echo '### Stage386: 20 original software guest audio exits, source-bound'
+            echo 'Ten completed source runs, 20 distinct optical PNGs and CRC-checked packets.'
+            echo 'Each run had two Result=0 guest waits with exactly one returned descriptor.'
+            echo '80 complete music-scene transitions and zero dropped events.'
+            echo 'New run 10 has matched original Stage384/385 NeXium TAR and executable SHA receipts.'
+            echo 'No claim that original runs 1-9 shared the same NeXium binary.'
+            echo 'No physical Switch speaker/home/sleep playback and no proved root cause of 0xEA01.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish only source-bound compact JSON; no ROM or raw audio
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage387-macos-intel-original-optical-evidence-summary
+          path: stage386-twenty-original-optical-replay.json
+          if-no-files-found: warn
+          retention-days: 90

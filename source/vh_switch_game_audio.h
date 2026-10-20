@@ -71,6 +71,21 @@ int vh_switch_game_audio_exit_output_dump(FILE *stream);
 int vh_switch_game_audio_worker_stop_dump(FILE *stream);
 /* Stage320: original last audoutPlayBuffer service begin/end, post-join only. */
 int vh_switch_game_audio_last_playbuffer_dump(FILE *stream);
+/* Stage322: last 16 normal call brackets, read only after audio join. */
+int vh_switch_game_audio_playbuffer_history_dump(FILE *stream);
+/* Stage347: independent post-join software lease balance; no DAC proof. */
+int vh_switch_game_audio_lease_reconciliation_dump(FILE *stream);
+/* Stage351: new exclusive post-join exit-tail reason, separate from Stage313/347. */
+int vh_switch_game_audio_tail_reason_dump(FILE *stream);
+/* Stage357: one captured raw audoutWaitPlayFinish Result after worker join.
+ * Separate new CSV; no additional audout calls, no device output claim. */
+int vh_switch_game_audio_tail_wait_result_dump(FILE *stream);
+/* Stage368: returned pointer equality/count from the ORIGINAL bounded
+ * wait. Post join only, without raw pointer or any extra service work. */
+int vh_switch_game_audio_wait_descriptor_dump(FILE *stream);
+/* Stage360: last retained PRE-SUBMIT queue query, with age at tail start;
+ * never queue depth at shutdown. No new service query. */
+int vh_switch_game_audio_exit_probe_context_dump(FILE *stream);
 void vh_switch_game_audio_stop(void);
 /* 0 starting/stopped, 1 playing, 2 paused, negative means audio failed.
  * Main gameplay can continue silently if the device is unavailable.

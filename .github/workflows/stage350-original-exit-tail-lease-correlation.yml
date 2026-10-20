@@ -1,0 +1,113 @@
+name: Stage350 audit two original NeXium exit tails versus PCM leases
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage350-original-exit-tail-lease-correlation.yml'
+      - 'tools/audit_nexium_stage350_original_tail_vs_lease.py'
+      - 'tests/test_audit_nexium_stage350_original_tail_vs_lease.py'
+      - 'tools/compare_nexium_stage349_original_lease_cohorts.py'
+      - 'tools/audit_nexium_guest_last_buffer_return.py'
+      - 'tools/audit_nexium_guest_lease_reconciliation_stage348.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  synthetic:
+    name: Reject forged Stage350 guest tail and lease source pairing
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Positive/negative source-pair regression tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_audit_nexium_stage350_original_tail_vs_lease.py' -v
+          python3 -m py_compile tools/audit_nexium_stage350_original_tail_vs_lease.py
+          echo "Stage350 synthetic tampering checks only; not original guest evidence." >> "$GITHUB_STEP_SUMMARY"
+
+  source-pairs:
+    name: Independently reopen Stage313, Stage314 and Stage348 original guest sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: synthetic
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve two distinct successfully completed original NeXium archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 39292707481 --repo stanmasked/vandal-hearts-switch-remaster \
+            --name nexium-runtime-evidence --dir original-first
+          gh run download 39292997818 --repo stanmasked/vandal-hearts-switch-remaster \
+            --name nexium-runtime-evidence --dir original-second
+
+      - name: Strict original source SHA and independent Stage313/314/348 cross-audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=()
+          for label in first second; do
+            directory="original-$label"
+            for key in lease-csv lease-receipt tail-csv stage313 stage314; do
+              case "$key" in
+                lease-csv) filename=audio-lease-reconciliation-000.csv ;;
+                lease-receipt) filename=guest-lease-reconciliation-stage348.json ;;
+                tail-csv) filename=audio-exit-output-000.csv ;;
+                stage313) filename=guest-last-audout-release-stage313.json ;;
+                stage314) filename=guest-original-audout-last-page-stage314.json ;;
+              esac
+              mapfile -t matches < <(find "$directory" -type f -name "$filename")
+              test "${#matches[@]}" -eq 1 || {
+                echo "Missing or ambiguous $key in original archived $label" >&2
+                exit 1
+              }
+              args+=("--$label-$key" "${matches[0]}")
+            done
+          done
+          python3 tools/audit_nexium_stage350_original_tail_vs_lease.py \
+            "${args[@]}" \
+            --first-run-id 39292707481 \
+            --first-lease-sha256 3a9d3e738330713a81be4bf507485613485053b79f9a86df1516b683c8795365 \
+            --first-tail-sha256 749a0ac0642c492bd29f7aaeda4ca13dfac8b46507cf2f84ed91c73234834f3b \
+            --second-run-id 39292997818 \
+            --second-lease-sha256 9e2724e77795fafd1374bc502cd3457c942190650ea34b9400fde33218f048db \
+            --second-tail-sha256 59ac2224f5962547aa98ff7136a4fe77b8420fce5cdf413daab322c7057b4cdc \
+            --output stage350-original-source-pair-report.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("stage350-original-source-pair-report.json")
+          r=json.loads(p.read_text())
+          a=r["first_original_source_pair"]
+          b=r["second_original_source_pair"]
+          if (r["result"]!="TWO_ORIGINAL_GUEST_EXIT_TAIL_AND_LEASE_SOURCES_CROSS_AUDITED"
+              or r["original_source_run_ids"] != [39292707481,39292997818]
+              or (a["lease_pages_acquired"],a["lease_pages_released"],a["abandoned_sessions"])
+                 != (1427,1426,1)
+              or (b["lease_pages_acquired"],b["lease_pages_released"],b["abandoned_sessions"])
+                 != (1446,1446,0)
+              or a["bounded_exit_tail_attempted"] is not True
+              or b["bounded_exit_tail_attempted"] is not True
+              or a["bounded_exit_tail_return_confirmed"] is not False
+              or b["bounded_exit_tail_return_confirmed"] is not True
+              or r["unconfirmed_tail_and_abandoned_lease_coincide_in_both_sources"] is not True
+              or r["one_to_one_causal_attribution_proven"] is not False
+              or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage350 original PCM/tail pairing or evidentiary scope mismatch")
+          print("Stage350: original failed return coincides with one abandoned session;")
+          print("second original confirmed return coincides with zero abandoned sessions.")
+          print("This is paired original SOFTWARE evidence, not proof of cause or audio.")
+          PY
+          echo "Stage350: original SHA-pinned Stage313/314/348 sources cross-audited; observed concordance is NOT causal attribution, DAC/speaker output or retail Switch sound." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve source-only interpretation without raw copyrighted PCM
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage350-original-software-tail-lease-comparison
+          path: stage350-original-source-pair-report.json
+          if-no-files-found: error

@@ -1,0 +1,62 @@
+name: Stage358 authentic NeXium 0xEA01 kernel timeout original-source replay
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage358-genuine-kernel-timeout.yml'
+      - 'tools/audit_nexium_stage358_original_kernel_timeout.py'
+      - 'tests/test_audit_nexium_stage358_original_kernel_timeout.py'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  original-kernel-timeout:
+    name: Stage358 verify four SHA-pinned authentic original guest software sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run independent original-source and forged-data regressions
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_nexium_stage358_original_kernel_timeout.py' -v
+          python3 -m py_compile tools/audit_nexium_stage358_original_kernel_timeout.py
+      - name: Download original completed NeXium raw numeric wait Result guest archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 39325440778 --repo stanmasked/vandal-hearts-switch-remaster \
+            --name nexium-runtime-evidence --dir original-wait-59905
+      - name: Independently audit Stage313 348 351 357 original bytes, receipts and Result
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_stage358_original_kernel_timeout.py \
+            --archive-root original-wait-59905 \
+            --output stage358-original-genuine-kernel-timeout.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("stage358-original-genuine-kernel-timeout.json").read_text())
+          if (r["result"]!="FOUR_ORIGINAL_NEIXUM_GUEST_TAIL_SOURCES_VERIFY_KERNEL_TIMED_OUT"
+              or r["stage357_audout_wait_raw_result_decimal"]!=59905
+              or r["stage357_audout_wait_raw_result_hex"]!="0xEA01"
+              or r["result_module"]!=1 or r["result_description"]!=117
+              or r["stage351_reason_code"]!=4
+              or r["software_lease_pages_acquired"]!=1414
+              or r["software_lease_pages_released"]!=1413
+              or r["software_abandoned_sessions"]!=1
+              or r["underlying_event_wait_call_site_uniquely_proven"] is not False
+              or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Original guest timeout source claim not supported")
+          print("Stage358 independent raw original result: 0xEA01 / KernelError_TimedOut")
+          print("Stage358: software buffer retained, no audible/hardware claim")
+          PY
+          echo "Stage358 authentic original guest source: 59905 / 0xEA01 Kernel TimedOut, 1414/1413/1 leases; software only, NOT physical Switch audio or uniquely proven eventWait call site." >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload only compact independent source validation JSON
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage358-authentic-raw-guest-kernel-timeout
+          path: stage358-original-genuine-kernel-timeout.json
+          if-no-files-found: error

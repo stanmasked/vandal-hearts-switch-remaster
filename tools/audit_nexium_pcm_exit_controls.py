@@ -181,9 +181,17 @@ def main(argv=None) -> int:
             "physical_Switch_audio_verified": False,
         }, sort_keys=True))
         return 0
-    except (OSError, ValueError, KeyError, TypeError):
-        print(json.dumps({"result": "STAGE304_EXIT_PCM_TIMELINE_NOT_VERIFIED"}),
-              file=sys.stderr)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        # Preserve all Stage304 source/provenance guards. An intermittent
+        # original host-recorder snapshot mismatch must be diagnosable
+        # without inventing a successful virtual audio measurement.
+        print(json.dumps({
+            "result": "STAGE304_EXIT_PCM_TIMELINE_NOT_VERIFIED",
+            "error_kind": type(exc).__name__,
+            "source_invariant_failure": str(exc)[:240],
+            "physical_Nintendo_Switch_audio_tested": False,
+            "guest_speaker_playback_verified": False,
+        }, sort_keys=True), file=sys.stderr)
         return 2
 
 

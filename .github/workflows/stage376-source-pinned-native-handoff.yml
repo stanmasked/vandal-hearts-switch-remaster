@@ -1,0 +1,199 @@
+name: Stage376 verify pinned integrated native NRO handoff provenance
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage376-source-pinned-native-handoff.yml'
+      - 'tools/audit_stage376_native_handoff.py'
+      - 'tests/test_audit_stage376_native_handoff.py'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: stage376-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  handoff-proof:
+    name: Audit pinned current-generation NRO source and completed native CI jobs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject synthetic forged run, source ZIP and NRO cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_audit_stage376_native_handoff.py' -v
+          python3 -m py_compile tools/audit_stage376_native_handoff.py
+      - name: Download original CI metadata and pinned complete original ZIP
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p stage376-metadata
+          repo=stanmasked/vandal-hearts-switch-remaster
+          gh api "repos/$repo/actions/runs/39453952599" > stage376-metadata/integrated-run.json
+          gh api "repos/$repo/actions/runs/39453952599/jobs?per_page=100" > stage376-metadata/integrated-jobs.json
+          gh api "repos/$repo/actions/artifacts/12278869762" > stage376-metadata/integrated-artifact.json
+          gh api "repos/$repo/actions/runs/39453952411" > stage376-metadata/host_spu-run.json
+          gh api "repos/$repo/actions/runs/39453952443" > stage376-metadata/native_pcm-run.json
+          gh api "repos/$repo/actions/runs/39453952772" > stage376-metadata/stage374-run.json
+          gh api "repos/$repo/actions/runs/39453952461" > stage376-metadata/native_audout-run.json
+          gh api "repos/$repo/actions/runs/39453952566" > stage376-metadata/optional-sdl2-run.json
+          curl --fail --silent --show-error --location \
+            --retry 3 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$repo/actions/artifacts/12278869762/zip" \
+            --output stage376-original-actions.zip
+          test -s stage376-original-actions.zip
+      - name: Verify original byte-for-byte NRO and native CI provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_stage376_native_handoff.py \
+            --artifact-zip stage376-original-actions.zip \
+            --metadata stage376-metadata \
+            --output stage376-handoff-source-audit.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path('stage376-handoff-source-audit.json').read_text())
+          assert data['result']=='STAGE376_PINNED_INTEGRATED_NRO_BYTES_AND_NATIVE_CI_PROVENANCE_VERIFIED'
+          assert len(data['independent_native_ci'])==4
+          assert data['optional_sdl2']['status']=='FAILED_EXTERNAL_DEPENDENCY_NOT_RECLASSIFIED'
+          assert data['hardware_status']=='HARDWARE NOT TESTED'
+          assert data['physical_speaker_audio_tested'] is False
+          PY
+          {
+            echo '### Stage376 original-source integrated libnx/audout candidate'
+            echo 'Original pinned head: 7df0d02c93217b6f077e6ba30de9e1a554d95b9a (historical after this CI documentation commit).'
+            echo 'Original integrated build #39453952599 and artifact #12278869762 have been re-opened and verified.'
+            echo 'Host SPU, native PCM, native audout and eight-session Stage374 archival replay were separately green.'
+            echo 'Optional SDL2 is still RED (devkitPro HTTP 403); do NOT treat the full PR CI as green.'
+            echo 'Only an earlier pinned tactical NRO candidate; no Switch SD/hardware execution or audible sound observed.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Stage377 package original attested NRO for read-only Mac and SD-copy verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
+          import io, hashlib, json, struct, subprocess, sys, tempfile
+          from tools.audit_stage376_native_handoff import validate_zip, SOURCE_NRO_SHA
+          source = Path("stage376-original-actions.zip").read_bytes()
+          audit = json.loads(Path("stage376-handoff-source-audit.json").read_text())
+          info = validate_zip(source)
+          if audit["result"] != "STAGE376_PINNED_INTEGRATED_NRO_BYTES_AND_NATIVE_CI_PROVENANCE_VERIFIED":
+              raise SystemExit("Stage376 source receipt not verified")
+          if audit["nro_sha256"] != info["nro_sha256"] or audit["source_archive_sha256"] != info["source_archive_sha256"]:
+              raise SystemExit("Stage376 receipt and source ZIP disagree")
+          with ZipFile(io.BytesIO(source)) as z:
+              nro=z.read("vandal-hearts-prototype.nro")
+          manifest = {
+              "schema": "vh-stage377-portable-nro-handoff/v1",
+              "source_head_sha": audit["source_head_sha"],
+              "source_run_id": audit["source_run_id"],
+              "source_artifact_id": audit["source_artifact_id"],
+              "source_archive_sha256": audit["source_archive_sha256"],
+              "nro_name": "vandal-hearts-prototype.nro",
+              "nro_sha256": SOURCE_NRO_SHA,
+              "nro_bytes": len(nro),
+              "hardware_status": "HARDWARE NOT TESTED",
+              "physical_sound_tested": False,
+              "rom_or_retail_music_included": False,
+              "optional_sdl2": audit["optional_sdl2"]["status"]
+          }
+          verify = r'''#!/usr/bin/env python3
+          import hashlib, json, struct, sys
+          from pathlib import Path
+          root=Path(__file__).resolve().parent
+          nro=Path(sys.argv[1]) if len(sys.argv)==2 else root/"nro"/"vandal-hearts-prototype.nro"
+          manifest=json.loads((root/"manifest.json").read_text(encoding="utf-8"))
+          try:
+              raw=nro.read_bytes()
+              digest=hashlib.sha256(raw).hexdigest()
+              if manifest.get("schema")!="vh-stage377-portable-nro-handoff/v1" or manifest.get("hardware_status")!="HARDWARE NOT TESTED":
+                  raise ValueError("invalid portable manifest")
+              if digest!="cfc49a8ac8dcfe4704e697c1bea8fc750ea32d498c2942176c2ca9b9cbcae71b" or manifest.get("nro_sha256")!=digest:
+                  raise ValueError("wrong source NRO SHA256")
+              if len(raw)!=299064 or raw[0x10:0x14]!=b"NRO0":
+                  raise ValueError("wrong NRO size or magic")
+              declared=struct.unpack_from("<I",raw,0x18)[0]
+              if declared!=282624:
+                  raise ValueError("wrong declared image size")
+              last_end=0
+              for pos in (0x20,0x28,0x30):
+                  start,count=struct.unpack_from("<II",raw,pos)
+                  if count==0 or start<last_end or start+count>declared:
+                      raise ValueError("invalid NRO segment")
+                  last_end=start+count
+              print(json.dumps({"result":"NRO_BYTES_AND_STRUCTURE_VERIFIED",
+                                "sha256":digest,"hardware_status":"HARDWARE NOT TESTED"},sort_keys=True))
+          except (OSError,ValueError,struct.error,KeyError) as exc:
+              print(json.dumps({"result":"STOP_INVALID_NRO","reason":str(exc)}),file=sys.stderr)
+              sys.exit(2)
+          '''
+          readme = """# Vandal Hearts Remake — переносимый NRO (Stage377)
+          
+          **HARDWARE NOT TESTED.** Это тактический прототип, не полный ремейк PS1.
+          
+          В Терминале Mac откройте папку этого комплекта и выполните:
+              python3 verify_nro.py
+          
+          После разрешённого копирования на SD можно повторно сверить байты:
+              python3 verify_nro.py '/Volumes/ИМЯ_SD/switch/vandal-hearts-remake/vandal-hearts-prototype.nro'
+          
+          При ошибке или несовпадении SHA-256 не запускайте скопированный файл.
+          Ни NRO0, ни SHA-256 не подтверждают воспроизведение через физические динамики.
+          Для проверки HOME, сна, выхода Plus и слуховой проверки используйте аппаратные протоколы проекта №219 и №239.
+          Никаких коммерческих ROM, SEQ, VH, VB и исходных аудиоресурсов в комплекте нет.
+          Необязательная SDL2-сборка остаётся красной из-за HTTP 403 devkitPro.
+          """
+          root="vandal-hearts-stage377-handoff/"
+          output=Path("stage377-portable-switch-handoff.zip")
+          if output.exists():
+              raise SystemExit("refuse overwrite Stage377 archive")
+          with ZipFile(output,"x") as z:
+              for name,payload in [
+                  ("nro/vandal-hearts-prototype.nro",nro),
+                  ("manifest.json",(json.dumps(manifest,indent=2,sort_keys=True)+"\n").encode()),
+                  ("stage376-source-audit.json",(json.dumps(audit,indent=2,sort_keys=True)+"\n").encode()),
+                  ("verify_nro.py",verify.encode()),
+                  ("README_RU.md",readme.encode("utf-8")),
+                  ("observation_blank.csv",b"run_id,device_label,audio_output,music_audible,home_cycles,sleep_cycles,plus_exit,notes\n")
+              ]:
+                  entry=ZipInfo(root+name,date_time=(2020,1,1,0,0,0))
+                  entry.compress_type=ZIP_DEFLATED
+                  entry.external_attr=0o100644<<16
+                  z.writestr(entry,payload,compresslevel=9)
+          with ZipFile(output) as z, tempfile.TemporaryDirectory() as temporary:
+              if z.testzip() is not None or len(z.namelist())!=6:
+                  raise SystemExit("Stage377 output archive corrupt")
+              z.extractall(temporary)
+              folder=Path(temporary)/root
+              cmd=[sys.executable,str(folder/"verify_nro.py")]
+              subprocess.run(cmd,check=True)
+              corrupt=Path(temporary)/"corrupted.nro"
+              fake=bytearray(nro)
+              fake[-1]^=1
+              corrupt.write_bytes(fake)
+              if subprocess.run(cmd+[str(corrupt)],capture_output=True).returncode!=2:
+                  raise SystemExit("tampered NRO not rejected")
+          print(json.dumps({"result":"STAGE377_PORTABLE_NRO_BYTES_VERIFIED",
+                            "nro_sha256":SOURCE_NRO_SHA,
+                            "zip_sha256":hashlib.sha256(output.read_bytes()).hexdigest(),
+                            "hardware_status":"HARDWARE NOT TESTED"},sort_keys=True))
+          PY
+      - name: Preserve compact JSON receipt only, not NRO or source game assets
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage376-pinned-native-handoff-receipt
+          path: |
+            stage376-handoff-source-audit.json
+            stage377-portable-switch-handoff.zip
+          if-no-files-found: warn
+          retention-days: 90

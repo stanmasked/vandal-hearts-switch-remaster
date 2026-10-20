@@ -1,0 +1,103 @@
+name: Stage331 original guest PlayBuffer source pair-deletion sensitivity
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage331-original-playbuffer-pair-deletion.yml'
+      - 'tools/audit_nexium_stage331_original_playbuffer_pair_deletion.py'
+      - 'tests/test_audit_nexium_stage331_original_playbuffer_pair_deletion.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  source-authentic-pair-deletions:
+    name: Independently compare all 105 omission pairs in two original NeXium guest software call tails
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source-audit implementation
+        uses: actions/checkout@v4
+      - name: Stage331 twelve positive and negative source regression tests
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/audit_nexium_stage331_original_playbuffer_pair_deletion.py tests/test_audit_nexium_stage331_original_playbuffer_pair_deletion.py
+          python3 -m unittest discover -s tests -p 'test_audit_nexium_stage331_original_playbuffer_pair_deletion.py' -v
+      - name: Check exact original NeXium captures successfully completed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for id in 39166023593 39167324026; do
+            test "$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$id" --jq '.status')" = completed
+            test "$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$id" --jq '.conclusion')" = success
+          done
+      - name: Download original first successful software call history
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39166023593
+          github-token: ${{ github.token }}
+          path: original-first-playbuffer
+      - name: Download original second successful software call history
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39167324026
+          github-token: ${{ github.token }}
+          path: original-second-playbuffer
+      - name: Recompute 105 source-pinned pair omissions on each actual guest history
+        run: |
+          set -euo pipefail
+          mkdir -p stage331-source-comparison
+          python3 tools/audit_nexium_stage331_original_playbuffer_pair_deletion.py \
+            --first-root original-first-playbuffer \
+            --second-root original-second-playbuffer \
+            --first-history-sha256 72eb03e4508e2f8f7814f8b059aa5bfba69c71bbdac9f495ffab447d23fc345d \
+            --second-history-sha256 795c751e11449b0d0e0938031c540890eac23058e3a50c49ac2be9f622950a07 \
+            --first-last-sha256 fdc3ab8bcc5908ccb61c149ba185435fb5ab4a6409d33a43c02e7a179caf4aec \
+            --second-last-sha256 2559938d1f86f8812405e2d3b1573398109450663188000bf1d58c8c965031e9 \
+            --output stage331-source-comparison/guest-call-pair-omission.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path(
+              'stage331-source-comparison/guest-call-pair-omission.json'
+          ).read_text(encoding='utf-8'))
+          if (r['result']!='TWO_PINNED_ORIGINAL_PLAYBUFFER_TAILS_ALL_PAIR_DELETIONS_REPLAYED'
+              or r['all_stage330_original_source_and_four_csv_pins_replayed'] is not True
+              or r['two_original_captures_not_105_independent_experiments'] is not True
+              or r['physical_Nintendo_Switch_audio_tested'] is not False):
+              raise SystemExit("Stage331 original guest-source provenance rejected")
+          rows=r['cohorts']
+          if (len(rows)!=2 or [x['previous_fifteen_lower_median_guest_software_ns']
+                                for x in rows]!=[32154011,31247083]
+              or [x['final_untouched_call_guest_software_ns'] for x in rows]
+                 !=[11225937,22352500]):
+              raise SystemExit("original source call baseline differs from Stage329")
+          for x in rows:
+            if (x['unordered_pair_deletion_replica_count']!=105
+                or x['retained_previous_call_count_per_replica']!=13
+                or sum(x[k] for k in (
+                   'replicas_with_final_shorter_than_previous_median',
+                   'replicas_with_final_equal_to_previous_median',
+                   'replicas_with_final_longer_than_previous_median'))!=105):
+                raise SystemExit("Stage331 original pair-omission source conservation failed")
+            print(x['original_guest_history_sha256'],
+                  'pair omitted median min/max',
+                  x['leave_two_out_lower_median_min_guest_software_ns'],
+                  x['leave_two_out_lower_median_max_guest_software_ns'],
+                  'last rank min/max',
+                  x['leave_two_out_final_first_possible_rank_min'],
+                  x['leave_two_out_final_first_possible_rank_max'])
+          PY
+          echo "Stage331: 105 deterministic deletion pairs from each original NeXium software call tail; not independent experiments, speaker sound or DAC timing." >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload only compact source-derived software call sensitivity
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage331-original-software-playbuffer-pair-deletions
+          path: stage331-source-comparison/
+          if-no-files-found: warn

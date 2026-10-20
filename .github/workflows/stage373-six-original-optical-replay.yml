@@ -1,0 +1,89 @@
+name: Stage373 independently decode six original NeXium scene optical packets
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage373-six-original-optical-replay.yml'
+      - 'tools/audit_stage373_six_optical_originals.py'
+      - 'tests/test_audit_stage373_six_optical_originals.py'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: stage373-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  replay-optical-six:
+    name: Verify six archived original guest optical CRC events and audout exits
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refuse forged sources with self-contained synthetic tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_audit_stage373_six_optical_originals.py' -v
+          python3 -m py_compile tools/audit_stage373_six_optical_originals.py
+      - name: Fetch independent completed-run GitHub provenance and original artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stage373-originals stage373-metadata
+          repo=stanmasked/vandal-hearts-switch-remaster
+          for run_id in 39396243731 39398650528 39406193313; do
+            case "$run_id" in
+              39396243731) artifact_id=12255245917; merge_sha=7322cd893638bdcbda168242093c7d20a20d5c85 ;;
+              39398650528) artifact_id=12257811667; merge_sha=14276a2b2326eff4b3d9c8a7de675205261048ed ;;
+              39406193313) artifact_id=12261315952; merge_sha=38318d3080a2813183704b2d9113015a3b51e464 ;;
+              *) exit 2 ;;
+            esac
+            gh api "repos/$repo/actions/runs/$run_id" > "stage373-metadata/$run_id-run.json"
+            gh api "repos/$repo/actions/runs/$run_id/jobs?per_page=100" > "stage373-metadata/$run_id-jobs.json"
+            gh api "repos/$repo/git/commits/$merge_sha" > "stage373-metadata/$run_id-merge.json"
+            gh api "repos/$repo/actions/runs/$run_id/artifacts?per_page=100" \
+              --jq ".artifacts[] | select(.id == $artifact_id)" > "stage373-metadata/$run_id-artifact.json"
+            test -s "stage373-metadata/$run_id-artifact.json"
+            mkdir -p "stage373-originals/$run_id"
+            gh run download "$run_id" --repo "$repo" \
+              --name stage371-two-guest-exit-original-observations \
+              --dir "stage373-originals/$run_id"
+            test -s "stage373-originals/$run_id/stage371-two-authentic-guest-exits.json"
+          done
+      - name: Independently unfilter PNG pixel bytes and verify six guest event packets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_stage373_six_optical_originals.py \
+            --originals stage373-originals \
+            --metadata stage373-metadata \
+            --output stage373-six-original-optical-audit.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path('stage373-six-original-optical-audit.json').read_text())
+          assert data['result']=='STAGE373_SIX_ORIGINAL_OPTICAL_GUEST_SCENE_AND_WAIT_PAIRS_VERIFIED'
+          assert len(data['sessions'])==6
+          assert len(set(x['pixel_packet_sha256'] for x in data['sessions']))==6
+          assert all(x['guest_result']==0 and x['released_descriptors']==1 for x in data['sessions'])
+          assert all(x['complete_scene_serials']==4 and x['dropped_guest_events']==0 for x in data['sessions'])
+          assert data['physical_nintendo_switch_audio_tested'] is False
+          PY
+          {
+            echo '### Stage373 independently decoded six original NeXium guest optical packets'
+            echo 'Original run IDs: 39396243731 / 39398650528 / 39406193313.'
+            echo 'Distinct optical payloads: six; 23 events each; four complete scene transitions each; zero dropped.'
+            echo 'Six source-verified software audout waits returned zero with one descriptor each.'
+            echo 'Separate archived guest sessions, NOT six physical speaker tests or a causal dwell-time experiment.'
+            echo 'Historical 0xEA01 cause and exit queue depth remain unknown.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve compact source-bound report only, never original PCM or game assets
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage373-six-original-optical-packet-audit
+          path: stage373-six-original-optical-audit.json
+          if-no-files-found: warn
+          retention-days: 90

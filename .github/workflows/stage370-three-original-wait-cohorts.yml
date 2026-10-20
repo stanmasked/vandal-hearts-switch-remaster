@@ -1,0 +1,97 @@
+name: Stage370 three original NeXium exit cohorts with no causal queue pairing
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage370-three-original-wait-cohorts.yml'
+      - 'tools/audit_stage370_distinct_original_wait_cohorts.py'
+      - 'tests/test_audit_stage370_distinct_original_wait_cohorts.py'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  three-distinct-cohorts:
+    name: Cross-audit original timeout and later descriptor-return source proofs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject synthetic false descriptor data and fabricated matched queue probes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_stage370_distinct_original_wait_cohorts.py' -v
+          python3 -m py_compile tools/audit_stage370_distinct_original_wait_cohorts.py
+      - name: Read original independent audit artifact metadata
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/12233871696 > stage370-meta365.json
+          gh api repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/12250010822 > stage370-meta369.json
+      - name: Download original Stage365 two-cohort independently reaudited report
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir stage370-original-365
+          gh run download 39351366143 --repo stanmasked/vandal-hearts-switch-remaster \
+            --name stage365-authentic-distinct-timeout-and-success \
+            --dir stage370-original-365
+          test -s stage370-original-365/stage365-two-original-cohorts-no-causal-claim.json
+      - name: Download original Stage369 archive-replayed descriptor report
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir stage370-original-369
+          gh run download 39390450645 --repo stanmasked/vandal-hearts-switch-remaster \
+            --name stage369-independent-original-nexium-wait-replay \
+            --dir stage370-original-369
+          test -s stage370-original-369/stage369-original-stage368-audit.json
+      - name: Compare three independently attested original runs without backfilling old data
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_stage370_distinct_original_wait_cohorts.py \
+            --stage365 stage370-original-365/stage365-two-original-cohorts-no-causal-claim.json \
+            --stage369 stage370-original-369/stage369-original-stage368-audit.json \
+            --meta365 stage370-meta365.json \
+            --meta369 stage370-meta369.json \
+            --output stage370-original-distinct-exits.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("stage370-original-distinct-exits.json")
+          x=json.loads(p.read_text(encoding="utf-8"))
+          if (x["result"]!="STAGE370_THREE_DISTINCT_AUTHENTIC_EXIT_RUNS_NONCAUSAL_GAP_AUDITED"
+              or x["old_authentic_timeout_service_result"]!=59905
+              or x["old_timeout_stage368_descriptor_count"] is not None
+              or x["older_success_stage368_descriptor_count"] is not None
+              or x["old_timeout_stage360_probe_status"] is not None
+              or x["latest_success_reported_released_count"]!=1
+              or x["latest_success_pointer_matches_submitted"] is not True
+              or x["old_0xEA01_causality_proven"] is not False
+              or x["physical_switch_dac_or_speaker_tested"] is not False):
+              raise SystemExit("Stage370 original-source provenance or missing-data boundary violated")
+          print("Stage370 original cohorts:",x["earlier_original_timeout_run"],
+                x["older_original_success_run"],
+                x["latest_original_success_with_descriptor_run"])
+          PY
+          {
+            echo '### Stage370 original cross-run audit'
+            echo 'Three ORIGINAL NeXium runs independently verified in earlier audits.'
+            echo 'The old timeout has neither Stage360 nor Stage368 observations.'
+            echo 'No controlled matched queue, kernel subcall, DAC or speaker causality proven.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve provenance-safe three-cohort comparison
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage370-three-distinct-original-audout-exit-cohorts
+          path: stage370-original-distinct-exits.json
+          if-no-files-found: error
+          retention-days: 90

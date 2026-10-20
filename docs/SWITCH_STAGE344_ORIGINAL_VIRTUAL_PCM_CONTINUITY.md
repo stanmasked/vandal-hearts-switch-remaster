@@ -1,0 +1,26 @@
+# Vandal Hearts Remake — Stage344 original virtual PCM continuity comparison
+
+Four independently verified original NeXium NRO runs have now passed full strict Stage303–305, Stage334, Stage336 and independent Stage342 guest/host software-source replays. Stage343 additionally confirms separate third/fourth original captures used bit-identical NRO despite varying guest-software PlayBuffer call durations.
+
+This stage investigates **actual recorded PCM sample indicators**, not merely API call time. Dedicated CI downloads the four original `nexium-runtime-evidence` archives and the independently checked Stage342 four-run source receipt. The unchanged Stage299 `analyze_pair` implementation re-hashes **both recorded original s16le stereo 48kHz PCM streams in each archive**, recomputes 10ms block/sample step and digital-zero indicators, verifies each original recorder's SHA-256-pinned metadata, approximate scene offsets and source event CSV, then demands **exact equality with each run's archived Stage299 report**. It also checks the existing guest/host provenance witness and forbids duplicate guest, host or PCM capture source hashes.
+
+The compact comparison reports four sets of per-run metrics, separately for the monitor and five-scene recordings: original PCM SHA-256, exact-zero frame fractions per million, longest digital silence, counts of long exact-zero runs, low-RMS 10ms blocks, large adjacent stereo sample steps >=4096, and steps aligned with 10ms block boundaries. Normalization matters: the captures can differ in total recorded frames. This report does **not** upload source PCM, exact audio waveforms or absolute host clock times.
+
+**Crucial limitation:** zero runs may be musical rests or capture startup/end; abrupt sample changes may be musical transients, while genuine small discontinuities may fall under the threshold. A host virtual sink captures buffered PCM without per-frame guest production timestamps, an independent expected waveform or the audout hardware queue occupancy trace. Therefore Stage344 cannot prove missing/duplicated frames, heard sound dropouts, cause of guest-service delays or Nintendo Switch DAC/speaker quality. Treat it as descriptive original sample evidence, not as an acceptance test for audible fidelity.
+
+Stage344 requires both all four original complete NeXium workflows and the independent Stage342 audit to be successful. Twelve positive/negative tests exercise provenance flags, duplicate capture hashes, altered frame counts, incorrect source markers, invalid step/zero counts, and inappropriate hardware/soundtrack claims. Original guest game audio, PCM synthesis, SPU, audout service-call logic and strict Stage299–305 verifiers are unchanged.
+
+## Independently confirmed original four-capture PCM result
+
+The corrected [Stage344 workflow #39212052488](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39212052488) **PASSED all 14 synthetic source/provenance regressions**, downloaded the four genuine original PCM archives, independently recomputed both original monitor/scene Stage299 audits from raw source bytes and matched each archived Stage299 report **exactly**. Source hashes remained distinct within/across all original runs; the independent Stage342 guest/host provenance chain also passed.
+
+| Genuine original capture | Monitor exact-zero frames per million | Scene exact-zero frames per million | Monitor >=4096 frame steps | Scene >=4096 frame steps |
+| --- | ---: | ---: | ---: | ---: |
+| #39166023593 | 580,305 | 642,203 | 0 | 0 |
+| #39167324026 | 580,383 | 635,400 | 0 | 0 |
+| #39175592570 | 566,893 | 641,743 | 0 | 0 |
+| #39182548276 | 588,242 | 649,602 | 0 | 0 |
+
+Thus the recorded original general-monitor streams contain **56.69–58.82% exact digital-zero stereo frames**, and the five-scene virtual recordings contain **63.54–64.96%**. There are **zero >=4096 adjacent-sample steps** in every source stream at the selected threshold. The source-derived summary artifact is `stage344-original-four-PCM-indicator-summaries`. These are per-frame descriptive observations, *not* verified missing audio frames, virtual audout buffer underruns, faithfully reproduced PS1 soundtrack, or audible Nintendo Switch speaker output.
+
+The first two initial CI attempts of Stage344 failed only during its new test harness/CLI scaffolding (fixture's `scenes_capture` rather than Stage299 `scene_capture`, followed by a malformed GH_TOKEN environment key), before touching original PCM. Both were corrected with regression coverage. **The final source-backed workflow passed** with original Stage299 and Stage342 verifier logic unchanged. No raw PCM was placed into the new comparison artifact or committed to the repository.

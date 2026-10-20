@@ -1,0 +1,108 @@
+name: Stage326 independent two-original-NeXium host clock comparison
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage326-compare-original-host-clocks.yml'
+      - 'tools/compare_nexium_stage326_original_host_clocks.py'
+      - 'tests/test_compare_nexium_stage326_original_host_clocks.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  two-original-source-clocks:
+    name: Independently compare two source-authentic Stage325 NeXium host clock captures
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Check out original source comparison code
+        uses: actions/checkout@v4
+
+      - name: Stage326 twelve source-cohort positive and negative tests
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/compare_nexium_stage326_original_host_clocks.py tests/test_compare_nexium_stage326_original_host_clocks.py
+          python3 -m unittest discover -s tests -p 'test_compare_nexium_stage326_original_host_clocks.py' -v
+
+      - name: Confirm the two source NeXium runs independently completed
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for id in 39166023593 39167324026; do
+            status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$id" --jq '.status')"
+            conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$id" --jq '.conclusion')"
+            test "$status" = completed
+            test "$conclusion" = success
+            echo "Original NeXium source capture $id completed successfully"
+          done
+
+      - name: Download first successful Stage325 original NeXium evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39166023593
+          github-token: ${{ github.token }}
+          path: original-stage325-cohort-first
+
+      - name: Download second successful Stage325 original NeXium evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39167324026
+          github-token: ${{ github.token }}
+          path: original-stage325-cohort-second
+
+      - name: Recompute both original CSV/Stage325 sources and compare host clock pairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stage326-original-source-report
+          python3 tools/compare_nexium_stage326_original_host_clocks.py \
+            --first-root original-stage325-cohort-first \
+            --second-root original-stage325-cohort-second \
+            --first-legacy-sha256 cd3b6a7e42d531310ae930969c3612b63697c13b840726056bde701ceffe3f2d \
+            --first-monotonic-sha256 302efc3b5c722f70956a0a6208c8e0b5e3e375aaa89fee73f6fff78b38f4d4c4 \
+            --second-legacy-sha256 ed94e89f82c9f705f1b04bf7851d9f22f01a41bafccec55e328a8e37e0b425ed \
+            --second-monotonic-sha256 b6041ca452f4f0ab7d678587007ebb45b8e6ef5bc630478fc6612d75ede16d22 \
+            --output stage326-original-source-report/two-cohort-host-clock-comparison.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path(
+              "stage326-original-source-report/two-cohort-host-clock-comparison.json"
+          ).read_text(encoding="utf-8"))
+          if (r["result"]!="TWO_DISTINCT_ORIGINAL_NEXIUM_HOST_CLOCK_COHORTS_REPLAYED"
+              or r["each_original_stage325_receipt_recomputed_from_original_csv"] is not True
+              or r["each_original_stage304_host_controls_matched_strict_receipt"] is not True
+              or r["each_original_stage305_success_receipt_present"] is not True
+              or r["entire_stage304_or_stage305_pcm_chain_independently_rerun"] is not False
+              or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage326 source-bound comparison invariant failed")
+          rows=r["original_control_pair_comparison"]
+          if len(rows)!=2:
+              raise SystemExit("Stage326 must compare exactly two original host intervals")
+          if [x["second_minus_first_wall_delta_ms"] for x in rows]!=[1,16]:
+              raise SystemExit("Stage326 original host wall intervals do not match")
+          if [x["second_minus_first_monotonic_delta_ns"] for x in rows]!=[
+                  9031,15989553]:
+              raise SystemExit("Stage326 original host monotonic intervals do not match")
+          print("Stage326 independently compared original NeXium control intervals")
+          print("Stage326 cross-cohort wall difference (ms):",
+                [x["second_minus_first_wall_delta_ms"] for x in rows])
+          print("Stage326 cross-cohort monotonic difference (ns):",
+                [x["second_minus_first_monotonic_delta_ns"] for x in rows])
+          PY
+          echo "Stage326 independently sourced both successful NeXium CSV clock histories, exact hashes and strict Stage304/305 receipts. Host timing comparison is NOT sample, DAC, speaker or physical console timing." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload compact two-cohort source provenance without PCM
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage326-two-original-host-clock-cohorts
+          path: stage326-original-source-report/
+          if-no-files-found: warn

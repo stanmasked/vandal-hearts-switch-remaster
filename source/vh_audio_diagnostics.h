@@ -25,6 +25,9 @@ typedef struct {
     uint32_t resume_recoveries;
     uint32_t lease_mismatches;
     uint32_t abandoned_sessions;
+    uint64_t lease_pages_acquired;
+    uint64_t lease_pages_released;
+    uint32_t lease_busy_begin_rejections;
 } VhAudioDiagnostics;
 
 /* Renderer-safe ASCII line formatter: uppercase A-Z, 0-9, spaces and

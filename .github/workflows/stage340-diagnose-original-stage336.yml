@@ -1,0 +1,77 @@
+name: Stage340 independently diagnose failed Stage336 original source/NRO binding
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage340-diagnose-original-stage336.yml'
+      - 'tools/audit_nexium_stage340_failed_nro_binding_diagnostic.py'
+      - 'tests/test_audit_nexium_stage340_failed_nro_binding_diagnostic.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  independently-diagnose-source-binding:
+    name: Identify exact Stage336 rejection in preserved strict Stage303-305-successful NeXium capture
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout immutable Stage336 acceptance and separate diagnostic
+        uses: actions/checkout@v4
+      - name: Stage340 11 source/NRO/monitor acceptance and rejection controls
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/audit_nexium_stage340_failed_nro_binding_diagnostic.py tests/test_audit_nexium_stage340_failed_nro_binding_diagnostic.py
+          python3 -m unittest discover -s tests -p 'test_audit_nexium_stage340_failed_nro_binding_diagnostic.py' -v
+      - name: Ensure original run failed without reclassifying it as accepted
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/39179079695" --jq '.conclusion')" = failure
+      - name: Download original NeXium source archive with successful Stage303 to Stage334 receipts
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39179079695
+          github-token: ${{ github.token }}
+          path: preserved-neXium-run
+      - name: Reidentify exact first strict Stage336 source/build binding gate
+        run: |
+          set -euo pipefail
+          mkdir -p stage340-diagnostic
+          python3 - <<'PY'
+          from pathlib import Path
+          from sys import path
+          path.insert(0,str(Path("tools").resolve()))
+          from compare_nexium_stage337_four_original_captures import find_unique
+          root=Path("preserved-neXium-run")
+          preflight=find_unique(root,"integrated-nro-preflight.json")
+          print("Found source preflight with original safe locator:",preflight.name)
+          PY
+          python3 tools/audit_nexium_stage340_failed_nro_binding_diagnostic.py \
+            --evidence-root preserved-neXium-run/runtime-evidence \
+            --nro-preflight preserved-neXium-run/integrated-nro-preflight.json \
+            --git-sha 6b657482cefc4409ad60803bdb07a8596aaaec51 \
+            --run-id 39179079695 \
+            --run-attempt 1 \
+            --output stage340-diagnostic/first-failed-nro-source-gate.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("stage340-diagnostic/first-failed-nro-source-gate.json").read_text())
+          if d["result"]!="FAILED_ORIGINAL_STAGE336_BINDING_GATE_IDENTIFIED":
+            raise SystemExit("Stage340 original diagnostic did not preserve source provenance")
+          print("First failing Stage336 source gate:",d["first_gate"])
+          print("Strict original Stage336 accepted:",d["strict_Stage336_replay_accepts_source"])
+          PY
+          echo "Stage340: independently diagnosed failed Stage336; a green diagnostic job does not rescue rejected original evidence or certify physical Switch sound." >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload only privacy-bounded diagnostic gate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage340-failed-original-stage336-source-gate
+          path: stage340-diagnostic/
+          if-no-files-found: warn

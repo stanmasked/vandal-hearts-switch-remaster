@@ -1,0 +1,83 @@
+name: Stage369 independently replay archived authentic Stage368 NeXium CSV
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage369-original-nexium-archive-replay.yml'
+      - 'tools/audit_stage369_original_nexium_archive.py'
+      - 'tests/test_audit_stage369_original_nexium_archive.py'
+      - 'tools/audit_nexium_stage368_wait_descriptor.py'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  replay-historical-original:
+    name: Independently fetch and reparse Stage368 guest CSV bytes from actual run
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove the re-audit rejects forged and mixed-run source artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_stage369_original_nexium_archive.py' -v
+          python3 -m py_compile tools/audit_stage369_original_nexium_archive.py
+      - name: Fetch original finished NeXium workflow run, jobs and archive provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api repos/stanmasked/vandal-hearts-switch-remaster/actions/runs/39388027581 > stage369-run.json
+          gh api 'repos/stanmasked/vandal-hearts-switch-remaster/actions/runs/39388027581/jobs?per_page=100' > stage369-jobs.json
+          gh api repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/12249301260 > stage369-artifact.json
+      - name: Download original preserved source artifact from same completed NeXium run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir stage369-original
+          gh run download 39388027581 \
+            --repo stanmasked/vandal-hearts-switch-remaster \
+            --name nexium-runtime-evidence --dir stage369-original
+      - name: Independently reparse three original CSV files and all provenance receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_stage369_original_nexium_archive.py \
+            --original-archive stage369-original \
+            --run-json stage369-run.json \
+            --jobs-json stage369-jobs.json \
+            --artifact-json stage369-artifact.json \
+            --output stage369-original-stage368-audit.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path("stage369-original-stage368-audit.json").read_text())
+          if (data.get("result")!="STAGE369_ORIGINAL_NEXIUM_ARCHIVE_STAGE368_REPLAYED"
+              or data.get("source_run_id")!=39388027581
+              or data.get("original_stage368_step_succeeded") is not True
+              or data.get("old_0xEA01_cause_proven") is not False
+              or data.get("physical_Switch_sound_tested") is not False
+              or data.get("exit_queue_depth_measured") is not False):
+              raise SystemExit("Stage369 original NeXium source replay not verified")
+          print("Independently reopened Stage368 service return:",
+                data["service_result_raw"],
+                "descriptor count:",data["service_returned_descriptor_count"])
+          PY
+          {
+            echo '### Stage369 original NeXium archive re-audited'
+            echo 'Original run: 39388027581; original artifact: 12249301260.'
+            echo 'Re-parsed Stage351, Stage357, Stage368 original CSV bytes and SHA-256.'
+            echo 'Stage368 service result is not a kernel callsite or physical DAC proof.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve independent Stage369 result
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage369-independent-original-nexium-wait-replay
+          path: stage369-original-stage368-audit.json
+          retention-days: 90
+          if-no-files-found: error

@@ -14,6 +14,12 @@
 #include "vh_audio_exit_worker_stop_witness.h"
 #include "vh_audio_worker_stop_gate.h"
 #include "vh_audio_last_playbuffer_call.h"
+#include "vh_audio_playbuffer_history.h"
+#include "vh_audio_exit_tail_reason_stage351.h"
+#include "vh_audio_exit_tail_checks_stage353.h"
+#include "vh_audio_exit_tail_wait_result_stage357.h"
+#include "vh_audio_exit_wait_descriptor_stage368.h"
+#include "vh_audio_exit_probe_context_stage360.h"
 
 #include <stdio.h>
 
@@ -25,6 +31,7 @@
 #include "vh_audio_resample.h"
 #include "vh_audio_output_recovery.h"
 #include "vh_audio_buffer_lease.h"
+#include "vh_audio_lease_reconciliation.h"
 #include "vh_audout_queue_telemetry.h"
 #include "vh_audout_queue_export.h"
 #include "vh_audio_output_ramp.h"
@@ -57,6 +64,9 @@ static atomic_uint published_resume_restarts;
 static atomic_uint published_resume_recoveries;
 static atomic_uint published_lease_mismatches;
 static atomic_uint published_abandoned_sessions;
+static atomic_ullong published_lease_pages_acquired;
+static atomic_ullong published_lease_pages_released;
+static atomic_uint published_lease_busy_begin_rejections;
 /* Two producer threads reserve immutable slots, then release-publish.
  * No heap, locks or file I/O in this path. */
 static VhAudioSceneTrace scene_trace;
@@ -64,6 +74,11 @@ static VhAudioExitTimeline exit_timeline; /* only once per audio start */
 static VhAudioExitOutputWitness exit_output_witness; /* audio owner only */
 static VhAudioExitWorkerStopWitness worker_stop_witness;
 static VhAudioLastPlayBufferCall last_playbuffer_call; /* same owner, existing clocks */
+static VhPlayBufferHistory last_playbuffer_history; /* last 16 real calls */
+static VhAudioExitTailReason exit_tail_reason; /* written only on cleanup */
+static VhAudioTailWaitResult357 exit_tail_wait_result; /* same owner; read after join */
+static VhAudioExitWaitDescriptor368 exit_tail_wait_descriptor; /* no new service calls */
+static VhTailProbeContext360 exit_tail_probe_context; /* old query history only */
 /* Audout worker is the sole writer. Main reads after thread join. */
 static VhAudoutQueueTelemetry audout_telemetry;
 static atomic_ullong scene_trace_latest_ticket; /* serial << 32 | scene */
@@ -194,6 +209,8 @@ static int output_submit(void *opaque, const int16_t *stereo,
         end_ns,returned,queue_status,queue_count);
     (void)vh_audio_last_playbuffer_record(
         &last_playbuffer_call,begin_ns,end_ns,returned);
+    (void)vh_playbuffer_history_record(
+        &last_playbuffer_history,begin_ns,end_ns,returned);
     return returned ? 0 : -1;
 }
 
@@ -244,22 +261,42 @@ static int output_start(void *opaque) {
  */
 static int output_tail_submit_bounded(VhSwitchOutput *s, size_t frames) {
     if (!s || !*s->opened || !*s->playing ||
-        !frames || frames>VH_AUDIO_STOP_TAIL_FRAMES ||
-        vh_audio_buffer_lease_begin(&s->lease,s->buffer))
+        !frames || frames>VH_AUDIO_STOP_TAIL_FRAMES) {
+        vh_audio_tail_reason_record(
+            &exit_tail_reason,VH_TAIL_PRECONDITION_FAILED);
         return -1;
+    }
+    if (vh_audio_buffer_lease_begin(&s->lease,s->buffer)) {
+        vh_audio_tail_reason_record(&exit_tail_reason,VH_TAIL_LEASE_BUSY);
+        return -1;
+    }
     s->buffer->next=NULL;
     s->buffer->data_offset=0;
     s->buffer->data_size=frames*2u*sizeof(int16_t);
-    if (R_FAILED(audoutAppendAudioOutBuffer(s->buffer))) return -1;
+    /* Same one libnx append and same fail-closed ownership policy.
+     * Stage353 helper makes this exact decision independently testable. */
+    if (vh_audio_tail_stage353_append_checked(
+            &exit_tail_reason,
+            R_FAILED(audoutAppendAudioOutBuffer(s->buffer))))
+        return -1;
     AudioOutBuffer *released=NULL;
     u32 released_count=0;
-    /* 2-ms buffer and generous <=12-ms wait; never infinite after
-     * the main loop has requested that the audio worker stop. */
-    if (R_FAILED(audoutWaitPlayFinish(
-            &released,&released_count,UINT64_C(12000000))) ||
-        !released_count)
-        return -1;
-    return vh_audio_buffer_lease_release(&s->lease,released);
+    /* Existing 12-ms bound unchanged. Failure does not release the
+     * lease, and audoutExit remains responsible for session discard. */
+    const Result wait_result=audoutWaitPlayFinish(
+        &released,&released_count,UINT64_C(12000000));
+    /* Record only the actual already-returned service Result. Do not
+     * issue another wait, poll, timestamp or PCM operation. */
+    vh_tail357_record(&exit_tail_wait_result,(uint32_t)wait_result);
+    const int decision=vh_audio_tail_stage353_wait_checked(
+        &exit_tail_reason,&s->lease,
+        R_FAILED(wait_result),released_count,released);
+    /* Stage368 only captures the count and pointer identity already
+     * returned by the SAME service call. Preserve the original lease
+     * decision and its 12-ms bound; never retain/export an address. */
+    (void)vh_tail368_record(&exit_tail_wait_descriptor,
+        (uint32_t)wait_result,(uint32_t)released_count,released,s->buffer);
+    return decision;
 }
 
 /* Called by the single audio owner; the render thread only takes
@@ -289,6 +326,12 @@ static void publish_audio_diagnostics(const VhAudioOutputRecovery *r,
     atomic_store_explicit(&published_abandoned_sessions,
                           lease->abandoned_sessions,
                           memory_order_release);
+    atomic_store_explicit(&published_lease_pages_acquired,
+                          lease->pages_leased,memory_order_release);
+    atomic_store_explicit(&published_lease_pages_released,
+                          lease->pages_released,memory_order_release);
+    atomic_store_explicit(&published_lease_busy_begin_rejections,
+                          lease->busy_begin_rejections,memory_order_release);
 }
 
 static void audio_worker(void *unused) {
@@ -544,8 +587,13 @@ cleanup:
         const uint64_t tail_begin=scene_trace_now_ns();
         const int tail_returned=output_tail_submit_bounded(
             &recovery_backend,VH_AUDIO_STOP_TAIL_FRAMES)==0;
+        const uint64_t tail_end=scene_trace_now_ns(); /* original end tick */
         (void)vh_audio_exit_output_tail(
-            &exit_output_witness,tail_begin,scene_trace_now_ns(),tail_returned);
+            &exit_output_witness,tail_begin,tail_end,tail_returned);
+        /* Stage360 consumes only existing pre-submit query journal.
+         * No extra service call or clock read at exit. */
+        (void)vh_tail360_capture(
+            &exit_tail_probe_context,&audout_telemetry,tail_begin,tail_end);
     }
     /* A stopped audout service may retain queued buffers. Close the
      * old session BEFORE overwriting or releasing the shared PCM page.
@@ -580,6 +628,11 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
     vh_audio_exit_output_reset(&exit_output_witness);
     vh_audio_exit_worker_stop_reset(&worker_stop_witness);
     vh_audio_last_playbuffer_reset(&last_playbuffer_call);
+    vh_playbuffer_history_reset(&last_playbuffer_history);
+    vh_audio_tail_reason_reset(&exit_tail_reason);
+    vh_tail357_reset(&exit_tail_wait_result);
+    vh_tail368_reset(&exit_tail_wait_descriptor);
+    vh_tail360_reset(&exit_tail_probe_context);
     vh_audout_queue_reset(&audout_telemetry);
     if(vh_audout_queue_set_probe_phase(&audout_telemetry,
                                       VH_AUDOUT_PROBE_PHASE)) return -1;
@@ -607,6 +660,9 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
     atomic_store_explicit(&published_resume_recoveries,0u,memory_order_release);
     atomic_store_explicit(&published_lease_mismatches,0u,memory_order_release);
     atomic_store_explicit(&published_abandoned_sessions,0u,memory_order_release);
+    atomic_store_explicit(&published_lease_pages_acquired,0u,memory_order_release);
+    atomic_store_explicit(&published_lease_pages_released,0u,memory_order_release);
+    atomic_store_explicit(&published_lease_busy_begin_rejections,0u,memory_order_release);
     Result rc = threadCreate(&audio_thread, audio_worker, NULL,
                              NULL, 0x10000u, 0x2Cu, -2);
     if (R_FAILED(rc)) return -1;
@@ -760,6 +816,56 @@ int vh_switch_game_audio_last_playbuffer_dump(FILE *stream) {
     return vh_audio_last_playbuffer_write_csv(&last_playbuffer_call,stream);
 }
 
+int vh_switch_game_audio_playbuffer_history_dump(FILE *stream) {
+    if (!stream || thread_started) return -1;
+    return vh_playbuffer_history_write_csv(&last_playbuffer_history,stream);
+}
+
+int vh_switch_game_audio_lease_reconciliation_dump(FILE *stream) {
+    if (!stream || thread_started) return -1;
+    VhAudioDiagnostics final={0};
+    vh_switch_game_audio_diagnostics(&final);
+    return vh_audio_lease_reconciliation_write(&final,stream);
+}
+
+/* Stage351: independent software-only reason for optional exit tail.
+ * The classification was recorded on cleanup without changing service
+ * behavior; it is readable/exportable only after audio thread join.
+ */
+int vh_switch_game_audio_tail_reason_dump(FILE *stream) {
+    if (!stream || thread_started) return -1;
+    VhAudioDiagnostics final={0};
+    vh_switch_game_audio_diagnostics(&final);
+    return vh_audio_tail_reason_write_csv(
+        &exit_tail_reason,&exit_output_witness,&final,stream);
+}
+
+/* Stage357 is an independent software-only source; never changes the
+ * eight-row Stage351 CSV or the underlying audout service path. */
+int vh_switch_game_audio_tail_wait_result_dump(FILE *stream) {
+    if (!stream || thread_started) return -1;
+    return vh_tail357_write_csv(
+        &exit_tail_wait_result,&exit_tail_reason,stream);
+}
+
+/* Stage368: the original wait call's returned descriptor identity
+ * and count, validated against original Stage351 and Stage357 sources.
+ * No pointer addresses emitted; post-join only. */
+int vh_switch_game_audio_wait_descriptor_dump(FILE *stream) {
+    if (!stream || thread_started) return -1;
+    return vh_tail368_write_csv(
+        &exit_tail_wait_descriptor,&exit_tail_wait_result,
+        &exit_tail_reason,stream);
+}
+
+/* Stage360: pre-existing periodic *pre-submit* probe and exit tick,
+ * never a direct queue-at-exit observation. Post-join only. */
+int vh_switch_game_audio_exit_probe_context_dump(FILE *stream) {
+    if (!stream || thread_started) return -1;
+    return vh_tail360_write_csv(
+        &exit_tail_probe_context,&exit_tail_reason,stream);
+}
+
 void vh_switch_game_audio_stop(void) {
     if (!thread_started) return;
     (void)vh_audio_exit_timeline_mark(&exit_timeline,
@@ -814,4 +920,10 @@ void vh_switch_game_audio_diagnostics(VhAudioDiagnostics *out) {
         &published_lease_mismatches,memory_order_acquire);
     out->abandoned_sessions=atomic_load_explicit(
         &published_abandoned_sessions,memory_order_acquire);
+    out->lease_pages_acquired=(uint64_t)atomic_load_explicit(
+        &published_lease_pages_acquired,memory_order_acquire);
+    out->lease_pages_released=(uint64_t)atomic_load_explicit(
+        &published_lease_pages_released,memory_order_acquire);
+    out->lease_busy_begin_rejections=atomic_load_explicit(
+        &published_lease_busy_begin_rejections,memory_order_acquire);
 }

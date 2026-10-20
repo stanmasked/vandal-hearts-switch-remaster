@@ -1,0 +1,72 @@
+name: Stage343 independent source-audited same NRO software variation
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage343-audit-same-nro-source-variation.yml'
+      - 'tools/audit_nexium_stage343_same_nro_variation.py'
+      - 'tests/test_audit_nexium_stage343_same_nro_variation.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  original-same-nro-variation:
+    name: Cross-run original guest software differences with identical NRO binary
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stage343 twelve source-provenance and separate clock regression controls
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/audit_nexium_stage343_same_nro_variation.py tests/test_audit_nexium_stage343_same_nro_variation.py
+          python3 -m unittest discover -s tests -p 'test_audit_nexium_stage343_same_nro_variation.py' -v
+      - name: Confirm both original fourth capture and four-capture audit succeeded
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/stanmasked/vandal-hearts-switch-remaster/actions/runs/39182548276 --jq '.conclusion')" = success
+          test "$(gh api repos/stanmasked/vandal-hearts-switch-remaster/actions/runs/39183433971 --jq '.conclusion')" = success
+      - name: Retrieve independent original Stage342 source-audited compact evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: stage342-four-genuine-neXium-guest-host-source-audit
+          run-id: 39183433971
+          github-token: ${{ github.token }}
+          path: stage342-source
+      - name: Compute original third-fourth same-NRO guest software-only variation
+        run: |
+          set -euo pipefail
+          mkdir -p stage343-original-same-NRO
+          python3 tools/audit_nexium_stage343_same_nro_variation.py \
+            --stage342-report stage342-source/four-original-sources.json \
+            --output stage343-original-same-NRO/software-service-observation.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("stage343-original-same-NRO/software-service-observation.json")
+          r=json.loads(p.read_text(encoding="utf-8"))
+          if (r["result"]!="TWO_INDEPENDENT_SAME_NRO_GUEST_SOFTWARE_CAPTURE_OBSERVATIONS_VERIFIED"
+              or r["source_bound_identical_NRO_sha256"]!="1ddd4eb8ca74ec1234973cfdfa5c46b4e8af0fea770962151b317b333a1b766c"
+              or r["fourth_minus_third_last_guest_software_ns"]!=6951042
+              or r["fourth_minus_third_previous_median_guest_software_ns"]!=-6204323
+              or r["fourth_minus_third_median_margin_guest_software_ns"]!=-13155365
+              or r["fourth_minus_third_host_only_monotonic_interval_deltas_ns"]!=[25554172,48976635]
+              or r["original_guest_and_host_source_SHA256s_are_distinct"] is not True
+              or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage343 original source same-NRO variation not confirmed")
+          print("Stage343 original same executable guest last service-call difference ns",
+                r["fourth_minus_third_last_guest_software_ns"])
+          PY
+          echo "Stage343: identical actual NRO SHA with different guest software service-call durations. Not proof of cause, physical sound, or guest/host clock mapping." >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload compact guest-software-only source observation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage343-source-authenticated-same-NRO-audio-service-variation
+          path: stage343-original-same-NRO/
+          if-no-files-found: warn

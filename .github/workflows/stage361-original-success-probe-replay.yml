@@ -1,0 +1,62 @@
+name: Stage361 independently replay authenticated successful Stage360 guest context
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage361-original-success-probe-replay.yml'
+      - 'tools/audit_nexium_stage361_original_success_probe.py'
+      - 'tests/test_audit_nexium_stage361_original_success_probe.py'
+      - 'tools/audit_nexium_guest_exit_probe_context_stage360.py'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  authentic-success-forensics:
+    name: Replay SHA-pinned success CSV; preserve separate Stage303 strict failure
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test SHA pins, derived-age rules and unwaived host clock rejection
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_nexium_stage361_original_success_probe.py' -v
+          python3 -m py_compile tools/audit_nexium_stage361_original_success_probe.py
+      - name: Download exact completed original Stage360 NeXium guest artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 39333759265 --repo stanmasked/vandal-hearts-switch-remaster \
+            --name nexium-runtime-evidence --dir archived-original-stage360
+      - name: Independently reread Stage313 348 351 357 360 and record FAILED host Stage303
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_stage361_original_success_probe.py \
+            --archive-root archived-original-stage360 \
+            --output stage361-real-original-success-probe.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('stage361-real-original-success-probe.json').read_text())
+          if (r['result']!='STAGE361_ORIGINAL_SUCCESS_GUEST_CONTEXT_REAUDITED_HOST_STAGE303_FAILED'
+              or r['last_pre_submit_probe_age_at_tail_end_ns']!=131117292
+              or r['tail_software_interval_ns']!=5283385
+              or r['tail_reason_code']!=7 or r['wait_result_raw']!=0
+              or r['original_guest_stage313_348_351_357_360_reaudited'] is not True
+              or r['last_probe_is_not_exit_queue_depth'] is not True
+              or r['host_wall_clock_regression_ms']!=-771
+              or r['original_stage303_strict_host_recorder_passed'] is not False
+              or r['original_run_overall_success'] is not False
+              or r['physical_Nintendo_Switch_audio_tested'] is not False):
+              raise SystemExit('Stage361 original provenance or failure boundary invalid')
+          print('Stage361: original Stage360 source authenticated; original full run FAILED at Stage303.')
+          PY
+          echo 'Stage361 reaudited original guest success; distinct original host Stage303 clock failure remains FAILED. No measured shutdown queue or physical speaker claims.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload compact derived original-source receipt only
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage361-authentic-success-probe-strict-host-failure
+          path: stage361-real-original-success-probe.json
+          if-no-files-found: error

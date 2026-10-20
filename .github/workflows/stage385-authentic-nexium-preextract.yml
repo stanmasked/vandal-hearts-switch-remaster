@@ -1,0 +1,75 @@
+name: Stage385 verify original NeXium release archive before extraction
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage385-authentic-nexium-preextract.yml'
+      - 'tools/audit_stage385_nexium_tar_preextract.py'
+      - 'tests/test_audit_stage385_nexium_tar_preextract.py'
+permissions:
+  contents: read
+concurrency:
+  group: stage385-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  verify-real-release-tar:
+    name: Test pre-extraction checker on original mutable NeXium nightly archive
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject synthetic TAR path traversals, links and SHA substitutions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_audit_stage385_nexium_tar_preextract.py' -v
+          python3 -m py_compile tools/audit_stage385_nexium_tar_preextract.py
+      - name: Download exact current public release metadata and archive without extraction
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p stage385-input stage385-result
+          repo=nexium-emu/nexium-nightly
+          gh api "repos/$repo/releases/tags/nightly" > stage385-input/release.json
+          url="$(jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url' stage385-input/release.json)"
+          test -n "$url"
+          test "$url" != null
+          curl -fsSL --retry 3 --retry-all-errors "$url" \
+            --output stage385-input/nexium-linux-x86_64.tar.gz
+          test -s stage385-input/nexium-linux-x86_64.tar.gz
+      - name: Independently validate original gzip TAR and release asset digest BEFORE extraction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_stage385_nexium_tar_preextract.py \
+            --release stage385-input/release.json \
+            --archive stage385-input/nexium-linux-x86_64.tar.gz \
+            --receipt stage385-result/preextract-verified.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path('stage385-result/preextract-verified.json').read_text())
+          assert x['result']=='STAGE385_RELEASE_ARCHIVE_BYTES_AND_TAR_PATHS_VERIFIED'
+          assert x['ready_for_controlled_extraction'] is True
+          assert x['binary_authenticity_signed'] is False
+          assert x['hardware_status']=='HARDWARE NOT TESTED'
+          print(json.dumps({'result':x['result'],'archive_sha256':x['archive_sha256'],
+            'release_asset_id':x['release_asset_id'],'members':x['member_count'],
+            'symbols':x['symbolic_links'],'real_emulator_execution':False},sort_keys=True))
+          PY
+          {
+            echo '### Stage385 — authentic NeXium nightly archive pre-extraction check'
+            echo 'Original release asset byte digest, TAR path/links/type/size invariants checked.'
+            echo 'This is not a replay, signature check, hardware test, or actual emulator execution.'
+            echo 'Archive and executable are not uploaded as artifacts.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve compact report only, not the original archive
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage385-nexium-preextract-summary
+          path: stage385-result/preextract-verified.json
+          if-no-files-found: warn
+          retention-days: 90

@@ -1,0 +1,9 @@
+# Stage359 — isolate 2ms sample duration from 12ms audout event-wait bound
+
+Observed original-source outcome: [NeXium #39325440778](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39325440778) has Stage351 code4, original raw wait Result **0xEA01 = KernelError_TimedOut**, and PCM lease **1414 acquired / 1413 released / 1 abandoned**. The original SHA-pinned archive independently passed [Stage358 #39329269749](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39329269749).
+
+**Crucial distinction:** the normal-exit fade consists of exactly **96 samples per channel at 48kHz = 2ms of PCM**. The unmodified audio worker issues one **12ms** bounded `audoutWaitPlayFinish`. Although 12ms exceeds 2ms, buffer return also depends on how long other audio pages remain queued, the service's event handling and guest/emulator scheduling. The 2ms sample duration is NOT a known upper bound on descriptor release latency.
+
+The small Stage359 pure-Python fixture explores seven **explicitly hypothetical** queue+schedule-delay cases, both below and beyond 12ms, preserving an equality boundary as its own separate case. It gives *no* real queue-occupancy measurements and cannot determine how often the emulator times out. Seven regression tests verify original constants in repository sources, absence of fabricated measurements or DAC/physical hardware claims, and exclusive JSON output. The test does not run any NRO, alter audio system calls, or recommend a revised timeout.
+
+Next meaningful actual experiment: capture exit-time queue state and scheduling context on *separate* NRO build variants, preserve all original source receipts, and compare matched real guest conditions. Do not change the production 12ms bound until a controlled comparison and independent physical Nintendo Switch playback validation justify it.

@@ -1,0 +1,241 @@
+name: Diagnose Stage304 original host Plus-control archive
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/diagnose-stage304-original-archive.yml'
+      - 'tools/classify_nexium_stage304_exit_control_order.py'
+      - 'tests/test_classify_nexium_stage304_exit_control_order.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  recheck-original-source:
+    name: Independently identify failed Stage304 original-source invariant
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Checkout current strict original-source verifier
+        uses: actions/checkout@v4
+
+      - name: Stage304 no-PCM archived-control ordering classification tests
+        run: python3 -m unittest discover -s tests -p 'test_classify_nexium_stage304_exit_control_order.py' -v
+
+      - name: Download exact failed Stage322 original runtime artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39157976877
+          github-token: ${{ github.token }}
+          path: original-failed-stage322
+
+      - name: Inventory archived Stage304 dependencies before replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stage304-original-postmortem
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("original-failed-stage322")
+          expected={
+              "monitor":"nexium-monitor-s16le-48k.pcm",
+              "monitor-report":"pcm-quality-report.json",
+              "scenes":"nexium-scenes-s16le-48k.pcm",
+              "scene-report":"scene-audio-report.json",
+              "events":"scene-events.csv",
+              "stage299":"pcm-stream-integrity-stage299.json",
+              "stage300":"pcm-scene-silence-stage300.json",
+              "stage301":"pcm-marker-envelopes-stage301.json",
+              "stage302":"pcm-recording-edge-silence-stage302.json",
+              "stage303":"pcm-recorder-stop-stage303.json",
+              "stop-csv":"scene-recorder-stop.csv",
+              "control-csv":"scene-exit-controls.csv",
+          }
+          found={}
+          missing=[]
+          ambiguous=[]
+          # The artifact action may strip the top-level directory or
+          # retain a nested evidence directory. Search by exact
+          # basename, require precisely ONE regular non-symlink file
+          # and preserve the located relative path for strict replay.
+          for label,name in expected.items():
+              candidates=list(root.rglob(name))
+              safe=[
+                  p for p in candidates
+                  if p.is_file() and not p.is_symlink()
+                  and all(not parent.is_symlink()
+                          for parent in p.relative_to(root).parents
+                          if parent!=Path("."))
+              ]
+              record={
+                  "filename":name,
+                  "candidate_count":len(candidates),
+                  "safe_regular_candidate_count":len(safe),
+                  "regular_source_available":len(safe)==1 and len(candidates)==1,
+              }
+              if record["regular_source_available"]:
+                  source=safe[0]
+                  record["relative_archive_path"]=source.relative_to(root).as_posix()
+                  record["size_bytes"]=source.stat().st_size
+              elif len(candidates)>1:
+                  ambiguous.append(name)
+              else:
+                  missing.append(name)
+              found[label]=record
+          out={
+              "schema":"vh-stage304-failed-run-archive-availability/v2",
+              "original_neXium_run_id":39157976877,
+              "original_runtime_successfully_completed":False,
+              "archive_has_all_Stage304_pinned_sources":not missing and not ambiguous,
+              "archived_pinned_source_files":found,
+              "missing_archived_pinned_sources":missing,
+              "ambiguous_archived_pinned_sources":ambiguous,
+              "original_capture_failure_reason_established":False,
+              "archive_defect_not_automatically_original_run_defect":True,
+              "guest_speaker_playback_verified":False,
+              "physical_Nintendo_Switch_audio_tested":False,
+          }
+          Path("stage304-original-postmortem/source-inventory.json").write_text(
+              json.dumps(out,indent=2,sort_keys=True)+"\n")
+          print("Old Stage304 archived pinned sources missing:",missing)
+          print("Old Stage304 archived pinned sources ambiguous:",ambiguous)
+          PY
+
+      - name: Re-audit strict Stage304 only when its archived inputs actually exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,subprocess,os
+          from pathlib import Path
+          folder=Path("stage304-original-postmortem")
+          doc=json.loads((folder/"source-inventory.json").read_text())
+          root=Path("original-failed-stage322")
+          if (doc["missing_archived_pinned_sources"] or
+                  doc["ambiguous_archived_pinned_sources"]):
+              doc["archive_replay_result"]="ARCHIVE_INCOMPLETE_OR_AMBIGUOUS_NO_FULL_REPLAY"
+              doc["original_capture_failure_reason_established"]=False
+              doc["archive_input_error_does_not_prove_original_run_error"]=True
+          else:
+              sources=doc["archived_pinned_source_files"]
+              command=["python3","tools/audit_nexium_pcm_exit_controls.py"]
+              for name in ("monitor","monitor-report","scenes","scene-report",
+                           "events","stage299","stage300","stage301","stage302",
+                           "stage303","stop-csv","control-csv"):
+                  command.extend(["--"+name,str(root/sources[name]["relative_archive_path"])])
+              command.extend(["--output",
+                              str(folder/"recomputed-stage304.json")])
+              result=subprocess.run(command,text=True,capture_output=True)
+              doc["replay_exit_code"]=result.returncode
+              if result.returncode==0:
+                  doc["archive_replay_result"]="ARCHIVE_STRICT_REPLAY_PASSED"
+                  doc["original_capture_failure_reason_established"]=False
+              else:
+                  doc["archive_replay_result"]="ARCHIVE_STRICT_REPLAY_REFUSED"
+                  try:
+                      err=json.loads(result.stderr.splitlines()[-1])
+                      doc["source_replay_error_kind"]=err.get("error_kind")
+                      doc["source_replay_invariant"]=err.get(
+                          "source_invariant_failure")
+                  except (IndexError,ValueError):
+                      doc["source_replay_error_kind"]="UNCLASSIFIED"
+                  # A failure from reconstructed archive files can differ
+                  # from the original in-run failure even if replay refused.
+                  doc["original_capture_failure_reason_established"]=False
+          # Separate exact original host-control pair diagnostics.
+          # Stage304 acceptance remains strictly unchanged. Distinguish
+          # file-size regression from same-millisecond or backward
+          # host epochs using only the original small CSV, never PCM.
+          if doc.get("archive_has_all_Stage304_pinned_sources"):
+              import sys
+              # The isolated source verifier imports shared tools.
+              sys.path.insert(0,str(Path("tools").resolve()))
+              from classify_nexium_stage304_exit_control_order import (
+                  classify_original_host_controls)
+              csvpath=root/doc["archived_pinned_source_files"]["control-csv"]["relative_archive_path"]
+              try:
+                  derived=classify_original_host_controls(csvpath.read_bytes())
+                  doc["original_host_control_adjacent_pairs"]=derived[
+                      "adjacent_original_host_control_pairs"]
+                  doc["original_nonmonotone_control_csv_source_replayed"]=derived[
+                      "reproduces_nonmonotone_exit_control_source_refusal"]
+                  doc["archived_control_order_violation_kind"]=derived[
+                      "archived_control_order_violation_kind"]
+                  doc["archived_control_size_regression_pair_count"]=derived[
+                      "pcm_size_regression_pair_count"]
+                  doc["archived_control_host_clock_backward_pair_count"]=derived[
+                      "host_epoch_backward_pair_count"]
+                  doc["archived_control_host_clock_tie_pair_count"]=derived[
+                      "host_epoch_equal_pair_count"]
+              except (OSError,ValueError,TypeError) as exc:
+                  doc["original_control_pair_classifier_error"]=str(exc)[:200]
+                  doc["original_nonmonotone_control_csv_source_replayed"]=False
+          doc["replay_of_archived_source_not_proof_of_original_exit"]=True
+          dest=folder/"source-inventory-and-replay.json"
+          dest.write_text(json.dumps(doc,indent=2,sort_keys=True)+"\n")
+          print("Stage304 prior failed original run archival diagnosis:",
+                doc["archive_replay_result"])
+          print("Missing pinned source files:",
+                doc["missing_archived_pinned_sources"])
+          print("Ambiguous pinned source files:",
+                doc["ambiguous_archived_pinned_sources"])
+          print("Strict archived Stage304 replay error kind:",
+                doc.get("source_replay_error_kind","none"))
+          print("Strict archived Stage304 replay rejected source invariant:",
+                doc.get("source_replay_invariant","none"))
+          print("Original host controls byte/host epoch adjacent-pair differences:",
+                doc.get("original_host_control_adjacent_pairs","not available"))
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as output:
+              output.write("### Stage304 prior failed NeXium archive postmortem\n\n")
+              output.write("- Original run **39157976877 failed**; not promoted to success.\n")
+              output.write("- Archived replay: "+doc["archive_replay_result"]+"\n")
+              output.write("- Missing archived inputs: "+
+                           (", ".join(doc["missing_archived_pinned_sources"])
+                            or "none")+"\n")
+              output.write("- Ambiguous archived inputs: "+
+                           (", ".join(doc["ambiguous_archived_pinned_sources"])
+                            or "none")+"\n")
+              if "original_host_control_adjacent_pairs" in doc:
+                  output.write("- Archived control ordering violation: "+
+                               doc["archived_control_order_violation_kind"]+"\n")
+                  output.write("- Original archived control pair deltas (bytes/ms): "+
+                               str([(p["pcm_file_size_delta_bytes"],
+                                     p["host_epoch_delta_ms"])
+                                    for p in doc["original_host_control_adjacent_pairs"]])+
+                               "\n")
+                  flags = [(p["original_buffer_size_decreased"],
+                            p["host_epoch_was_not_strictly_increasing"])
+                           for p in doc["original_host_control_adjacent_pairs"]]
+                  output.write("- File size decreased in adjacent pair: "+
+                               str(any(x[0] for x in flags))+"\n")
+                  output.write("- Host timestamp non-increasing in adjacent pair: "+
+                               str(any(x[1] for x in flags))+"\n")
+              output.write("- An archived input missing now does not identify "+
+                           "the original in-run failure cause.\n")
+          # A postmortem must never pass when its classification contradicts
+          # the exact original archived verifier or cannot be reproduced.
+          # The diagnostic artifact above is still uploaded on a failure.
+          if doc.get("archive_has_all_Stage304_pinned_sources"):
+              if "original_control_pair_classifier_error" in doc:
+                  raise SystemExit("Stage304 original archived CSV classifier failed")
+              replayed=doc.get("original_nonmonotone_control_csv_source_replayed")
+              invariant=doc.get("source_replay_invariant")
+              if (invariant=="nonmonotone exit-control snapshots" and
+                      replayed is not True):
+                  raise SystemExit("Stage304 replay/classifier source ordering contradiction")
+              if (doc["archive_replay_result"]=="ARCHIVE_STRICT_REPLAY_PASSED" and
+                      replayed is True):
+                  raise SystemExit("Stage304 strict acceptance/classifier contradiction")
+          PY
+
+      - name: Publish archive availability and replay classification only, never original PCM
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage304-old-archive-source-availability
+          path: stage304-original-postmortem/source-inventory-and-replay.json
+          if-no-files-found: warn

@@ -25,6 +25,8 @@ jobs:
         uses: actions/checkout@v4
       - name: Python syntax checks
         run: python3 -m compileall -q tools tests
+      - name: Stage366 external SDL2 blocker preservation negative controls
+        run: python3 -m unittest discover -s tests -p 'test_stage366_sdl2_portlib_evidence.py' -v
       - name: Audout cross-run repeatability negative controls
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_audout_repeatability.py' -v
       - name: Stage 271 audout second-window maxima negative controls
@@ -83,6 +85,38 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_pcm_recorder_stop.py' -v
       - name: Stage304 host Plus exit controls and buffered terminal-PCM synthetic tests
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_pcm_exit_controls.py' -v
+      - name: Stage304 archived nonmonotone control pair classifier regression cases
+        run: python3 -m unittest discover -s tests -p 'test_classify_nexium_stage304_exit_control_order.py' -v
+      - name: Stage325 host dual clock event capture and mismatch regression cases
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_host_clock_pairs.py' -v
+      - name: Stage326 strict independent two-original-host-clock-cohort synthetic tests
+        run: python3 -m unittest discover -s tests -p 'test_compare_nexium_stage326_original_host_clocks.py' -v
+      - name: Stage327 original wall-versus-monotonic clock gap negative controls
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_stage327_clock_gap.py' -v
+      - name: Stage328 compare two independent original 16-call PlayBuffer histories
+        run: python3 -m unittest discover -s tests -p 'test_compare_nexium_stage328_original_playbuffer_histories.py' -v
+      - name: Stage329 original bounded PlayBuffer guest software dispersion tests
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_stage329_guest_software_dispersion.py' -v
+      - name: Stage330 original PlayBuffer guest last-tail median leave-one-out regressions
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_stage330_original_playbuffer_jackknife.py' -v
+      - name: Stage331 original guest PlayBuffer pair-omission source regression tests
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_stage331_original_playbuffer_pair_deletion.py' -v
+      - name: Stage332 original PlayBuffer complete 0-to-3 source deletion frontier tests
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_stage332_original_playbuffer_frontier.py' -v
+      - name: Stage333 exact original guest PlayBuffer finite source reversal threshold tests
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_stage333_original_playbuffer_reversal_threshold.py' -v
+      - name: Stage334 guest and host original capture source manifest negative controls
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_stage334_capture_manifest.py' -v
+      - name: Stage335 three real guest and host capture archive source regressions
+        run: python3 -m unittest discover -s tests -p 'test_compare_nexium_stage335_three_original_capture_sources.py' -v
+      - name: Stage336 fresh source-bound NeXium NRO and monitor identity regressions
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_stage336_capture_build_binding.py' -v
+      - name: Stage337 four original NeXium capture source and same-run NRO tamper controls
+        run: python3 -m unittest discover -s tests -p 'test_compare_nexium_stage337_four_original_captures.py' -v
+      - name: Stage338 original failed recorder lifecycle diagnostic source controls
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_stage338_failed_stage303_diagnostic.py' -v
+      - name: Stage341 original monitor NRO capture and later PCM quality report negative controls
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_stage341_capture_quality_link.py' -v
       - name: Stage305 strict buffered Plus/PCM terminal zero onset fence and baseline tests
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_pcm_plus_fence.py' -v
       - name: Stage307 guest software exit C11 timeline on GCC and Clang
@@ -139,6 +173,17 @@ jobs:
           done
       - name: Stage320 validate original guest audout PlayBuffer source against stop/return
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_guest_last_playbuffer.py' -v
+      - name: Stage322 bounded original PlayBuffer history under GCC and Clang
+        run: |
+          set -euxo pipefail
+          for cc in gcc clang; do
+            "$cc" -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+              tests/test_vh_audio_playbuffer_history.c \
+              -o "/tmp/vh-stage322-playbuffer-history-$cc"
+            "/tmp/vh-stage322-playbuffer-history-$cc"
+          done
+      - name: Stage322 verify last16 original call intervals and refuse fabricated baseline
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_guest_playbuffer_history.py' -v
       - name: Stage318 original worker stop, audout last page, guest exit and optical replay adversarial tests
         run: |
           set -euxo pipefail
@@ -370,6 +415,39 @@ jobs:
              source/vh_audio_buffer_lease.c source/vh_audio_output_recovery.c \
              -o build/test_vh_audio_buffer_lease
           ./build/test_vh_audio_buffer_lease
+      - name: Stage347 canonical post-join descriptor lifecycle source reconciliation
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          for cc in gcc clang; do
+            "$cc" -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+              tests/test_vh_audio_lease_reconciliation_stage347.c \
+              -o "build/test_vh_audio_lease_reconciliation_stage347-$cc"
+            "build/test_vh_audio_lease_reconciliation_stage347-$cc"
+          done
+      - name: Stage345 512-page audio ownership and PCM retry continuity stress on GCC and Clang
+        run: |
+          set -euo pipefail
+          for cc in gcc clang; do
+            "$cc" -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+              tests/test_vh_audio_page_continuity_stage345.c \
+              source/vh_audio_buffer_lease.c source/vh_audio_output_recovery.c \
+              -o "build/test_vh_audio_page_continuity_stage345-$cc"
+            "build/test_vh_audio_page_continuity_stage345-$cc"
+          done
+      - name: Stage345 native PCM page ownership under UBSan
+        env:
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          set -euo pipefail
+          for cc in gcc clang; do
+            "$cc" -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+              -fsanitize=undefined -fno-omit-frame-pointer \
+              tests/test_vh_audio_page_continuity_stage345.c \
+              source/vh_audio_buffer_lease.c source/vh_audio_output_recovery.c \
+              -o "build/test_vh_audio_page_continuity_stage345-ubsan-$cc"
+            "build/test_vh_audio_page_continuity_stage345-ubsan-$cc"
+          done
       - name: Audout page ownership under ASan and UBSan
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1

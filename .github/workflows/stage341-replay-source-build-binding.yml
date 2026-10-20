@@ -1,0 +1,74 @@
+name: Stage341 independently replay original NeXium NRO capture provenance
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage341-replay-source-build-binding.yml'
+      - 'tools/audit_nexium_stage336_capture_build_binding.py'
+      - 'tests/test_audit_nexium_stage341_capture_quality_link.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  immutable-source-replay:
+    name: Original strict PCM-successful source/NRO identity replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source validators
+        uses: actions/checkout@v4
+      - name: Nine Stage341 original monitor and quality regression cases
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_audit_nexium_stage341_capture_quality_link.py' -v
+      - name: Confirm historical complete workflow remained failed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/stanmasked/vandal-hearts-switch-remaster/actions/runs/39179079695" --jq '.conclusion')" = failure
+      - name: Download immutable genuine original NeXium source evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39179079695
+          github-token: ${{ github.token }}
+          path: original-capture
+      - name: Re-audit original Stage303-305 Stage334 and exact-run NRO monitor
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stage341-replay
+          python3 tools/audit_nexium_stage336_capture_build_binding.py \
+            --evidence-root original-capture/runtime-evidence \
+            --nro-preflight original-capture/integrated-nro-preflight.json \
+            --git-sha 6b657482cefc4409ad60803bdb07a8596aaaec51 \
+            --run-id 39179079695 \
+            --run-attempt 1 \
+            --output stage341-replay/retrospective-source-NRO-binding.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("stage341-replay/retrospective-source-NRO-binding.json").read_text())
+          if (r["result"]!="ORIGINAL_NEXIUM_GUEST_HOST_SOURCES_BOUND_TO_SAME_RUN_NRO"
+            or r["same_run_nro_bytes_and_host_monitor_source_digest_checked"] is not True
+            or r["strict_original_stage304_305_receipts_preserved"] is not True
+            or r["original_stage320_322_325_guest_host_receipts_replayed_again"] is not True
+            or r["original_guest_last_software_duration_ns"]!=16161407
+            or r["original_guest_prior_lower_median_software_ns"]!=19249688
+            or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage341 source-original retrospective replay rejected")
+          print("Original Stage341 NRO/PCM source provenance verified; historical workflow remains failed.")
+          print("Source NRO SHA256:",r["source_nro_sha256"])
+          PY
+          echo "Retrospective source provenance only: historical NeXium run remains FAILED. Not audible or physical Switch sound." >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload compact source report only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage341-original-source-replay
+          path: stage341-replay/
+          if-no-files-found: warn

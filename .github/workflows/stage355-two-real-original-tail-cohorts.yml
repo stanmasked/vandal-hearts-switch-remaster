@@ -1,0 +1,133 @@
+name: Stage355 compare two archived original NeXium exit-tail source triples
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage355-two-real-original-tail-cohorts.yml'
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  originals:
+    name: Stage355 independently verify both original code7 source triples
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download genuine archived sources from two completed NeXium runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 39308380160 --repo stanmasked/vandal-hearts-switch-remaster \
+            --name nexium-runtime-evidence --dir stage355-first
+          gh run download 39317788067 --repo stanmasked/vandal-hearts-switch-remaster \
+            --name nexium-runtime-evidence --dir stage355-second
+      - name: Independently re-audit original CSV bytes, receipts and distinct provenance
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,sys
+          from pathlib import Path
+          sys.path.insert(0,"tools")
+          from audit_nexium_stage352_three_original_tail_sources import (
+              reaudited_archive,VERIFIED as SOURCE_VERDICT
+          )
+          from audit_nexium_stage350_original_tail_vs_lease import safe_file
+
+          SOURCES={
+              "tail":"audio-exit-output-000.csv",
+              "lease":"audio-lease-reconciliation-000.csv",
+              "reason":"audio-exit-tail-reason-000.csv",
+              "stage313":"guest-last-audout-release-stage313.json",
+              "stage314":"guest-original-audout-last-page-stage314.json",
+              "stage348":"guest-lease-reconciliation-stage348.json",
+              "stage351":"guest-exit-tail-reason-stage351.json",
+          }
+          PINNED=(
+              (39308380160,"stage355-first",1441,{
+                  "tail":"761810a3ef96e551beebebc92e7f4ea369379b38914a33ef515cc5795bc79fb8",
+                  "lease":"bfe73361a817cba4155fb103088e4da4b9511c6860484a62c9005e4e9555918a",
+                  "reason":"1e49059bf105690b45fd63b41923726fde330f9c330b5b0fd62f914084a91b58",
+              }),
+              (39317788067,"stage355-second",1411,{
+                  "tail":"cf43a66e08064733d60edfd7b143ca70b0da1049ab0884e4799218cedf231f68",
+                  "lease":"6ad40d565572abb9f5210769ef31aa38849b4b2e03a6bab160a2da4eaa46dc2e",
+                  "reason":"05750729ec79275db1791f0b97ffcc7a36ba1f3cc1e61568c89baebc5ee5e4d0",
+              }),
+          )
+          reports=[]
+          for run,dirname,count,pins in PINNED:
+              root=Path(dirname)
+              if not root.is_dir() or root.is_symlink():
+                  raise SystemExit("Missing real NeXium artifact root")
+              paths={}
+              for kind,name in SOURCES.items():
+                  matches=list(root.rglob(name))
+                  if len(matches)!=1:
+                      raise SystemExit("Missing or ambiguous original file: "+name)
+                  safe_file(matches[0])
+                  paths[kind]=matches[0]
+              report=reaudited_archive(paths,pins,run)
+              if (report["result"]!=SOURCE_VERDICT
+                  or report["original_neXium_run_id"]!=run
+                  or report["tail_reason_code"]!=7
+                  or report["tail_reason_name"]!="return_confirmed"
+                  or report["tail_attempted"] is not True
+                  or report["tail_descriptor_return_confirmed"] is not True
+                  or report["lease_pages_acquired"]!=count
+                  or report["lease_pages_released"]!=count
+                  or report["abandoned_sessions"]!=0
+                  or report["exact_archived_original_CSV_bytes_reaudited"] is not True
+                  or report["three_distinct_guest_source_receipts_matched"] is not True
+                  or report["older_unconfirmed_tail_failure_cause_proven"] is not False
+                  or report["physical_Nintendo_Switch_audio_tested"] is not False
+                  or report["DAC_or_speaker_audio_verified"] is not False):
+                  raise SystemExit("Original source triple cannot confirm code7")
+              reports.append(report)
+          first,second=reports
+          if first["original_neXium_run_id"]==second["original_neXium_run_id"]:
+              raise SystemExit("Two distinct real executions required")
+          a=first["original_guest_csv_sha256"]
+          b=second["original_guest_csv_sha256"]
+          if set(a.values()) & set(b.values()):
+              raise SystemExit("Original guest sources must be distinct")
+          result={
+              "schema":"vh-stage355-two-original-NeXium-tail-cohorts/v1",
+              "result":"TWO_INDEPENDENT_ORIGINAL_GUEST_TAIL_CODE7_COHORTS_REAUDITED",
+              "original_run_ids":[39308380160,39317788067],
+              "first_original_guest_source_sha256":a,
+              "second_original_guest_source_sha256":b,
+              "first_software_pages_acquired_released_abandoned":[1441,1441,0],
+              "second_software_pages_acquired_released_abandoned":[1411,1411,0],
+              "second_minus_first_acquired_pages":-30,
+              "both_real_guest_exit_tail_codes":[7,7],
+              "all_six_SHA_pinned_original_CSVs_source_reaudited":True,
+              "both_original_source_receipt_sets_reaudited":True,
+              "older_unconfirmed_tail_failure_cause_proven":False,
+              "new_failed_tail_reason_observed":False,
+              "physical_Nintendo_Switch_audio_tested":False,
+              "DAC_or_speaker_audio_verified":False,
+              "original_PS1_soundtrack_verified":False,
+          }
+          destination=Path("stage355-two-original-tail-cohorts.json")
+          with destination.open("x",encoding="utf-8") as output:
+              json.dump(result,output,sort_keys=True,indent=2)
+              output.write("\n")
+          print(json.dumps({
+              "result":result["result"],
+              "first_acquired":1441,"first_released":1441,
+              "second_acquired":1411,"second_released":1411,
+              "older_failure_cause_proven":False,
+              "physical_Nintendo_Switch_audio_tested":False,
+          },sort_keys=True))
+          PY
+          echo "Stage355: two distinct real guest originals SHA-pinned and independently reaudited, both code7 and balanced PCM ownership; no older-failure causal or hardware audio claim." >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve small audit receipt only (never original PCM or music)
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage355-two-original-real-source-triples
+          path: stage355-two-original-tail-cohorts.json
+          if-no-files-found: error

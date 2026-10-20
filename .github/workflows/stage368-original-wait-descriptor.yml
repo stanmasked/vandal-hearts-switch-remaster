@@ -1,0 +1,57 @@
+name: Stage368 original bounded audoutWait returned-descriptor witness
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage368-original-wait-descriptor.yml'
+      - 'source/vh_audio_exit_wait_descriptor_stage368.h'
+      - 'source/vh_switch_game_audio.c'
+      - 'source/vh_switch_game_audio.h'
+      - 'source/main.c'
+      - 'tests/test_vh_audio_exit_wait_descriptor_stage368.c'
+      - 'tests/test_stage368_guest_wiring.py'
+      - 'tools/audit_nexium_stage368_wait_descriptor.py'
+      - 'tests/test_audit_nexium_stage368_wait_descriptor.py'
+      - 'tools/audit_nexium_stage368_attested_guest.py'
+      - 'tests/test_audit_nexium_stage368_attested_guest.py'
+permissions:
+  contents: read
+jobs:
+  software-wait:
+    name: GCC Clang UBSan real-wait tuple guards without extra audout calls
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate original 12-ms wait, descriptor count and cross-source schema
+        shell: bash
+        env:
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          for cc in gcc clang; do
+            for mode in opt ubsan; do
+              if [ "$mode" = opt ]; then
+                "$cc" -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+                  tests/test_vh_audio_exit_wait_descriptor_stage368.c \
+                  -o "build/stage368-$cc"
+                "build/stage368-$cc"
+              else
+                "$cc" -std=c11 -Wall -Wextra -Werror -O1 -g \
+                  -fsanitize=undefined -fno-omit-frame-pointer -Isource \
+                  tests/test_vh_audio_exit_wait_descriptor_stage368.c \
+                  -o "build/stage368-$cc-ubsan"
+                "build/stage368-$cc-ubsan"
+              fi
+            done
+          done
+          python3 -m unittest discover -s tests \
+            -p 'test_stage368_guest_wiring.py' -v
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_nexium_stage368_wait_descriptor.py' -v
+          python3 -m py_compile tools/audit_nexium_stage368_wait_descriptor.py
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_nexium_stage368_attested_guest.py' -v
+          python3 -m py_compile tools/audit_nexium_stage368_attested_guest.py
+          echo 'Stage368: software-only descriptor/count tuple from existing wait; no extra service call, clock, or physical DAC claim. Same-directory CSV parsing is NOT an independently attested original NeXium capture.' >> "$GITHUB_STEP_SUMMARY"

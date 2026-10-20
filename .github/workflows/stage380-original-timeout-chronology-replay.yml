@@ -1,0 +1,87 @@
+name: Stage380 independently recheck original audout timeout versus success chronology
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage380-original-timeout-chronology-replay.yml'
+      - 'tools/audit_stage380_original_timeout_chronology.py'
+      - 'tests/test_audit_stage380_original_timeout_chronology.py'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: stage380-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  original-outcome-chronology:
+    name: Recheck authentic historical 0xEA01 and successful NeXium exit clocks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject forged/ambiguous original GitHub/guest sources using synthetic controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_audit_stage380_original_timeout_chronology.py' -v
+          python3 -m py_compile tools/audit_stage380_original_timeout_chronology.py
+      - name: Download two authentic original GitHub Actions evidence ZIPs and independent provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repo=stanmasked/vandal-hearts-switch-remaster
+          mkdir -p stage380-originals stage380-metadata
+          for run_id in 39325440778 39388027581; do
+            case "$run_id" in
+              39325440778) artifact_id=12223136961 ;;
+              39388027581) artifact_id=12249301260 ;;
+              *) exit 2 ;;
+            esac
+            gh api "repos/$repo/actions/runs/$run_id" > "stage380-metadata/$run_id-run.json"
+            gh api "repos/$repo/actions/runs/$run_id/jobs?per_page=100" > "stage380-metadata/$run_id-jobs.json"
+            gh api "repos/$repo/actions/artifacts/$artifact_id" > "stage380-metadata/$run_id-artifact.json"
+            curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/$repo/actions/artifacts/$artifact_id/zip" \
+              --output "stage380-originals/$run_id.zip"
+            test -s "stage380-originals/$run_id.zip"
+          done
+      - name: Independently reparse original guest clocks, 16-call history and PCM lease outcomes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_stage380_original_timeout_chronology.py \
+            --originals stage380-originals \
+            --metadata stage380-metadata \
+            --output stage380-original-opposite-exit-chronology.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          doc=json.loads(Path('stage380-original-opposite-exit-chronology.json').read_text())
+          assert doc['result']=='STAGE380_ORIGINAL_TIMEOUT_AND_SUCCESS_CHRONOLOGY_VERIFIED'
+          assert doc['original_guest_software_wait_results']==[59905,0]
+          assert len(doc['source_runs'])==2
+          assert doc['source_runs'][0]['abandoned_sessions']==1
+          assert doc['source_runs'][1]['abandoned_sessions']==0
+          assert doc['nominal_exit_pcm_frames']==96
+          assert doc['physical_nintendo_switch_speaker_audio_tested'] is False
+          assert doc['historical_timeout_root_cause_proven'] is False
+          PY
+          {
+            echo '### Stage380 — two original NeXium exit-tail chronologies independently rechecked'
+            echo 'Historical original software wait 0xEA01 and later original software wait Result=0.'
+            echo '96 frames / 48kHz = 2ms of tail PCM; original bounded service wait 12ms.'
+            echo 'Original ZIP bytes, GitHub source identity, guest CSVs, last 16 PlayBuffer calls and PCM lease states checked.'
+            echo 'This is archival software observation, NOT physical audio or proof of timeout root cause.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Archive only compact source-bound result, never original PCM or ROM assets
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage380-original-timeout-success-chronology
+          path: stage380-original-opposite-exit-chronology.json
+          if-no-files-found: warn
+          retention-days: 90

@@ -503,6 +503,176 @@ int main(int argc, char **argv) {
                     (void)unlink(bracket_path);
             }
         }
+        /* Stage322: no output while audio runs; post-join only.
+         * Separate original guest source with O_EXCL to avoid replacing
+         * any earlier capture. Export failures do not alter game exit. */
+        int history_fd=-1;
+        char history_path[256];
+        for(unsigned slot=0;slot<32u;slot++) {
+            int n=snprintf(history_path,sizeof history_path,
+                VH_SCENE_TRACE_SD_DIRECTORY
+                "/audio-playbuffer-history-%03u.csv",slot);
+            if(n<=0 || (size_t)n>=sizeof history_path) break;
+            history_fd=open(history_path,O_WRONLY|O_CREAT|O_EXCL,0600);
+            if(history_fd>=0) break;
+            if(errno!=EEXIST) break;
+        }
+        if(history_fd>=0) {
+            FILE *history_stream=fdopen(history_fd,"w");
+            if(!history_stream) {
+                (void)close(history_fd);
+                (void)unlink(history_path);
+            } else {
+                const int rows=vh_switch_game_audio_playbuffer_history_dump(history_stream);
+                const int flushed=fflush(history_stream);
+                const int closed=fclose(history_stream);
+                if(rows<=0 || flushed!=0 || closed!=0)
+                    (void)unlink(history_path);
+            }
+        }
+        /* Stage347: separate post-join software lease source; no PCM or
+         * extra hot-path I/O. Never overwrite prior guest SD captures. */
+        int lease_fd=-1;
+        char lease_path[256];
+        for(unsigned slot=0;slot<32u;slot++) {
+            const int n=snprintf(lease_path,sizeof lease_path,
+                VH_SCENE_TRACE_SD_DIRECTORY
+                "/audio-lease-reconciliation-%03u.csv",slot);
+            if(n<=0 || (size_t)n>=sizeof lease_path) break;
+            lease_fd=open(lease_path,O_WRONLY|O_CREAT|O_EXCL,0600);
+            if(lease_fd>=0) break;
+            if(errno!=EEXIST) break;
+        }
+        if(lease_fd>=0) {
+            FILE *lease_stream=fdopen(lease_fd,"w");
+            if(!lease_stream) {
+                (void)close(lease_fd);
+                (void)unlink(lease_path);
+            } else {
+                const int rows=vh_switch_game_audio_lease_reconciliation_dump(
+                    lease_stream);
+                const int flushed=fflush(lease_stream);
+                const int closed=fclose(lease_stream);
+                if(rows!=8 || flushed!=0 || closed!=0)
+                    (void)unlink(lease_path);
+            }
+        }
+        /* Stage351: own exclusive post-join exit-tail reason evidence.
+         * The previous Stage313 and Stage347 CSV files stay identical.
+         * A failed partial source is never left as a valid observation.
+         */
+        int reason_fd=-1;
+        char reason_path[256];
+        for(unsigned slot=0;slot<32u;slot++) {
+            const int n=snprintf(reason_path,sizeof reason_path,
+                VH_SCENE_TRACE_SD_DIRECTORY
+                "/audio-exit-tail-reason-%03u.csv",slot);
+            if(n<=0 || (size_t)n>=sizeof reason_path) break;
+            reason_fd=open(reason_path,O_WRONLY|O_CREAT|O_EXCL,0600);
+            if(reason_fd>=0) break;
+            if(errno!=EEXIST) break;
+        }
+        if(reason_fd>=0) {
+            FILE *reason_stream=fdopen(reason_fd,"w");
+            if(!reason_stream) {
+                (void)close(reason_fd);
+                (void)unlink(reason_path);
+            } else {
+                const int rows=vh_switch_game_audio_tail_reason_dump(
+                    reason_stream);
+                const int flushed=fflush(reason_stream);
+                const int closed=fclose(reason_stream);
+                if(rows!=8 || flushed!=0 || closed!=0)
+                    (void)unlink(reason_path);
+            }
+        }
+        /* Stage357: preserve raw software Result from the original
+         * single bounded tail wait as a separate exclusive guest CSV.
+         * The original Stage313/347/351 sources are unchanged.
+         */
+        int wait_result_fd=-1;
+        char wait_result_path[256];
+        for(unsigned slot=0;slot<32u;slot++) {
+            const int n=snprintf(wait_result_path,sizeof wait_result_path,
+                VH_SCENE_TRACE_SD_DIRECTORY
+                "/audio-exit-tail-wait-result-%03u.csv",slot);
+            if(n<=0 || (size_t)n>=sizeof wait_result_path) break;
+            wait_result_fd=open(wait_result_path,O_WRONLY|O_CREAT|O_EXCL,0600);
+            if(wait_result_fd>=0) break;
+            if(errno!=EEXIST) break;
+        }
+        if(wait_result_fd>=0) {
+            FILE *wait_result_stream=fdopen(wait_result_fd,"w");
+            if(!wait_result_stream) {
+                (void)close(wait_result_fd);
+                (void)unlink(wait_result_path);
+            } else {
+                const int rows=vh_switch_game_audio_tail_wait_result_dump(
+                    wait_result_stream);
+                const int flushed=fflush(wait_result_stream);
+                const int closed=fclose(wait_result_stream);
+                if(rows!=4 || flushed!=0 || closed!=0)
+                    (void)unlink(wait_result_path);
+            }
+        }
+        /* Stage368: separate, exclusive post-join return-descriptor
+         * observation from the original one 12-ms audout wait. No new
+         * service calls, no raw pointer addresses, no PCM mutation. */
+        int wait_descriptor_fd=-1;
+        char wait_descriptor_path[256];
+        for(unsigned slot=0;slot<32u;slot++) {
+            const int n=snprintf(wait_descriptor_path,
+                sizeof wait_descriptor_path,
+                VH_SCENE_TRACE_SD_DIRECTORY
+                "/audio-exit-wait-descriptor-%03u.csv",slot);
+            if(n<=0 || (size_t)n>=sizeof wait_descriptor_path) break;
+            wait_descriptor_fd=open(wait_descriptor_path,
+                O_WRONLY|O_CREAT|O_EXCL,0600);
+            if(wait_descriptor_fd>=0) break;
+            if(errno!=EEXIST) break;
+        }
+        if(wait_descriptor_fd>=0) {
+            FILE *wait_descriptor_stream=fdopen(wait_descriptor_fd,"w");
+            if(!wait_descriptor_stream) {
+                (void)close(wait_descriptor_fd);
+                (void)unlink(wait_descriptor_path);
+            } else {
+                const int rows=vh_switch_game_audio_wait_descriptor_dump(
+                    wait_descriptor_stream);
+                const int flushed=fflush(wait_descriptor_stream);
+                const int closed=fclose(wait_descriptor_stream);
+                if(rows!=8 || flushed!=0 || closed!=0)
+                    (void)unlink(wait_descriptor_path);
+            }
+        }
+        /* Stage360: an independent post-join guest source using the
+         * EXISTING pre-submit audout query history and tail timestamps.
+         * No queue query is made at shutdown. */
+        int probe_fd=-1;
+        char exit_probe_path[256];
+        for(unsigned slot=0;slot<32u;slot++) {
+            const int n=snprintf(exit_probe_path,sizeof exit_probe_path,
+                VH_SCENE_TRACE_SD_DIRECTORY
+                "/audio-exit-probe-context-%03u.csv",slot);
+            if(n<=0 || (size_t)n>=sizeof exit_probe_path) break;
+            probe_fd=open(exit_probe_path,O_WRONLY|O_CREAT|O_EXCL,0600);
+            if(probe_fd>=0) break;
+            if(errno!=EEXIST) break;
+        }
+        if(probe_fd>=0) {
+            FILE *probe_stream=fdopen(probe_fd,"w");
+            if(!probe_stream) {
+                (void)close(probe_fd);
+                (void)unlink(exit_probe_path);
+            } else {
+                const int rows=vh_switch_game_audio_exit_probe_context_dump(
+                    probe_stream);
+                const int flushed=fflush(probe_stream);
+                const int closed=fclose(probe_stream);
+                if(rows!=13 || flushed!=0 || closed!=0)
+                    (void)unlink(exit_probe_path);
+            }
+        }
         char scene_path[VH_SCENE_TRACE_EXPORT_PATH_CAP];
         const VhSceneExportResult saved=vh_switch_game_audio_trace_export(
             scene_path,sizeof scene_path);

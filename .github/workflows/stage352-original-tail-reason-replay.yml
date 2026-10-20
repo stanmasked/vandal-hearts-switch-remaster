@@ -1,0 +1,108 @@
+name: Stage352 original NeXium software tail reason archive re-audit
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage352-original-tail-reason-replay.yml'
+      - 'tools/audit_nexium_stage352_three_original_tail_sources.py'
+      - 'tests/test_audit_nexium_stage352_three_original_tail_sources.py'
+      - 'tools/audit_nexium_guest_tail_reason_stage351.py'
+      - 'tools/audit_nexium_stage350_original_tail_vs_lease.py'
+      - 'tools/compare_nexium_stage349_original_lease_cohorts.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  tampering-tests:
+    name: Stage352 reject forged original PCM lease and exit-tail sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run fifteen synthetic source integrity regressions
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_nexium_stage352_three_original_tail_sources.py' -v
+          python3 -m py_compile tools/audit_nexium_stage352_three_original_tail_sources.py
+          echo "Stage352 synthetic tests do not constitute real guest or speaker observations." >> "$GITHUB_STEP_SUMMARY"
+
+  original-guest-replay:
+    name: Stage352 independently download three original NeXium guest CSVs
+    needs: tampering-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download completed real NeXium NRO run source archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 39308380160 --repo stanmasked/vandal-hearts-switch-remaster \
+            --name nexium-runtime-evidence --dir original-guest
+      - name: Require original software guest source files and SHA256 pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=()
+          for item in tail lease reason stage313 stage314 stage348 stage351; do
+            case "$item" in
+              tail) filename=audio-exit-output-000.csv ;;
+              lease) filename=audio-lease-reconciliation-000.csv ;;
+              reason) filename=audio-exit-tail-reason-000.csv ;;
+              stage313) filename=guest-last-audout-release-stage313.json ;;
+              stage314) filename=guest-original-audout-last-page-stage314.json ;;
+              stage348) filename=guest-lease-reconciliation-stage348.json ;;
+              stage351) filename=guest-exit-tail-reason-stage351.json ;;
+            esac
+            mapfile -t match < <(find original-guest -type f -name "$filename")
+            test "${#match[@]}" -eq 1 || {
+              echo "Stage352 original archive source missing/ambiguous: $filename" >&2
+              exit 1
+            }
+            case "$item" in
+              tail|lease|reason) args+=("--$item-csv" "${match[0]}");;
+              *) args+=("--$item" "${match[0]}");;
+            esac
+          done
+          python3 tools/audit_nexium_stage352_three_original_tail_sources.py \
+            "${args[@]}" \
+            --tail-sha256 761810a3ef96e551beebebc92e7f4ea369379b38914a33ef515cc5795bc79fb8 \
+            --lease-sha256 bfe73361a817cba4155fb103088e4da4b9511c6860484a62c9005e4e9555918a \
+            --reason-sha256 1e49059bf105690b45fd63b41923726fde330f9c330b5b0fd62f914084a91b58 \
+            --original-run-id 39308380160 \
+            --output stage352-original-NeXium-exit-tail-reason.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          doc=json.loads(Path(
+              "stage352-original-NeXium-exit-tail-reason.json").read_text())
+          if (doc["schema"]!="vh-stage352-triple-original-guest-lease-tail-reason/v1"
+              or doc["result"]!="THREE_ORIGINAL_GUEST_PCM_TAIL_SOFTWARE_SOURCES_REAUDITED"
+              or doc["original_neXium_run_id"]!=39308380160
+              or doc["tail_reason_code"]!=7
+              or doc["tail_reason_name"]!="return_confirmed"
+              or doc["tail_attempted"] is not True
+              or doc["tail_descriptor_return_confirmed"] is not True
+              or (doc["lease_pages_acquired"],doc["lease_pages_released"],
+                  doc["abandoned_sessions"])!=(1441,1441,0)
+              or doc["exact_archived_original_CSV_bytes_reaudited"] is not True
+              or doc["three_distinct_guest_source_receipts_matched"] is not True
+              or doc["older_unconfirmed_tail_failure_cause_proven"] is not False
+              or doc["physical_Nintendo_Switch_audio_tested"] is not False
+              or doc["DAC_or_speaker_audio_verified"] is not False):
+              raise SystemExit("Stage352 original guest source triple re-audit failed")
+          print("Stage352: original guest code 7, exact tail return and 1441/1441 PCM leases VERIFIED")
+          print("Stage352: prior unrelated tail failure cause remains UNKNOWN")
+          PY
+          echo "Stage352 independent original source archive replay: Stage313/348/351 matched code7 and full lease balance. No hardware/DAC or failed-run causal proof." >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve report only, no guest PCM or music resources
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage352-original-guest-PCM-tail-software-proof
+          path: stage352-original-NeXium-exit-tail-reason.json
+          if-no-files-found: error

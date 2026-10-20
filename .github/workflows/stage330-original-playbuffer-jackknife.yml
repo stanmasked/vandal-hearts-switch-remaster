@@ -1,0 +1,116 @@
+name: Stage330 independently replay original PlayBuffer median leave-one-out
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage330-original-playbuffer-jackknife.yml'
+      - 'tools/audit_nexium_stage330_original_playbuffer_jackknife.py'
+      - 'tests/test_audit_nexium_stage330_original_playbuffer_jackknife.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  source-original-software-jackknife:
+    name: Independently assess sensitivity of original guest PlayBuffer previous-fifteen median
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Checkout real source PlayBuffer history verifier
+        uses: actions/checkout@v4
+
+      - name: Stage330 twelve positive/negative original guest software source tests
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/audit_nexium_stage330_original_playbuffer_jackknife.py tests/test_audit_nexium_stage330_original_playbuffer_jackknife.py
+          python3 -m unittest discover -s tests -p 'test_audit_nexium_stage330_original_playbuffer_jackknife.py' -v
+
+      - name: Confirm the two original guest source captures succeeded
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for run_id in 39166023593 39167324026; do
+            status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$run_id" --jq '.status')"
+            conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$run_id" --jq '.conclusion')"
+            test "$status" = completed
+            test "$conclusion" = success
+            echo "Original successful NeXium source capture: $run_id"
+          done
+
+      - name: Download first successful original source guest audout artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39166023593
+          github-token: ${{ github.token }}
+          path: original-audout-first
+
+      - name: Download second successful original source guest audout artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39167324026
+          github-token: ${{ github.token }}
+          path: original-audout-second
+
+      - name: Recompute all original Stage322/329 source statistics and fifteen leave-one-out medians
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stage330-original-call-sensitivity
+          python3 tools/audit_nexium_stage330_original_playbuffer_jackknife.py \
+            --first-root original-audout-first \
+            --second-root original-audout-second \
+            --first-history-sha256 72eb03e4508e2f8f7814f8b059aa5bfba69c71bbdac9f495ffab447d23fc345d \
+            --second-history-sha256 795c751e11449b0d0e0938031c540890eac23058e3a50c49ac2be9f622950a07 \
+            --first-last-sha256 fdc3ab8bcc5908ccb61c149ba185435fb5ab4a6409d33a43c02e7a179caf4aec \
+            --second-last-sha256 2559938d1f86f8812405e2d3b1573398109450663188000bf1d58c8c965031e9 \
+            --output stage330-original-call-sensitivity/leave-one-out-call-distributions.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path(
+              "stage330-original-call-sensitivity/leave-one-out-call-distributions.json"
+          ).read_text(encoding="utf-8"))
+          if (r["result"]!="TWO_SOURCE_PINNED_PLAYBUFFER_SOFTWARE_TAILS_LEAVE_ONE_OUT_REAUDITED"
+              or r["both_stage329_original_source_receipts_independently_replayed"] is not True
+              or r["leave_one_out_is_descriptive_not_population_confidence_interval"] is not True
+              or r["raw_guest_software_start_end_timestamps_not_published"] is not True
+              or r["physical_Nintendo_Switch_audio_measured"] is not False):
+              raise SystemExit("Stage330 original source provenance / evidence scope rejected")
+          rows=r["cohorts"]
+          if (len(rows)!=2
+              or [x["full_previous_lower_median_ns"] for x in rows]!=[32154011,31247083]
+              or [x["last_successful_software_call_ns"] for x in rows]!=[11225937,22352500]
+              or [x["full_previous_MAD_ns"] for x in rows]!=[727969,5297032]):
+              raise SystemExit("Stage330 original Stage329 source timings not reproduced")
+          for doc in rows:
+              if (doc["jackknife_replica_count"]!=15
+                  or doc["calls_in_each_replica"]!=14
+                  or doc["original_retained_success_count"]!=16
+                  or type(doc["all_replicas_have_last_shorter_than_prior_lower_median"]) is not bool):
+                  raise SystemExit("original guest software leave-one-out integrity rejected")
+              print(doc["original_guest_history_sha256"],
+                    "15 LOO medians (min/max ns)",
+                    doc["leave_one_out_lower_median_min_ns"],
+                    doc["leave_one_out_lower_median_max_ns"],
+                    "LOO MAD min/max (ns)",
+                    doc["leave_one_out_MAD_min_ns"],
+                    doc["leave_one_out_MAD_max_ns"],
+                    "LOO last-rank min/max",
+                    doc["leave_one_out_last_first_possible_rank_min"],
+                    doc["leave_one_out_last_first_possible_rank_max"])
+          PY
+          echo "Stage330: original software call tail-one-sample-deletion sensitivity from two real NeXium captures; no DAC/speaker measurement, population interval or causality claim." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish only compact original software call sensitivity summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage330-original-playbuffer-leave-one-out
+          path: stage330-original-call-sensitivity/
+          if-no-files-found: warn

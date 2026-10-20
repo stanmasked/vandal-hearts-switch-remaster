@@ -15,6 +15,25 @@ on:
       - 'source/vh_audio_exit_output_witness.h'
       - 'source/vh_audio_exit_worker_stop_witness.h'
       - 'source/vh_audio_last_playbuffer_call.h'
+      - 'source/vh_audio_playbuffer_history.h'
+      - 'source/vh_audio_exit_wait_descriptor_stage368.h'
+      - 'tools/audit_nexium_stage368_wait_descriptor.py'
+      - 'tests/test_audit_nexium_stage368_wait_descriptor.py'
+      - 'tools/audit_nexium_stage368_attested_guest.py'
+      - 'tests/test_audit_nexium_stage368_attested_guest.py'
+      - 'tests/test_stage368_guest_wiring.py'
+      - 'tests/test_vh_audio_exit_wait_descriptor_stage368.c'
+      - 'tools/audit_nexium_guest_lease_reconciliation_stage348.py'
+      - 'tests/test_audit_nexium_guest_lease_reconciliation_stage348.py'
+      - 'source/vh_audio_lease_reconciliation.h'
+      - 'source/vh_audio_exit_tail_reason_stage351.h'
+      - 'tools/audit_nexium_guest_tail_reason_stage351.py'
+      - 'tests/test_audit_nexium_guest_tail_reason_stage351.py'
+      - 'tests/test_vh_audio_exit_tail_reason_stage351.c'
+      - 'tests/test_vh_audio_lease_reconciliation_stage347.c'
+      - 'tools/audit_nexium_guest_playbuffer_history.py'
+      - 'tests/test_audit_nexium_guest_playbuffer_history.py'
+      - 'tests/test_vh_audio_playbuffer_history.c'
       - 'tools/audit_nexium_guest_last_playbuffer.py'
       - 'tests/test_vh_audio_last_playbuffer_call.c'
       - 'tests/test_audit_nexium_guest_last_playbuffer.py'
@@ -75,9 +94,12 @@ on:
       - 'tools/analyze_nexium_scene_audio.py'
       - 'tools/analyze_nexium_pcm_stream_integrity.py'
       - 'tools/analyze_nexium_pcm_scene_silence.py'
+      - 'tools/audit_nexium_pcm_exit_controls.py'
       - 'tests/test_analyze_nexium_pcm_scene_silence.py'
       - 'tests/test_analyze_nexium_pcm_stream_integrity.py'
       - 'tools/capture_nexium_scene_audio.sh'
+      - 'tools/audit_nexium_host_clock_pairs.py'
+      - 'tests/test_audit_nexium_host_clock_pairs.py'
       - 'tests/test_analyze_nexium_scene_audio.py'
       - 'tools/analyze_nexium_transition_timing.py'
       - 'tools/audit_switch_guest_scene_trace.py'
@@ -685,6 +707,30 @@ jobs:
           set -euo pipefail
           bash tools/capture_nexium_scene_audio.sh runtime-evidence
           python3 -m json.tool runtime-evidence/scene-audio-report.json > /dev/null
+          # Stage325 uses only tiny event/size/timestamp CSVs. The original
+          # Stage304 host-epoch order and provenance checks remain unchanged.
+          python3 tools/audit_nexium_host_clock_pairs.py audit \
+            --legacy runtime-evidence/scene-exit-controls.csv \
+            --dual runtime-evidence/scene-exit-controls-monotonic.csv \
+            --output runtime-evidence/host-dual-clock-stage325.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("runtime-evidence/host-dual-clock-stage325.json").read_text())
+          if (r["result"]!="ORIGINAL_HOST_DUAL_CLOCK_CSVS_INDEPENDENTLY_MATCHED"
+              or len(r["adjacent_host_clock_deltas"])!=2
+              or r["all_monotonic_intervals_positive"] is not True
+              or r["legacy_stage304_strict_ordering_not_relaxed"] is not True
+              or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage325 paired original host monotonic observations not verified")
+          print("Stage325 host CSV SHA:",r["legacy_csv_sha256"])
+          print("Stage325 monotonic companion SHA:",r["paired_clock_csv_sha256"])
+          print("Stage325 adjacent wall deltas (ms):",
+                [p["host_wall_delta_ms"] for p in r["adjacent_host_clock_deltas"]])
+          print("Stage325 adjacent monotonic deltas (ns):",
+                [p["host_monotonic_delta_ns"] for p in r["adjacent_host_clock_deltas"]])
+          PY
+          echo "Stage325 matched same-host wall-clock and monotonic Plus-control observations. Wall clock can move backward; original Stage304 still fails closed. Neither clock proves DAC or speaker sound." >> "$GITHUB_STEP_SUMMARY"
           python3 tools/analyze_nexium_transition_timing.py \
             runtime-evidence/nexium-scenes-s16le-48k.pcm \
             runtime-evidence/scene-events.csv \
@@ -911,6 +957,92 @@ jobs:
           PY
           echo "Stage320: final successful audoutPlayBuffer service call bracket measured with the ALREADY existing start/end clock readings, cross-referenced to three original guest software witnesses. One call is not necessarily all stop latency, nor DAC or audible speaker playback." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Stage322 re-audit original last16 audout PlayBuffer calls and optional prior baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_guest_playbuffer_history.py \
+            --guest-root-file runtime-evidence/guest-sd-root.txt \
+            --output runtime-evidence/guest-playbuffer-history-stage322.json \
+            --output-original runtime-evidence/audio-playbuffer-history-000.csv
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          p=Path("runtime-evidence/guest-playbuffer-history-stage322.json")
+          r=json.loads(p.read_text())
+          original=Path("runtime-evidence/audio-playbuffer-history-000.csv")
+          if (r["schema"]!="vh-original-last16-PlayBuffer-guest-software-call-history/v1"
+                  or r["result"]!="ORIGINAL_GUEST_PLAYBUFFER_HISTORY_REAUDITED"
+                  or r["original_guest_history_source_observed"] is not True
+                  or r["original_guest_history_bytes_preserved"] is not True
+                  or not original.is_file() or original.is_symlink()
+                  or hashlib.sha256(original.read_bytes()).hexdigest()!=
+                     r["original_guest_history_csv_sha256"]
+                  or not 1<=r["original_recent_call_count"]<=16
+                  or r["total_original_normal_PlayBuffer_calls"]<
+                     r["original_recent_call_count"]
+                  or r["history_is_not_the_entire_session"] is not True
+                  or r["one_call_is_not_DAC_or_last_audible_sample"] is not True
+                  or r["guest_software_time_not_host_PCM_sample_clock"] is not True
+                  or r["original_PS1_retail_soundtrack_verified"] is not False
+                  or r["plus_caused_audible_dropout_verified"] is not False
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage322 guest original bounded PlayBuffer history source not verified")
+          if r["prior_successful_call_count_in_window"]==0:
+              if r["prior_successful_duration_lower_median_guest_ns"] is not None:
+                  raise SystemExit("Stage322 fabricated an earlier successful-call baseline")
+          print("Stage322 original last16 PlayBuffer source SHA:",
+                r["original_guest_history_csv_sha256"])
+          print("Stage322 final successful PlayBuffer software duration (ns):",
+                r["final_call_duration_guest_ns"])
+          print("Stage322 earlier successful calls preserved:",
+                r["prior_successful_call_count_in_window"])
+          print("Stage322 earlier lower median duration (guest ns):",
+                r["prior_successful_duration_lower_median_guest_ns"])
+          PY
+          echo "Stage322: real original guest last16 normal PlayBuffer software-call brackets preserved byte-exact, SHA-256 audited, compared with original Stage320 last success. Earlier baseline only when actual earlier successes exist. Reuses existing clocks; not DAC or audible music." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage348 independently verify actual Stage347 post-join guest software lease source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_guest_lease_reconciliation_stage348.py \
+            --guest-root-file runtime-evidence/guest-sd-root.txt \
+            --output runtime-evidence/guest-lease-reconciliation-stage348.json \
+            --output-original runtime-evidence/audio-lease-reconciliation-000.csv
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          report=Path("runtime-evidence/guest-lease-reconciliation-stage348.json")
+          source=Path("runtime-evidence/audio-lease-reconciliation-000.csv")
+          r=json.loads(report.read_text(encoding="utf-8"))
+          if (r["schema"]!="vh-stage348-original-software-lease-reconciliation/v1"
+              or r["result"]!="ORIGINAL_GUEST_SOFTWARE_PCM_LEASE_BALANCE_SOURCE_VERIFIED"
+              or r["original_guest_software_lease_source_observed"] is not True
+              or r["original_guest_software_lease_bytes_preserved"] is not True
+              or r["only_software_owner_counters_checked"] is not True
+              or r["playback_at_DAC_or_speaker_verified"] is not False
+              or r["original_PS1_soundtrack_verified"] is not False
+              or r["physical_Nintendo_Switch_audio_tested"] is not False
+              or not source.is_file() or source.is_symlink()
+              or hashlib.sha256(source.read_bytes()).hexdigest()!=
+                 r["original_guest_software_lease_csv_sha256"]
+              or r["lease_pages_acquired"]<=0
+              or r["lease_pages_acquired"]!=
+                 r["lease_pages_released"]+r["abandoned_sessions"]
+              or r["accepted_pages_submitted"]>r["lease_pages_released"]):
+              raise SystemExit("Stage348 original guest PCM lease source not verified")
+          print("Stage348 original software PCM pages acquired:",
+                r["lease_pages_acquired"])
+          print("Stage348 original software PCM pages released:",
+                r["lease_pages_released"])
+          print("Stage348 abandoned full sessions:",
+                r["abandoned_sessions"])
+          print("Stage348 original software guest source SHA256:",
+                r["original_guest_software_lease_csv_sha256"])
+          PY
+          echo "Stage348: independently SHA256 rechecked original guest post-join PCM software lease accounting. NOT device queue depth, audible fidelity or physical Nintendo Switch sound." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Stage308 independently source-verify guest optical scene clocks versus guest exit
         shell: bash
         run: |
@@ -1015,6 +1147,161 @@ jobs:
                 r["last_page_relative_to_Plus_ns"])
           PY
           echo "Stage314: copied ORIGINAL guest audout last-return CSV byte-for-byte, re-audited against original Stage307/310 exit source and Stage313 source, preserved separate audit hash. No DAC/speaker playback proof or guest-to-host PCM timing claims." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage351 verify original post-join tail failure cause against old source receipts
+        id: stage351_audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_guest_tail_reason_stage351.py \
+            --guest-root-file runtime-evidence/guest-sd-root.txt \
+            --stage313 runtime-evidence/guest-last-audout-release-stage313.json \
+            --stage348 runtime-evidence/guest-lease-reconciliation-stage348.json \
+            --stage313-original runtime-evidence/audio-exit-output-000.csv \
+            --stage348-original runtime-evidence/audio-lease-reconciliation-000.csv \
+            --output runtime-evidence/guest-exit-tail-reason-stage351.json \
+            --output-original runtime-evidence/audio-exit-tail-reason-000.csv
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          doc=json.loads(Path(
+              "runtime-evidence/guest-exit-tail-reason-stage351.json"
+              ).read_text(encoding="utf-8"))
+          original=Path("runtime-evidence/audio-exit-tail-reason-000.csv")
+          if (doc["schema"]!="vh-stage351-original-guest-exit-tail-reason/v1"
+              or doc["result"]!="ORIGINAL_GUEST_EXIT_TAIL_CAUSE_SOURCE_VERIFIED"
+              or doc["original_guest_tail_reason_source_observed"] is not True
+              or doc["original_guest_tail_reason_bytes_preserved"] is not True
+              or doc["bound_to_original_stage313_tail_observation"] is not True
+              or doc["bound_to_original_stage348_lease_observation"] is not True
+              or doc["prior_stage313_and_stage348_original_bytes_reaudited"] is not True
+              or doc["one_to_one_causal_attribution_proven"] is not False
+              or doc["physical_Nintendo_Switch_audio_tested"] is not False
+              or not original.is_file() or original.is_symlink()
+              or hashlib.sha256(original.read_bytes()).hexdigest()!=
+                 doc["original_guest_tail_reason_csv_sha256"]):
+              raise SystemExit("Stage351 original guest tail source not verified")
+          print("Stage351 original software tail result:",doc["reason_name"])
+          print("Stage351 guest source SHA256:",
+                doc["original_guest_tail_reason_csv_sha256"])
+          print("Stage351 final software abandoned sessions:",doc["abandoned_sessions"])
+          PY
+          echo "Stage351: original guest exit-tail service cause independently source-audited after join; not proof of DAC/speaker audio." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage357 independently verify original raw audoutWait Result against Stage351
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_guest_tail_wait_result_stage357.py \
+            --guest-root-file runtime-evidence/guest-sd-root.txt \
+            --stage351 runtime-evidence/guest-exit-tail-reason-stage351.json \
+            --stage351-original runtime-evidence/audio-exit-tail-reason-000.csv \
+            --stage313 runtime-evidence/guest-last-audout-release-stage313.json \
+            --stage348 runtime-evidence/guest-lease-reconciliation-stage348.json \
+            --output runtime-evidence/guest-exit-tail-wait-result-stage357.json \
+            --output-original runtime-evidence/audio-exit-tail-wait-result-000.csv
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          doc=json.loads(Path(
+              "runtime-evidence/guest-exit-tail-wait-result-stage357.json"
+              ).read_text(encoding="utf-8"))
+          original=Path("runtime-evidence/audio-exit-tail-wait-result-000.csv")
+          if (doc["result"]!="ORIGINAL_NEIXUM_GUEST_EXIT_TAIL_WAIT_RESULT_SOURCE_VERIFIED"
+              or doc["original_guest_wait_result_source_observed"] is not True
+              or doc["original_guest_wait_result_bytes_preserved"] is not True
+              or doc["raw_result_is_software_service_status_only"] is not True
+              or doc["physical_Nintendo_Switch_audio_tested"] is not False
+              or doc["underlying_result_symbolic_meaning_proven"] is not False
+              or not original.is_file() or original.is_symlink()
+              or hashlib.sha256(original.read_bytes()).hexdigest()!=
+                 doc["original_guest_wait_result_csv_sha256"]):
+              raise SystemExit("Stage357 raw original guest wait Result not verified")
+          print("Stage357 original guest wait Result bits:",
+                doc["audout_wait_result_raw"],
+                "Stage351 reason:",doc["stage351_reason_code"])
+          PY
+          echo "Stage357: independently preserved true guest raw Result from existing bounded tail wait, not physical audio." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage368 bind one original returned-descriptor tuple to same-run NeXium NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_stage368_attested_guest.py \
+            --guest-root-file runtime-evidence/guest-sd-root.txt \
+            --runner-temp "$RUNNER_TEMP" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --git-sha "$GITHUB_SHA" \
+            --nro-preflight integrated-nro-preflight.json \
+            --stage351 runtime-evidence/guest-exit-tail-reason-stage351.json \
+            --stage357 runtime-evidence/guest-exit-tail-wait-result-stage357.json \
+            --stage351-original runtime-evidence/audio-exit-tail-reason-000.csv \
+            --stage357-original runtime-evidence/audio-exit-tail-wait-result-000.csv \
+            --output runtime-evidence/guest-exit-wait-descriptor-stage368.json \
+            --stage368-original runtime-evidence/audio-exit-wait-descriptor-000.csv
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          f=Path("runtime-evidence/guest-exit-wait-descriptor-stage368.json")
+          doc=json.loads(f.read_text(encoding="utf-8"))
+          raw=Path("runtime-evidence/audio-exit-wait-descriptor-000.csv").read_bytes()
+          if (doc["result"]!="STAGE368_SAME_RUN_ORIGINAL_GUEST_WAIT_DESCRIPTOR_BOUND_TO_351_357_NRO"
+              or doc["neXium_original_guest_run_id"]!=int(__import__("os").environ["GITHUB_RUN_ID"])
+              or doc["stage368_guest_original_source_bound_to_verified_prior_originals"] is not True
+              or hashlib.sha256(raw).hexdigest()!=doc["source_sha256"]["descriptor"]
+              or doc["old_0xEA01_cause_proven"] is not False
+              or doc["actual_queue_depth_measured"] is not False
+              or doc["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage368 original guest wait descriptor not attested")
+          print("Stage368 real source-bound raw Result:",doc["raw_wait_result"],
+                "release count:",doc["reported_released_count"],
+                "pointer matched:",doc["returned_pointer_matches_submitted"])
+          PY
+          echo 'Stage368 independently bound original guest wait descriptor tuple to prior Stage351/357 CSV and same-run NRO. No physical audio or kernel root-cause inference.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage360 independently audit last retained pre-submit queue probe age at exit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_guest_exit_probe_context_stage360.py \
+            --guest-root-file runtime-evidence/guest-sd-root.txt \
+            --stage313 runtime-evidence/guest-last-audout-release-stage313.json \
+            --stage351 runtime-evidence/guest-exit-tail-reason-stage351.json \
+            --output runtime-evidence/guest-exit-probe-context-stage360.json \
+            --output-original runtime-evidence/audio-exit-probe-context-000.csv
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          doc=json.loads(Path("runtime-evidence/guest-exit-probe-context-stage360.json").read_text())
+          raw=Path("runtime-evidence/audio-exit-probe-context-000.csv").read_bytes()
+          if (doc["result"]!="ORIGINAL_NEIXUM_EXIT_PRE_SUBMIT_PROBE_AGE_SOURCE_VERIFIED"
+              or doc["original_guest_context_bytes_preserved"] is not True
+              or hashlib.sha256(raw).hexdigest()!=doc["original_guest_context_sha256"]
+              or doc["direct_exit_time_queue_depth_observed"] is not False
+              or doc["scheduler_latency_measured"] is not False
+              or doc["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage360 guest context source not trusted")
+          print("Stage360 original probe age (ns):",doc["last_pre_submit_probe_age_ns"],
+                "exit software interval (ns):",doc["tail_elapsed_ns"])
+          PY
+          echo "Stage360: source-bound age of latest existing pre-submit audout probe; NOT direct shutdown queue depth or scheduler time." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve bounded unverified guest Stage351 source on strict audit failure
+        if: ${{ failure() && steps.stage351_audit.outcome == 'failure' }}
+        shell: bash
+        run: |
+          # Forensic fallback only. This does not turn a failed Stage351 audit
+          # into a pass and never labels a guest reason code as verified.
+          if python3 tools/preserve_unverified_guest_tail_reason_stage351.py \
+              --guest-root-file runtime-evidence/guest-sd-root.txt \
+              --output-original runtime-evidence/stage351-unverified-quarantine.csv \
+              --output-report runtime-evidence/stage351-unverified-quarantine.json \
+              --run-id "$GITHUB_RUN_ID"; then
+            echo "Stage351 failed; limited original guest diagnostic bytes quarantined as UNVERIFIED." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Stage351 failed; no safe original guest diagnostic bytes were available to quarantine." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Capture ten additional A/B transitions in isolated NeXium
         id: scene_soak_capture
@@ -1835,6 +2122,33 @@ jobs:
           PY
           echo "Stage302: independently re-count original PCM zero runs by recording-start, interior, EOF and whole-recording censoring; EOF is NOT evidence of guest shutdown or audible dropout." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Stage339 show relative original host recorder stop clock diagnostics before immutable Stage303
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,sys
+          from pathlib import Path
+          sys.path.insert(0,str(Path("tools").resolve()))
+          from audit_nexium_pcm_recorder_stop import read_stop_events
+          from audit_nexium_stage338_failed_stage303_diagnostic import inspect_invalid_original_stop_csv
+          raw=Path("runtime-evidence/scene-recorder-stop.csv").read_bytes()
+          try:
+              rows=read_stop_events(raw)
+          except (ValueError,TypeError,KeyError):
+              reason=inspect_invalid_original_stop_csv(raw)
+              print("Stage339 original host recorder stop noncanonical:",reason)
+              # A read-only diagnosis cannot rescue invalid original source.
+              # The following strict Stage303 step is UNCHANGED and still fails.
+          else:
+              print("Stage339 original host recorder stop source canonical.",
+                    "Host recorder stop wall delta (ms):",
+                    rows[1]["host_epoch_ms"]-rows[0]["host_epoch_ms"],
+                    "Buffered recorder byte delta:",
+                    rows[1]["pcm_bytes"]-rows[0]["pcm_bytes"])
+          PY
+          echo "Stage339: recorded relative original host recorder stop wall and PCM byte deltas ahead of strict Stage303. No waiver of chronological evidence, no absolute host/guest epochs, no DAC or physical audio claim." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Stage303 original host recorder SIGINT snapshots versus exact terminal PCM
         shell: bash
         run: |
@@ -1872,6 +2186,37 @@ jobs:
                 r["terminal_exact_zero_run_stop_overlap"])
           PY
           echo "Stage303: captured original Parec before-SIGINT and after-wait PCM byte snapshots; independently source-bound and byte/frame-intersected with EOF silence. Buffered host snapshots do NOT prove audible/guest shutdown." >> "$GITHUB_STEP_SUMMARY"
+
+      # Stage362 must run EVEN when the preceding strict Stage303 fails.
+      # The paired host clock is explanatory evidence, not an exception
+      # to the original recorder-stop epoch ordering requirements.
+      - name: Stage362 independent recorder stop wall/monotonic companion audit
+        if: ${{ always() && steps.scene_capture.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s runtime-evidence/scene-recorder-stop.csv
+          test -s runtime-evidence/scene-recorder-stop-monotonic.csv
+          python3 tools/audit_nexium_recorder_stop_dual_clock_stage362.py \
+            --legacy runtime-evidence/scene-recorder-stop.csv \
+            --paired runtime-evidence/scene-recorder-stop-monotonic.csv \
+            --output runtime-evidence/scene-recorder-stop-dual-clock-stage362.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("runtime-evidence/scene-recorder-stop-dual-clock-stage362.json")
+          r=json.loads(p.read_text(encoding="utf-8"))
+          if (r["result"]!="STAGE362_ORIGINAL_HOST_RECORDER_STOP_DUAL_CLOCKS_RECONCILED"
+              or r["host_monotonic_clock_increased"] is not True
+              or r["strict_stage303_source_audit_not_waived"] is not True
+              or r["strict_stage303_original_csv_not_modified"] is not True
+              or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage362 host-only independent original clock pairing invalid")
+          print("Stage362 original host recorder wall delta (ms):",r["host_wall_elapsed_ms"])
+          print("Stage362 original host recorder monotonic delta (ns):",r["host_monotonic_elapsed_ns"])
+          print("Stage362 original strict Stage303 chronology compatible:",r["strict_stage303_chronology_compatible"])
+          PY
+          echo "Stage362: original host recorder SIGINT wall+monotonic clocks paired. Backwards wall clock still fails Stage303; no audio speaker/device claim." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Stage304 source-bound real Plus exit control host PCM timeline
         shell: bash
@@ -1960,6 +2305,114 @@ jobs:
                                    "after_plus_500ms_window")})
           PY
           echo "Stage305: independently fenced terminal zero-run start against actual buffered Plus snapshots and inspected ±500ms original source PCM; correlation is not guest timing, audio causality or audible quality proof." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage325 final recheck of unchanged original host clock CSV witnesses
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,sys
+          from pathlib import Path
+          sys.path.insert(0,str(Path("tools").resolve()))
+          from audit_nexium_host_clock_pairs import audit
+          root=Path("runtime-evidence")
+          receipt=root/"host-dual-clock-stage325.json"
+          if receipt.is_symlink() or not receipt.is_file():
+              raise SystemExit("Stage325 missing original host clock receipt")
+          old=root/"scene-exit-controls.csv"
+          dual=root/"scene-exit-controls-monotonic.csv"
+          if old.is_symlink() or dual.is_symlink() or not old.is_file() or not dual.is_file():
+              raise SystemExit("Stage325 original clock CSV disappeared or was replaced")
+          previous=json.loads(receipt.read_text(encoding="utf-8"))
+          reproduced=audit(old.read_bytes(),dual.read_bytes())
+          if previous!=reproduced:
+              raise SystemExit("Stage325 later source evidence differs from initial receipt")
+          stage304=json.loads((root/"pcm-exit-controls-stage304.json").read_text())
+          if stage304["result"]!="SOURCE_BOUND_BUFFERED_EXIT_CONTROL_TIMELINE_RECONCILED":
+              raise SystemExit("Stage325 cannot replace strict Stage304 acceptance")
+          for before,after in zip(stage304["exit_control_snapshots"],
+                                  stage304["exit_control_snapshots"][1:]):
+              if (before["pcm_bytes"]>after["pcm_bytes"] or
+                      before["host_epoch_ms"]>=after["host_epoch_ms"]):
+                  raise SystemExit("Stage325 cannot permit rejected Stage304 host ordering")
+          print("Stage325 original paired host CSV sources unchanged through Stage305")
+          PY
+          echo "Stage325: independent final re-read reproduced exact original host dual-clock receipt after strict Stage304/305; unchanged PCM/music, no physical audio claim." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage334 capture new real guest-software and host-clock source manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_stage334_capture_manifest.py \
+            --evidence-root runtime-evidence \
+            --output runtime-evidence/source-guest-host-stage334.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("runtime-evidence/source-guest-host-stage334.json").read_text(encoding="utf-8"))
+          if (r["result"]!="ORIGINAL_GUEST_SOFTWARE_AND_HOST_CLOCK_SOURCES_INDEPENDENTLY_REPLAYED"
+                  or r["original_stage320_322_325_receipts_recomputed_from_exact_sources"] is not True
+                  or r["original_stage304_305_strict_success_receipts_checked"] is not True
+                  or r["no_guest_to_host_clock_alignment_proven"] is not True
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage334 genuine original guest-host evidence not verified")
+          print("Stage334 original capture guest software duration:",
+                r["original_guest_last_call_duration_software_ns"])
+          print("Stage334 original capture guest software previous baseline:",
+                r["original_guest_prior_lower_median_software_ns"])
+          print("Stage334 original host control deltas:",r["original_host_control_deltas"])
+          PY
+          echo "Stage334: new independent NeXium original guest-source / host-clock compact witness; Stage320/322/325 and strict Stage304/305 replayed; no original PCM or absolute timestamps in compact manifest; not guest-host clock mapping or physical Switch sound." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage341 verify original capture NRO metadata versus subsequent PCM quality report
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,sys
+          from pathlib import Path
+          sys.path.insert(0,str(Path("tools").resolve()))
+          from audit_nexium_stage336_capture_build_binding import read_json,verify_monitor_quality
+          root=Path("runtime-evidence")
+          capture=read_json(root/"pcm-monitor-report.json")
+          quality=read_json(root/"pcm-quality-report.json")
+          preflight=read_json(Path("integrated-nro-preflight.json"),max_bytes=4096)
+          verify_monitor_quality(capture,quality)
+          if capture["source_nro_sha256"]!=preflight["nro_sha256"]:
+              raise SystemExit("Stage341 original capture source NRO differs from same-run preflight")
+          print("Stage341 capture source NRO SHA-256 confirmed:",capture["source_nro_sha256"])
+          print("Stage341 virtual PCM source-byte count confirmed:",quality["bytes"])
+          PY
+          echo "Stage341: original NRO-carrying PCM monitor capture metadata matches its separate quality analysis and current-run NRO preflight; not physical Switch audio." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage336 bind fourth fresh genuine NeXium guest host sources to exact same-run NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_stage336_capture_build_binding.py \
+            --evidence-root runtime-evidence \
+            --nro-preflight integrated-nro-preflight.json \
+            --git-sha "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --output runtime-evidence/source-capture-to-build-stage336.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path(
+              "runtime-evidence/source-capture-to-build-stage336.json"
+          ).read_text(encoding="utf-8"))
+          if (r["result"]!="ORIGINAL_NEXIUM_GUEST_HOST_SOURCES_BOUND_TO_SAME_RUN_NRO"
+                  or r["same_run_nro_bytes_and_host_monitor_source_digest_checked"] is not True
+                  or r["original_stage320_322_325_guest_host_receipts_replayed_again"] is not True
+                  or r["strict_original_stage304_305_receipts_preserved"] is not True
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage336 fresh independent NeXium source to NRO binding rejected")
+          print("Stage336 fresh NRO SHA-256:",r["source_nro_sha256"])
+          print("Stage336 guest source last normal software call:",
+                r["original_guest_last_software_duration_ns"])
+          PY
+          echo "Stage336: fourth fresh NeXium original guest/host evidence bound to same-run NRO source SHA and capture monitor without absolute timestamps, sample clock alignment, actual speakers or physical Switch claims." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record audio capture boundary
         if: always()

@@ -103,6 +103,7 @@ static void test_exact_release_ownership(void) {
     assert(lease.in_flight==&a && lease.pages_released==0);
     assert(vh_audio_buffer_lease_release(&lease,&a)==0);
     assert(lease.in_flight==NULL && lease.pages_released==1);
+    assert(lease.pages_leased==1 && lease.busy_begin_rejections==1);
     assert(vh_audio_buffer_lease_release(&lease,&a)==-1);
     assert(vh_audio_buffer_lease_begin(&lease,&b)==0);
     assert(vh_audio_buffer_lease_release(&lease,&a)==-1);
@@ -113,6 +114,7 @@ static void test_exact_release_ownership(void) {
     assert(vh_audio_buffer_lease_begin(&lease,&a)==0);
     assert(vh_audio_buffer_lease_release(&lease,&a)==0);
     assert(lease.pages_released==2);
+    assert(lease.pages_leased==3 && lease.busy_begin_rejections==2);
     vh_audio_buffer_lease_session_closed(&lease);
     assert(lease.abandoned_sessions==1);
     vh_audio_buffer_lease_session_closed(NULL);
@@ -159,7 +161,28 @@ static void test_stale_releases_and_restarts(void) {
     assert(dev.accepted==3);
     assert(dev.lease.pages_released==3);
 }
+
+static void test_stage346_counter_saturation(void) {
+    int a=0,b=0;
+    VhAudioBufferLease lease={0};
+    assert(vh_audio_buffer_lease_begin(&lease,NULL)==-1);
+    assert(!lease.pages_leased && !lease.busy_begin_rejections);
+    lease.pages_leased=UINT64_MAX-1u;
+    lease.busy_begin_rejections=UINT_MAX-1u;
+    assert(!vh_audio_buffer_lease_begin(&lease,&a));
+    assert(lease.pages_leased==UINT64_MAX);
+    assert(vh_audio_buffer_lease_begin(&lease,&b)==-1);
+    assert(vh_audio_buffer_lease_begin(&lease,&b)==-1);
+    assert(lease.busy_begin_rejections==UINT_MAX);
+    assert(vh_audio_buffer_lease_release(&lease,&b)==-1);
+    assert(lease.in_flight==&a);
+    assert(!vh_audio_buffer_lease_release(&lease,&a));
+    assert(!vh_audio_buffer_lease_begin(&lease,&b));
+    assert(lease.pages_leased==UINT64_MAX);
+    assert(!vh_audio_buffer_lease_release(&lease,&b));
+}
 int main(void) {
+    test_stage346_counter_saturation();
     test_exact_release_ownership();
     test_stale_releases_and_restarts();
     puts("strict audout PCM lease: matching releases, stale queue, "

@@ -1,0 +1,50 @@
+name: Stage357 captured raw audoutWaitPlayFinish Result software source tests
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage357-tail-wait-result.yml'
+      - 'source/vh_audio_exit_tail_wait_result_stage357.h'
+      - 'tests/test_vh_audio_exit_tail_wait_result_stage357.c'
+      - 'source/vh_switch_game_audio.c'
+      - 'source/vh_switch_game_audio.h'
+      - 'source/main.c'
+      - 'tools/audit_nexium_guest_tail_wait_result_stage357.py'
+      - 'tests/test_audit_nexium_guest_tail_wait_result_stage357.py'
+      - 'tools/audit_nexium_guest_tail_reason_stage351.py'
+permissions:
+  contents: read
+jobs:
+  native:
+    name: Stage357 GCC Clang UBSan no-extra-service-call raw Result CSV tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run C11 post-join raw wait Result writer invariants
+        env:
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          for cc in gcc clang; do
+            for mode in optimized ubsan; do
+              if [ "$mode" = optimized ]; then
+                "$cc" -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+                  tests/test_vh_audio_exit_tail_wait_result_stage357.c \
+                  -o "build/stage357-$cc"
+                "build/stage357-$cc"
+              else
+                "$cc" -std=c11 -Wall -Wextra -Werror -O1 -g \
+                  -fsanitize=undefined -fno-omit-frame-pointer -Isource \
+                  tests/test_vh_audio_exit_tail_wait_result_stage357.c \
+                  -o "build/stage357-$cc-ubsan"
+                "build/stage357-$cc-ubsan"
+              fi
+            done
+          done
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_nexium_guest_tail_wait_result_stage357.py' -v
+          python3 -m py_compile tools/audit_nexium_guest_tail_wait_result_stage357.py
+          echo "Stage357 native result codes are synthetic only. Actual numeric audoutWaitPlayFinish Result requires a NEW NeXium guest CSV. No physical hardware or speaker audio proof." >> "$GITHUB_STEP_SUMMARY"

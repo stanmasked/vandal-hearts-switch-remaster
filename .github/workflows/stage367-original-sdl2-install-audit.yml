@@ -1,0 +1,50 @@
+name: Stage367 independently audit original failed SDL2 install evidence
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage367-original-sdl2-install-audit.yml'
+      - 'tools/audit_stage367_sdl2_original_artifact.py'
+      - 'tests/test_audit_stage367_sdl2_original_artifact.py'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit-authentic-failed-portlib:
+    name: Audit authentic Stage366 artifact without promoting failed SDL2 job
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject forged artifacts, successful builds and substitute runs
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_audit_stage367_sdl2_original_artifact.py' -v
+          python3 -m py_compile tools/audit_stage367_sdl2_original_artifact.py
+      - name: Fetch original GitHub artifact metadata and original failed job
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/12246243370 > stage367-meta.json
+          gh api repos/stanmasked/vandal-hearts-switch-remaster/actions/jobs/118499937561 > stage367-job.json
+      - name: Download preserved original two-file Stage366 artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 39384172009 --repo stanmasked/vandal-hearts-switch-remaster \
+            --name stage366-sdl2-portlib-install-evidence --dir stage367-original
+      - name: Independently re-audit source identity, original failure and logs
+        run: |
+          set -euo pipefail
+          python3 tools/audit_stage367_sdl2_original_artifact.py \
+            --original stage367-original --metadata stage367-meta.json \
+            --job stage367-job.json --output stage367-original-sdl2-verdict.json
+          echo 'Stage367 verifies historical failed SDL2 installer, not a passing SDL2 NRO or physical audio output.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload independent audit verdict
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage367-audited-original-sdl2-failure
+          path: stage367-original-sdl2-verdict.json
+          if-no-files-found: error

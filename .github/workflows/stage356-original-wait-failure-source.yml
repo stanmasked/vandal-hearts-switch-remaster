@@ -1,0 +1,104 @@
+name: Stage356 independent original NeXium failed audout wait source verification
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage356-original-wait-failure-source.yml'
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  genuine-source:
+    name: Stage356 re-audit SHA-pinned genuine guest wait_failed source
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download original failed-return run's archived guest diagnostic sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 39320606595 --repo stanmasked/vandal-hearts-switch-remaster \
+            --name nexium-runtime-evidence --dir original-failed-wait
+      - name: Recheck exact original Stage313 348 351 CSV bytes against their source receipts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,sys
+          from pathlib import Path
+          sys.path.insert(0,"tools")
+          from audit_nexium_stage352_three_original_tail_sources import (
+              reaudited_archive,VERIFIED
+          )
+          from audit_nexium_stage350_original_tail_vs_lease import safe_file
+          root=Path("original-failed-wait")
+          filenames={
+              "tail":"audio-exit-output-000.csv",
+              "lease":"audio-lease-reconciliation-000.csv",
+              "reason":"audio-exit-tail-reason-000.csv",
+              "stage313":"guest-last-audout-release-stage313.json",
+              "stage314":"guest-original-audout-last-page-stage314.json",
+              "stage348":"guest-lease-reconciliation-stage348.json",
+              "stage351":"guest-exit-tail-reason-stage351.json",
+          }
+          paths={}
+          for key,name in filenames.items():
+              matches=list(root.rglob(name))
+              if len(matches)!=1:
+                  raise SystemExit("Missing or ambiguous original guest source "+name)
+              safe_file(matches[0])
+              paths[key]=matches[0]
+          pins={
+              "tail":"f0e57a34db96becbddbb7fadd34772598e9f453f7dd3fed9b2bd5e0041468296",
+              "lease":"8314bc1619890356572aa16238ac4da6f87c790aee353a463be273f4991d39da",
+              "reason":"70e757639b6f26a7c18c7def2d46c564ec1543ebad5e7dcddcf323c58bfb1b61",
+          }
+          r=reaudited_archive(paths,pins,39320606595)
+          if (r.get("result")!=VERIFIED
+              or r.get("original_neXium_run_id")!=39320606595
+              or r.get("original_guest_csv_sha256")!={ 
+                  "stage313_last_audio_page_and_tail":pins["tail"],
+                  "stage348_software_PCM_lease":pins["lease"],
+                  "stage351_exit_tail_reason":pins["reason"],
+              }
+              or r.get("tail_reason_code")!=4
+              or r.get("tail_reason_name")!="wait_failed"
+              or r.get("tail_attempted") is not True
+              or r.get("tail_descriptor_return_confirmed") is not False
+              or r.get("lease_pages_acquired")!=1379
+              or r.get("lease_pages_released")!=1378
+              or r.get("abandoned_sessions")!=1
+              or r.get("exact_archived_original_CSV_bytes_reaudited") is not True
+              or r.get("three_distinct_guest_source_receipts_matched") is not True
+              or r.get("older_unconfirmed_tail_failure_cause_proven") is not False
+              or r.get("physical_Nintendo_Switch_audio_tested") is not False
+              or r.get("DAC_or_speaker_audio_verified") is not False):
+              raise SystemExit("Original NeXium wait_failed source did not revalidate")
+          r.update({
+              "stage356_result":"ORIGINAL_NEIXUM_GUEST_WAIT_FAILURE_SOURCE_REAUDITED",
+              "stage356_real_failed_wait_branch_observed":True,
+              "underlying_libnx_Result_numeric_code_observed":False,
+              "audible_dropout_or_DAC_playback_verified":False,
+              "reason_for_older_unclassified_runs_proven":False,
+          })
+          with Path("stage356-authentic-guest-wait-failure.json").open(
+                  "x",encoding="utf-8") as f:
+              json.dump(r,f,indent=2,sort_keys=True)
+              f.write("\n")
+          print(json.dumps({
+              "stage356_result":r["stage356_result"],
+              "reason_name":"wait_failed","reason_code":4,
+              "pages_acquired":1379,"pages_released":1378,"abandoned":1,
+              "hardware_audio_verified":False,
+          },sort_keys=True))
+          PY
+          echo "Stage356: authentic guest software reason4 wait_failed independently pinned to three original sources, balanced 1379/1378/1; underlying libnx Result and actual speaker output NOT captured." >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve only compact software result JSON, never PCM/music data
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage356-original-NeXium-wait-failure-software-proof
+          path: stage356-authentic-guest-wait-failure.json
+          if-no-files-found: error

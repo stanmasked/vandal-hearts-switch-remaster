@@ -1,0 +1,120 @@
+name: Stage383 independently recheck eighteen original NeXium audout exits
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage383-eighteen-original-optical-replay.yml'
+      - 'tools/audit_stage383_eighteen_optical_originals.py'
+      - 'tests/test_audit_stage383_eighteen_optical_originals.py'
+      - 'tools/audit_stage382_sixteen_optical_originals.py'
+      - 'tests/test_audit_stage382_sixteen_optical_originals.py'
+      - 'tools/audit_stage378_twelve_optical_originals.py'
+      - 'tools/audit_stage374_eight_optical_originals.py'
+      - 'tools/audit_stage373_six_optical_originals.py'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: stage383-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  eighteen-original-guest-sessions:
+    name: Replay nine original NeXium guest pairs with source-byte pins
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Stage373/374/378/382/383 anti-substitution regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          for stage in 373 374 378 382 383; do
+            case "$stage" in
+              373) suffix=six_optical_originals ;;
+              374) suffix=eight_optical_originals ;;
+              378) suffix=twelve_optical_originals ;;
+              382) suffix=sixteen_optical_originals ;;
+              383) suffix=eighteen_optical_originals ;;
+            esac
+            python3 -m unittest discover -s tests \
+              -p "test_audit_stage${stage}_${suffix}.py" -v
+            python3 -m py_compile "tools/audit_stage${stage}_${suffix}.py"
+          done
+      - name: Fetch nine original immutable guest pairs and original GitHub metadata
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p stage383-originals stage383-metadata
+          repo=stanmasked/vandal-hearts-switch-remaster
+          for run_id in 39396243731 39398650528 39406193313 39451930021 \
+                        39459228340 39462294094 39466729315 39476667373 \
+                        39479476340; do
+            case "$run_id" in
+              39396243731) artifact_id=12255245917; merge_sha=7322cd893638bdcbda168242093c7d20a20d5c85 ;;
+              39398650528) artifact_id=12257811667; merge_sha=14276a2b2326eff4b3d9c8a7de675205261048ed ;;
+              39406193313) artifact_id=12261315952; merge_sha=38318d3080a2813183704b2d9113015a3b51e464 ;;
+              39451930021) artifact_id=12279117713; merge_sha=3f213b94d25dc0d2b0687c27655fb823418732ed ;;
+              39459228340) artifact_id=12281898466; merge_sha=ba58bfb3190bda47e0c904a3684eb27a0c69fd1c ;;
+              39462294094) artifact_id=12283318074; merge_sha=a5deed8cea073a6c95e36eb94fda7b820ac0e0f1 ;;
+              39466729315) artifact_id=12286756628; merge_sha=1f361b89ccbfa50f85c0ea932f6a81e19fcecfba ;;
+              39476667373) artifact_id=12289084323; merge_sha=83d0252ec61274acb070bae74e49394992f44f4c ;;
+              39479476340) artifact_id=12290652201; merge_sha=c52dd353fe14f065cfe7c28f441509ec1f98587a ;;
+              *) exit 2 ;;
+            esac
+            gh api "repos/$repo/actions/runs/$run_id" > "stage383-metadata/$run_id-run.json"
+            gh api "repos/$repo/actions/runs/$run_id/jobs?per_page=100" > "stage383-metadata/$run_id-jobs.json"
+            gh api "repos/$repo/git/commits/$merge_sha" > "stage383-metadata/$run_id-merge.json"
+            gh api "repos/$repo/actions/runs/$run_id/artifacts?per_page=100" \
+              --jq ".artifacts[] | select(.id == $artifact_id)" > "stage383-metadata/$run_id-artifact.json"
+            test -s "stage383-metadata/$run_id-artifact.json"
+            mkdir -p "stage383-originals/$run_id"
+            gh run download "$run_id" --repo "$repo" \
+              --name stage371-two-guest-exit-original-observations \
+              --dir "stage383-originals/$run_id"
+            test -s "stage383-originals/$run_id/stage371-two-authentic-guest-exits.json"
+          done
+      - name: Decode eighteen original CRC-checked optical packets and guest software exits
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_stage383_eighteen_optical_originals.py \
+            --originals stage383-originals \
+            --metadata stage383-metadata \
+            --output stage383-eighteen-original-optical-replay.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('stage383-eighteen-original-optical-replay.json').read_text())
+          assert report['result']=='STAGE383_EIGHTEEN_ORIGINAL_NEIXUM_GUEST_EXITS_SOURCE_BOUND'
+          assert report['original_guest_sessions']==18 and len(report['source_run_ids'])==9
+          assert len(report['sessions'])==18
+          assert report['successful_software_wait_results']==18
+          assert report['confirmed_exact_descriptor_returns']==18
+          assert report['distinct_original_optical_pngs']==18
+          assert report['distinct_crc_checked_optical_packets']==18
+          assert report['complete_music_scene_transitions']==72 and report['dropped_guest_events']==0
+          assert report['distinct_reason_csv_sha256_count']==17
+          assert len(report['repeated_reason_counter_csv'])==1
+          assert report['hardware_status']=='HARDWARE NOT TESTED'
+          assert not report['physical_switch_speaker_audio_tested']
+          assert not report['cause_of_historical_0xEA01_proven']
+          PY
+          {
+            echo '### Stage383: eighteen independently archived original NeXium guest exits'
+            echo 'Nine completed original source runs, same verified NRO SHA256.'
+            echo '18 software waits Result=0, one matching returned descriptor per session.'
+            echo '18 unique CRC-checked original optical PNGs and packets.'
+            echo '72 complete music-scene transitions, zero dropped events.'
+            echo 'One authentic reason-counter CSV digest repeats across two independently verified guests.'
+            echo 'Not hardware audio/Switch speaker/HOME, not controlled causality or root cause of 0xEA01.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish report only, never raw PCM, ROM or original game assets
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage383-eighteen-original-optical-evidence-summary
+          path: stage383-eighteen-original-optical-replay.json
+          if-no-files-found: warn
+          retention-days: 90

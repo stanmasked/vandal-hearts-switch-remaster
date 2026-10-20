@@ -1,0 +1,93 @@
+name: Stage372 independently replay archived authentic Stage371 NeXium pair
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage372-original-stage371-pair-replay.yml'
+      - 'tools/audit_stage372_original_pair.py'
+      - 'tests/test_audit_stage372_original_pair.py'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: stage372-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  replay-original-pair:
+    name: Independently reopen two original Stage371 audout guest CSV sets
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run synthetic anti-substitution and fail-closed controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_stage372_original_pair.py' -v
+          python3 -m py_compile tools/audit_stage372_original_pair.py
+      - name: Obtain completed original Actions run, jobs and merge commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api repos/stanmasked/vandal-hearts-switch-remaster/actions/runs/39396243731 \
+            > stage372-run.json
+          gh api 'repos/stanmasked/vandal-hearts-switch-remaster/actions/runs/39396243731/jobs?per_page=100' \
+            > stage372-jobs.json
+          gh api repos/stanmasked/vandal-hearts-switch-remaster/git/commits/7322cd893638bdcbda168242093c7d20a20d5c85 \
+            > stage372-merge-commit.json
+          gh api 'repos/stanmasked/vandal-hearts-switch-remaster/actions/runs/39396243731/artifacts?per_page=100' \
+            --jq '.artifacts[] | select(.id == 12255245917)' > stage372-artifact.json
+          test -s stage372-artifact.json
+      - name: Download actual archived Stage371 original guest data
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir stage372-original
+          gh run download 39396243731 \
+            --repo stanmasked/vandal-hearts-switch-remaster \
+            --name stage371-two-guest-exit-original-observations \
+            --dir stage372-original
+          test -s stage372-original/stage371-two-authentic-guest-exits.json
+          test -s stage372-original/stage371-originals/a/audio-exit-tail-reason-000.csv
+          test -s stage372-original/stage371-originals/b/audio-exit-tail-reason-000.csv
+      - name: Reparse both genuine three-file guest tuples and image CRCs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_stage372_original_pair.py \
+            --archive stage372-original \
+            --run-json stage372-run.json \
+            --jobs-json stage372-jobs.json \
+            --artifact-json stage372-artifact.json \
+            --merge-commit-json stage372-merge-commit.json \
+            --output stage372-independent-original-pair.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('stage372-independent-original-pair.json').read_text())
+          assert report['result']=='STAGE372_INDEPENDENTLY_REPARSED_TWO_ORIGINAL_STAGE371_GUEST_WAITS'
+          assert [x['software_wait_result'] for x in report['original_runs_replayed']]==[0,0]
+          assert [x['released_descriptors'] for x in report['original_runs_replayed']]==[1,1]
+          assert report['historical_0xEA01_root_cause_proven'] is False
+          assert report['physical_switch_speaker_audio_tested'] is False
+          PY
+          {
+            echo '### Stage372 independent archived original-source replay'
+            echo 'Both preserved Stage371 guest CSV families were independently reopened and re-parsed.'
+            echo 'Results: 0 / 0; reported released descriptors: 1 / 1.'
+            echo 'This is archival source re-audit, not two additional NeXium sessions.'
+            echo 'No DAC/speaker test, exit queue depth measurement, or historical 0xEA01 cause claim.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve compact independent report without PCM or game assets
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage372-independent-original-stage371-source-replay
+          path: stage372-independent-original-pair.json
+          if-no-files-found: warn
+          retention-days: 90

@@ -1,0 +1,92 @@
+name: Stage374 recheck eight original NeXium optical exit sessions
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage374-eight-original-optical-replay.yml'
+      - 'tools/audit_stage374_eight_optical_originals.py'
+      - 'tests/test_audit_stage374_eight_optical_originals.py'
+      - 'tools/audit_stage373_six_optical_originals.py'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: stage374-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  eight-original-guest-sessions:
+    name: Replay four independently archived NeXium guest pairs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run original Stage373 and new Stage374 anti-substitution tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_audit_stage373_six_optical_originals.py' -v
+          python3 -m unittest discover -s tests -p 'test_audit_stage374_eight_optical_originals.py' -v
+          python3 -m py_compile tools/audit_stage373_six_optical_originals.py tools/audit_stage374_eight_optical_originals.py
+      - name: Fetch original source runs, Git metadata, and guest files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stage374-originals stage374-metadata
+          repo=stanmasked/vandal-hearts-switch-remaster
+          for run_id in 39396243731 39398650528 39406193313 39451930021; do
+            case "$run_id" in
+              39396243731) artifact_id=12255245917; merge_sha=7322cd893638bdcbda168242093c7d20a20d5c85 ;;
+              39398650528) artifact_id=12257811667; merge_sha=14276a2b2326eff4b3d9c8a7de675205261048ed ;;
+              39406193313) artifact_id=12261315952; merge_sha=38318d3080a2813183704b2d9113015a3b51e464 ;;
+              39451930021) artifact_id=12279117713; merge_sha=3f213b94d25dc0d2b0687c27655fb823418732ed ;;
+              *) exit 2 ;;
+            esac
+            gh api "repos/$repo/actions/runs/$run_id" > "stage374-metadata/$run_id-run.json"
+            gh api "repos/$repo/actions/runs/$run_id/jobs?per_page=100" > "stage374-metadata/$run_id-jobs.json"
+            gh api "repos/$repo/git/commits/$merge_sha" > "stage374-metadata/$run_id-merge.json"
+            gh api "repos/$repo/actions/runs/$run_id/artifacts?per_page=100" \
+              --jq ".artifacts[] | select(.id == $artifact_id)" > "stage374-metadata/$run_id-artifact.json"
+            test -s "stage374-metadata/$run_id-artifact.json"
+            mkdir -p "stage374-originals/$run_id"
+            gh run download "$run_id" --repo "$repo" \
+              --name stage371-two-guest-exit-original-observations \
+              --dir "stage374-originals/$run_id"
+            test -s "stage374-originals/$run_id/stage371-two-authentic-guest-exits.json"
+          done
+      - name: Reopen eight original guest CSV plus optical pixel families
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_stage374_eight_optical_originals.py \
+            --originals stage374-originals \
+            --metadata stage374-metadata \
+            --output stage374-eight-original-optical-replay.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path('stage374-eight-original-optical-replay.json').read_text())
+          assert data['result']=='STAGE374_EIGHT_ORIGINAL_GUEST_OPTICAL_EXITS_REPLAYED'
+          assert data['source_workflow_run_ids']==[39396243731,39398650528,39406193313,39451930021]
+          assert len(data['sessions'])==8
+          assert len(set(x['pixel_packet_sha256'] for x in data['sessions']))==8
+          assert data['all_eight_wait_results_zero'] and data['all_eight_returned_descriptors_one']
+          assert not data['physical_switch_speaker_audio_tested']
+          assert not data['historical_0xEA01_root_cause_proven']
+          PY
+          {
+            echo '### Stage374 — eight archived original NeXium guest audio exits rechecked'
+            echo 'Four separate finished GitHub Actions source runs, one identical verified NRO.'
+            echo 'Eight guest software waits: Result 0, one matching returned descriptor each.'
+            echo 'Eight distinct CRC-checked optical packets, four complete scenes in each, zero dropped.'
+            echo 'No new NeXium executions from this replay, no causal claim, no physical speaker proof.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve source-bound summary without raw music, PCM, or ROM data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage374-eight-original-guest-optical-summary
+          path: stage374-eight-original-optical-replay.json
+          if-no-files-found: warn
+          retention-days: 90

@@ -1,0 +1,42 @@
+name: Stage354 6144-page PCM ownership and original reason writer stress
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage354-lease-stress.yml'
+      - 'tests/test_vh_audio_exit_tail_stage354_longrun.c'
+      - 'source/vh_audio_exit_tail_checks_stage353.h'
+      - 'source/vh_audio_buffer_lease.c'
+      - 'source/vh_audio_buffer_lease.h'
+permissions:
+  contents: read
+jobs:
+  stress:
+    name: GCC Clang UBSan deterministic tail owner tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stress actual Stage353 decisions and original Stage351 CSV writer
+        env:
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          for cc in gcc clang; do
+            for mode in native ubsan; do
+              if [ "$mode" = native ]; then
+                "$cc" -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+                  tests/test_vh_audio_exit_tail_stage354_longrun.c \
+                  source/vh_audio_buffer_lease.c -o "build/stage354-$cc"
+                "build/stage354-$cc"
+              else
+                "$cc" -std=c11 -Wall -Wextra -Werror -O1 -g \
+                  -fsanitize=undefined -fno-omit-frame-pointer -Isource \
+                  tests/test_vh_audio_exit_tail_stage354_longrun.c \
+                  source/vh_audio_buffer_lease.c -o "build/stage354-$cc-ubsan"
+                "build/stage354-$cc-ubsan"
+              fi
+            done
+          done
+          echo "Stage354: 6144 synthetic PCM pages per invocation, not real libnx device or speaker evidence." >> "$GITHUB_STEP_SUMMARY"

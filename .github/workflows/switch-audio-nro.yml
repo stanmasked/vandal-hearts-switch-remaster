@@ -41,7 +41,8 @@ jobs:
           if [ -f "$conf" ] && ! grep -q '^XferCommand[[:space:]]*=' "$conf"; then
             sed -i '/^\[options\]/a XferCommand = /usr/bin/curl --user-agent "pacman/6.1.0 (Linux x86_64) libalpm/14.0.0" -L -C - -f -o %o %u' "$conf"
           fi
-          install_log="/tmp/vh-switch-sdl2-install.log"
+          # Keep the original package-manager bytes for post-failure provenance.
+          install_log="stage366-sdl2-install.log"
           installed=0
           for attempt in 1 2; do
             if dkp-pacman -Sy --noconfirm switch-sdl2 >"$install_log" 2>&1; then
@@ -56,11 +57,25 @@ jobs:
             sleep "$attempt"
           done
           if [ "$installed" -ne 1 ]; then
+            # pipefail keeps the original classifier's non-zero result.
+            # Never turn unavailable SDL2 into a successful NRO build.
             python3 tools/classify_switch_portlib_install.py \
-              --package switch-sdl2 --log "$install_log"
+              --package switch-sdl2 --log "$install_log" \
+              | tee stage366-sdl2-diagnostic.txt
             exit 1
           fi
           test -x "${DEVKITPRO:-/opt/devkitpro}/portlibs/switch/bin/sdl2-config"
+
+      - name: Preserve Stage366 SDL2 install evidence even when dependency fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage366-sdl2-portlib-install-evidence
+          path: |
+            stage366-sdl2-install.log
+            stage366-sdl2-diagnostic.txt
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Compile and inspect music NRO
         shell: bash
