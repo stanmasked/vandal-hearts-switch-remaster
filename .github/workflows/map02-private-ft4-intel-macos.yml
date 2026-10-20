@@ -71,3 +71,54 @@ jobs:
             tests/test_map02_vram4_frame.c -o /tmp/vh-map02-mac-ft4-frame -lm
           /tmp/vh-map02-mac-ft4-frame
           echo 'VH_MAP02_INTEL_MACOS_PRIVATE_FT4_PASS python=${{ matrix.python }} source_faces=2 owned_disc=0'
+
+  python-backward-compat:
+    name: Cross-host Python ${{ matrix.python }} regression
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.11']
+    steps:
+      - name: Checkout asset-free source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout exact pinned public PC raster
+        uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: upstream
+          sparse-checkout: |
+            platform/pc/src/pc_raster.c
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Run the identical private-format safety regressions with Clang
+        env:
+          CC: clang
+          MAP02_PINNED_RASTER: upstream/platform/pc/src/pc_raster.c
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          python -c 'import sys; assert sys.version_info[:2] == tuple(map(int, "${{ matrix.python }}".split(".")))'
+          python -m py_compile tools/verify_map02_private_pc_native_ft4.py \
+            tools/verify_map02_private_timeline_pc_vram4.py
+          python -m unittest discover -s tests \
+            -p 'test_verify_map02_private_timeline_pc_vram4.py' -v \
+            2>&1 | tee /tmp/vh-map02-crosshost-timeline.log
+          grep -F 'Ran 14 tests' /tmp/vh-map02-crosshost-timeline.log
+          python -m unittest discover -s tests \
+            -p 'test_verify_map02_private_pc_native_ft4.py' -v \
+            2>&1 | tee /tmp/vh-map02-crosshost-native.log
+          grep -F 'Ran 25 tests' /tmp/vh-map02-crosshost-native.log
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            tests/test_map02_vram4_frame.c -o /tmp/vh-map02-crosshost-ft4 -lm
+          /tmp/vh-map02-crosshost-ft4
+          echo 'VH_MAP02_PY39_PY311_COMPAT_PASS python=${{ matrix.python }} original_vram=0'
