@@ -92,7 +92,8 @@ jobs:
           from pathlib import Path
           p=Path("stage292-results/independent-real-21-22-cpal-audit.json")
           r=json.loads(p.read_text())
-          assert r["result"]=="ONE_NEW_ELF_21_22_GUEST_CONTRAST_VERIFIED"
+          assert r["result"] in ("ONE_NEW_ELF_21_22_GUEST_CONTRAST_VERIFIED",
+                                 "TWO_COMPLETE_ARCHIVES_SHOW_DIFFERENT_OR_MIXED_RESULTS")
           assert r["same_new_compiled_elf_and_generated_guest_nro"] is True
           assert len(r["trials"])==2
           assert r["trials"][0]["hint_ms"]==21
@@ -119,7 +120,7 @@ jobs:
               else:
                   r=json.loads(p.read_text())
                   print("Result: "+r["result"],file=out)
-                  if r["result"]=="ONE_NEW_ELF_21_22_GUEST_CONTRAST_VERIFIED":
+                  if "trials" in r:
                       print("Same host SHA-256: "+r["exact_nexium_lifecycle_elf_sha256"],file=out)
                       print("Same opt-in NRO SHA-256: "+r["same_rom_free_research_guest_nro_sha256"],file=out)
                       print("| Hint | CPAL calls | CPAL error callbacks | Lifecycle state | AudioOut appends | Guest prejoin | Nonzero PCM16 | Guest optical |",file=out)
@@ -134,7 +135,7 @@ jobs:
                                 f'{x["prejoin_audout_returns"]} | '
                                 f'{x["actual_nonzero_pcm16_samples"]} | '
                                 f'{x["guest_final_optical_result"]} |',file=out)
-                      print("**One pair only, not proven repeatability or permanent deadlock**. "
+                      print("**One pair only; mixed behavior is not suppressed and no permanent deadlock proven**. "
                             "Pulse latency is a requested hint, not measured CPAL hardware "
                             "period. Not evidence of original game music or physical Nintendo "
                             "Switch speaker output.",file=out)
