@@ -481,9 +481,9 @@ static void draw_map02_battle8(u32 *pixels, u32 stride,
     draw_text(pixels, stride, 985, 346, "B CANCEL", COLOR_WHITE, 1);
     draw_text(pixels, stride, 985, 370, "X END TURN", COLOR_WHITE, 1);
     draw_text(pixels, stride, 985, 394, "Y RESTART", COLOR_WHITE, 1);
-    draw_text(pixels, stride, 985, 418, "ZR OLD MAPS", COLOR_WHITE, 1);
+    draw_text(pixels, stride, 985, 418, "ZR OR L+R RETURN", COLOR_WHITE, 1);
     draw_text(pixels, stride, 70, 622,
-              "ZR RETURN  MINUS SWITCH DEMO  PLUS EXIT", COLOR_MUTED, 2);
+              "ZR OR L+R RETURN  MINUS DEMO  PLUS EXIT", COLOR_MUTED, 2);
     draw_text(pixels, stride, 70, 661,
               "D-PAD CURSOR  A MOVE OR ATTACK  X ENEMY TURN", COLOR_MUTED, 1);
     fill_rect(pixels, stride, 1000, 610,
@@ -522,6 +522,7 @@ int main(int argc, char **argv) {
     while (appletMainLoop()) {
         padUpdate(&pad);
         const u64 buttons_down = padGetButtonsDown(&pad);
+        const u64 buttons_held = padGetButtons(&pad);
 
         unsigned int actions = 0;
         if (buttons_down & HidNpadButton_Left)  actions |= VH_INPUT_LEFT;
@@ -542,7 +543,14 @@ int main(int argc, char **argv) {
         }
         if (battle_mode) {
             if (actions & VH_INPUT_QUIT) break;
-            if (buttons_down & HidNpadButton_ZR) {
+            /* ZR on hardware; held L+R chord for keyboard-driven NeXium.
+             * Plain L or R still selects original authored maps. */
+            const int toggle_8 =
+                !!(buttons_down & HidNpadButton_ZR) ||
+                (!!(buttons_down & (HidNpadButton_L | HidNpadButton_R)) &&
+                 (buttons_held & (HidNpadButton_L | HidNpadButton_R)) ==
+                     (HidNpadButton_L | HidNpadButton_R));
+            if (toggle_8) {
                 if (battle8_mode) {
                     battle8_mode = 0;
                     (void)vh_binit_index(&battle, scenario_id);
@@ -561,7 +569,7 @@ int main(int argc, char **argv) {
                 if (actions & VH_INPUT_CANCEL) (void)vh_b8_cancel(&battle8);
                 if (buttons_down & HidNpadButton_X)
                     (void)vh_b8_end_turn(&battle8);
-            } else {
+            } else if (!toggle_8) {
                 if (buttons_down & (HidNpadButton_L | HidNpadButton_R)) {
                     int next = (scenario_id + 1) % VH_BSCENARIOS;
                     if (vh_binit_index(&battle, next)) scenario_id = next;
