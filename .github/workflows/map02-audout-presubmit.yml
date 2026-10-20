@@ -107,10 +107,18 @@ jobs:
           if-no-files-found: error
 
   nexiom-presubmit:
-    name: Verify actual opt-in NRO's eight-page optical receipt in NeXium
+    name: Guest virtual sink PCM (${{ matrix.latency_ms }} ms, repeat ${{ matrix.repeat }})
     needs: [host-witness, research-nro]
     runs-on: ubuntu-26.04
     timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        # The NRO, PulseAudio sink and recording remain identical.
+        # Only the guest host-audio client receives this OPTIONAL hint;
+        # the separate parec monitor recorder uses default settings.
+        latency_ms: [default, 20]
+        repeat: [1, 2]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -188,6 +196,24 @@ jobs:
           set -euo pipefail
           mkdir -p runtime-evidence
           cp nros/manifest.json runtime-evidence/
+          export VH_PULSE_CLIENT_LATENCY_TRIAL="${{ matrix.latency_ms }}"
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          manifest=json.loads(Path('runtime-evidence/manifest.json').read_text())
+          trial={'schema':'vh-map02-pulse-client-latency-trial/v1',
+                 'variant':os.environ['VH_PULSE_CLIENT_LATENCY_TRIAL'],
+                 'independent_repeat':int('${{ matrix.repeat }}'),
+                 'latency_hint_only_not_verified_effect':True,
+                 'monitor_recorder_uses_default_latency':True,
+                 'source_sha':manifest['source_sha'],
+                 'nro_sha256':manifest['nro_sha256'],
+                 'run_id':int(os.environ['GITHUB_RUN_ID']),
+                 'attempt':int(os.environ['GITHUB_RUN_ATTEMPT']),
+                 '48k_sink_and_guest_audio_c_code_unchanged':True}
+          Path('runtime-evidence/pulse-client-trial.json').write_text(
+              json.dumps(trial,indent=2,sort_keys=True)+'\n')
+          PY
           # NeXium must see a functioning 48-kHz device. Mirror the
           # already-green STUDIO_C virtual audout environment; otherwise
           # audio initialization can fail before the eight-page witness.
@@ -202,6 +228,8 @@ jobs:
             rate=48000 channels=2 >runtime-evidence/pulse-module-id.txt
           pactl set-default-sink vh_map02_presubmit
           pactl list short sources > runtime-evidence/pulse-sources.txt
+          pactl list sinks > runtime-evidence/pulse-sinks-before.txt
+          pactl info > runtime-evidence/pulse-server-info.txt
           grep -F 'vh_map02_presubmit.monitor' runtime-evidence/pulse-sources.txt
           cat >"$RUNNER_TEMP/map02-presubmit-asound.conf" <<'ASOUND'
           pcm.!default { type pulse }
@@ -227,6 +255,14 @@ jobs:
           kill -0 "$capture_pid"
           timeout --kill-after=5s 45s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
             set -euo pipefail
+            # Set the optional hint only on NeXium, *after* launching
+            # the baseline parec recorder. It may be ignored by the
+            # backend: a changed gap is not automatic causal proof.
+            if [ "$VH_PULSE_CLIENT_LATENCY_TRIAL" != default ]; then
+              export PULSE_LATENCY_MSEC="$VH_PULSE_CLIENT_LATENCY_TRIAL"
+            else
+              unset PULSE_LATENCY_MSEC || true
+            fi
             "$NEXIUM_BIN" "$NRO" >"$ROOT/nexium-presubmit.log" 2>&1 &
             guest=$!
             trap "kill -KILL $guest 2>/dev/null || true" EXIT
@@ -239,6 +275,13 @@ jobs:
             done
             test -n "$window"
             sleep 4
+            # Capture real PulseAudio sink-input request attributes,
+            # not only an intended environment knob.
+            (pactl list sink-inputs > "$ROOT/pulse-sink-inputs-during.txt") || true
+            (pactl list short sink-inputs > "$ROOT/pulse-sink-inputs-short.txt") || true
+            # If no optical receipt is generated, these screenshots keep
+            # the actual UI stage visible rather than reporting only CRC.
+            import -window "$window" "$ROOT/presubmit-guest-before-input.png" || true
             timeout 3 xdotool windowfocus --sync "$window" || true
             timeout 3 xdotool keydown --window "$window" c
             sleep 0.15
@@ -254,6 +297,11 @@ jobs:
             sleep 3
             import -window "$window" "$ROOT/presubmit-guest.png"
             test -s "$ROOT/presubmit-guest.png"
+            sleep 5
+            import -window "$window" "$ROOT/presubmit-guest-late.png" || true
+            # Recheck sink input; a 20ms hint may change the ALSA client
+            # buffers or cause it to stop feeding the sink altogether.
+            (pactl list sink-inputs > "$ROOT/pulse-sink-inputs-after-input.txt") || true
             # Do not block forever on a GUI that ignores SIGINT:
             # retain the captured PNG as evidence and reap boundedly.
             kill -INT "$guest" 2>/dev/null || true
@@ -267,6 +315,42 @@ jobs:
           wait "$capture_pid" 2>/dev/null || true
           trap - EXIT
           test -s "$ROOT/presubmit-virtual-sink-s16le-48k.pcm"
+          pactl list sinks > "$ROOT/pulse-sinks-after.txt" || true
+      - name: Report raw monitor signal independently of guest optical state
+        shell: bash
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from array import array
+          import hashlib,json,math,sys
+          from pathlib import Path
+          root=Path("runtime-evidence")
+          pcm=root/"presubmit-virtual-sink-s16le-48k.pcm"
+          result={"schema":"vh-map02-latency-monitor-health/v1",
+                  "variant":"${{ matrix.latency_ms }}",
+                  "repeat":int("${{ matrix.repeat }}"),
+                  "virtual_sink_hardware_proof":False}
+          if pcm.is_file():
+              raw=pcm.read_bytes()
+              result["raw_pcm_sha256"]=hashlib.sha256(raw).hexdigest()
+              result["raw_bytes"]=len(raw)
+              result["valid_pcm16le_stereo"]=len(raw)>0 and len(raw)%4==0
+              if result["valid_pcm16le_stereo"]:
+                  samples=array("h");samples.frombytes(raw)
+                  if sys.byteorder!="little":samples.byteswap()
+                  result["stereo_frames"]=len(samples)//2
+                  result["seconds"]=round((len(samples)//2)/48000,6)
+                  result["nonzero_pcm16_samples"]=sum(x!=0 for x in samples)
+                  result["rms"]=round(math.sqrt(
+                      sum(float(x)*x for x in samples)/len(samples)),6)
+                  result["all_zero_monitor_pcm"]=result["nonzero_pcm16_samples"]==0
+          else:
+              result["capture_missing"]=True
+          (root/"presubmit-monitor-health.json").write_text(
+              json.dumps(result,sort_keys=True,indent=2)+"\n")
+          print(json.dumps(result,sort_keys=True,indent=2))
+          PY
       - name: Decode actual guest CRC and assert eight descriptor identities
         shell: bash
         run: |
@@ -301,6 +385,7 @@ jobs:
           print(result['result'])
           PY
           )"
+          echo "PulseAudio client latency hint: ${{ matrix.latency_ms }} ms (effect not assumed)" >> "$GITHUB_STEP_SUMMARY"
           echo "Virtual sink PCM page classifier: $result" >> "$GITHUB_STEP_SUMMARY"
           # An inconclusive byte-match is not 'no sound' or a test pass.
           # Preserve real capture for follow-up gain/timing analysis.
@@ -311,6 +396,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: map02-presubmit-nexium-guest-proof
+          name: map02-presubmit-nexium-guest-proof-${{ matrix.latency_ms }}-r${{ matrix.repeat }}
           path: runtime-evidence/
           if-no-files-found: warn
