@@ -1,0 +1,214 @@
+name: MAP02 Stage279 boot exact instrumented NeXium without ROM or guest audio
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-cpal-host-norom-boot.yml'
+      - 'docs/MAP02_CPAL_HOST_NOROM_BOOT.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  VH_EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_FROZEN_STAGE278: 'ca54ca70aa82d03d7f81a827d85cce21b73353d3'
+  VH_EXPECTED_HOST_SHA256: 'dd4ed55b6ce8477f19b77465f4ce6a0606b7a7315b3a0e2b8137b7d7ab5effd0'
+  VH_NEIXUM_SOURCE_SHA: '089562567a0a8760dfdd8420e1f57c35159a9219'
+
+jobs:
+  no-rom-gui-startup:
+    name: Launch SHA-pinned NeXium Linux host under headless Vulkan/X11, no game
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Ensure this stage changes no game or executable source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_SHA"
+          python3 - <<'PY'
+          import os,subprocess
+          observed=set(subprocess.check_output(
+              ["git","diff","--name-only",
+               os.environ["VH_FROZEN_STAGE278"],"HEAD"],
+              text=True).splitlines())
+          allowed={
+              ".github/workflows/map02-cpal-host-norom-boot.yml",
+              "docs/MAP02_CPAL_HOST_NOROM_BOOT.md",
+          }
+          assert observed and observed<=allowed,sorted(observed-allowed)
+          print("No original Switch game or emulator source changes:",sorted(observed))
+          PY
+      - name: Download exact completed instrumented Linux host from Stage276
+        uses: actions/download-artifact@v4
+        with:
+          name: map02-stage276-experimental-nexium-linux-x86_64
+          run-id: 39467347590
+          github-token: ${{ github.token }}
+          path: host
+      - name: Verify exact executable and immutable source/lock receipts BEFORE launch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s host/nexium
+          test -s host/manifest.json
+          chmod 0755 host/nexium
+          echo "$VH_EXPECTED_HOST_SHA256  host/nexium" | sha256sum --check -
+          python3 tools/verify_map02_instrumented_nexium_host_artifact.py \
+            --artifact-dir host --output host-identity-reverified.json
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          m=json.loads(Path("host-identity-reverified.json").read_text())
+          assert m["result"]=="EXACT_SOURCE_INSTRUMENTED_HOST_ELF_ARTIFACT_VERIFIED"
+          assert m["observed_elf_sha256"]==os.environ["VH_EXPECTED_HOST_SHA256"]
+          assert m["pinned_nexium_source_sha"]=="089562567a0a8760dfdd8420e1f57c35159a9219"
+          assert not m["guest_emulator_boot_or_cpal_execution_proven"]
+          PY
+      - name: Install minimal headless graphics, virtual audio and GUI runtime libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            xvfb xauth xdotool imagemagick \
+            libgtk-3-0t64 libasound2t64 libudev1 \
+            libxkbcommon0 libxkbcommon-x11-0 libx11-xcb1 \
+            libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers libgl1-mesa-dri \
+            pulseaudio pulseaudio-utils libasound2-plugins
+          mkdir -p runtime-evidence
+          ldd host/nexium >runtime-evidence/linked-libraries.txt
+          if grep -F 'not found' runtime-evidence/linked-libraries.txt; then
+            echo "::error::Missing ELF shared library dependencies"
+            exit 1
+          fi
+          test -s runtime-evidence/linked-libraries.txt
+      - name: Launch actual new NeXium ELF with NO ROM using software Vulkan/Xvfb
+        shell: bash
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          export HOST_BIN="$PWD/host/nexium"
+          export EVIDENCE="$PWD/runtime-evidence"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/vh-map02-no-rom-pulse"
+          mkdir -p "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          pulseaudio --daemonize=yes --exit-idle-time=-1 \
+            --log-target=file:"$EVIDENCE/pulseaudio.log"
+          export PULSE_SERVER="unix:$XDG_RUNTIME_DIR/pulse/native"
+          pactl load-module module-null-sink sink_name=vh_map02_boot_smoke \
+            rate=48000 channels=2 >"$EVIDENCE/pulse-null-sink-module-id.txt"
+          pactl set-default-sink vh_map02_boot_smoke
+          pactl list short sinks >"$EVIDENCE/pulse-sinks.txt"
+          test -s "$EVIDENCE/pulse-sinks.txt"
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export NEXIUM_X11=1
+          export NEXIUM_LOG_LEVEL=info
+          export WGPU_BACKEND=vulkan
+          export SDL_AUDIODRIVER=pulse
+          export HOME="$RUNNER_TEMP/map02-norom-home"
+          mkdir -p "$HOME"
+          timeout --kill-after=5s 95s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+            set -euo pipefail
+            "$HOST_BIN" >"$EVIDENCE/nexium-no-rom-stdout.log" 2>&1 &
+            guest=$!
+            trap "kill -KILL $guest 2>/dev/null || true" EXIT
+            window=""
+            for attempt in $(seq 1 55); do
+              sleep 1
+              window="$(xdotool search --onlyvisible --name NeXium 2>/dev/null | tail -n1 || true)"
+              if [ -n "$window" ]; then break; fi
+              kill -0 "$guest" 2>/dev/null || exit 1
+            done
+            test -n "$window"
+            kill -0 "$guest"
+            xdotool getwindowname "$window" >"$EVIDENCE/visible-window-title.txt"
+            grep -iF NeXium "$EVIDENCE/visible-window-title.txt"
+            sleep 3
+            kill -0 "$guest"
+            import -window "$window" "$EVIDENCE/nexium-gui-no-rom.png"
+            test -s "$EVIDENCE/nexium-gui-no-rom.png"
+            kill -TERM "$guest" 2>/dev/null || true
+            sleep 1
+            kill -KILL "$guest" 2>/dev/null || true
+            wait "$guest" 2>/dev/null || true
+          '
+          identify "$EVIDENCE/nexium-gui-no-rom.png" >"$EVIDENCE/screenshot-properties.txt"
+          test -s "$EVIDENCE/screenshot-properties.txt"
+      - name: Generate honest no-ROM GUI startup receipt, NOT CPAL callback proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          d=Path("runtime-evidence")
+          screenshot=(d/"nexium-gui-no-rom.png").read_bytes()
+          assert screenshot[:8]==b"\x89PNG\r\n\x1a\n"
+          title=(d/"visible-window-title.txt").read_text().strip()
+          assert "nexium" in title.lower()
+          stdout=(d/"nexium-no-rom-stdout.log").read_bytes()
+          identity=json.loads(Path("host-identity-reverified.json").read_text())
+          assert identity["result"]=="EXACT_SOURCE_INSTRUMENTED_HOST_ELF_ARTIFACT_VERIFIED"
+          manifest={
+            "schema":"vh-map02-instrumented-nexium-norom-boot/v1",
+            "result":"INSTRUMENTED_LINUX_HOST_GUI_VISIBLE_WITHOUT_ROM",
+            "exact_compiled_host_sha256":identity["observed_elf_sha256"],
+            "pinned_upstream_source_sha":identity["pinned_nexium_source_sha"],
+            "visible_window_title":title,
+            "actual_gui_png_sha256":hashlib.sha256(screenshot).hexdigest(),
+            "host_stdout_log_sha256":hashlib.sha256(stdout).hexdigest(),
+            "headless_software_vulkan":True,
+            "virtual_pulseaudio_sink_configured":True,
+            "user_rom_or_game_nro_loaded":False,
+            "cpal_game_callback_invoked_proven":False,
+            "guest_audioout_release_proven":False,
+            "original_nightly_binary_equivalence_proven":False,
+            "physical_switch_dac_audio_proven":False,
+            "21ms_guest_audio_fixed_proven":False,
+          }
+          (d/"no-rom-boot-receipt.json").write_text(
+              json.dumps(manifest,indent=2,sort_keys=True)+"\n")
+          print(json.dumps(manifest,indent=2,sort_keys=True))
+          PY
+      - name: Report confirmed GUI startup or inability to verify it
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          f=Path("runtime-evidence/no-rom-boot-receipt.json")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              print("### Stage279 SHA-pinned NeXium real GUI startup",file=out)
+              if not f.is_file():
+                  print("**UNVERIFIED:** visible no-ROM NeXium GUI was not established.",file=out)
+              else:
+                  m=json.loads(f.read_text())
+                  print("Result: "+m["result"],file=out)
+                  print("Actual host SHA: "+m["exact_compiled_host_sha256"],file=out)
+                  print("Window title: "+m["visible_window_title"],file=out)
+                  print("No user ROM or NRO, so **no game CPAL callback, AudioOut "
+                        "service, guest PCM, 21ms fix or physical Switch speaker "
+                        "claim** can be made from this smoke test.",file=out)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage279-no-rom-nexium-gui-startup-evidence
+          path: |
+            runtime-evidence/
+            host-identity-reverified.json
+          if-no-files-found: warn
