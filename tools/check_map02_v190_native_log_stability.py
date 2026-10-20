@@ -60,6 +60,11 @@ def snapshot_directory(directory: Path) -> tuple[tuple[str, tuple[int, ...]], ..
     for mode in range(10):
         filename = f"v185-{mode}.log" if mode <= 3 else f"v186-{mode}.log"
         out.append(sample_file(directory / filename))
+    # The ten independent emulator invocations must not alias one inode:
+    # a hard link could otherwise make two labels share one mutable log.
+    inodes = [(item[1][0], item[1][1]) for item in out]
+    if len(set(inodes)) != 10:
+        raise ValueError("native witness files share an inode across modes")
     return tuple(out)
 
 def audit_stability(directory: Path) -> tuple[int, int, int]:
