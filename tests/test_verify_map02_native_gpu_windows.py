@@ -181,6 +181,24 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
             self.assertFalse(result["whole_original_gameplay_frame_proven"])
             self.assertFalse(result["physical_ps1_equivalence_proven"])
 
+    def test_transfer_only_window_cannot_certify_target_draw_frame(self):
+        # A consistent frame-6 transfer journal with no DrawOTag frame-7
+        # event must not pass as a successful target-frame observation.
+        self.events = [
+            dict(event, frame=6, operation="clear", primitive_type=0,
+                 rect=[0, 0, 0, 0], semi=0)
+            for event in self.events
+        ]
+        empty = bytes(VRAM_BYTES)
+        for event in self.events:
+            (self.window / event["snapshot"]).write_bytes(empty)
+        (self.window / "gpu-native-events.jsonl").write_bytes(
+            b"".join(jsonline(event) for event in self.events))
+        self.status.update(draw_before_hooks=0, transfer_before_hooks=2)
+        self.save_status()
+        with self.assertRaisesRegex(ValueError, "no target DrawOTag"):
+            self.verify()
+
     def test_rejects_oversubscribed_or_counterfeit_completion(self):
         for change in (
             {"observed_hooks": 6},
