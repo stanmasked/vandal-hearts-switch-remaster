@@ -417,6 +417,54 @@ class PublicRelocatableELFTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unsupported/out-of-function"):
                 function_images(fp.fileno(), ("LoadCdFile",))
 
+    def test_relocation_with_forged_symbol_index_is_rejected(self):
+        obj, raw, reloc, _ = self.make_relocation_mutation_fixture(
+            name="relocation-foreign-symbol-index")
+        position, info, addend = RELA.unpack_from(raw, reloc[4])
+        forged_info = (0xfffffffe << 32) | (info & 0xffffffff)
+        RELA.pack_into(raw, reloc[4], position, forged_info, addend)
+        obj.write_bytes(raw)
+        with obj.open("rb") as fp:
+            with self.assertRaisesRegex(ValueError, "relocation symbol index invalid"):
+                function_images(fp.fileno(), ("LoadCdFile",))
+
+    def test_relocation_straddling_start_of_required_func_is_rejected(self):
+        obj = self.compile(
+            "int padding_function(void) { return 42; }\n"
+            "extern int outside(void);\n"
+            "int LoadCdFile(void) { return outside() + outside(); }\n",
+            name="relocation-cross-func")
+        result = subprocess.run(
+            ["readelf", "-W", "-s", str(obj)],
+            check=True, capture_output=True, text=True)
+        matching = [line.split() for line in result.stdout.splitlines()
+                    if line.split()[-1:] == ["LoadCdFile"]]
+        self.assertEqual(len(matching), 1)
+        start = int(matching[0][1], 16)
+        self.assertGreaterEqual(start, 4)
+        raw = bytearray(obj.read_bytes())
+        header = EHDR.unpack_from(raw)
+        shoff, shnum = header[6], header[12]
+        sections = [SHDR.unpack_from(raw, shoff + index * SHDR.size)
+                    for index in range(shnum)]
+        candidates = [
+            sec for sec in sections
+            if (sec[1] == 4 and sec[5] >= RELA.size
+                and sec[7] < shnum
+                and sections[sec[7]][2] & 0x4)
+        ]
+        self.assertTrue(candidates)
+        reloc = candidates[0]
+        _, info, addend = RELA.unpack_from(raw, reloc[4])
+        # A four-byte PC-relative relocation placed two bytes before the
+        # FUNC start reaches across its first two instruction bytes.
+        RELA.pack_into(raw, reloc[4], start - 2,
+                       (info & ~0xffffffff) | 4, addend)
+        obj.write_bytes(raw)
+        with obj.open("rb") as fp:
+            with self.assertRaisesRegex(ValueError, "cross-function relocation"):
+                function_images(fp.fileno(), ("LoadCdFile",))
+
     def test_real_relocatable_link_matches_nonrelocated_code(self):
         first = self.compile(
             "extern int ext(int);\n"
