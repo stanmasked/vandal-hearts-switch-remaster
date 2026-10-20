@@ -73,6 +73,20 @@ def bind_independent_reports(triple:dict,stage363:dict)->dict:
         "STAGE363_AUTHENTIC_DUAL_CLOCK_AND_GUEST_EXIT_SOURCE_REAUDITED"
         or type(stage363.get("original_neXium_run_id")) is not int
         or stage363["original_neXium_run_id"]!=RUN_ID
+        # Bind to the *entire* Stage363 pinned original-source set,
+        # not just to its displayed counters or human-readable run ID.
+        # A forged wrapper with the same 1438/1438/0 counts is not proof.
+        or stage363.get("exact_original_sha256")!=STAGE363_PINS
+        or type(stage363.get("original_stage303_pcm_bytes")) is not int
+        or stage363["original_stage303_pcm_bytes"]!=8804896
+        or type(stage363.get("original_stage362_host_pcm_size_delta_bytes")) is not int
+        or stage363["original_stage362_host_pcm_size_delta_bytes"]!=0
+        or type(stage363.get("software_tail_elapsed_ns")) is not int
+        or stage363["software_tail_elapsed_ns"]!=11735468
+        or type(stage363.get("old_probe_age_at_tail_begin_ns")) is not int
+        or stage363["old_probe_age_at_tail_begin_ns"]!=369284375
+        or type(stage363.get("old_probe_age_at_tail_end_ns_derived")) is not int
+        or stage363["old_probe_age_at_tail_end_ns_derived"]!=381019843
         or stage363.get("guest_tail_reason_code")!=triple["tail_reason_code"]
         or stage363.get("guest_audout_wait_raw_result")!=0
         or stage363.get("guest_lease_pages_acquired")!=triple["lease_pages_acquired"]
