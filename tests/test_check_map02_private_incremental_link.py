@@ -90,6 +90,54 @@ class NativeIncrementalRelinkTests(unittest.TestCase):
         for name in ("missing", "needed", "followup"):
             self.assertNotIn(name, json.dumps(report))
 
+    def test_single_direct_object_uses_exact_initial_import_baseline(self):
+        """One direct .o is enough to measure real ld-r symbol resolution."""
+        direct = self.compile(
+            "single-direct", "int needed(void) { return 43; }\n")
+        output = self.root / "baseline-direct"
+        report = probe_private_incremental_link(
+            self.manifest, self.base, [direct], output,
+            expected_initial_strong_imports=2)
+        self.assertEqual(report["candidate_count"], 1)
+        self.assertEqual(report["candidate_archive_count"], 0)
+        self.assertTrue(report["expected_initial_import_count_confirmed"])
+        self.assertEqual(report["original_strong_imports_resolved_by_ld_r"], 1)
+        self.assertEqual(report["original_strong_imports_remaining_after_ld_r"], 1)
+        self.assertEqual(report["new_strong_imports_introduced_by_candidates"], 0)
+        self.assertEqual(report["final_strong_import_count"], 1)
+        self.assertFalse(report["fully_linked_game_executable"])
+
+    def test_single_archive_with_wrong_baseline_fails_without_output(self):
+        """A stale or wrong original 520 baseline must not write anything."""
+        direct = self.compile(
+            "baseline-provider", "int needed(void) { return 43; }\n")
+        archive = self.archive("baseline-one-archive", direct)
+        for claimed in (520, -1, True, "2"):
+            output = self.root / ("rejected-" + str(claimed))
+            with self.subTest(expected=claimed):
+                with self.assertRaisesRegex(ValueError, "count differs"):
+                    probe_private_incremental_link(
+                        self.manifest, self.base, [archive], output,
+                        expected_initial_strong_imports=claimed)
+                self.assertFalse(output.exists())
+
+    def test_single_provider_cli_baseline_mismatch_prints_no_private_data(self):
+        """CLI exits unsuccessfully before output, without owned path leaks."""
+        import sys
+        direct = self.compile(
+            "cli-baseline-provider", "int needed(void) {return 18;}\n")
+        target = self.root / "cli-single-reject"
+        result = subprocess.run(
+            [sys.executable, "-m", "tools.check_map02_private_incremental_link",
+             str(self.manifest), str(self.base), str(target), str(direct),
+             "--expect-initial-strong-imports", "520"],
+            text=True, capture_output=True, timeout=120)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(target.exists())
+        for private in ("needed", "missing", str(self.manifest),
+                        str(self.base), str(direct)):
+            self.assertNotIn(private, result.stdout + result.stderr)
+
     def test_actual_archive_link_order_changes_unresolved_count(self):
         """GNU ld scans archives in supplied order, not all possible orders."""
         needed = self.compile(

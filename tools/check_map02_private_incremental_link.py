@@ -132,7 +132,8 @@ def _private_output_dir(path):
 
 
 def probe_private_incremental_link(manifest, partial, candidates, out_dir,
-                                   *, group_archives=False):
+                                   *, group_archives=False,
+                                   expected_initial_strong_imports=None):
     """Return aggregate counts from an actual non-executing GNU partial link."""
     doc = read_private_manifest(manifest)
     if not 1 <= len(candidates) <= 64:
@@ -168,6 +169,11 @@ def probe_private_incremental_link(manifest, partial, candidates, out_dir,
         if (initial_strong != doc["strong_symbols"]
                 or initial_weak != doc["weak_symbols"]):
             raise ValueError("private MAP02 source ELF imports differ from manifest")
+        if expected_initial_strong_imports is not None and (
+                type(expected_initial_strong_imports) is not int
+                or expected_initial_strong_imports < 0
+                or len(initial_strong) != expected_initial_strong_imports):
+            raise ValueError("private MAP02 expected original strong import count differs")
 
         output_dir, dir_ident = _private_output_dir(out_dir)
         output = output_dir / OUTPUT
@@ -217,6 +223,8 @@ def probe_private_incremental_link(manifest, partial, candidates, out_dir,
                      else "repeated_archive_group")
                     if group_archives else "single_pass_user_order"),
                 "original_strong_import_count": len(original),
+                "expected_initial_import_count_confirmed":
+                    expected_initial_strong_imports is not None,
                 "original_strong_imports_resolved_by_ld_r":
                     len(original - updated),
                 "original_strong_imports_remaining_after_ld_r":
@@ -243,6 +251,9 @@ def main():
     parser.add_argument("new_private_output_dir", type=Path)
     parser.add_argument("native_candidate", type=Path, nargs="+")
     parser.add_argument(
+        "--expect-initial-strong-imports", type=int,
+        help="require an exact source strong-import count before writing files")
+    parser.add_argument(
         "--group-archives", action="store_true",
         help="repeat resolution over two or more .a inputs; direct .o inputs precede the archive group")
     args = parser.parse_args()
@@ -250,7 +261,8 @@ def main():
         result = probe_private_incremental_link(
             args.private_undefined_manifest, args.private_original_partial_elf,
             args.native_candidate, args.new_private_output_dir,
-            group_archives=args.group_archives)
+            group_archives=args.group_archives,
+            expected_initial_strong_imports=args.expect_initial_strong_imports)
     except (OSError, ValueError, subprocess.TimeoutExpired):
         parser.error("private MAP02 incremental link probe failed")
     print(json.dumps(result, sort_keys=True, indent=2))

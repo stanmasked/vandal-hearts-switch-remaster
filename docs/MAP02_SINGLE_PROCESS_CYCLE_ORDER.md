@@ -1283,6 +1283,28 @@ python3 -m tools.check_map02_private_incremental_link \
   /private/map02/candidate-lib.a
 ```
 
+**Если доступен только один кандидат**, обычный однопроходный
+`ld -r` уже поддерживает **один `.o` или один обычный `.a`**:
+групповое сравнение не требуется. Для исходной MAP02-ревизии
+с ранее подтверждёнными 520 сильными импортами используйте:
+
+```sh
+python3 -m tools.check_map02_private_incremental_link \
+  /private/map02/map02-unresolved-symbols.private.json \
+  /private/map02/map02-public-original-cd-gpu-reloc.o \
+  /private/map02/new-private-single-candidate-dir \
+  /private/map02/provider-only.o \
+  --expect-initial-strong-imports 520
+```
+
+Флаг `--expect-initial-strong-imports 520` необязателен для
+других ревизий. Он проверяет исходное число по **реальному**
+`nm -u` и приватному манифесту и отказывает **до** создания
+каталога, если число не совпало. Поле
+`expected_initial_import_count_confirmed: true` свидетельствует
+только о совпадении исходного числа. Подлинность ресурса,
+полнота финальной сборки и запуск MAP02 этим не подтверждаются.
+
 Исходный ELF обязан соответствовать точному SHA-256 приватного
 манифеста и совпадать с его исходными неразрешёнными символами.
 Каждый входящий `.o/.a` проверяется на **ELF64, x86-64,
