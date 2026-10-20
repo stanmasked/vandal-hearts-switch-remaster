@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 from tools.check_map02_private_incremental_link import OUTPUT
 from tools.check_map02_public_sdl2_archive_witness import (
@@ -82,7 +83,49 @@ class PublicSdl2StaticWitnessTests(unittest.TestCase):
                      str(self.partial)):
             self.assertNotIn(name, json.dumps(result))
 
-    def test_wrong_initial_520_baseline_has_no_outputs(self):
+    def test_modified_copy_after_nm_coverage_does_not_reach_linker(self):
+        """An in-place change between the real nm and ld steps fails closed."""
+        from tools import check_map02_public_sdl2_archive_witness as module
+        real_audit = module.audit_provider_coverage
+        destination = self.root / "mutated-after-coverage"
+
+        def tamper_copy(*args, **kwargs):
+            aggregate = real_audit(*args, **kwargs)
+            with (destination / "sdl2-system-candidate.a").open("ab") as fd:
+                fd.write(b"tampered-after-nm")
+            return aggregate
+
+        with mock.patch.object(module, "audit_provider_coverage",
+                               side_effect=tamper_copy):
+            with self.assertRaisesRegex(ValueError, "changed during link"):
+                probe_public_sdl2_archive(
+                    self.manifest, self.partial, self.archive, destination,
+                    expected_initial_strong_imports=2)
+        self.assertFalse((destination / "linked").exists())
+
+    def test_identical_bytes_new_archive_inode_after_nm_is_rejected(self):
+        """SHA agreement alone cannot permit pathname substitution."""
+        from tools import check_map02_public_sdl2_archive_witness as module
+        real_audit = module.audit_provider_coverage
+        destination = self.root / "swapped-after-coverage"
+
+        def swap_copy(*args, **kwargs):
+            aggregate = real_audit(*args, **kwargs)
+            current = destination / "sdl2-system-candidate.a"
+            replacement = destination / "replacement-temp.a"
+            replacement.write_bytes(current.read_bytes())
+            replacement.chmod(0o600)
+            replacement.replace(current)
+            return aggregate
+
+        with mock.patch.object(module, "audit_provider_coverage",
+                               side_effect=swap_copy):
+            with self.assertRaisesRegex(ValueError, "path replaced"):
+                probe_public_sdl2_archive(
+                    self.manifest, self.partial, self.archive, destination,
+                    expected_initial_strong_imports=2)
+        self.assertFalse((destination / "linked").exists())
+
         target = self.root / "wrong-source-count"
         with self.assertRaisesRegex(ValueError, "baseline mismatch"):
             probe_public_sdl2_archive(
