@@ -1,0 +1,46 @@
+name: MAP02 physical Switch test kit (not hardware validation)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-hardware-kit.yml'
+      - 'tools/prepare_map02_hardware_kit.py'
+      - 'tests/test_map02_hardware_kit.py'
+      - 'docs/MAP02_PHYSICAL_TEST_KIT.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_map02_hardware_kit.py' -v
+  package:
+    needs: synthetic
+    runs-on: ubuntu-22.04
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Build and verify exact NeXium-tested NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/opt/devkitpro/devkitA64/bin:/opt/devkitpro/tools/bin:$PATH"
+          make verify-nro
+          python3 tools/prepare_map02_hardware_kit.py prepare \
+            --nro build/vandal-hearts-prototype.nro \
+            --output build/physical-switch-test-kit
+          python3 tools/prepare_map02_hardware_kit.py verify \
+            --output build/physical-switch-test-kit
+          test "$(sha256sum build/physical-switch-test-kit/vandal-hearts-prototype.nro | cut -d' ' -f1)" = \
+            '564c29e4c6c47eaf80e356733b8bdb8e298f1e0c938575b20be0ae9d48680539'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: map02-physical-console-test-kit-unverified
+          path: build/physical-switch-test-kit/
+          if-no-files-found: error
