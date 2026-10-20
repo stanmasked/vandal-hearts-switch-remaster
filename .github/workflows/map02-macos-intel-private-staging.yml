@@ -1,0 +1,67 @@
+name: MAP02 macOS Intel private disc staging
+
+on:
+  push:
+    branches:
+      - 'work/map02-macos15-intel-private-copy-ci'
+    paths:
+      - '.github/workflows/map02-macos-intel-private-staging.yml'
+      - 'tools/stage_map02_private_disc.py'
+      - 'tools/check_map02_local_disc_receipt.py'
+      - 'tools/emit_map02_local_disc_receipt.py'
+      - 'tests/test_stage_map02_private_disc.py'
+      - 'tests/test_check_map02_local_disc_receipt.py'
+      - 'tests/test_emit_map02_local_disc_receipt.py'
+  pull_request:
+    paths:
+      - '.github/workflows/map02-macos-intel-private-staging.yml'
+      - 'tools/stage_map02_private_disc.py'
+      - 'tools/check_map02_local_disc_receipt.py'
+      - 'tools/emit_map02_local_disc_receipt.py'
+      - 'tests/test_stage_map02_private_disc.py'
+      - 'tests/test_check_map02_local_disc_receipt.py'
+      - 'tests/test_emit_map02_local_disc_receipt.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  intel-staging:
+    name: macOS Intel synthetic BIN/CUE and receipt regression
+    runs-on: macos-15-intel
+    timeout-minutes: 12
+    steps:
+      - name: Checkout source code only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify native macOS and secure directory APIs
+        run: |
+          python3 - <<'PY'
+          import os
+          import platform
+          assert platform.system() == 'Darwin'
+          assert platform.machine() == 'x86_64'
+          for flag in ('O_NOFOLLOW','O_DIRECTORY','O_EXCL'):
+              assert getattr(os,flag,0), flag
+          for method in (os.open,os.stat,os.link,os.unlink,os.mkdir,os.rename):
+              assert method in os.supports_dir_fd, method
+          print(platform.platform(), 'secure dir_fd operations present')
+          PY
+      - name: Compile private-stage and receipt modules
+        run: |
+          python3 -m py_compile tools/stage_map02_private_disc.py tools/check_map02_local_disc_receipt.py tools/emit_map02_local_disc_receipt.py
+      - name: Run all 33 asset-free tests
+        run: |
+          python3 -m unittest -v \
+            tests.test_check_map02_local_disc_receipt \
+            tests.test_emit_map02_local_disc_receipt \
+            tests.test_stage_map02_private_disc
