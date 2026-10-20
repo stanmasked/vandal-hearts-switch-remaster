@@ -1,0 +1,205 @@
+name: MAP02 Stage286 CPAL lifecycle real Rust type-check
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-nexium-cpal-lifecycle-check.yml'
+      - 'tools/prepare_map02_nexium_cpal_lifecycle_overlay.py'
+      - 'tests/test_prepare_map02_nexium_cpal_lifecycle_overlay.py'
+      - 'docs/MAP02_NEXIUM_CPAL_LIFECYCLE.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VH_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_FROZEN_STAGE285: '1870f825c4443502825353135906af66e1e45361'
+  VH_PINNED_NEXIUM_SHA: '089562567a0a8760dfdd8420e1f57c35159a9219'
+  VH_STAGE275_LOCK_SHA: 'e6e8fcb90624650afddd1f25327dd4e6b042b094e8336cb5f43d2dc370e28739'
+  CARGO_TERM_COLOR: never
+
+jobs:
+  lifecycle-typecheck:
+    name: Real CPAL stream build, play, error and drop type-check on pinned source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_HEAD }}
+          path: research
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: nexium-emu/nexium
+          ref: 089562567a0a8760dfdd8420e1f57c35159a9219
+          submodules: recursive
+          path: upstream
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Reject changed game/source baseline or partial upstream submodule checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C research rev-parse HEAD)" = "$VH_EXACT_HEAD"
+          test "$(git -C upstream rev-parse HEAD)" = "$VH_PINNED_NEXIUM_SHA"
+          test -s upstream/rustarmic/Cargo.toml
+          test -z "$(git -C upstream status --porcelain)"
+          python3 - <<'PY'
+          import os,subprocess
+          observed=set(subprocess.check_output(
+              ["git","-C","research","diff","--name-only",
+               os.environ["VH_FROZEN_STAGE285"],"HEAD"],
+              text=True).splitlines())
+          allowed={
+              ".github/workflows/map02-nexium-cpal-lifecycle-check.yml",
+              "tools/prepare_map02_nexium_cpal_lifecycle_overlay.py",
+              "tests/test_prepare_map02_nexium_cpal_lifecycle_overlay.py",
+              "docs/MAP02_NEXIUM_CPAL_LIFECYCLE.md",
+          }
+          assert observed and observed<=allowed,sorted(observed-allowed)
+          print("Only four isolated research files changed:",sorted(observed))
+          PY
+      - name: Run both ROM-free source overlay test suites before touching upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s research/tests \
+            -p 'test_prepare_map02_nexium_cpal_overlay.py' -v
+          python3 -m unittest discover -s research/tests \
+            -p 'test_prepare_map02_nexium_cpal_lifecycle_overlay.py' -v
+      - name: Apply Stage274 host counters and Stage286 lifecycle overlay sequentially
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 research/tools/prepare_map02_nexium_cpal_overlay.py \
+            --upstream upstream --manifest stage274-original-overlay.json
+          python3 research/tools/prepare_map02_nexium_cpal_lifecycle_overlay.py \
+            --upstream upstream --receipt stage286-lifecycle-overlay.json
+          python3 - <<'PY'
+          import hashlib,json,subprocess
+          from pathlib import Path
+          orig=json.loads(Path("stage274-original-overlay.json").read_text())
+          life=json.loads(Path("stage286-lifecycle-overlay.json").read_text())
+          expected={"nexium-runner/src/audio.rs",
+                    "nexium-kernel/src/services/audio_out/handlers.rs",
+                    "nexium-runner/Cargo.toml"}
+          actual=set(subprocess.check_output(
+              ["git","-C","upstream","diff","--name-only"],
+              text=True).splitlines())
+          assert actual==expected,(actual,expected)
+          original_runner=next(x for x in orig["source_files"]
+                               if x["path"]=="nexium-runner/src/audio.rs")
+          assert original_runner["sha256_after"]==life["source_sha256_before"]
+          final=Path("upstream/nexium-runner/src/audio.rs").read_bytes()
+          assert hashlib.sha256(final).hexdigest()==life["source_sha256_after"]
+          assert life["error_callback_new_operations"]=="relaxed_atomic_increment_only"
+          assert life["source_path"]=="nexium-runner/src/audio.rs"
+          assert life["stream_drop_count_instrumented"] is True
+          assert life["new_compiled_executable_proven"] is False
+          print("Stage286 layered after exact Stage274; source SHA/paths validated")
+          PY
+      - name: Install Linux CPAL and Rustarmic backend compile dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config clang libclang-dev \
+            llvm-dev libasound2-dev libpulse-dev libudev-dev libdbus-1-dev \
+            libopus-dev libssl-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: upstream
+          cache-on-failure: true
+      - name: Verify actual source parses using rustfmt
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 --emit stdout upstream/nexium-runner/src/audio.rs \
+            >stage286-rustfmt-source.log
+          rustfmt --edition 2021 --emit stdout \
+            upstream/nexium-kernel/src/services/audio_out/handlers.rs >/dev/null
+      - name: Pin Cargo dependency graph to previously compiled source baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo generate-lockfile --manifest-path upstream/Cargo.toml \
+            2>&1 | tee stage286-dependency-resolution.log
+          actual="$(sha256sum upstream/Cargo.lock | cut -d ' ' -f1)"
+          echo "$actual" >stage286-lock.sha256
+          test "$actual" = "$VH_STAGE275_LOCK_SHA" || {
+            echo "::error::Cargo dependency lock changed from previously proven Stage275 graph"
+            exit 1
+          }
+      - name: Compile-check genuine CPAL lifecycle/error Rust code and kernel AudioOut
+        shell: bash
+        timeout-minutes: 30
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path upstream/Cargo.toml \
+            --locked --package nexium-runner --no-default-features \
+            --features backend-rustarmic \
+            2>&1 | tee stage286-cargo-typecheck.log
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          overlay=json.loads(Path("stage286-lifecycle-overlay.json").read_text())
+          assert "Finished" in Path("stage286-cargo-typecheck.log").read_text()
+          receipt={
+              "schema":"vh-map02-stage286-real-cpal-lifecycle-typecheck/v1",
+              "result":"REAL_NEXIUM_CPAL_LIFECYCLE_TYPES_COMPILED",
+              "research_source_sha":os.environ["VH_EXACT_HEAD"],
+              "upstream_git_sha":os.environ["VH_PINNED_NEXIUM_SHA"],
+              "compiled_target":"nexium-runner with backend-rustarmic (cargo check only)",
+              "cargo_lock_sha256":hashlib.sha256(
+                  Path("upstream/Cargo.lock").read_bytes()).hexdigest(),
+              "lifecycle_audio_rs_sha256":overlay["source_sha256_after"],
+              "error_callback_additional_operations":"one relaxed atomic increment",
+              "nexium_host_binary_built":False,
+              "game_guest_booted":False,
+              "cpal_callback_lifecycle_runtime_events_observed":False,
+              "physical_switch_audio_verified":False,
+          }
+          Path("stage286-typecheck-receipt.json").write_text(
+              json.dumps(receipt,indent=2,sort_keys=True)+"\n")
+          print(json.dumps(receipt,indent=2,sort_keys=True))
+          PY
+      - name: Report precise completed Rust gates and limitations
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path("stage286-typecheck-receipt.json")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              print("### Stage286 CPAL lifecycle Rust typecheck",file=out)
+              if p.is_file():
+                  x=json.loads(p.read_text())
+                  print("Result: "+x["result"],file=out)
+                  print("Source SHA: "+x["lifecycle_audio_rs_sha256"],file=out)
+                  print("No real new NeXium ELF built, launched or used to "
+                        "measure 21/22ms callbacks yet.",file=out)
+              else:
+                  print("**UNVERIFIED:** see source test, rustfmt, "
+                        "Cargo dependency or compiler logs.",file=out)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage286-cpal-lifecycle-typecheck-evidence
+          path: |
+            stage274-original-overlay.json
+            stage286-lifecycle-overlay.json
+            stage286-typecheck-receipt.json
+            stage286-rustfmt-source.log
+            stage286-dependency-resolution.log
+            stage286-lock.sha256
+            stage286-cargo-typecheck.log
+          if-no-files-found: warn
