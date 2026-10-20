@@ -189,3 +189,78 @@ jobs:
           name: nexium-map02-reconciled-guard-runtime
           path: map02-guard-hud-evidence/
           if-no-files-found: warn
+
+  nexium-reconciled-specialists:
+    name: NeXium reconciled combat specialty (${{ matrix.scenario }})
+    needs: [ancestry-content-proof, combined-combat, integrated-switch-nro]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [bow, medic]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-reconciled-stack-switch-nro
+          path: nros
+      - name: Install Vulkan and screenshot dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl jq xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 libxkbcommon-x11-0 \
+            libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers
+      - name: Download pinned current NeXium nightly release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="$(curl -fsSL --retry 3 --retry-all-errors -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+          asset_url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          test -n "$asset_url"
+          curl -fL --retry 3 --retry-all-errors "$asset_url" -o /tmp/nexium-linux.tar.gz
+          mkdir -p /tmp/nexium
+          tar -xzf /tmp/nexium-linux.tar.gz -C /tmp/nexium
+          emu_bin="$(find /tmp/nexium -type f -executable \( -name nexium -o -name nexium-gui \) -print -quit)"
+          test -n "$emu_bin"
+          echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
+      - name: Execute genuine NeXium controlled ${{ matrix.scenario }} encounter
+        shell: bash
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          set -euo pipefail
+          dir="map02-reconciled-$SCENARIO-evidence"
+          mkdir -p "$dir"
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          case "$SCENARIO" in
+            bow)
+              script=tests/run_map02_nexium_bow.py
+              marker='VH_MAP02_NEXIUM_BOW_PASS second_arena=1 invalid_range=1 selection_preserved=1 line_of_sight=1 actual_b_fire=1 enemy_defeated=1 other_enemies_alive=1 reset=1 primary_preserved=1 legacy_preserved=1 retail=0'
+              ;;
+            medic)
+              script=tests/run_map02_nexium_medic.py
+              marker='VH_MAP02_NEXIUM_MEDIC_PASS second_arena=1 healthy_no_heal=1 natural_ai_damage=1 healer_b_action=1 healed=1 action_spent=1 reset=1 primary_preserved=1 legacy_preserved=1 retail=0'
+              ;;
+            *) echo 'unknown specialist route' >&2; exit 2 ;;
+          esac
+          timeout --kill-after=5s 180s xvfb-run -a -s "-screen 0 1280x720x24" \
+            python3 "$script" \
+              --nro "$PWD/nros/vandal-hearts-prototype.nro" \
+              --evidence-dir "$dir" | tee "$dir/result.log"
+          grep -Fx "$marker" "$dir/result.log"
+      - name: Upload authentic emulator screenshots and execution log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-map02-reconciled-${{ matrix.scenario }}-runtime
+          path: map02-reconciled-${{ matrix.scenario }}-evidence/
+          if-no-files-found: warn
