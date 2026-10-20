@@ -130,8 +130,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest discover -s tests -p 'test_patch_map02_cpal_lifecycle_stage286.py' -v
-          python3 tools/patch_map02_cpal_lifecycle_stage286.py \
+          python3 -m unittest discover -s research/tests -p 'test_patch_map02_cpal_lifecycle_stage286.py' -v
+          python3 research/tools/patch_map02_cpal_lifecycle_stage286.py \
             --input upstream/nexium-runner/src/audio.rs \
             --output upstream/nexium-runner/src/audio-stage286-tmp.rs
           mv upstream/nexium-runner/src/audio-stage286-tmp.rs upstream/nexium-runner/src/audio.rs
