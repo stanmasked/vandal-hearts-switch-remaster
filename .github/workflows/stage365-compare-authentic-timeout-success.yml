@@ -1,0 +1,82 @@
+name: Stage365 authentic distinct guest kernel timeout and software-success cohorts
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage365-compare-authentic-timeout-success.yml'
+      - 'tools/audit_nexium_stage365_distinct_timeout_success.py'
+      - 'tests/test_audit_nexium_stage365_distinct_timeout_success.py'
+      - 'tools/audit_nexium_stage358_original_kernel_timeout.py'
+      - 'tools/audit_nexium_stage364_guest_host_triple.py'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  historical-original-cohorts:
+    name: Strict original 0xEA01 versus success without fabricated Stage360 pairing
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject synthetic forged guest wait, queue pairing, and ownership counters
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_nexium_stage365_distinct_timeout_success.py' -v
+          python3 -m py_compile tools/audit_nexium_stage365_distinct_timeout_success.py
+      - name: Download only the exact original archived 0xEA01 NeXium evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 39325440778 --repo stanmasked/vandal-hearts-switch-remaster \
+            --name nexium-runtime-evidence --dir original-timeout-stage365
+      - name: Download only the exact original archived successful NeXium evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 39340120727 --repo stanmasked/vandal-hearts-switch-remaster \
+            --name nexium-runtime-evidence --dir original-success-stage365
+      - name: Independently re-audit both distinct original guest cohorts and missing timeout probe
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_stage365_distinct_timeout_success.py \
+            --timeout-original-root original-timeout-stage365 \
+            --success-original-root original-success-stage365 \
+            --output stage365-two-original-cohorts-no-causal-claim.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("stage365-two-original-cohorts-no-causal-claim.json").read_text())
+          if (r["result"]!="STAGE365_DISTINCT_AUTHENTIC_KERNEL_TIMEOUT_AND_SUCCESS_REAUDITED_NO_CAUSAL_PAIR"
+              or r["timeout_original_run_id"]!=39325440778
+              or r["success_original_run_id"]!=39340120727
+              or r["two_distinct_original_archives_reaudited"] is not True
+              or r["timeout_software_wait_raw_result"]!=59905
+              or r["timeout_software_wait_raw_hex"]!="0xEA01"
+              or r["timeout_kernel_result_module"]!=1
+              or r["timeout_kernel_result_description"]!=117
+              or r["timeout_software_acquired_released_abandoned"]!=[1414,1413,1]
+              or r["success_software_wait_raw_result"]!=0
+              or r["success_software_acquired_released_abandoned"]!=[1438,1438,0]
+              or r["timeout_old_stage360_queue_probe_recorded"] is not False
+              or r["timeout_old_pre_submit_queue_depth"] is not None
+              or r["timeout_old_pre_submit_probe_age_ns"] is not None
+              or r["queue_depth_at_timeout_construed_as_zero"] is not False
+              or r["timeout_and_success_have_same_schema_queue_telemetry"] is not False
+              or r["timeout_root_cause_unique_to_kernel_callsite_proven"] is not False
+              or r["causal_inference_about_old_timeout_proven"] is not False
+              or r["old_failed_host_wall_epoch_clock_explained"] is not False
+              or r["guest_host_clock_alignment_proven"] is not False
+              or r["real_hardware_Nintendo_Switch_speaker_or_DAC_verified"] is not False):
+              raise SystemExit("Stage365 old timeout versus success original source/scope check failed")
+          print("Stage365: authentic 0xEA01 1414/1413/1 vs Result0 1438/1438/0; absent older Stage360; no causal pairing.")
+          PY
+          echo "Stage365 separately authenticated TWO original NeXium runs. Old original 0xEA01 lacks Stage360 probe. No causality, direct shutdown queue, DAC/speaker or kernel wait-site claims." >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve compact independent two-original-cohort verdict only
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage365-authentic-distinct-timeout-and-success
+          path: stage365-two-original-cohorts-no-causal-claim.json
+          if-no-files-found: error
