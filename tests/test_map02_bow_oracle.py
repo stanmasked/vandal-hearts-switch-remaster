@@ -42,7 +42,7 @@ def make_frames(folder):
     px, py = GX + CELL, GY
     ImageDraw.Draw(invalid).rectangle(
         (px + 11, py + 11, px + 60, py + 60),
-        outline=(255, 255, 255), width=1,
+        outline=(224, 234, 246), width=1,
     )
     ready = second.copy()
     actor(ready, 1, 0, None)
