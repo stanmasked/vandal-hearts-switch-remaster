@@ -27,6 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="/opt/devkitpro/devkitA64/bin:/opt/devkitpro/tools/bin:$PATH"
+          python3 -m py_compile tests/run_map02_nexium_4v4.py
           python3 tools/generate_map02_fixture.py --all --check
           python3 tools/generate_map02_roster8.py --output /tmp/map02_roster8_generated.h
           cmp source/map02_roster8_smoke_data.h /tmp/map02_roster8_generated.h
@@ -89,7 +90,7 @@ jobs:
               --nro "$PWD/nros/vandal-hearts-prototype.nro" \
               --evidence-dir map02-four-evidence \
             | tee map02-four-evidence/result.log
-          grep -Fx 'VH_MAP02_NEXIUM_4V4_PASS entered=1 allies=4 opponents=4 real_attacks=4 victory=1 reset=1 legacy_restore=1 retail=0' map02-four-evidence/result.log
+          grep -Fx 'VH_MAP02_NEXIUM_4V4_PASS entered=1 allies=4 opponents=4 real_attacks=4 victory=1 enemy_phases=2 defeat=1 reset=1 legacy_restore=1 retail=0' map02-four-evidence/result.log
       - name: Upload authentic emulator screenshots and execution log
         if: always()
         uses: actions/upload-artifact@v4
