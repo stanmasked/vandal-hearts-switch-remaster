@@ -75,10 +75,15 @@ def analyze(p_path,l_path,first_input_ns,last_observation_ns):
     require(rows[0]["sample_ns"] <= first_input_ns-500_000_000 and
             rows[-1]["sample_ns"] >= last_observation_ns-1_000_000_000,
             "P telemetry does not span pre-input and final observation")
-    require(rows[-1]["sample_ns"]<=last_observation_ns,
-            "P telemetry contains sample beyond final guest marker")
+    # The host reporter can keep sampling during graceful process teardown
+    # after the guest's final observation marker. Keep all original P rows
+    # but exclude post-marker samples from ALL guest-window conclusions.
+    window_rows=[r for r in rows if r["sample_ns"]<=last_observation_ns]
+    require(window_rows and
+            window_rows[-1]["sample_ns"]>=last_observation_ns-1_000_000_000,
+            "No real P reporter sample close to final guest marker")
 
-    final=rows[-1]
+    final=window_rows[-1]
     events={key:final[key] for key in EVENTS}
     order=["build_begin_ns","build_ok_ns","play_begin_ns","play_ok_ns"]
     if all(events[k] for k in order):
@@ -101,7 +106,7 @@ def analyze(p_path,l_path,first_input_ns,last_observation_ns):
             "Retained stream guard was dropped before successful play")
     # Only source-tagged P event stamps claim exact CLOCK_MONOTONIC times.
     # Read-only callback counts may change between reporter samples.
-    first_callback_positive=next((i for i,x in enumerate(rows)
+    first_callback_positive=next((i for i,x in enumerate(window_rows)
                                   if x["cpal_entry_counter"]>0),None)
     if first_callback_positive is None:
         first_callback_bracket=None
@@ -110,12 +115,12 @@ def analyze(p_path,l_path,first_input_ns,last_observation_ns):
         first_callback_bracket=None
         callback_status="INITIAL_P_COUNTER_ALREADY_POSITIVE_NO_FIRST_CALLBACK_TIME"
     else:
-        before=rows[first_callback_positive-1]["sample_ns"]
-        after=rows[first_callback_positive]["sample_ns"]
+        before=window_rows[first_callback_positive-1]["sample_ns"]
+        after=window_rows[first_callback_positive]["sample_ns"]
         first_callback_bracket=[before,after]
         callback_status="FIRST_POSITIVE_COUNTER_BRACKETED_BY_P_SNAPSHOTS"
-    pre=[p for p in rows if p["sample_ns"]<=first_input_ns]
-    near=[p for p in rows if
+    pre=[p for p in window_rows if p["sample_ns"]<=first_input_ns]
+    near=[p for p in window_rows if
           last_observation_ns-1_000_000_000<=p["sample_ns"]<=last_observation_ns]
     require(pre and near,"P guest measurement window lacks bounding samples")
     deltas=near[-1]["cpal_entry_counter"]-pre[-1]["cpal_entry_counter"]
@@ -133,13 +138,15 @@ def analyze(p_path,l_path,first_input_ns,last_observation_ns):
         "schema":SCHEMA,
         "result":"REAL_SOURCE_SYNCHRONIZED_CPAL_P_AND_L_REPARSED",
         "p_rows":len(rows),
+        "p_rows_through_last_guest_marker":len(window_rows),
+        "p_rows_after_last_guest_marker_excluded":len(rows)-len(window_rows),
         "original_l_rows":len(lrows),
         "p_sha256":hashlib.sha256(Path(p_path).read_bytes()).hexdigest(),
         "l_sha256":hashlib.sha256(Path(l_path).read_bytes()).hexdigest(),
         "p_first_sample_clock_ns":rows[0]["sample_ns"],
-        "p_final_sample_clock_ns":rows[-1]["sample_ns"],
+        "p_final_sample_clock_ns":window_rows[-1]["sample_ns"],
         "first_p_cpal_entry_counter":rows[0]["cpal_entry_counter"],
-        "final_p_cpal_entry_counter":rows[-1]["cpal_entry_counter"],
+        "final_p_cpal_entry_counter":window_rows[-1]["cpal_entry_counter"],
         "guest_window_p_cpal_entry_delta":deltas,
         "guest_window_original_l_cpal_entry_delta":
             raw_l["guest_window_atomic_counter_deltas"]["cpal_entries"],
