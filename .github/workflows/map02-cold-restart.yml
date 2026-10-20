@@ -89,7 +89,7 @@ jobs:
   nexium-combined-session:
     name: Real NeXium two independently terminated game processes and equal PNGs
     needs: [synthetic-oracle, combined-switch-nro]
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
