@@ -87,6 +87,8 @@ on:
       - 'tests/test_check_map02_public_sdl2_archive_witness.py'
       - 'tools/check_map02_public_x11_after_sdl2.py'
       - 'tests/test_check_map02_public_x11_after_sdl2.py'
+      - 'tools/verify_map02_public_x11_native_replay.py'
+      - 'tests/test_verify_map02_public_x11_native_replay.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -236,6 +238,8 @@ on:
       - 'tests/test_check_map02_public_sdl2_archive_witness.py'
       - 'tools/check_map02_public_x11_after_sdl2.py'
       - 'tests/test_check_map02_public_x11_after_sdl2.py'
+      - 'tools/verify_map02_public_x11_native_replay.py'
+      - 'tests/test_verify_map02_public_x11_native_replay.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -328,6 +332,7 @@ jobs:
             tests.test_check_map02_private_incremental_link \
             tests.test_check_map02_public_sdl2_archive_witness \
             tests.test_check_map02_public_x11_after_sdl2 \
+            tests.test_verify_map02_public_x11_native_replay \
             tests.test_check_map02_private_archive_strategy_compare \
             tests.test_verify_map02_private_archive_comparison \
             tests.test_run_map02_private_link_gap_audit
@@ -621,6 +626,40 @@ jobs:
           assert x11["authentic_map02_execution_proven"] is False
           print("Original public PC ELF: genuine SDL2.a followed by genuine X11.a GNU ld-r.")
           print("Second-stage unresolved counts independently checked without retail data.")
+          PY
+      - name: Recount X11 native ELF and demand byte-identical second real GNU ld-r
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m tools.verify_map02_public_x11_native_replay \
+            "${RUNNER_TEMP}/map02-real-x11-native-provider/after-sdl2-unresolved.private.json" \
+            "${RUNNER_TEMP}/map02-real-sdl2-native-provider/linked/map02-private-candidate-linked.o" \
+            "${RUNNER_TEMP}/map02-real-x11-native-provider/x11-system-candidate.a" \
+            "${RUNNER_TEMP}/map02-real-x11-native-provider/linked/map02-private-candidate-linked.o" \
+            "${RUNNER_TEMP}/map02-real-x11-aggregate.json" \
+            "${RUNNER_TEMP}/map02-real-x11-independent-replay" \
+            | tee "${RUNNER_TEMP}/map02-real-x11-replay-aggregate.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          x11 = json.loads((root / "map02-real-x11-aggregate.json").read_text())
+          replay = json.loads((root / "map02-real-x11-replay-aggregate.json").read_text())
+          assert replay["sdl2_stage_initial_strong_undefined"] == 1085
+          assert replay["x11_resolved_original_stage_imports"] == 150
+          assert replay["x11_new_imports"] == 61
+          assert replay["final_strong_undefined"] == 996
+          assert replay["input_sdl2_partial_sha256"] == x11["input_sdl2_partial_sha256"]
+          assert replay["x11_static_archive_sha256"] == x11["copied_x11_archive_sha256"]
+          assert replay["identical_output_partial_sha256"] == x11["output_x11_partial_sha256"]
+          assert replay["saved_x11_recount_verified"] is True
+          assert replay["independent_native_x11_relink_executed"] is True
+          assert replay["byte_identical_x11_relink_verified"] is True
+          assert replay["retail_assets_linked"] is False
+          assert replay["fully_linked_game_executable"] is False
+          assert replay["authentic_map02_execution_proven"] is False
+          print("Actual public SDL2 -> X11 ET_REL replayed bit-identically by a second GNU ld-r.")
           PY
       - name: Fail closed on upstream rasterizer source drift
         run: |
