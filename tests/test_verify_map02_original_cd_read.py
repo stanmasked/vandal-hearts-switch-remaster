@@ -14,6 +14,7 @@ import zlib
 
 from tests.test_check_map02_owned_disc_extent import OwnedMap02DiscExtentTests
 from tools.check_map02_owned_disc_extent import _raw_sector
+from tools.audit_map02_disc_prs import xa_edc
 from tools.verify_map02_original_cd_read import verify_map02_original_cd_read
 from tools.verify_map02_window_scoped_join import CD_READ
 
@@ -95,10 +96,26 @@ class OriginalCdReadReceiptTests(unittest.TestCase):
             self.check()
 
     def test_mutated_raw_disc_data_rejected(self):
+        # EDC must still be valid to exercise the independent original
+        # CdRead receipt versus owned-disc CRC comparison.
+        with self.fixture.image.open("r+b") as f:
+            f.seek(0x1bcc * 2352)
+            sector = bytearray(f.read(2352))
+            sector[24:32] = b"changed!"
+            sector[0x818:0x81c] = xa_edc(
+                sector[0x10:0x818]).to_bytes(4, "little")
+            f.seek(0x1bcc * 2352)
+            f.write(sector)
+        with self.assertRaisesRegex(ValueError, "payload differs"):
+            self.check()
+
+    def test_mutated_raw_disc_without_updated_edc_rejected_first(self):
+        # Independently ensure that a damaged Mode 2 Form 1 sector is
+        # refused before it can be treated as valid user data.
         with self.fixture.image.open("r+b") as f:
             f.seek(0x1bcc * 2352 + 24)
             f.write(b"changed!")
-        with self.assertRaisesRegex(ValueError, "payload differs"):
+        with self.assertRaisesRegex(ValueError, "EDC mismatch"):
             self.check()
 
     def test_nonprivate_cd_receipt_rejected(self):

@@ -5,6 +5,39 @@ MAP02 GTE/DrawOTag/VRAM verification and the staged PutPixel/BlendG1
 and independent VRAM-edge witness publishers. It does not create,
 change or upload original game files, hash manifests or capture logs.
 
+## Read-only original-disc sector integrity gate (before runtime capture)
+
+Before launching the instrumented original-PC executable, validate the
+locally owned **raw 2352-byte, single data-track US image** against the
+pinned upstream `CDF_M_MAP02_PRS` sector extent:
+
+```sh
+python3 -m tools.check_map02_owned_disc_extent \
+  /private/owned-original/track-01.bin \
+  --upstream-checkout /private/pinned-original-pc-port
+```
+
+The tool reads the pinned source's sector table, checks the source US boot
+marker, and validates all twelve `M_MAP02.PRS` resource sectors for
+synchronization, BCD sector address, Mode 2 Form 1, duplicate XA
+subheaders, and each sector's **stored 32-bit CD-XA EDC**. EDC is also
+checked for the boot sector. Only sector counts and hashes are returned;
+no original game bytes, raw sectors, executable paths, or images are
+printed or uploaded. The raw image must be owner-private.
+
+**Important:** This gate assumes the pinned US CD layout, including
+`M_MAP02.PRS` at LBA `0x1bcc` for 12 sectors. It must not be applied as
+proof that a translated, Japanese, multitrack, or otherwise rearranged
+release matches the US PC-port layout. For split archives, assemble and
+verify the user's own data track *privately* before invoking the audit;
+do not feed a compressed `.zip.001` volume to the sector reader.
+
+A successful Form 1 EDC verifies sector-level integrity only, not
+authentic retail provenance. It does not check PS1 ECC parity, certify a
+byte-exact US executable, prove an original `CdRead` occurred, or
+establish any GPU-frame/pixel equivalence. A separate pinned-executable
+and live same-session capture are still mandatory.
+
 ## Local invocation
 
 With independently captured, private source and native GPU directories:
