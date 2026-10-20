@@ -177,7 +177,7 @@ class NativeIncrementalRelinkTests(unittest.TestCase):
 
     def test_repeated_input_inode_rejected_before_link(self):
         """Repeated archives must not inflate candidate counts in reports."""
-        provider = self.compile("one-archive-member", "int needed(void) {return 5;}\\n")
+        provider = self.compile("one-archive-member", "int needed(void) {return 5;}\n")
         archive = self.archive("one-provider", provider)
         out = self.root / "reject-repeated"
         with self.assertRaisesRegex(ValueError, "input repeated"):
