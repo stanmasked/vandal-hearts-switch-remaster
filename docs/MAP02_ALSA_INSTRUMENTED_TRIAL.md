@@ -41,6 +41,22 @@ The corrected parser **requires valid 48-kHz stereo params**, records other vali
 
 The trace decoder has been moved **after** the original guest strict CRC/PCM classification so a host-probe-only failure cannot silently bypass real guest acceptance tests. Instrumentation remains opt-in; no audio workaround or fix is inferred.
 
+## Stage272 — PCM-instance-scoped anonymous stream ordinals
+
+The original Stage270 six-run audit [#39453295835](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39453295835) **succeeded** independently, even though the overall Actions workflow ended as failure because all three 21-ms guest strict CRC tests failed. The three 22-ms guest tests and both source-integrity auditors succeeded. Each 21-ms guest had 1 `audoutPlayBuffer` entry and 0 returns at the prejoin snapshot; 22-ms tests had 462/462, 515/515 and 432/432. These are observed snapshots, not a permanent deadlock or hardware Switch speaker proof.
+
+Stage272 changes **only the opt-in Linux host ALSA shim and associated analyzers** (a new experimental workload). The old shim recorded `snd_pcm_writei` and `snd_pcm_mmap_commit` but could not tell which negotiated `snd_pcm_hw_params` belonged to the transfer. That was a key ambiguity because the same process also configured 768-kHz/32-channel ALSA instances alongside the relevant 48-kHz/stereo instance.
+
+- Assign short process-local numeric ordinals to distinct `snd_pcm_t *` handles, protected by a small atomic lock. **Never write real pointer values to disk.** Retire the ordinal after successful `snd_pcm_close`, so a re-used memory address obtains a new identity.
+- Append the anonymous ordinal to the existing bounded 256-event CSV; only monotonic host timestamps, frame counts and negotiated ALSA parameters are written.
+- The parser correlates a WRITEI/MMAP_COMMIT event to the most recent successful hardware-configuration event of the same ordinal observed before the transfer timestamp. It partitions calls into **48-kHz/stereo**, **other configuration**, and **unattributed** (no prior verified configuration, no ordinal, or sample cap).
+- Reconfiguration of the same PCM handle between 48-kHz and another sample format is disclosed as a mixed stream. A nonzero 48-kHz-attributed count is **not equivalent** to direct Rust CPAL callback instrumentation, nor proof that output reaches physical Nintendo Switch speakers.
+- The 256-event cap means counts describe a **sampled prefix**, not necessarily the entire guest run. Concurrent thread ordering and interposition overhead are explicitly new variables.
+
+The expanded generated tests include primary-vs-secondary stream separation, invalid/unknown IDs, mixed-format reconfiguration, and real dynamic-linker open/close-address reuse using a fake libasound stub. The test environment never loads ROMs, licensed soundtrack, or genuine game PCM.
+
+The new six-run CI matrix must independently verify the same research NRO, exact host NeXium binary, exact injected shim, guest PNG CRC-8 and raw PCM, all six original guest identities, and matching host stream summaries. Both failures and successes remain part of the evidence.
+
 ## Non-equivalence to older uninstrumented runs
 
 The probe calls the runtime linker for original functions, obtains monotonic timestamps and does bounded per-call CSV file writes. **Those operations can materially change host thread scheduling and audio behavior.** Do not combine results with Stage265 as if the guest host workload were unchanged or mistake any apparent recovered/failed 21-ms trials for a fix.
