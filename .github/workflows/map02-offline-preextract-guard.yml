@@ -1,0 +1,124 @@
+name: MAP02 authenticated offline ZIP before extraction
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-offline-preextract-guard.yml'
+      - 'tools/verify_and_extract_map02_offline_kit.py'
+      - 'tests/test_verify_and_extract_map02_offline_kit.py'
+      - 'tools/build_map02_intel_mac_offline_kit.py'
+      - 'tools/verify_map02_offline_kit.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  linux-preextract-negative:
+    name: ZIP checksum and 11 fail-closed pre-extract cases
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: upstream
+          sparse-checkout: |
+            platform/pc/src/pc_raster.c
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Offline ZIP defenses without original PS1 data
+        env:
+          MAP02_PINNED_RASTER: upstream/platform/pc/src/pc_raster.c
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_verify_and_extract_map02_offline_kit.py' -v \
+            2>&1 | tee /tmp/vh-map02-safe-extract-tests.log
+          grep -F 'Ran 11 tests' /tmp/vh-map02-safe-extract-tests.log
+          python3 -m tools.build_map02_intel_mac_offline_kit \
+            upstream/platform/pc/src/pc_raster.c \
+            /tmp/vh-map02-offline-preextract.zip \
+            > /tmp/vh-map02-build-report.json
+          expected=$(python3 -c "import json; print(json.load(open('/tmp/vh-map02-build-report.json'))['zip_sha256'])")
+          python3 -m tools.verify_and_extract_map02_offline_kit \
+            /tmp/vh-map02-offline-preextract.zip "$expected" \
+            /tmp/vh-map02-authenticated-tree \
+            > /tmp/vh-map02-preextract-report.json
+          cd /tmp/vh-map02-authenticated-tree
+          python3 verify-kit.py --root . > /tmp/vh-map02-extracted-verify.json
+          test ! -d .git
+          echo 'VH_MAP02_PREEXTRACT_GUARD_PASS tests=11 integrity=1 original_disc=0'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vh-map02-standalone-preextract-guard
+          path: tools/verify_and_extract_map02_offline_kit.py
+          if-no-files-found: error
+          retention-days: 14
+
+  intel-mac-authenticated-extract:
+    name: Intel Mac extract-before-run (Python ${{ matrix.python }})
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.11']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: upstream
+          sparse-checkout: |
+            platform/pc/src/pc_raster.c
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Build, checksum-authenticate, safely extract and run no-disc selfcheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          python -m tools.build_map02_intel_mac_offline_kit \
+            upstream/platform/pc/src/pc_raster.c \
+            /tmp/vh-map02-preextract-mac.zip \
+            > /tmp/vh-map02-preextract-mac-build.json
+          expected=$(python -c "import json; print(json.load(open('/tmp/vh-map02-preextract-mac-build.json'))['zip_sha256'])")
+          python -m tools.verify_and_extract_map02_offline_kit \
+            /tmp/vh-map02-preextract-mac.zip "$expected" \
+            /tmp/vh-map02-preextract-safe-tree \
+            > /tmp/vh-map02-preextract-receipt.json
+          cd /tmp/vh-map02-preextract-safe-tree
+          test ! -d .git
+          python verify-kit.py --root . > /tmp/vh-map02-mac-manifest.json
+          sh run-selfcheck.sh > /tmp/vh-map02-mac-safe-selfcheck.txt
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          receipt=json.loads(Path('/tmp/vh-map02-preextract-receipt.json').read_text())
+          selfcheck=Path('/tmp/vh-map02-mac-safe-selfcheck.txt').read_text().lstrip()
+          decode=json.JSONDecoder()
+          first,off=decode.raw_decode(selfcheck)
+          second,_=decode.raw_decode(selfcheck[off:].lstrip())
+          assert receipt['schema']=='vh.map02.intel-mac.preextract-verify.v1'
+          assert receipt['validated_files_extracted'] >= 20
+          assert receipt['public_pc_port_pinned'] is True
+          assert receipt['raw_ps1_data_read'] is False
+          assert first['synthetic_regressions_total']==49
+          assert first['c11_macho_macos_minimum']=='10.15'
+          assert second['compiled_helpers_audited']==3
+          assert second['only_system_dynamic_libraries'] is True
+          assert second['retail_gameplay_authenticated'] is False
+          print('VH_MAP02_INTEL_PREEXTRACT_PASS python=${{ matrix.python }} cases=49 helpers=3 retail=0')
+          PY
