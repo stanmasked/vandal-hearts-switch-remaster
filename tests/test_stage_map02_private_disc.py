@@ -148,7 +148,8 @@ class PrivateLocalCopyTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 self.run_stage()
         self.assertTrue(final.is_symlink())
-        self.assertEqual(final.resolve(), target)
+        # Darwin canonically maps /var to /private/var in resolved paths.
+        self.assertEqual(final.resolve(), target.resolve())
         self.assertEqual(sentinel.read_text(), "untouched")
         self.assertEqual(list(self.private.iterdir()), [final])
 
