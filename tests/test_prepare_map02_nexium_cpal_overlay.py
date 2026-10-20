@@ -64,6 +64,11 @@ fn sink() {
     };
     let sink_dyn: Arc<dyn HostPcmSink> = sink;
     set_host_audio_sink(sink_dyn);
+
+    std::thread_local! {
+        static AUDIO_STREAM: std::cell::RefCell<Option<cpal::Stream>> =
+            std::cell::RefCell::new(None);
+    }
 }
 """
 KERNEL_SOURCE="""use std::time::Instant;
@@ -101,6 +106,8 @@ class OverlayTests(unittest.TestCase):
         self.assertEqual(patched.count("move |out: &mut [f32]"),1)
         self.assertEqual(patched.count("move |out: &mut [i16]"),1)
         self.assertIn("map02_start_cpal_reporter(sink);",patched)
+        self.assertEqual(patched.count("map02_start_cpal_reporter(sink);"),1)
+        self.assertIn("std::thread_local!",patched)
         self.assertIn("CLOCK_MONOTONIC",patched)
         self.assertIn("VH_MAP02_CPAL_TRACE_PATH",patched)
         self.assertIn("200)",patched)
