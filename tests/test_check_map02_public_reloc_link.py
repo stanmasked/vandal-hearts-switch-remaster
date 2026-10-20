@@ -773,7 +773,9 @@ class PublicRelocatableELFTests(unittest.TestCase):
             report = audit_public_link(root, self.root / "bundle-unused",
                                        self.root / "sealed-link-result")
         self.assertEqual(observed, [True])
-        self.assertEqual(inspectors, ["readelf", "nm", "nm", "readelf", "readelf", "readelf", "readelf"])
+        # The relocation-aware byte witness reads sealed ELF bytes directly
+        # with os.pread; it does not invoke two additional readelf probes.
+        self.assertEqual(inspectors, ["readelf", "nm", "nm", "readelf", "readelf"])
         self.assertEqual(len(set(witness_fds)), 1)
         self.assertEqual(report["public_game_object_count"], 1)
         self.assertEqual(report["backend_and_observer_object_count"], 1)
@@ -893,7 +895,9 @@ class PublicRelocatableELFTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "differs from linked proof"):
                 audit_public_link(root, self.root / "bundle-unused", output_dir)
         self.assertTrue(swapped)
-        self.assertEqual(readers, ["readelf", "nm", "nm", "readelf", "readelf", "readelf", "readelf"])
+        # Source/output function bytes are now inspected by os.pread, so
+        # subprocess instrumentation sees only five post-link readers.
+        self.assertEqual(readers, ["readelf", "nm", "nm", "readelf", "readelf"])
 
     def test_partial_elf_double_read_proof_is_stable(self):
         obj = self.compile(self.all_exports(), name="stable")
