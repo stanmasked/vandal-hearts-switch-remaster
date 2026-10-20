@@ -16,7 +16,7 @@ from tools.check_map02_private_provider_coverage import (
     audit_provider_coverage, read_private_manifest,
 )
 from tools.check_map02_private_incremental_link import (
-    _confirm_owned, _open_owned, _private_output_dir,
+    _check_abi, _confirm_owned, _open_owned, _private_output_dir, _unresolved,
 )
 from tools.check_map02_private_archive_strategy_compare import (
     compare_private_archive_strategies, write_private_archive_receipt,
@@ -71,6 +71,15 @@ def run_private_link_gap_audit(manifest, partial, archives, output_root,
         original = read_private_manifest(manifest)
         if entries[1][3] != original["relocatable_elf_sha256"]:
             raise ValueError("private MAP02 initial source digest mismatch")
+        # Validate *all* pinned native inputs before creating even a
+        # diagnostic output directory. Optional export coverage alone is
+        # not sufficient, and is not enabled by default.
+        for entry in entries[1:]:
+            _check_abi(entry)
+        source_strong, source_weak = _unresolved(entries[1])
+        if (source_strong != original["strong_symbols"]
+                or source_weak != original["weak_symbols"]):
+            raise ValueError("private MAP02 initial source imports differ")
         _confirm_private_link_gap_inputs(entries)
         initial_count = len(original["strong_symbols"])
         if expected_initial_strong_imports is not None and (
