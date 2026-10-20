@@ -18,7 +18,7 @@ from unittest.mock import patch
 from tools.check_map02_public_reloc_link import (
     REQUIRED_SYMBOLS, inspect_relocatable, make_inventory, main,
     stable_relocatable_output, stable_object_input, sealed_input_fd,
-    audit_public_link, BUILD, OUTPUT,
+    audit_public_link, BUILD, OUTPUT, inspect_sealed_export_origins,
 )
 
 
@@ -316,6 +316,60 @@ class PublicRelocatableELFTests(unittest.TestCase):
         gpu.chmod(0o644)
         return root, game, gpu
 
+    def test_each_required_export_is_owned_by_one_sealed_source_object(self):
+        root, first, second = self.prepare_synthetic_original_objects()
+        names = [f"{BUILD}/original-cd.o", f"{BUILD}/original-gpu.o"]
+        files = [first, second]
+        fds = [sealed_input_fd(path, stable_object_input(path), index=n)
+               for n, path in enumerate(files)]
+        try:
+            owners = inspect_sealed_export_origins(names, fds)
+            expected = {name: names[0] if i < 5 else names[1]
+                        for i, name in enumerate(REQUIRED_SYMBOLS)}
+            self.assertEqual(owners, expected)
+        finally:
+            for fd in fds:
+                os.close(fd)
+
+    def test_duplicate_required_export_across_sealed_objects_is_rejected(self):
+        _, first, second = self.prepare_synthetic_original_objects()
+        # Both valid .o files export the same required strong function.
+        extra = self.compile(
+            "\n".join(f"void {name}(void) {{}}"
+                      for name in REQUIRED_SYMBOLS[5:]) +
+            f"\nvoid {REQUIRED_SYMBOLS[0]}(void) {{}}\n",
+            name="duplicate-owner")
+        os.replace(extra, second)
+        second.chmod(0o644)
+        files = [first, second]
+        fds = [sealed_input_fd(path, stable_object_input(path), index=n)
+               for n, path in enumerate(files)]
+        try:
+            with self.assertRaisesRegex(ValueError, "sealed input export"):
+                inspect_sealed_export_origins(["a.o", "b.o"], fds)
+        finally:
+            for fd in fds:
+                os.close(fd)
+
+    def test_weak_required_export_from_sealed_input_is_rejected(self):
+        _, first, second = self.prepare_synthetic_original_objects()
+        impostor = REQUIRED_SYMBOLS[-1]
+        weakened = self.compile(
+            "\n".join(f"void {name}(void) {{}}"
+                      for name in REQUIRED_SYMBOLS[5:] if name != impostor) +
+            f"\nvoid {impostor}(void) __attribute__((weak));\n"
+            f"void {impostor}(void) {{}}\n", name="weak-owner")
+        os.replace(weakened, second)
+        second.chmod(0o644)
+        fds = [sealed_input_fd(path, stable_object_input(path), index=n)
+               for n, path in enumerate([first, second])]
+        try:
+            with self.assertRaisesRegex(ValueError, "sealed input export"):
+                inspect_sealed_export_origins(["a.o", "b.o"], fds)
+        finally:
+            for fd in fds:
+                os.close(fd)
+
     def test_full_partial_link_uses_sealed_fds_not_mutable_upstream_paths(self):
         root, game, gpu = self.prepare_synthetic_original_objects()
         files = [[f"{BUILD}/original-cd.o"], [f"{BUILD}/original-gpu.o"]]
@@ -367,6 +421,10 @@ class PublicRelocatableELFTests(unittest.TestCase):
         self.assertEqual(report["public_game_object_count"], 1)
         self.assertEqual(report["backend_and_observer_object_count"], 1)
         self.assertEqual(report["total_compiled_elf_objects"], 2)
+        self.assertEqual(report["verified_original_export_input_owners"], {
+            name: f"{BUILD}/original-cd.o" if i < 5 else f"{BUILD}/original-gpu.o"
+            for i, name in enumerate(REQUIRED_SYMBOLS)
+        })
         expected_input_manifest = [
             {"path": path, "sha256": stable_object_input(source)[0]}
             for path, source in (
