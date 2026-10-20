@@ -1,0 +1,222 @@
+name: MAP02 Stage280 first real 22ms NRO on instrumented CPAL host
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-cpal-real-guest-22ms.yml'
+      - 'tools/run_map02_new_cpal_guest_22ms.sh'
+      - 'docs/MAP02_CPAL_FIRST_REAL_GUEST_22MS.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  VH_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_FROZEN_STAGE279: '08bf2bb47ab63c0f2d21e00a4dea12808de12d3b'
+  VH_NEW_HOST_SHA: 'dd4ed55b6ce8477f19b77465f4ce6a0606b7a7315b3a0e2b8137b7d7ab5effd0'
+  VH_ORIGINAL_NRO_SHA: '04b20024a50327091cff430eb5c28e4722d4ec76'
+
+jobs:
+  one-real-guest:
+    name: 22ms source-pinned CPAL runtime and generated NRO guest evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Enforce strictly isolated three-file research route and synthetic CPAL audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_HEAD"
+          python3 - <<'PY'
+          import os,subprocess
+          paths=set(subprocess.check_output(
+              ["git","diff","--name-only",os.environ["VH_FROZEN_STAGE279"],"HEAD"],
+              text=True).splitlines())
+          allowed={
+              ".github/workflows/map02-cpal-real-guest-22ms.yml",
+              "tools/run_map02_new_cpal_guest_22ms.sh",
+              "docs/MAP02_CPAL_FIRST_REAL_GUEST_22MS.md",
+          }
+          assert paths and paths<=allowed,sorted(paths-allowed)
+          PY
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_map02_cpal_audioout_timeline.py' -v
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-stage276-experimental-nexium-linux-x86_64
+          run-id: 39467347590
+          github-token: ${{ github.token }}
+          path: host
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-audout-presubmit-research-nro
+          run-id: 39460035568
+          github-token: ${{ github.token }}
+          path: guest
+      - name: Verify actual experimental ELF and ROM-free generated research NRO bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          chmod 0755 host/nexium
+          echo "$VH_NEW_HOST_SHA  host/nexium" | sha256sum -c -
+          python3 tools/verify_map02_instrumented_nexium_host_artifact.py \
+            --artifact-dir host --output evidence/host-identity.json
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          d=Path("guest")
+          m=json.loads((d/"manifest.json").read_text())
+          nro=(d/"vandal-hearts-map02-audio.nro").read_bytes()
+          assert m["schema"]=="vh-map02-presubmit-guest-nro/v1"
+          assert m["source_sha"]==os.environ["VH_ORIGINAL_NRO_SHA"]
+          assert m["run_id"]==39460035568
+          assert nro[16:20]==b"NRO0"
+          assert hashlib.sha256(nro).hexdigest()==m["nro_sha256"]
+          assert (d/"nro.sha256").read_text().split()[0]==m["nro_sha256"]
+          host=json.loads(Path("evidence/host-identity.json").read_text())
+          assert host["result"]=="EXACT_SOURCE_INSTRUMENTED_HOST_ELF_ARTIFACT_VERIFIED"
+          assert host["observed_elf_sha256"]==os.environ["VH_NEW_HOST_SHA"]
+          report={
+              "schema":"vh-map02-stage280-guest-host-pair/v1",
+              "new_host_executable_sha256":host["observed_elf_sha256"],
+              "guest_nro_sha256":m["nro_sha256"],
+              "guest_original_research_source_sha":m["source_sha"],
+              "old_guest_artifact_run_id":m["run_id"],
+              "actual_new_trial_run_id":int(os.environ["GITHUB_RUN_ID"]),
+              "trial_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "pulse_hint_ms":22,
+              "rom_or_licensed_audio_used":False,
+              "physical_switch_audio_proven":False,
+          }
+          Path("evidence/pinned-host-and-nro.json").write_text(
+              json.dumps(report,sort_keys=True,indent=2)+"\n")
+          PY
+      - name: Install audio/graphics libraries for genuine guest optical and virtual PCM
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 \
+            libxkbcommon0 libxkbcommon-x11-0 libx11-xcb1 \
+            libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers libgl1-mesa-dri \
+            pulseaudio pulseaudio-utils libasound2-plugins
+          ldd host/nexium >evidence/host-linked-libraries.txt
+          ! grep -F 'not found' evidence/host-linked-libraries.txt
+          python3 -m unittest discover -s tests \
+            -p 'test_decode_map02_prejoin_stage.py' -v
+      - name: Run actual 22ms generated NRO with newly compiled CPAL callback counters
+        shell: bash
+        timeout-minutes: 6
+        run: |
+          set -euo pipefail
+          export MAP02_HOST="$PWD/host/nexium"
+          export MAP02_NRO="$PWD/guest/vandal-hearts-map02-audio.nro"
+          export MAP02_EVIDENCE="$PWD/evidence"
+          bash tools/run_map02_new_cpal_guest_22ms.sh
+      - name: Independently parse REAL callback entry/return and AudioOut counters
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_map02_cpal_audioout_timeline.py \
+            --trace evidence/host-cpal-audioout-timeline.csv \
+            --first-input-marker evidence/guest-first-input-monotonic-ns.txt \
+            --final-observation-marker evidence/guest-final-observation-monotonic-ns.txt \
+            --output evidence/host-cpal-audioout-audit.json
+      - name: Decode optical guest stage from actual prejoin screenshot
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/decode_map02_prejoin_stage.py \
+            --image evidence/guest-prejoin.png \
+            --output evidence/guest-prejoin-stage.json
+      - name: Check strict original guest eight-page PCM CRC-8 receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/decode_map02_audout_presubmit.py \
+            --image evidence/guest-final.png \
+            --output evidence/guest-final-receipt.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("evidence/guest-final-receipt.json").read_text())
+          assert r["result"]=="GUEST_PRESUBMIT_PCM_PAGES_MATCHED",r["result"]
+          assert r["observed_pages"]==8 and r["mismatches"]==0
+          assert all(p["descriptor_released_returns"]==1 for p in r["pages"])
+          assert not r["physical_switch_speaker_audio_verified"]
+          PY
+      - name: Preserve and digest raw 48k virtual PCM even on failure
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from array import array
+          import hashlib,json,sys
+          from pathlib import Path
+          root=Path("evidence")
+          path=root/"virtual-pulse-48k-stereo-s16le.pcm"
+          out={"schema":"vh-map02-stage280-virtual-pcm/v1",
+               "physical_switch_dac_proven":False,
+               "new_host_origin_from_stage276":True}
+          if path.is_file():
+              raw=path.read_bytes()
+              out["raw_sha256"]=hashlib.sha256(raw).hexdigest()
+              out["bytes"]=len(raw)
+              out["valid_pcm16le_stereo"]=len(raw)>0 and len(raw)%4==0
+              if out["valid_pcm16le_stereo"]:
+                  samples=array("h");samples.frombytes(raw)
+                  if sys.byteorder!="little":samples.byteswap()
+                  out["nonzero_pcm16_samples"]=sum(v!=0 for v in samples)
+          else:
+              out["capture_missing"]=True
+          (root/"virtual-pcm-health.json").write_text(
+              json.dumps(out,indent=2,sort_keys=True)+"\n")
+          print(json.dumps(out,sort_keys=True))
+          PY
+      - name: Report only observations actually supported by this guest run
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path("evidence")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as fp:
+              print("### Stage280 first real NRO on CPAL-instrumented NeXium",file=fp)
+              for filename in ("host-cpal-audioout-audit.json",
+                               "guest-prejoin-stage.json",
+                               "guest-final-receipt.json",
+                               "virtual-pcm-health.json"):
+                  p=root/filename
+                  if not p.is_file():
+                      print(filename+": **UNVERIFIED**",file=fp)
+                  else:
+                      x=json.loads(p.read_text())
+                      print(filename+": "+x.get("result","recorded"),file=fp)
+                      if filename=="host-cpal-audioout-audit.json":
+                          print("Host CPAL status: "+
+                                x.get("guest_window_cpal_status","unverified"),file=fp)
+              print("One positive-control 22ms request only; not a verified "
+                    "CPAL/ALSA hardware period, permanent deadlock, production "
+                    "audio repair or physical Switch speaker test.",file=fp)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage280-first-real-22ms-cpal-guest-evidence
+          path: evidence/
+          if-no-files-found: warn
