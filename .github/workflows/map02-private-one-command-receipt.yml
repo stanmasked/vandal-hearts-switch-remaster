@@ -1,0 +1,57 @@
+name: MAP02 private one-command receipt handoff
+
+on:
+  push:
+    branches:
+      - 'work/map02-private-one-command-receipt'
+    paths:
+      - '.github/workflows/map02-private-one-command-receipt.yml'
+      - 'tools/run_map02_private_disc_audit.py'
+      - 'tests/test_run_map02_private_disc_audit.py'
+      - 'tools/stage_map02_private_disc.py'
+      - 'tools/emit_map02_local_disc_receipt.py'
+      - 'tools/check_map02_local_disc_receipt.py'
+  pull_request:
+    paths:
+      - '.github/workflows/map02-private-one-command-receipt.yml'
+      - 'tools/run_map02_private_disc_audit.py'
+      - 'tests/test_run_map02_private_disc_audit.py'
+      - 'tools/stage_map02_private_disc.py'
+      - 'tools/emit_map02_local_disc_receipt.py'
+      - 'tools/check_map02_local_disc_receipt.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  one-command-private-audit:
+    name: Private audit handoff / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15-intel]
+    steps:
+      - name: Checkout source only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile handoff and private file safety modules
+        run: |
+          python3 -m py_compile \
+            tools/run_map02_private_disc_audit.py \
+            tools/stage_map02_private_disc.py \
+            tools/emit_map02_local_disc_receipt.py \
+            tools/check_map02_local_disc_receipt.py
+      - name: Five asset-free orchestration tests
+        run: |
+          python3 -m unittest -v tests.test_run_map02_private_disc_audit
