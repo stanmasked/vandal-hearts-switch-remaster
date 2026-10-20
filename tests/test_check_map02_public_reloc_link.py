@@ -316,6 +316,49 @@ class PublicRelocatableELFTests(unittest.TestCase):
         gpu.chmod(0o644)
         return root, game, gpu
 
+    def test_sealed_source_function_sizes_match_linked_elf(self):
+        obj = self.compile(self.all_exports(), name="sized-original")
+        obj.chmod(0o644)
+        fd = sealed_input_fd(obj, stable_object_input(obj), index=0)
+        try:
+            owners, sizes = inspect_sealed_export_origins(
+                ["build-map02-cycle/sized-original.o"], [fd],
+                with_sizes=True)
+            self.assertEqual(set(owners), set(REQUIRED_SYMBOLS))
+            self.assertTrue(all(size > 0 for size in sizes.values()))
+            result = inspect_relocatable(
+                f"/proc/self/fd/{fd}", pass_fds=(fd,),
+                expected_source_sizes=sizes)
+            self.assertEqual(result["original_cd_gpu_and_vram_exports_verified"],
+                             len(REQUIRED_SYMBOLS))
+            invalid = dict(sizes)
+            invalid[REQUIRED_SYMBOLS[0]] += 1
+            with self.assertRaisesRegex(ValueError, "size differs from sealed input"):
+                inspect_relocatable(
+                    f"/proc/self/fd/{fd}", pass_fds=(fd,),
+                    expected_source_sizes=invalid)
+        finally:
+            os.close(fd)
+
+    def test_zero_size_sealed_source_export_cannot_claim_provenance(self):
+        name = REQUIRED_SYMBOLS[-1]
+        obj = self.compile(
+            "\n".join(f"void {symbol}(void) {{}}"
+                      for symbol in REQUIRED_SYMBOLS if symbol != name) +
+            f'\n__asm__(".text\\n.globl {name}'
+            f'\\n.type {name}, @function'
+            f'\\n{name}:\\n.size {name}, .-{name}\\n");\n',
+            name="zero-size-sealed")
+        obj.chmod(0o644)
+        fd = sealed_input_fd(obj, stable_object_input(obj), index=0)
+        try:
+            with self.assertRaisesRegex(ValueError, "function size unavailable"):
+                inspect_sealed_export_origins(
+                    ["build-map02-cycle/zero-size-sealed.o"], [fd],
+                    with_sizes=True)
+        finally:
+            os.close(fd)
+
     def test_each_required_export_is_owned_by_one_sealed_source_object(self):
         root, first, second = self.prepare_synthetic_original_objects()
         names = [f"{BUILD}/original-cd.o", f"{BUILD}/original-gpu.o"]
@@ -424,6 +467,7 @@ class PublicRelocatableELFTests(unittest.TestCase):
         self.assertEqual(report["public_game_object_count"], 1)
         self.assertEqual(report["backend_and_observer_object_count"], 1)
         self.assertEqual(report["total_compiled_elf_objects"], 2)
+        self.assertTrue(report["original_cd_gpu_source_function_sizes_matched"])
         self.assertEqual(report["verified_original_export_input_owners"], {
             name: f"{BUILD}/original-cd.o" if i < 5 else f"{BUILD}/original-gpu.o"
             for i, name in enumerate(REQUIRED_SYMBOLS)
