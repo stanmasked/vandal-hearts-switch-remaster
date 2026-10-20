@@ -149,8 +149,9 @@ def main():
               verify_published_window_source_witness)
         result = fn(args.source_bundle, args.native_windows,
                     compiler=args.compiler)
-    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
-        parser.error(str(exc))
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        # Never echo source/private capture paths or untrusted witness data.
+        parser.error("private MAP02 native window witness unavailable")
     print(json.dumps(result, indent=2, sort_keys=True))
 
 
