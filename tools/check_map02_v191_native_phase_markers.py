@@ -14,7 +14,7 @@ from pathlib import Path
 import re
 
 from .check_map02_v188_native_ram_receipts import refusal_phase
-from .check_map02_v190_native_log_stability import audit_stability
+from .check_map02_v190_native_log_stability import audit_stability, snapshot_directory
 
 PHASE = re.compile(r"VH78_PHASE_PASS phase=([0-3]) checked=595 guard=499")
 FINAL_VRAM = (
@@ -83,6 +83,7 @@ def verify_phase_log(data: str, mode: int) -> int:
     return phase_markers
 
 def audit_directory(directory: Path) -> tuple[int, int, int, int]:
+    before = snapshot_directory(directory)
     modes, shots, mutations = audit_stability(directory)
     total_phases = 0
     for mode in range(10):
@@ -92,6 +93,8 @@ def audit_directory(directory: Path) -> tuple[int, int, int, int]:
         total_phases += verify_phase_log(
             (directory / name).read_text(encoding="utf-8"), mode
         )
+    if snapshot_directory(directory) != before:
+        raise ValueError("native log file identity or hash changed during phase audit")
     if (modes, shots, mutations, total_phases) != (10, 21, 159, 22):
         raise ValueError("incorrect native pixel checkpoint matrix")
     return modes, shots, mutations, total_phases
