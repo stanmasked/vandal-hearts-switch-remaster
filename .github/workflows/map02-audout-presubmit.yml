@@ -13,6 +13,8 @@ on:
       - 'tools/audit_presubmit_virtual_sink.py'
       - 'tools/report_pulse_sink_input_latency.py'
       - 'tests/test_report_pulse_sink_input_latency.py'
+      - 'tools/validate_presubmit_sink_eight_pages.py'
+      - 'tests/test_validate_presubmit_sink_eight_pages.py'
       - 'source/vh_switch_game_audio.c'
       - 'source/vh_switch_game_audio.h'
       - 'source/main.c'
@@ -126,7 +128,10 @@ jobs:
         # 20-ms trial failed twice and both 40/80-ms trials passed twice.
         # The actual 48-kHz sink-input buffer latency is observed below,
         # not assumed to equal the requested client hint.
-        latency_ms: [24, 32]
+        # 21ms failed to start real guest sound in both controls.
+        # 22ms / 23ms produced valid optical receipts but sporadically
+        # omitted one *exact* PCM page in the separately recorded sink.
+        latency_ms: [22, 23]
         repeat: [1, 2]
     steps:
       - uses: actions/checkout@v4
@@ -183,6 +188,11 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests -p 'test_report_pulse_sink_input_latency.py' -v
+      - name: Refuse false positive virtual sink 8/8 proofs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_validate_presubmit_sink_eight_pages.py' -v
       - name: Download pinned NeXium nightly asset
         shell: bash
         env:
@@ -415,6 +425,14 @@ jobs:
           if [ "$result" = NO_EXACT_EIGHT_PAGE_SINK_MATCH ]; then
             echo "Exact virtual sink attribution NOT YET proven" >> "$GITHUB_STEP_SUMMARY"
           fi
+      - name: Fail closed unless every guest page occurs exactly once in virtual sink
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/validate_presubmit_sink_eight_pages.py \
+            --sink runtime-evidence/presubmit-sink-parity.json \
+            --health runtime-evidence/presubmit-monitor-health.json \
+            --output runtime-evidence/presubmit-sink-eight-page-verdict.json
       - name: Archive actual guest evidence even if decode fails
         if: always()
         uses: actions/upload-artifact@v4
