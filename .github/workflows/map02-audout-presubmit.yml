@@ -449,7 +449,10 @@ jobs:
           python3 tools/audit_presubmit_virtual_sink.py \
             --guest runtime-evidence/presubmit-guest.json \
             --monitor runtime-evidence/presubmit-virtual-sink-s16le-48k.pcm \
-            --max-seconds 30 \
+            # Pre-join stage observability deliberately adds 1+8s to
+            # guest exit. Preserve a 45s *bounded* sink window so an
+            # otherwise valid recording is not rejected as >30s.
+            --max-seconds 45 \
             --output runtime-evidence/presubmit-sink-parity.json
           result="$(python3 - <<'PY'
           import json
