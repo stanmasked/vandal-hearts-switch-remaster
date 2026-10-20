@@ -1,0 +1,131 @@
+name: Stage323 independent original PlayBuffer history replay
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage323-independent-original-playbuffer-history.yml'
+      - 'tools/replay_nexium_original_playbuffer_history_archive.py'
+      - 'tests/test_replay_nexium_original_playbuffer_history_archive.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  independent-history-source:
+    name: Re-read real last16 guest calls and original exit/optical provenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 48
+    steps:
+      - name: Checkout canonical source and CRC optical decoders
+        uses: actions/checkout@v4
+
+      - name: Install isolated optical PNG decoder
+        run: |
+          set -euxo pipefail
+          python3 -m venv /tmp/vh-stage323
+          /tmp/vh-stage323/bin/python -m pip install --disable-pip-version-check 'Pillow>=10,<13'
+
+      - name: Stage323 independent guest history 16 source and rank controls
+        run: /tmp/vh-stage323/bin/python -m unittest discover -s tests -p 'test_replay_nexium_original_playbuffer_history_archive.py' -v
+
+      - name: Require the exact original Stage322 source run to finish successfully
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 150); do
+            status="$(gh api repos/${GITHUB_REPOSITORY}/actions/runs/39159226320 --jq '.status')"
+            conclusion="$(gh api repos/${GITHUB_REPOSITORY}/actions/runs/39159226320 --jq '.conclusion // "pending"')"
+            if [[ "$status" == completed ]]; then
+              if [[ "$conclusion" != success ]]; then
+                echo "Original Stage322 NeXium source failed: $conclusion" >&2
+                exit 1
+              fi
+              echo "Stage322 original capture completed successfully"
+              break
+            fi
+            if (( attempt == 150 )); then
+              echo "Original source did not finish in bounded check" >&2
+              exit 1
+            fi
+            sleep 15
+          done
+
+      - name: Download original Stage322 guest NeXium software sources
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39159226320
+          github-token: ${{ github.token }}
+          path: original-stage322-neXium
+
+      - name: Independently replay exact last16 original source and all prior receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p independent-stage323-evidence
+          /tmp/vh-stage323/bin/python tools/replay_nexium_original_playbuffer_history_archive.py \
+            --original-run-id 39159226320 \
+            --archive original-stage322-neXium \
+            --output independent-stage323-evidence/original-playbuffer-history-stage323.json
+          /tmp/vh-stage323/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path(
+              "independent-stage323-evidence/original-playbuffer-history-stage323.json"
+          ).read_text())
+          if (r["schema"]!="vh-independent-original-last16-PlayBuffer-guest-source-replay/v1"
+                  or r["result"]!="ORIGINAL_LAST16_PLAYBUFFER_CALLS_AND_EXIT_INDEPENDENTLY_REPLAYED"
+                  or r["original_source_workflow_run_id"]!=39159226320
+                  or r["original_stage307_308_310_313_314_317_320_321_sources_replayed"] is not True
+                  or r["original_stage322_history_CSV_and_receipt_replayed"] is not True
+                  or not 1<=r["recent_original_service_call_count"]<=16
+                  or r["recent_original_successful_calls"]+r["recent_original_failed_calls"]
+                      !=r["recent_original_service_call_count"]
+                  or r["has_source_verified_prior_call_baseline"]
+                      !=(r["prior_successful_calls_in_window"]>0)
+                  or (r["prior_successful_calls_shorter_than_last"]
+                      +r["prior_successful_calls_equal_to_last"]
+                      +r["prior_successful_calls_longer_than_last"]
+                      !=r["prior_successful_calls_in_window"])
+                  or r["prior_successful_duration_rank_is_only_this_bounded_window"] is not True
+                  or r["guest_software_call_is_NOT_DAC_or_speaker_sound"] is not True
+                  or r["original_guest_to_host_PCM_clock_fit_verified"] is not False
+                  or r["plus_caused_audible_dropout_verified"] is not False
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage323 original history source replay/provenance not verified")
+          if r["prior_successful_calls_in_window"]==0:
+              if r["prior_successful_lower_median_duration_guest_ns"] is not None:
+                  raise SystemExit("Stage323 invented an earlier original service-call baseline")
+          else:
+              if (r["last_minus_prior_lower_median_guest_ns"]!=
+                  r["last_successful_duration_guest_ns"]-
+                  r["prior_successful_lower_median_duration_guest_ns"]):
+                  raise SystemExit("Stage323 duration baseline arithmetic invalid")
+          print("Stage323 original guest rolling source SHA:",
+                r["original_guest_history_csv_sha256"])
+          print("Stage323 real last successful call (guest software ns):",
+                r["last_successful_duration_guest_ns"])
+          print("Stage323 count of proven prior successful calls:",
+                r["prior_successful_calls_in_window"])
+          print("Stage323 prior lower median (guest software ns):",
+                r["prior_successful_lower_median_duration_guest_ns"])
+          print("Stage323 preceding successful calls shorter/equal/longer than final:",
+                r["prior_successful_calls_shorter_than_last"],
+                r["prior_successful_calls_equal_to_last"],
+                r["prior_successful_calls_longer_than_last"])
+          print("Stage323 last call ascending rank among final and prior samples:",
+                r["last_call_ascending_rank_among_prior_plus_last"])
+          PY
+          echo "Stage323: independent original-byte replay of guest last16 PlayBuffer history, final PlayBuffer call, worker stop, page return, guest exit and optical CRC evidence. Prior baseline shown only if supported by actual original calls. Software clock only; no DAC/speaker or Plus causality proof." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish only independent guest software source report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage323-independent-original-playbuffer-history
+          path: independent-stage323-evidence/
+          if-no-files-found: warn
