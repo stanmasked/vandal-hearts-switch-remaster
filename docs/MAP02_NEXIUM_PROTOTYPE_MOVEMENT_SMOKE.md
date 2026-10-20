@@ -32,10 +32,12 @@ Expected success marker:
 `VH_MAP02_NEXIUM_PROTOTYPE_MOVE_PASS boot=1 select=1 cursor=1 invalid_range=1 move=1 cancel=1 return=1 enemy_preserved=1 frame_replay=1 retail=0`
 
 The workflow preserves original X11 screenshots, a tool result and an emulator
-log as GitHub Actions artifacts even when the test fails. The real NeXium
-download prints its archive SHA-256 for traceability; the tag is mutable and
-the fetched executable is **not a pinned release hash**. This is a
-reproducibility limitation, not proof of source equivalence.
+log as GitHub Actions artifacts even when the test fails. The tested NeXium
+nightly is pinned to GitHub release asset ID `658656899` and SHA-256
+`c933fbbcf8d1b011de8d4a79c9d8eb55c0678a305947af9388ddb40ce5960a66`,
+observed on 20 October 2026. The mutable nightly tag can no longer silently
+replace the binary: changing the asset requires an explicit reviewed hash
+update. This does not independently establish source-build equivalence.
 
 ## Scope exclusions
 
