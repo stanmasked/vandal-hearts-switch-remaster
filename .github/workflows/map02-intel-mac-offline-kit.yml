@@ -70,6 +70,7 @@ jobs:
               )
               assert not any(x.startswith('assets/') for x in names)
           print('VH_MAP02_OFFLINE_KIT_PROVENANCE_PASS public_only=1 private=0')
+          print('VH_MAP02_OFFLINE_KIT_INNER_ZIP_SHA256 ' + report['zip_sha256'])
           PY
       - name: Extract and run seven true CLI adversaries in the packaged tree
         shell: bash
