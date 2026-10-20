@@ -20,7 +20,7 @@ import re
 import subprocess
 import sys
 
-from audit_map02_stack import AuditError, git
+from audit_map02_stack import AuditError, git, unsafe_asset_paths
 from audit_map02_full_stack import validate_snapshot
 
 SHA = re.compile(r"^[0-9a-f]{40}$")
@@ -64,6 +64,50 @@ def _head_reference(repo: Path) -> tuple[int, str]:
     return (result.returncode, result.stdout.strip())
 
 
+def inspect_step_changes(repo: Path, before_tree: str,
+                         after_tree: str, number: int) -> list[dict]:
+    """Account for *every* intermediate path, even if later deleted.
+
+    A final-tree-only scan misses transient retail data. Read Git's raw -z
+    name/status stream so unusual filenames cannot masquerade as a status.
+    """
+    if not SHA.fullmatch(before_tree) or not SHA.fullmatch(after_tree):
+        raise AuditError(f"PR #{number}: invalid tree in change inventory")
+    result = subprocess.run(
+        ["git", "-C", str(repo), "diff", "--name-status",
+         "--no-renames", "-z", before_tree, after_tree],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    if result.returncode:
+        raise AuditError(f"PR #{number}: cannot enumerate staged tree changes")
+    tokens = result.stdout.split(b"\\0")
+    if not tokens or tokens[-1] != b"":
+        raise AuditError(f"PR #{number}: truncated Git change inventory")
+    tokens.pop()
+    if len(tokens) % 2:
+        raise AuditError(f"PR #{number}: malformed Git change inventory")
+    inventory = []
+    for i in range(0, len(tokens), 2):
+        try:
+            status = tokens[i].decode("ascii")
+            filename = tokens[i + 1].decode("utf-8")
+        except UnicodeError as exc:
+            raise AuditError(f"PR #{number}: unsupported path encoding") from exc
+        if status not in ("A", "M", "D", "T") or not filename:
+            raise AuditError(f"PR #{number}: unsupported file change status")
+        if filename.startswith("/") or any(
+                part in ("", ".", "..") for part in filename.split("/")):
+            raise AuditError(f"PR #{number}: unsafe changed path")
+        inventory.append({"status": status, "path": filename})
+    dangerous = unsafe_asset_paths([
+        x["path"] for x in inventory if x["status"] in ("A", "M", "T")
+    ])
+    if dangerous:
+        raise AuditError(
+            f"PR #{number}: forbidden intermediate retail/binary assets: "
+            + ", ".join(dangerous[:10]))
+    return inventory
+
+
 def rehearse(repo: Path, main_sha: str, pinned_prs: list[dict],
              expected_last_sha: str | None = None) -> dict:
     """Simulate one isolated merge object per stage and verify ALL trees."""
@@ -75,6 +119,8 @@ def rehearse(repo: Path, main_sha: str, pinned_prs: list[dict],
     before_status = git(repo, "status", "--porcelain").stdout
     parent = main_sha
     items = []
+    all_changes = 0
+    changed_paths = set()
     for entry in pinned_prs:
         number = entry["number"]
         child = entry["sha"]
@@ -92,6 +138,10 @@ def rehearse(repo: Path, main_sha: str, pinned_prs: list[dict],
             raise AuditError(
                 f"PR #{number}: virtual integration reintroduces or changes "
                 "contents absent from the reviewed downstream head")
+        path_changes = inspect_step_changes(repo, _tree(repo, parent),
+                                             target_tree, number)
+        all_changes += len(path_changes)
+        changed_paths.update(x["path"] for x in path_changes)
         virtual_sha = _object_only_commit(repo, merged_tree, parent, child,
                                            number)
         if _tree(repo, virtual_sha) != target_tree:
@@ -100,6 +150,8 @@ def rehearse(repo: Path, main_sha: str, pinned_prs: list[dict],
             "number": number, "source_sha": child,
             "source_tree": target_tree, "rehearsed_tree": merged_tree,
             "virtual_commit": virtual_sha, "identical": True,
+            "changed_file_count": len(path_changes),
+            "path_changes": path_changes,
         })
         parent = virtual_sha
 
@@ -121,6 +173,9 @@ def rehearse(repo: Path, main_sha: str, pinned_prs: list[dict],
         "stages": len(items),
         "unchanged_trees": len(items),
         "virtual_object_only_commits": len(items),
+        "intermediate_changes_checked": all_changes,
+        "unique_changed_paths": len(changed_paths),
+        "forbidden_intermediate_assets": [],
         "git_refs_updated": False, "worktree_updated": False,
         "real_merge_performed": False,
         "steps": items,
