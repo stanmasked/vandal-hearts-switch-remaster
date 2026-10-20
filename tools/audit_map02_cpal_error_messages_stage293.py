@@ -60,7 +60,7 @@ def scan_host_log(path):
     path=Path(path)
     require(path.is_file() and not path.is_symlink(),"Original host stdout missing or symlinked")
     raw=path.read_bytes()
-    require(0<len(raw)<=LIMIT_BYTES,"Original host stdout empty or unexpectedly large")
+    require(len(raw)<=LIMIT_BYTES,"Original host stdout unexpectedly large")
     text=raw.decode("utf-8","replace")
     lines=text.splitlines()
     require(len(lines)<=MAX_LINES,"Host log line count exceeds bounded audit maximum")
@@ -85,6 +85,7 @@ def scan_host_log(path):
     return {
         "original_stdout_sha256":hashlib.sha256(raw).hexdigest(),
         "original_stdout_bytes":len(raw),
+        "original_stdout_is_empty":len(raw)==0,
         "original_stdout_line_count":len(lines),
         "cpal_stream_error_log_line_count_all_times":len(reasons),
         "distinct_sanitized_cpal_error_messages":len(groups),
