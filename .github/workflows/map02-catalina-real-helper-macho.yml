@@ -1,0 +1,100 @@
+name: MAP02 Catalina real compiled PC texture helper ABI audit
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-catalina-real-helper-macho.yml'
+      - 'tools/map02_catalina_helper_macho_audit.py'
+      - 'tests/test_map02_catalina_helper_macho_audit.py'
+      - 'tools/verify_map02_pc_vram4_equivalence.py'
+      - 'tools/verify_map02_pc_vram4_ft4_binding.py'
+      - 'tools/verify_map02_private_timeline_pc_vram4.py'
+      - 'source/map02_vram4_page.h'
+      - 'tests/test_map02_vram4_frame.c'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  three-real-pinned-helpers:
+    name: "3 pinned PC C helpers x86_64 minos10.15 Python ${{ matrix.python }}"
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.11']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: upstream
+          sparse-checkout: |
+            platform/pc/src/pc_raster.c
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Test actual Mach-O dependency parser before building
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          python -m unittest discover -s tests \
+            -p 'test_map02_catalina_helper_macho_audit.py' -v \
+            2>&1 | tee /tmp/vh-map02-catalina-helper-contract.log
+          grep -F 'Ran 5 tests' /tmp/vh-map02-catalina-helper-contract.log
+      - name: Compile three real public-pinned C helpers and audit x86_64 10.15 ABI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m tools.map02_catalina_helper_macho_audit \
+            upstream/platform/pc/src/pc_raster.c \
+            > /tmp/vh-map02-catalina-helper-report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/vh-map02-catalina-helper-report.json').read_text())
+          assert r["compiled_helpers_audited"] == 3
+          assert r["synthetic_helpers_executed"] == 2
+          assert r["private_timeline_missing_input_rejected"] is True
+          assert r["helper_architecture"] == "x86_64"
+          assert r["helper_macos_minimum"] == "10.15"
+          assert r["all_helper_load_commands_verified"] is True
+          assert r["only_system_dynamic_libraries"] is True
+          assert r["original_ps1_assets_read"] is False
+          assert r["catalina_10_15_runtime_executed"] is False
+          assert r["retail_gameplay_authenticated"] is False
+          print("VH_MAP02_CATALINA_REAL_HELPERS_PASS python=${{ matrix.python }} compiled=3 executed=2 private_missing_refused=1 minos=10.15 original_disc=0")
+          PY
+
+  linux-host-negative:
+    name: Reject three-helper audit on Linux
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run five parser/host negative cases without owned data
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_map02_catalina_helper_macho_audit.py' -v \
+            2>&1 | tee /tmp/vh-map02-catalina-helper-negative.log
+          grep -F 'Ran 5 tests' /tmp/vh-map02-catalina-helper-negative.log
+          if python3 -m tools.map02_catalina_helper_macho_audit \
+              /does/not/exist > /tmp/vh-map02-fake.out 2>/tmp/vh-map02-fake.err; then
+            exit 1
+          fi
+          test ! -s /tmp/vh-map02-fake.out
+          grep -F 'synthetic Catalina MAP02 helper audit unavailable' \
+            /tmp/vh-map02-fake.err
+          echo "VH_MAP02_CATALINA_HELPER_FAKE_HOST_REJECTED private_disc=0"
