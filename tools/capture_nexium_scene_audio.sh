@@ -4,6 +4,14 @@
 set -euo pipefail
 : "${NEXIUM_BIN:?NeXium executable required}"
 : "${RUNNER_TEMP:?runner temporary directory required}"
+# Stage371 opt-in isolated repeat samples; legacy capture remains unchanged.
+SCENE_CAPTURE_TAG="${SCENE_CAPTURE_TAG:-}"
+SCENE_CAPTURE_EXIT_DWELL_SECONDS="${SCENE_CAPTURE_EXIT_DWELL_SECONDS:-6}"
+case "$SCENE_CAPTURE_TAG" in ""|a|b) ;; *)
+  echo "Invalid isolated audio-capture tag" >&2; exit 2;; esac
+case "$SCENE_CAPTURE_EXIT_DWELL_SECONDS" in 6|12) ;; *)
+  echo "Invalid exit dwell for reproducibility control" >&2; exit 2;; esac
+export SCENE_CAPTURE_TAG SCENE_CAPTURE_EXIT_DWELL_SECONDS
 output="${1:-runtime-evidence}"
 mkdir -p "$output"
 export XDG_RUNTIME_DIR="$RUNNER_TEMP/vh-pulse-runtime"
@@ -18,8 +26,11 @@ pactl set-default-sink vh_nexium_capture
 # An isolated, runner-local emulated SD root is authoritative for this
 # session. It cannot pick up traces from previous CI runs or user data.
 # NeXium resolves guest sdmc:/ under NEXIUM_DATA_ROOT/sdmc.
-export NEXIUM_DATA_ROOT="${RUNNER_TEMP}/vh-nexium-stage266-${GITHUB_RUN_ID:-local}"
+export NEXIUM_DATA_ROOT="${RUNNER_TEMP}/vh-nexium-stage266-${GITHUB_RUN_ID:-local}${SCENE_CAPTURE_TAG:+-$SCENE_CAPTURE_TAG}"
 export SCENE_SD_DIR="$NEXIUM_DATA_ROOT/sdmc/switch/vandal-hearts-remake"
+if [[ -n "$SCENE_CAPTURE_TAG" && -e "$NEXIUM_DATA_ROOT" ]]; then
+  echo "Refuse to reuse a tagged original guest SD root" >&2; exit 2
+fi
 mkdir -p "$SCENE_SD_DIR"
 printf '%s\n' "$NEXIUM_DATA_ROOT" > "$output/guest-sd-root.txt"
 export SCENE_PCM="$output/nexium-scenes-s16le-48k.pcm"
@@ -119,7 +130,7 @@ timeout --kill-after=5s 65s xvfb-run -a -s '-screen 0 1280x720x24' bash -c '
   key_press c; snapshot focus_2
   sleep 7
   key_press x; snapshot field_2
-  sleep 6
+  sleep "$SCENE_CAPTURE_EXIT_DWELL_SECONDS"
   # Optical diagnostic shutdown: hold controller X (NeXium V),
   # press Plus (NeXium M), then screenshot the post-join framebuffer.
   # A normal Plus alone preserves immediate exit semantics. The
