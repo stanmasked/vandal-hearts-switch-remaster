@@ -145,7 +145,7 @@ def parse(path,first_input_ns=None,last_observation_ns=None):
         "cpal_error_counter_is_not_a_timestamped_error_event":True,
         "snapshots_do_not_include_pause_drop_or_alsa_wakeup":True,
         "reporter_intrusiveness_not_qualified_by_this_parser":True,
-        "exact_neixum_elf_source_sha_verified_by_this_parser":False,
+        "exact_nexium_elf_source_sha_verified_by_this_parser":False,
         "permanent_guest_audioout_deadlock_or_cpal_root_cause_proven":False,
         "physical_switch_dac_proven":False,
         "original_game_rom_or_audio_read":False,
@@ -168,7 +168,7 @@ def main():
         rc=0
     except (OSError,ValueError,TypeError,UnicodeError,csv.Error) as exc:
         result={"schema":SCHEMA,"result":"UNVERIFIED","reason":str(exc),
-                "exact_neixum_elf_source_sha_verified_by_this_parser":False,
+                "exact_nexium_elf_source_sha_verified_by_this_parser":False,
                 "permanent_guest_audioout_deadlock_or_cpal_root_cause_proven":False,
                 "physical_switch_dac_proven":False}
         rc=1
