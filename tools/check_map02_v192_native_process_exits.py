@@ -100,7 +100,8 @@ def main() -> None:
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("--verify-dir", type=Path, required=True)
     args = cli.parse_args()
-    assert verify_exits(args.verify_dir) == (10, 9, 10)
+    if verify_exits(args.verify_dir) != (10, 9, 10):
+        raise ValueError("native process-exit receipt verification failed")
     print(MARKER)
 
 if __name__ == "__main__":
