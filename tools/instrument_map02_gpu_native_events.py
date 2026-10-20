@@ -6,7 +6,8 @@ VH_MAP02_GPU_CAPTURE_DIR (an existing private directory) and
 VH_MAP02_GPU_CAPTURE_FRAME (positive DrawOTag frame number). It records
 bounded BEFORE/AFTER native BGR555 VRAM snapshots for actual GPU transfer
 calls and for each DRAW primitive (F4, FT4, SPRT, TILE) walked by
-DrawOTag; state-only DR_MODE packets never consume recorder slots. This is command-order evidence, NOT a source-keyed MAP02 trace,
+DrawOTag plus state-only DR_MODE packets for exact GPU-state continuity.
+This is command-order evidence, NOT a source-keyed MAP02 trace,
 not a PS1 GPU command trace, and not a substitute for authenticated
 original game assets. It never alters the normal compiled GPU backend.
 """
@@ -165,7 +166,9 @@ static void VH_CaptureEvent(const char *phase, const char *operation, int transf
     }
     upload_name[0] = '\0';
     if (upload && upload_words > 0u && upload_words <= 16384u) {
-        n = snprintf(upload_name, sizeof upload_name, "gpu-%04u-upload.bin", seq);
+        /* Match snapshot, JSONL step and all per-window upload filenames. */
+        n = snprintf(upload_name, sizeof upload_name,
+                     "gpu-%04u-upload.bin", local_seq);
         if (n < 0 || (size_t)n >= sizeof upload_name) return;
         n = snprintf(upload_path, sizeof upload_path, "%s/%s",
                      directory, upload_name);
@@ -348,8 +351,12 @@ def instrument(source):
          ANCHORS["clear_after"]+'\n#if defined(VH_MAP02_GPU_CAPTURE)\n'
          '    VH_CaptureEvent("after","clear",1,rect,NULL,0u,0,0,r,g,b,0,0,NULL);\n#endif',
          "post-ClearImage")
+    # Capture state-only DR_MODE as well: PR #55 checks the exact
+    # pre/post GPU state transition and requires contiguous VRAM across
+    # adjacent DrawOTag events. DR_MODE cannot be omitted as a gap.
     draw_only = ('type == PC_GPU_PRIM_POLY_F4 || type == PC_GPU_PRIM_POLY_FT4 || '
-                 'type == PC_GPU_PRIM_SPRT || type == PC_GPU_PRIM_TILE')
+                 'type == PC_GPU_PRIM_SPRT || type == PC_GPU_PRIM_TILE || '
+                 'type == PC_GPU_PRIM_DR_MODE')
     source=replace_one(source,ANCHORS["draw_before"],
          '#if defined(VH_MAP02_GPU_CAPTURE)\n'
          '            if (' + draw_only + ')\n'

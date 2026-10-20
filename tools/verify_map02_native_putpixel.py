@@ -14,6 +14,7 @@ from pathlib import Path
 import stat
 
 from tools.verify_map02_frame_bundle import fields, number, parse_json
+from tools.map02_pc_writepixel_reference import expected_write_pixel
 
 NAME = "putpixel-native-events.jsonl"
 MAX_RECORDS = 64
@@ -39,6 +40,8 @@ def verify_pixel_calls(directory):
     chosen = None
     opaque_calls = blend_calls = accurate_calls = same_color_calls = 0
     changed_calls = bit15_rises = bit15_falls = gaps = 0
+    accurate_blend_checked = legacy_blend_checked = 0
+    observed_accurate_mode = None
     prev_after = None
     for index, line in enumerate(rows):
         e = parse_json(line, f"pixel sample event {index}")
@@ -60,12 +63,28 @@ def verify_pixel_calls(directory):
         semi = number(e["semi"], "semi-transparency", 0, 1)
         number(e["textured"], "textured", 0, 1)
         accurate = number(e["accurate"], "PC accurate-mode flag", 0, 1)
+        # The pinned PC AccurateEnabled() caches VH_ACCURATE in a static
+        # local variable. It cannot change during one native capture.
+        if observed_accurate_mode is None:
+            observed_accurate_mode = accurate
+        elif observed_accurate_mode != accurate:
+            raise ValueError("inconsistent native AccurateEnabled mode in one PutPixel session")
 
         # The actual pinned original WritePixel always copies c directly
         # when semiTrans == 0. Reject the only outcome the source alone
         # lets us verify without reconstructing blend/dither decisions.
-        if semi == 0 and front != after:
-            raise ValueError("opaque native WritePixel result violates pinned PC source")
+        if semi == 0:
+            if front != after:
+                raise ValueError("opaque native WritePixel result violates pinned PC source")
+        else:
+            expected = expected_write_pixel(before, front, e["abr"], semi,
+                                            e["textured"], accurate)
+            if after != expected:
+                raise ValueError("semi-transparent native WritePixel differs from pinned PC blend")
+            if accurate:
+                accurate_blend_checked += 1
+            else:
+                legacy_blend_checked += 1
         if prev_after is not None and prev_after != before:
             # Other native GPU operations or uploads may modify this word
             # between calls. Do not invent their cause or silently say no gap.
@@ -83,6 +102,10 @@ def verify_pixel_calls(directory):
         "native_putpixel_calls_observed": len(rows),
         "opaque_copy_calls": opaque_calls,
         "semi_transparent_blend_requests": blend_calls,
+        "accurate_pc_blend_results_checked": accurate_blend_checked,
+        "legacy_pc_blend_results_checked": legacy_blend_checked,
+        "original_pc_writepixel_effects_verified": True,
+        "single_runtime_accurate_mode_consistent": True,
         "accurate_gpu_mode_calls": accurate_calls,
         "same_color_write_calls_invisible_to_vram_delta": same_color_calls,
         "changed_word_write_calls": changed_calls,

@@ -73,6 +73,100 @@ class WindowScopedJoinTests(unittest.TestCase):
         self.assertFalse(result["source_gte_subsequence_verified"])
         self.assertFalse(result["whole_original_gameplay_frame_proven"])
 
+    def test_state_only_dr_mode_has_no_selected_pixel_edge_or_ordinal(self):
+        # Synthetic source order: DR_MODE, F4, F4. The mode pair
+        # counts in the strict native GPU receipt but must not become
+        # a raster primitive ordinal in PutPixel/BlendG1/VRAM edges.
+        from tools.verify_map02_native_gpu_capture import VRAM_BYTES
+        events = []
+        mode_before = dict(self.fixture.events[0], step=0, phase="before",
+                           snapshot="gpu-0000-vram.bin", primitive_type=5,
+                           draw_mode=[0, 0, 0])
+        mode_after = dict(mode_before, step=1, phase="after",
+                          snapshot="gpu-0001-vram.bin",
+                          draw_mode=[1, 0, 0])
+        events.extend((mode_before, mode_after))
+        for idx, original in enumerate(self.fixture.events):
+            event = dict(original, step=idx + 2,
+                         snapshot=f"gpu-{idx + 2:04d}-vram.bin",
+                         draw_mode=[1, 0, 0])
+            events.append(event)
+        for idx, payload in enumerate(
+                (bytes(VRAM_BYTES), bytes(VRAM_BYTES),
+                 *self.fixture.snapshots)):
+            (self.fixture.window / f"gpu-{idx:04d}-vram.bin").write_bytes(payload)
+        self.fixture.events = events
+        (self.fixture.window / "gpu-native-events.jsonl").write_bytes(
+            b"".join(jsonline(e) for e in events))
+        self.fixture.status.update(
+            observed_hooks=6, before_hooks=3, after_hooks=3,
+            draw_before_hooks=3, indexed_hooks=6, written_hooks=6)
+        self.fixture.save_status()
+        report = self.check()
+        self.assertEqual(report["global_draw_ordinals_checked"], 2)
+        self.assertEqual(report["global_event_indices_of_first_and_last_draw"],
+                         [2, 4])
+        self.assertEqual(report["unchanged_draws_at_selected_pixel"], 0)
+        self.assertFalse(report["whole_original_gameplay_frame_proven"])
+
+        # A DR_MODE transition is allowed to change draw_mode, but must
+        # NEVER change even one VRAM byte; the independent native checker
+        # must reject such a forgery before the scoped evidence joins.
+        changed = bytearray(VRAM_BYTES)
+        changed[4] = 1
+        (self.fixture.window / "gpu-0001-vram.bin").write_bytes(changed)
+        with self.assertRaisesRegex(ValueError,
+                                    "DR_MODE DrawOTag primitive modified VRAM"):
+            self.check()
+
+    def test_midstream_dr_mode_does_not_advance_raster_ordinals(self):
+        # F4, DR_MODE, F4: state-only mode is between two raster draws.
+        # Strict VRAM before/after continuity is unchanged and neither
+        # PutPixel nor direct VRAM-edge ordinal may acquire a gap.
+        from tools.verify_map02_native_gpu_capture import VRAM_BYTES
+        first, first_after, last, last_after = self.fixture.events
+        mode_pre = dict(last, step=2, primitive_type=5,
+                        snapshot="gpu-0002-vram.bin", draw_mode=[0, 0, 0])
+        mode_post = dict(last_after, step=3, primitive_type=5,
+                         snapshot="gpu-0003-vram.bin", draw_mode=[1, 0, 0])
+        last = dict(last, step=4, snapshot="gpu-0004-vram.bin",
+                    draw_mode=[1, 0, 0])
+        last_after = dict(last_after, step=5,
+                          snapshot="gpu-0005-vram.bin",
+                          draw_mode=[1, 0, 0])
+        events = [first, first_after, mode_pre, mode_post, last, last_after]
+        self.fixture.events = events
+        same_at_mode_boundary = bytearray(VRAM_BYTES)
+        same_at_mode_boundary[:2] = (1).to_bytes(2, "little")
+        for idx, payload in enumerate((
+                *self.fixture.snapshots[:2],
+                bytes(same_at_mode_boundary), bytes(same_at_mode_boundary),
+                *self.fixture.snapshots[2:],
+        )):
+            (self.fixture.window / f"gpu-{idx:04d}-vram.bin").write_bytes(payload)
+        (self.fixture.window / "gpu-native-events.jsonl").write_bytes(
+            b"".join(jsonline(e) for e in events))
+        self.fixture.status.update(observed_hooks=6, before_hooks=3,
+                                   after_hooks=3, draw_before_hooks=3,
+                                   indexed_hooks=6, written_hooks=6)
+        self.fixture.save_status()
+        result = self.check()
+        self.assertEqual(result["global_draw_ordinals_checked"], 2)
+        self.assertEqual(result["global_event_indices_of_first_and_last_draw"],
+                         [0, 4])
+        self.assertEqual(result["independently_sampled_draw_edges"], 2)
+        self.assertFalse(result["whole_original_gameplay_frame_proven"])
+        self.assertFalse(result["physical_ps1_equivalence_proven"])
+
+        # Forge an unreported GPU-state transition across a raster packet.
+        # The native validator must fail instead of masking the evidence
+        # as if DR_MODE were merely a skipped edge.
+        events[4]["draw_mode"] = [0, 0, 0]
+        (self.fixture.window / "gpu-native-events.jsonl").write_bytes(
+            b"".join(jsonline(e) for e in events))
+        with self.assertRaisesRegex(ValueError, "discontinuous GPU state"):
+            self.check()
+
     def test_rejects_identically_tampered_pixel_blend_and_edge_vs_native_vram(self):
         # Coordinated mutation still passes all three *mutual* comparators,
         # but must NOT bypass directly captured full-VRAM native snapshots.

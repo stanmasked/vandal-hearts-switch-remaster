@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from tools.verify_map02_native_gpu_windows import (
     INDEX, SCHEMA, verify_native_windows,
@@ -74,7 +75,167 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
         data = bytearray(self.snapshots[2])
         data[:2] = (99).to_bytes(2, "little")
         name.write_bytes(data)
-        with self.assertRaisesRegex(ValueError, "continuity broken"):
+        with self.assertRaisesRegex(ValueError, "discontinuous VRAM|continuity broken"):
+            self.verify()
+
+    def test_gpu_mode_cannot_change_silently_across_window_boundary(self):
+        # Use four-event synthetic windows, with 4+2=6 total events,
+        # STRICTLY BELOW their 2*4=8 capacity. Production cap stays 64.
+        # Reuse two validated F4 pairs already in window-000.
+        next_window = self.root / "window-001"
+        next_window.mkdir(mode=0o700)
+        before = dict(self.events[0], step=0, primitive_type=5,
+                      snapshot="gpu-0000-vram.bin", draw_mode=[0, 0, 0])
+        after = dict(before, step=1, phase="after",
+                     snapshot="gpu-0001-vram.bin", draw_mode=[1, 0, 0])
+        for event in (before, after):
+            (next_window / event["snapshot"]).write_bytes(self.snapshots[3])
+        logfile = next_window / "gpu-native-events.jsonl"
+        logfile.write_bytes(jsonline(before) + jsonline(after))
+        self.status.update(window_capacity_events=4, windows_written=2,
+                           observed_hooks=6, before_hooks=3, after_hooks=3,
+                           draw_before_hooks=3, indexed_hooks=6,
+                           written_hooks=6)
+        self.save_status()
+        with patch("tools.verify_map02_native_gpu_windows.MAX_RECORDS", 4):
+            report = self.verify()
+            self.assertEqual(report["recorded_windows"], 2)
+            self.assertEqual(report["native_draw_pairs"], 3)
+            self.assertFalse(report["whole_original_gameplay_frame_proven"])
+            # Forging both local DR_MODE phases leaves local VRAM/state
+            # consistent. Only the cross-window GPU bridge rejects it.
+            before["draw_mode"] = [1, 0, 0]
+            logfile.write_bytes(jsonline(before) + jsonline(after))
+            with self.assertRaisesRegex(
+                    ValueError, "GPU state continuity broken"):
+                self.verify()
+
+    def test_drawenv_clip_continuity_cannot_be_forged_at_window_boundary(self):
+        # Old two-window checks bound draw mode/window and 1 MiB VRAM.
+        # A changed clip/offset (or dropped optional DRAWENV) must not
+        # inherit the same source-pinned DrawOTag boundary.
+        clip = [0, 0, 1024, 512, 0, 0]
+        for event in self.events:
+            event["draw_env"] = clip[:]
+        (self.window / "gpu-native-events.jsonl").write_bytes(
+            b"".join(jsonline(e) for e in self.events))
+
+        second = self.root / "window-001"
+        second.mkdir(mode=0o700)
+        before = dict(self.events[0], step=0, snapshot="gpu-0000-vram.bin")
+        after = dict(before, step=1, phase="after",
+                     snapshot="gpu-0001-vram.bin")
+        for event in (before, after):
+            (second / event["snapshot"]).write_bytes(self.snapshots[3])
+        log = second / "gpu-native-events.jsonl"
+        log.write_bytes(jsonline(before) + jsonline(after))
+        self.status.update(window_capacity_events=4, windows_written=2,
+                           observed_hooks=6, before_hooks=3, after_hooks=3,
+                           draw_before_hooks=3, indexed_hooks=6,
+                           written_hooks=6)
+        self.save_status()
+
+        with patch("tools.verify_map02_native_gpu_windows.MAX_RECORDS", 4):
+            self.assertEqual(self.verify()["native_draw_pairs"], 3)
+            before["draw_env"] = [1, 0, 1023, 512, 0, 0]
+            after["draw_env"] = before["draw_env"][:]
+            log.write_bytes(jsonline(before) + jsonline(after))
+            with self.assertRaisesRegex(ValueError, "DRAWENV continuity broken"):
+                self.verify()
+
+            del before["draw_env"]
+            del after["draw_env"]
+            log.write_bytes(jsonline(before) + jsonline(after))
+            with self.assertRaisesRegex(ValueError, "DRAWENV continuity broken"):
+                self.verify()
+
+    def test_preframe_transfer_cannot_reappear_after_draw_at_window_boundary(self):
+        # All four original window-000 events are valid DrawOTag F4 draws.
+        # Window-001 contains a self-consistent, VRAM-neutral ClearImage
+        # transfer in the PREVIOUS frame. Per-window checks accept this
+        # separately; global frame chronology must reject their order.
+        second = self.root / "window-001"
+        second.mkdir(mode=0o700)
+        before = dict(self.events[0], step=0, frame=6,
+                      operation="clear", primitive_type=0, semi=0,
+                      rect=[0, 0, 0, 0], snapshot="gpu-0000-vram.bin")
+        after = dict(before, step=1, phase="after",
+                     snapshot="gpu-0001-vram.bin")
+        for event in (before, after):
+            (second / event["snapshot"]).write_bytes(self.snapshots[3])
+        (second / "gpu-native-events.jsonl").write_bytes(
+            jsonline(before) + jsonline(after))
+        self.status.update(window_capacity_events=4, windows_written=2,
+                           observed_hooks=6, before_hooks=3, after_hooks=3,
+                           draw_before_hooks=2, transfer_before_hooks=1,
+                           indexed_hooks=6, written_hooks=6)
+        self.save_status()
+        with patch("tools.verify_map02_native_gpu_windows.MAX_RECORDS", 4):
+            with self.assertRaisesRegex(
+                    ValueError,
+                    "transfer appears after DrawOTag across window boundary"):
+                self.verify()
+
+    def test_preframe_transfers_then_target_draw_may_cross_window_boundary(self):
+        # The chronological transition from frame-6 ClearImage operations
+        # to a frame-7 F4 DrawOTag is valid even at the rollover. This
+        # guards against a validator that indiscriminately rejects all
+        # transfer-to-draw window boundaries.
+        self.events = [
+            dict(event, frame=6, operation="clear", primitive_type=0,
+                 rect=[0, 0, 0, 0], semi=0)
+            for event in self.events
+        ]
+        empty = bytes(VRAM_BYTES)
+        for step, event in enumerate(self.events):
+            (self.window / event["snapshot"]).write_bytes(empty)
+        (self.window / "gpu-native-events.jsonl").write_bytes(
+            b"".join(jsonline(event) for event in self.events))
+        next_window = self.root / "window-001"
+        next_window.mkdir(mode=0o700)
+        before = dict(self.events[0], step=0, frame=7,
+                      operation="draw", primitive_type=1,
+                      rect=None, snapshot="gpu-0000-vram.bin")
+        after = dict(before, step=1, phase="after",
+                     snapshot="gpu-0001-vram.bin")
+        changed = bytearray(VRAM_BYTES)
+        changed[0] = 1
+        (next_window / before["snapshot"]).write_bytes(empty)
+        (next_window / after["snapshot"]).write_bytes(changed)
+        (next_window / "gpu-native-events.jsonl").write_bytes(
+            jsonline(before) + jsonline(after))
+        self.status.update(window_capacity_events=4, windows_written=2,
+                           observed_hooks=6, before_hooks=3, after_hooks=3,
+                           draw_before_hooks=1, transfer_before_hooks=2,
+                           indexed_hooks=6, written_hooks=6)
+        self.save_status()
+        with patch("tools.verify_map02_native_gpu_windows.MAX_RECORDS", 4):
+            result = self.verify()
+            self.assertEqual(result["globally_ordered_native_gpu_events"], 6)
+            self.assertEqual(result["native_draw_pairs"], 1)
+            self.assertEqual(result["native_transfer_pairs"], 2)
+            self.assertEqual(result["recorded_windows"], 2)
+            self.assertEqual(result["vram_bridge_checks"], 2)
+            self.assertIsNone(result["capture_session_sha256"])
+            self.assertFalse(result["whole_original_gameplay_frame_proven"])
+            self.assertFalse(result["physical_ps1_equivalence_proven"])
+
+    def test_transfer_only_window_cannot_certify_target_draw_frame(self):
+        # A consistent frame-6 transfer journal with no DrawOTag frame-7
+        # event must not pass as a successful target-frame observation.
+        self.events = [
+            dict(event, frame=6, operation="clear", primitive_type=0,
+                 rect=[0, 0, 0, 0], semi=0)
+            for event in self.events
+        ]
+        empty = bytes(VRAM_BYTES)
+        for event in self.events:
+            (self.window / event["snapshot"]).write_bytes(empty)
+        (self.window / "gpu-native-events.jsonl").write_bytes(
+            b"".join(jsonline(event) for event in self.events))
+        self.status.update(draw_before_hooks=0, transfer_before_hooks=2)
+        self.save_status()
+        with self.assertRaisesRegex(ValueError, "no target DrawOTag"):
             self.verify()
 
     def test_rejects_oversubscribed_or_counterfeit_completion(self):

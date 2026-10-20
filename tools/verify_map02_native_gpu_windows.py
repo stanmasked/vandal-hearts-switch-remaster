@@ -83,6 +83,12 @@ def verify_native_windows(directory, *, target_frame):
         raise ValueError("unlisted native GPU window or unrelated capture files")
     total_draws = total_transfers = seen = 0
     last_vram = None
+    # Source-pinned DrawOTag runs continuously through a window rollover.
+    # A dropped DR_MODE transition can leave VRAM identical while forging
+    # the texture window / draw mode at the next native event.
+    last_operation = None
+    last_draw_post_state = None
+    last_draw_post_env = None
     logs_hash = hashlib.sha256()
     file_tree_hash = hashlib.sha256()
     for idx in range(window_count):
@@ -125,10 +131,33 @@ def verify_native_windows(directory, *, target_frame):
                 window, first["snapshot"], expected=VRAM_BYTES)
             after_vram = private_file(
                 window, second["snapshot"], expected=VRAM_BYTES)
+            if idx and offset == 0 and last_operation == "draw":
+                # Every transfer for target frame N happens while the
+                # original C s_drawFrame is N-1. Once target DrawOTag
+                # begins, frame N-1 transfers cannot reappear merely
+                # because the bounded journal switched to window-001.
+                if first["operation"] != "draw":
+                    raise ValueError(
+                        "native GPU transfer appears after DrawOTag across window boundary")
+                if ((first["window"], first["draw_mode"]) !=
+                        last_draw_post_state):
+                    raise ValueError(
+                        "GPU state continuity broken at native window boundary")
+                if first.get("draw_env") != last_draw_post_env:
+                    raise ValueError(
+                        "DRAWENV continuity broken at native window boundary")
             if last_vram is not None and last_vram != hashlib.sha256(
                     before_vram).digest():
                 raise ValueError("GPU VRAM continuity broken at native event/window boundary")
             last_vram = hashlib.sha256(after_vram).digest()
+            last_operation = second["operation"]
+            last_draw_post_state = (
+                (second["window"], second["draw_mode"])
+                if last_operation == "draw" else None
+            )
+            last_draw_post_env = (
+                second.get("draw_env") if last_operation == "draw" else None
+            )
             seen += 2
         logs_hash.update(log)
     if (root / f"window-{window_count:03d}").exists() or (
@@ -136,6 +165,10 @@ def verify_native_windows(directory, *, target_frame):
         raise ValueError("unlisted native GPU window directory")
     if seen != written or total_draws != draws or total_transfers != transfers:
         raise ValueError("global native GPU event count does not match window evidence")
+    # Preframe transfers alone cannot certify that the requested target
+    # DrawOTag frame was ever reached by the native recorder.
+    if total_draws == 0:
+        raise ValueError("no target DrawOTag primitive in native GPU window capture")
     return {
         "native_window_schema": SCHEMA,
         "recorded_windows": window_count,

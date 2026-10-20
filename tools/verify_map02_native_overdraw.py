@@ -96,6 +96,13 @@ def verify_native_overdraw(source_dir, native_dir, *, compiler="gcc"):
     previous_after = None
     seen = bytearray(VRAM_WORDS)
     seen_inside_bbox = bytearray(VRAM_WORDS)
+    # First PRE and last POST values for every word visibly changed by a
+    # source-keyed FT4. No coordinate or word value leaves the private audit.
+    first_pre_word = {}
+    last_post_word = {}
+    bit15_only_changes = 0
+    color_only_changes = 0
+    color_and_bit15_changes = 0
     changed_draw_words = 0
     unique_draw_words = 0
     repeated_draw_words = 0
@@ -130,6 +137,19 @@ def verify_native_overdraw(source_dir, native_dir, *, compiler="gcc"):
             local_changed += 1
             changed_draw_words += 1
             address = byte_offset // 2
+            pre_word = before[byte_offset] | (before[byte_offset + 1] << 8)
+            post_word = after[byte_offset] | (after[byte_offset + 1] << 8)
+            if address not in first_pre_word:
+                first_pre_word[address] = pre_word
+            last_post_word[address] = post_word
+            color_changed = (pre_word & 0x7fff) != (post_word & 0x7fff)
+            bit15_changed = bool((pre_word ^ post_word) & 0x8000)
+            if color_changed and bit15_changed:
+                color_and_bit15_changes += 1
+            elif color_changed:
+                color_only_changes += 1
+            else:
+                bit15_only_changes += 1
             if seen[address] == 0:
                 unique_draw_words += 1
                 seen[address] = 1
@@ -159,6 +179,22 @@ def verify_native_overdraw(source_dir, native_dir, *, compiler="gcc"):
         if local_changed == 0:
             unchanged_face_draws += 1
 
+    # This compares the two endpoints of each touched word's selected-FT4
+    # history, NOT the first/last frame snapshot or a complete write ledger.
+    # Unmatched primitives may also affect a word between these endpoints.
+    endpoint_equal = sum(
+        last_post_word[address] == initial
+        for address, initial in first_pre_word.items()
+    )
+    repeated_endpoint_equal = sum(
+        seen[address] == 2 and last_post_word[address] == initial
+        for address, initial in first_pre_word.items()
+    )
+    if changed_draw_words != (
+        bit15_only_changes + color_only_changes + color_and_bit15_changes
+    ):
+        raise ValueError("FT4 change classification accounting mismatch")
+
     return {
         "overdraw_manifest_sha256": sha(manifest_raw),
         "source_ot_order_manifest_sha256": sha(ot_raw),
@@ -170,6 +206,14 @@ def verify_native_overdraw(source_dir, native_dir, *, compiler="gcc"):
         "consecutive_native_vram_boundaries_exact": True,
         "changed_vram_words_on_source_ft4_draws": changed_draw_words,
         "distinct_vram_words_changed_by_source_ft4": unique_draw_words,
+        "source_ft4_first_pre_equals_last_post_words": endpoint_equal,
+        "source_ft4_first_pre_differs_last_post_words":
+            unique_draw_words - endpoint_equal,
+        "source_ft4_repeatedly_changed_first_pre_equals_last_post_words":
+            repeated_endpoint_equal,
+        "source_ft4_bit15_only_word_changes": bit15_only_changes,
+        "source_ft4_color_only_word_changes": color_only_changes,
+        "source_ft4_color_and_bit15_word_changes": color_and_bit15_changes,
         "vram_words_changed_by_two_or_more_source_ft4_draws": repeated_draw_words,
         "changed_words_inside_ft4_screen_aabb_proxy": inside_bbox_words,
         "changed_words_outside_ft4_screen_aabb_proxy": outside_bbox_words,
@@ -180,6 +224,7 @@ def verify_native_overdraw(source_dir, native_dir, *, compiler="gcc"):
         "source_ft4_pairs_without_observable_vram_changes": unchanged_face_draws,
         "full_gpu_frame_authenticated": False,
         "intervening_write_then_restore_excluded": False,
+        "ft4_word_change_causality_or_coverage_verified": False,
         "ft4_actual_pixel_coverage_verified": False,
         "unchanged_pixel_proves_transparency_or_mask_reject": False,
         "stp_abr_mask_state_correctness_verified": False,

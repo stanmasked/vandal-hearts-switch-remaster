@@ -23,8 +23,11 @@ class NativePutPixelAuditTests(unittest.TestCase):
             row(1,0,0x001f,0x001f),
             row(2,0x001f,0x801f,0x801f,semi=1),
             row(3,0x801f,0x03e0,0x03e0),
-            row(4,0x001f,0x801f,0x001f,semi=1,accurate=0),
+            row(4,0x001f,0,0x001f,semi=1),
         ]
+        # Textured accurate BlendG1 retains bit15. An untextured
+        # zero-front blend is a legitimate unchanged BGR555 result.
+        self.rows[4]["textured"] = 0
         self.save()
 
     def save(self):
@@ -36,12 +39,16 @@ class NativePutPixelAuditTests(unittest.TestCase):
         self.assertEqual(r["native_putpixel_calls_observed"],5)
         self.assertEqual(r["opaque_copy_calls"],3)
         self.assertEqual(r["semi_transparent_blend_requests"],2)
+        self.assertEqual(r["accurate_pc_blend_results_checked"],2)
+        self.assertEqual(r["legacy_pc_blend_results_checked"],0)
+        self.assertTrue(r["single_runtime_accurate_mode_consistent"])
+        self.assertTrue(r["original_pc_writepixel_effects_verified"])
         self.assertEqual(r["same_color_write_calls_invisible_to_vram_delta"],2)
         self.assertEqual(r["changed_word_write_calls"],3)
         self.assertEqual(r["bit15_unset_to_set_calls"],1)
         self.assertEqual(r["bit15_set_to_unset_calls"],1)
         self.assertEqual(r["gaps_between_consecutive_sampled_calls"],1)
-        self.assertEqual(r["accurate_gpu_mode_calls"],4)
+        self.assertEqual(r["accurate_gpu_mode_calls"],5)
         self.assertTrue(r["original_opaque_copy_invariant_checked"])
         self.assertFalse(r["blending_or_mask_hardware_accuracy_verified"])
         for key in ("no_unlogged_putpixel_calls_proven",
@@ -57,6 +64,39 @@ class NativePutPixelAuditTests(unittest.TestCase):
         self.rows[1]["after"]=0x7c00
         self.save()
         with self.assertRaisesRegex(ValueError,"opaque native WritePixel"):
+            verify_pixel_calls(self.root)
+
+    def test_accurate_and_legacy_semitransparent_forgery_rejected(self):
+        # Both native source algorithms are replayed, even when the
+        # submitted JSONL otherwise preserves all record ordering.
+        self.assertEqual(verify_pixel_calls(self.root)[
+            "semi_transparent_blend_requests"], 2)
+        # The background already has maximum red (0x001f).
+        # Adding only one red quantum would saturate to the *same*
+        # expected result and cannot serve as a negative ABR1 vector.
+        # Change the green channel instead; the output must differ.
+        self.rows[2]["front"] = 0x03e0
+        self.save()
+        with self.assertRaisesRegex(ValueError, "semi-transparent native WritePixel"):
+            verify_pixel_calls(self.root)
+        self.rows[2]["front"] = 0x801f
+        for entry in self.rows:
+            entry["accurate"] = 0
+        self.rows[2]["after"] = 0x001f
+        self.save()
+        legacy = verify_pixel_calls(self.root)
+        self.assertEqual(legacy["legacy_pc_blend_results_checked"],2)
+        self.assertEqual(legacy["accurate_pc_blend_results_checked"],0)
+        self.rows[4]["after"] = 0x801f
+        self.save()
+        with self.assertRaisesRegex(ValueError, "semi-transparent native WritePixel"):
+            verify_pixel_calls(self.root)
+
+    def test_mixed_runtime_accurate_mode_rejected(self):
+        # Pinned AccurateEnabled() is fixed after its first invocation.
+        self.rows[4]["accurate"] = 0
+        self.save()
+        with self.assertRaisesRegex(ValueError, "inconsistent native AccurateEnabled"):
             verify_pixel_calls(self.root)
 
     def test_duplicate_noncontiguous_and_mutated_numeric_fields(self):

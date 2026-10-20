@@ -108,8 +108,11 @@ class NativeDdaCountAuditTests(unittest.TestCase):
     def test_non_native_ft4_primitive_cannot_be_correlated(self):
         self.native.events[2]["ft4"] = None
         self.native.events[3]["ft4"] = None
-        self.native.events[2]["primitive_type"] = 5
-        self.native.events[3]["primitive_type"] = 5
+        # F4 is a real drawing packet that may modify VRAM but is not FT4.
+        # DR_MODE (type 5) cannot modify VRAM: substituting it here would
+        # fail an earlier, unrelated GPU-state integrity assertion.
+        self.native.events[2]["primitive_type"] = 1
+        self.native.events[3]["primitive_type"] = 1
         self.save()
         with self.assertRaisesRegex(ValueError, "incomplete"):
             self.verify()

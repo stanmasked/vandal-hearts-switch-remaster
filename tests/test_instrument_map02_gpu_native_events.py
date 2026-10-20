@@ -48,25 +48,48 @@ class NativeGpuProbeTests(unittest.TestCase):
         self.assertEqual(rendered.count('VH_CaptureEvent("before"'),4)
         self.assertEqual(rendered.count('VH_CaptureEvent("after"'),4)
         self.assertIn('PC_GPU_PRIM_POLY_FT4 ? (POLY_FT4 *)cur',rendered)
+        self.assertEqual(rendered.count('type == PC_GPU_PRIM_POLY_FT4 ? (POLY_FT4 *)cur : NULL'),2)
         self.assertIn('s_drawModeTPage, s_drawModeAbr, s_drawModeDither',rendered)
-        self.assertIn('s_drawEnv.clip.x, s_drawEnv.clip.y',rendered)
-        self.assertIn('s_drawEnv.clip.w, s_drawEnv.clip.h',rendered)
-        self.assertIn('s_drawEnv.ofs[0], s_drawEnv.ofs[1]',rendered)
-        self.assertIn('draw_env',rendered)
         self.assertIn('vh_capture_seq >= VH_CAPTURE_LIMIT',rendered)
         self.assertIn('getenv("VH_MAP02_GPU_CAPTURE_DIR")',rendered)
         self.assertIn('getenv("VH_MAP02_GPU_CAPTURE_FRAME")',rendered)
         self.assertIn('if (!vh_capture_frame',rendered)
         self.assertIn('PC_GpuVramBytes(&bytes)',rendered)
         self.assertEqual(rendered.count('#if defined(VH_MAP02_GPU_CAPTURE)'),10)
-        self.assertIn("if (type == PC_GPU_PRIM_POLY_F4 ||",rendered)
-        self.assertIn("type == PC_GPU_PRIM_TILE)",rendered)
-        self.assertIn("VH_CaptureFinish(s_drawFrame, nextTok == 0)",rendered)
-        self.assertIn("vh_capture_seen < 0xffffffffUL",rendered)
-        self.assertIn("gpu-native-capture-status.json",rendered)
-        self.assertIn("observed_window_closed_without_detected_loss",rendered)
+        self.assertIn('type == PC_GPU_PRIM_DR_MODE', rendered)
+        self.assertEqual(rendered.count('type == PC_GPU_PRIM_DR_MODE'), 2)
+        self.assertIn('VH_CaptureFinish(s_drawFrame, nextTok == 0)', rendered)
+        self.assertIn('gpu-native-capture-status.json', rendered)
+        self.assertIn('observed_window_closed_without_detected_loss', rendered)
+        self.assertIn('s_drawEnv.clip.x, s_drawEnv.clip.y', rendered)
+        self.assertIn('s_drawEnv.clip.w, s_drawEnv.clip.h', rendered)
+        self.assertIn('s_drawEnv.ofs[0], s_drawEnv.ofs[1]', rendered)
+        self.assertIn('draw_env', rendered)
+        self.assertIn('vh_capture_seen < 0xffffffffUL', rendered)
         self.assertIn('fwrite(vram, 1u, bytes, file)',rendered)
         self.assertIn('ft4',rendered)
+
+    def test_native_loadimage_upload_limit_is_per_dimension(self):
+        # Keep the offline validator's mandatory-payload rule aligned
+        # with the actual source-pinned C observer's after-hook.
+        rendered=instrument(minimal_source())
+        self.assertIn('rect->w > 0 && rect->h > 0 && rect->w <= 128 && rect->h <= 128',rendered)
+        self.assertIn('(size_t)rect->w*(size_t)rect->h : 0u',rendered)
+        self.assertIn('if (upload && upload_words > 0u && upload_words <= 16384u)',rendered)
+        self.assertIn('fwrite(upload, sizeof(unsigned short), upload_words, file)',rendered)
+
+    def test_two_window_loadimage_filename_uses_local_record_index(self):
+        # At global step 65 the recorder has local step 1 in window-001.
+        # Native JSONL and VRAM snapshot names are already local, so the
+        # upload must NOT be called gpu-0065-upload.bin.
+        rendered = instrument(minimal_source())
+        self.assertIn('local_seq = seq % VH_CAPTURE_LIMIT;', rendered)
+        self.assertIn('"gpu-%04u-vram.bin", local_seq', rendered)
+        self.assertIn('"gpu-%04u-upload.bin", local_seq', rendered)
+        self.assertIn('local_seq, s_drawFrame, phase, operation, snapshot_name', rendered)
+        self.assertNotIn('"gpu-%04u-upload.bin", seq', rendered)
+        self.assertIn('VH_MAP02_GPU_CAPTURE_WINDOW_COUNT', rendered)
+        self.assertIn('gpu-native-window-index.json', rendered)
 
     def test_injection_is_fail_closed_and_unique(self):
         once=instrument(minimal_source())

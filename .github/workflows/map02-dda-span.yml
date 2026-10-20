@@ -1,0 +1,123 @@
+name: MAP02 DDA span synthetic C11 regression
+on:
+  push:
+    branches:
+      - 'work/map02-dda-coverage-independent-audit'
+      - 'work/map02-pr55-receipt-compatibility'
+      - 'work/map02-pr55-native-recorder-compat'
+      - 'work/map02-pr55-drawenv-optional-fix'
+      - 'work/map02-pr55-window-upload-index'
+      - 'work/map02-pr55-joint-status-inventory'
+      - 'work/map02-main-merge-candidate'
+      - 'work/map02-main-blend-compat'
+      - 'work/map02-main-dda-fixture-compat'
+      - 'work/map02-main-transfer-fixture-compat'
+      - 'work/map02-main-transfer-four-gates'
+      - 'work/map02-main-transfer-frame-fix'
+      - 'work/map02-main-recorder-drmode-boundary'
+      - 'work/map02-scoped-drmode-ordinal-compat'
+      - 'work/map02-drmode-four-gates'
+      - 'work/map02-window-transfer-order'
+  pull_request:
+    paths:
+      - 'tools/map02_dda_coverage.py'
+      - 'tools/map02_dda_span_join.py'
+      - 'tools/instrument_map02_dda_span.py'
+      - 'tests/test_map02_dda_coverage.py'
+      - 'tests/test_map02_dda_span_join.py'
+      - 'tests/test_instrument_map02_dda_span.py'
+      - 'tests/test_map02_dda_span_c11.py'
+      - 'tests/test_map02_dda_span_composition.py'
+      - 'tools/instrument_map02_dda_rejected_edges.py'
+      - 'tests/test_instrument_map02_dda_rejected_edges.py'
+      - 'tests/test_map02_dda_candidate_c11.py'
+      - 'tests/test_map02_baseline_elf_parity.py'
+      - 'tools/verify_map02_dda_rejected_edges.py'
+      - 'tests/test_verify_map02_dda_rejected_edges.py'
+      - 'tests/test_map02_span_workflow_gate.py'
+      - 'tools/audit_map02_independent_dda_journals.py'
+      - 'tests/test_audit_map02_independent_dda_journals.py'
+      - 'tools/preflight_map02_private_dda_capture.py'
+      - 'tests/test_preflight_map02_private_dda_capture.py'
+      - 'tools/verify_map02_private_capture_session.py'
+      - 'tests/test_verify_map02_private_capture_session.py'
+      - 'tools/run_map02_private_native_capture.py'
+      - 'tools/capture_map02_live_frame_pipe.py'
+      - 'tools/run_map02_private_joint_capture_audit.py'
+      - 'tests/test_run_map02_private_joint_capture_audit.py'
+      - 'tools/prepare_map02_private_frame_pair.py'
+      - 'tests/test_prepare_map02_private_frame_pair.py'
+      - 'tools/audit_map02_private_frame_repeatability.py'
+      - 'tests/test_audit_map02_private_frame_repeatability.py'
+      - 'tools/run_map02_private_two_live_captures.py'
+      - 'tests/test_run_map02_private_two_live_captures.py'
+      - 'tests/test_capture_map02_live_frame_pipe.py'
+      - 'tools/map02_native_frame_pipe.h'
+      - 'tools/map02_native_frame_pipe.c'
+      - 'tests/test_map02_native_frame_pipe_c11.py'
+      - 'tools/instrument_map02_frame_flush.py'
+      - 'tests/test_instrument_map02_frame_flush.py'
+      - 'tools/replay_map02_live_frame_receipt.py'
+      - 'tests/test_replay_map02_live_frame_receipt.py'
+      - 'tools/join_map02_live_frame_native.py'
+      - 'tests/test_join_map02_live_frame_native.py'
+      - 'tests/test_join_map02_live_gpu_receipt.py'
+      - 'tools/instrument_map02_joint_gpu_frame.py'
+      - 'tests/test_instrument_map02_joint_gpu_frame.py'
+      - 'tests/test_map02_joint_gpu_secure_files_c11.py'
+      - 'tools/audit_map02_joint_gpu_frame.py'
+      - 'tools/map02_linux_child_journal_fd.py'
+      - 'tests/test_map02_joint_native_capture_c11.py'
+      - 'tools/verify_map02_private_capture_receipt.py'
+      - 'tests/test_run_map02_private_native_capture.py'
+      - 'tools/verify_map02_dda_native_spans.py'
+      - 'tools/verify_map02_native_gpu_capture.py'
+      - 'tests/test_verify_map02_native_gpu_capture.py'
+      - 'tests/test_verify_map02_dda_native_spans.py'
+      - '.github/workflows/map02-dda-span.yml'
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-span:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run synthetic DDA span tests
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_map02_dda_coverage.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_dda_span_join.py' -v
+          python3 -m unittest discover -s tests -p 'test_instrument_map02_dda_span.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_dda_span_c11.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_dda_span_composition.py' -v
+          python3 -m unittest discover -s tests -p 'test_instrument_map02_dda_rejected_edges.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_dda_candidate_c11.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_baseline_elf_parity.py' -v
+          python3 -m unittest discover -s tests -p 'test_verify_map02_dda_rejected_edges.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_span_workflow_gate.py' -v
+          python3 -m unittest discover -s tests -p 'test_verify_map02_dda_native_spans.py' -v
+          python3 -m unittest discover -s tests -p 'test_verify_map02_native_gpu_capture.py' -v
+          python3 -m unittest discover -s tests -p 'test_audit_map02_independent_dda_journals.py' -v
+          python3 -m unittest discover -s tests -p 'test_preflight_map02_private_dda_capture.py' -v
+          python3 -m unittest discover -s tests -p 'test_verify_map02_private_capture_session.py' -v
+          python3 -m unittest discover -s tests -p 'test_run_map02_private_native_capture.py' -v
+          python3 -m unittest discover -s tests -p 'test_capture_map02_live_frame_pipe.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_native_frame_pipe_c11.py' -v
+          python3 -m unittest discover -s tests -p 'test_instrument_map02_frame_flush.py' -v
+          python3 -m unittest discover -s tests -p 'test_replay_map02_live_frame_receipt.py' -v
+          python3 -m unittest discover -s tests -p 'test_join_map02_live_frame_native.py' -v
+          python3 -m unittest discover -s tests -p 'test_join_map02_live_gpu_receipt.py' -v
+          python3 -m unittest discover -s tests -p 'test_instrument_map02_joint_gpu_frame.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_joint_gpu_secure_files_c11.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_joint_native_capture_c11.py' -v
+          python3 -m unittest discover -s tests -p 'test_run_map02_private_joint_capture_audit.py' -v
+          python3 -m unittest discover -s tests -p 'test_prepare_map02_private_frame_pair.py' -v
+          python3 -m unittest discover -s tests -p 'test_audit_map02_private_frame_repeatability.py' -v
+          python3 -m unittest discover -s tests -p 'test_run_map02_private_two_live_captures.py' -v

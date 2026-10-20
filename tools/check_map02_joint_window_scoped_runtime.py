@@ -65,9 +65,10 @@ int main(void) {
         setXYWH(&extras[k], 30, 30, 6, 6);
         AddPrim(&ot[0], &extras[k]);
     }
-    /* 32 non-touching F4s, DR_MODE, F4 and FT4. Ordinals 0..33.
-     * Exactly 32 draws (64 event hooks) in window 000, 2 draws in 001.
-     * Private pixel witness starts only after the 32 non-touching draws. */
+    /* 32 non-touching F4s, DR_MODE, F4 and FT4. Raster ordinals
+     * 0..33, but GPU event stream also captures state-only DR_MODE.
+     * Window 000 stores 32 F4 (64 hooks); window 001 stores DR_MODE
+     * then F4/FT4 (6 hooks). Private pixel witness has no DR_MODE edge. */
     DrawOTag(ot);
 #ifdef VH_MAP02_VRAM_EDGE_PROBE
     verify_edges_against_putpixel();
@@ -135,7 +136,7 @@ def check_joint_original_gpu(upstream, *, compiler="cc"):
             native_dir, scoped_dir, target_frame=1)
         if (result["global_draw_ordinals_checked"] != 34 or
                 result["global_event_indices_of_first_and_last_draw"] !=
-                [0, 66] or
+                [0, 68] or
                 result["unchanged_draws_at_selected_pixel"] != 32 or
                 result["selected_pixel_putpixel_events"] < 2 or
                 result["selected_pixel_blendg1_events"] < 2 or

@@ -104,24 +104,42 @@ class SourceToNativeFt4JoinTests(unittest.TestCase):
         legacy = verify_join(self.source, self.native)
         self.assertEqual(legacy["matched_ft4_draws_proven_no_coverage"], 0)
         self.assertEqual(legacy["matched_ft4_draws_zero_delta_cause_unknown"], 2)
-        # Native FT4 pairs occur at steps 2/3 and 4/5, with different
-        # DRAWENV clip state. No execution-order/source-order guess.
+        # A source-pinned DrawOTag sequence cannot change DRAWENV between
+        # registered draws without an observed state update. Test a wholly
+        # in-bounds capture, then a wholly clipped one, rather than
+        # synthesizing an impossible mid-walk offset change.
         for entry in self.entries:
-            entry["draw_env"] = ([0, 0, 1024, 512, 1500, 1500]
-                                  if entry["step"] == 2 else
-                                  [0, 0, 1024, 512, 0, 0])
+            entry["draw_env"] = [0, 0, 1024, 512, 0, 0]
         self.save()
         report = verify_join(self.source, self.native)
-        self.assertEqual(report["matched_ft4_draws_proven_no_coverage"], 1)
-        self.assertEqual(report["matched_ft4_draws_zero_delta_cause_unknown"], 1)
+        self.assertEqual(report["matched_ft4_draws_proven_no_coverage"], 0)
+        self.assertEqual(report["matched_ft4_draws_zero_delta_cause_unknown"], 2)
 
-        # This write stays inside the GPU drawing area, but the FT4
-        # vertices are far outside it after the captured draw offset.
+        for entry in self.entries:
+            entry["draw_env"] = [0, 0, 1024, 512, 1500, 1500]
+        self.save()
+        report = verify_join(self.source, self.native)
+        self.assertEqual(report["matched_ft4_draws_proven_no_coverage"], 2)
+        self.assertEqual(report["matched_ft4_draws_zero_delta_cause_unknown"], 0)
+
+        # A pixel mutation is forbidden even when the last FT4 is
+        # provably outside the entire effective drawing area.
         changed = bytearray(self.bytes_before)
         fixture.word(changed, 0, 0, 0x801f)
-        self.override_snapshots[3] = bytes(changed)
+        self.override_snapshots[5] = bytes(changed)
         self.save()
         with self.assertRaisesRegex(ValueError, "geometry entirely outside"):
+            verify_join(self.source, self.native)
+
+    def test_join_rejects_unobserved_drawenv_transition(self):
+        # Per-pair consistency alone cannot justify a new clip/offset
+        # half-way through one DrawOTag command walk.
+        for entry in self.entries:
+            entry["draw_env"] = ([0, 0, 1024, 512, 1500, 1500]
+                                 if entry["step"] == 4 else
+                                 [0, 0, 1024, 512, 0, 0])
+        self.save()
+        with self.assertRaisesRegex(ValueError, "discontinuous DRAWENV"):
             verify_join(self.source, self.native)
 
     def test_single_frame_native_ft4_post_draw_pixel_delta(self):
@@ -160,6 +178,26 @@ class SourceToNativeFt4JoinTests(unittest.TestCase):
                 self.entries[2]["ft4"]=orig
         self.entries[2]["window"]=[1,0,0,0]
         self.save()
+        # A lone FT4 cannot change the texture window between native
+        # packets; the stricter GPU continuity verifier now correctly
+        # rejects this forged journal before attempting the face join.
+        with self.assertRaisesRegex(ValueError,"discontinuous GPU state"):
+            verify_join(self.source,self.native)
+        # To test a genuine window-related *source face mismatch*, insert
+        # the source-pinned DR_MODE (type 5) that makes the transition
+        # legal and update the native journal digest accordingly.
+        self.entries.insert(2,self.event(6,"draw",None))
+        self.save()
+        journal=self.native/"gpu-native-events.jsonl"
+        records=[json.loads(line) for line in journal.read_bytes().splitlines()]
+        records[5]["window"]=[1,0,0,0]  # after DR_MODE, before next FT4
+        raw=b"".join((json.dumps(item,sort_keys=True)+"\n").encode()
+                     for item in records)
+        journal.write_bytes(raw)
+        manifest=self.source/"gpu-face-join.json"
+        meta=json.loads(manifest.read_text())
+        meta["native_events_sha256"]=digest(raw)
+        manifest.write_text(json.dumps(meta,sort_keys=True))
         with self.assertRaisesRegex(ValueError,"no exact GPU FT4"):
             verify_join(self.source,self.native)
 
@@ -181,6 +219,9 @@ class SourceToNativeFt4JoinTests(unittest.TestCase):
     def test_different_material_vram_texel_rejected_even_when_ft4_matches(self):
         modified=bytearray(self.bytes_before)
         fixture.word(modified,380,192,0x2222)  # used by source face 0
+        # The earlier FT4's POST may write texture memory; the next
+        # primitive's PRE must reflect the exact same VRAM content.
+        self.override_snapshots[3]=bytes(modified)
         self.override_snapshots[4]=bytes(modified)
         self.save()
         with self.assertRaisesRegex(ValueError,"texture or CLUT words differ"):
@@ -189,6 +230,7 @@ class SourceToNativeFt4JoinTests(unittest.TestCase):
     def test_unrelated_render_target_vram_mutation_allowed(self):
         modified=bytearray(self.bytes_before)
         fixture.word(modified,0,0,0xffff)
+        self.override_snapshots[3]=bytes(modified)
         self.override_snapshots[4]=bytes(modified)
         self.override_snapshots[5]=bytes(modified)
         self.save()
