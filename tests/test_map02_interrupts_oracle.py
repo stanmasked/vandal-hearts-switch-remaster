@@ -38,6 +38,10 @@ def fixtures(folder: Path):
         actor(one, 1, y)
     tag(one, UNAVAILABLE)
 
+    free_roam = Image.new("RGB", old.size)
+    ImageDraw.Draw(free_roam).rectangle(
+        (370, 115, 890, 480), fill=(20, 37, 55))
+
     blocked = initial.copy()
     actor(blocked, 1, 0, HERO, 2)
     tag(blocked, BLOCKED)
@@ -50,7 +54,7 @@ def fixtures(folder: Path):
         "after_y": initial, "pre_hit": initial,
         "armed_before_hit": armed, "blocked": blocked,
         "legacy_after_block": old, "primary_reentry": primary,
-        "second_reentry": initial, "demo_off": Image.new("RGB", old.size),
+        "second_reentry": initial, "demo_off": free_roam,
         "legacy_after_minus": old,
         "primary_after_minus": primary, "second_after_minus": initial,
         "final_legacy": old,
