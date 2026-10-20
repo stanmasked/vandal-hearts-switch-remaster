@@ -96,6 +96,16 @@ class Stage371Tests(unittest.TestCase):
                 extra.write_bytes((sd/name).read_bytes())
                 with self.assertRaises(ValueError):self.verify()
                 extra.unlink()
+        nested=sd/"nested-copy"
+        nested.mkdir()
+        for name in ("audio-exit-tail-reason-000.csv",
+                     "audio-exit-tail-wait-result-000.csv",
+                     "audio-exit-wait-descriptor-000.csv"):
+            with self.subTest(nested=name):
+                clone=nested/name.replace("-000.csv","-001.csv")
+                clone.write_bytes((sd/name).read_bytes())
+                with self.assertRaises(ValueError):self.verify()
+                clone.unlink()
     def test_linked_capture_or_wrong_optical_dimensions_rejected(self):
         shot=self.two/"scene-optical-trace.png"
         content=shot.read_bytes()
@@ -122,6 +132,12 @@ class Stage371Tests(unittest.TestCase):
         self.assertFalse(report["captures"][0]["optional_original_telemetry"][age.name]["present"])
         self.assertIsNone(report["captures"][0]["optional_original_telemetry"][age.name]["sha256"])
         (sd/"audio-exit-probe-context-001.csv").write_bytes(age.read_bytes())
+        with self.assertRaises(ValueError):
+            self.verify()
+        (sd/"audio-exit-probe-context-001.csv").unlink()
+        nested=sd/"archive"
+        nested.mkdir()
+        (nested/"audio-lease-reconciliation-001.csv").write_bytes(lease.read_bytes())
         with self.assertRaises(ValueError):
             self.verify()
     def test_no_unproven_guest_capture_can_be_backfilled(self):
