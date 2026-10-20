@@ -262,6 +262,46 @@ class OneShotPrivateMap02LinkGapTests(unittest.TestCase):
         self.assertFalse(
             (output / "receipts" / "paired.private.json").exists())
 
+    def test_invalid_native_archive_rejected_before_output_even_without_coverage(self):
+        """Mandatory ABI gate refuses a fake .a even without optional provider audit."""
+        fake = self.root / "fake-archive.a"
+        fake.write_bytes(b"not a real GNU archive")
+        target = self.root / "invalid-abi-output"
+        with self.assertRaisesRegex(ValueError, "thin or invalid archive"):
+            run_private_link_gap_audit(
+                self.manifest, self.partial, [fake, self.needs], target)
+        self.assertFalse(target.exists())
+
+    def test_foreign_arch_archive_rejected_before_output_even_without_coverage(self):
+        """An ELF32 archive member cannot become a trusted x86-64 input."""
+        asm = self.root / "foreign-member.s"
+        asm.write_text(".globl needed\nneeded:\n ret\n", encoding="ascii")
+        obj = self.root / "foreign-member.o"
+        subprocess.run(
+            ["as", "--32", str(asm), "-o", str(obj)],
+            check=True, capture_output=True, timeout=30)
+        foreign = self.archive("foreign-abi", obj)
+        target = self.root / "wrong-arch-output"
+        with self.assertRaisesRegex(ValueError, "incompatible PC ELF ABI"):
+            run_private_link_gap_audit(
+                self.manifest, self.partial, [foreign, self.needs], target)
+        self.assertFalse(target.exists())
+
+    def test_source_manifest_symbol_tamper_is_rejected_before_output(self):
+        """Matching file SHA is not enough if the declared import list is fake."""
+        imported = json.loads(self.manifest.read_text(encoding="utf-8"))
+        imported["strong_symbols"] = ["different", "needed"]
+        imported["partial_elf_unresolved_strong_symbols_sha256"] = hashlib.sha256(
+            json.dumps(["different", "needed"], ensure_ascii=True,
+                       separators=(",", ":")).encode("ascii")).hexdigest()
+        self.manifest.write_text(json.dumps(imported), encoding="utf-8")
+        self.manifest.chmod(0o600)
+        target = self.root / "wrong-original-imports"
+        with self.assertRaisesRegex(ValueError, "initial source imports differ"):
+            run_private_link_gap_audit(
+                self.manifest, self.partial, self.archives, target)
+        self.assertFalse(target.exists())
+
     def test_bad_archive_set_rejected_before_creating_root(self):
         cases = [[self.needs], [self.needs, self.partial]]
         for idx, candidates in enumerate(cases):
