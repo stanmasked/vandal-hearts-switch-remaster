@@ -9,9 +9,10 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 from tools.check_map02_private_incremental_link import (
-    OUTPUT, probe_private_incremental_link,
+    OUTPUT, _run_native_tool, probe_private_incremental_link,
 )
 
 
@@ -147,6 +148,53 @@ class NativeIncrementalRelinkTests(unittest.TestCase):
             probe_private_incremental_link(
                 self.manifest, linked, [provider], self.root / "linked")
 
+
+    def test_native_tools_do_not_inherit_dynamic_loader_hooks(self):
+        """No caller-controlled native loader/Python hooks see private objects."""
+        danger = {
+            "LD_PRELOAD": "/owner/fake-preload.so",
+            "LD_LIBRARY_PATH": "/owner/other-libs",
+            "LD_AUDIT": "/owner/fake-audit.so",
+            "DYLD_INSERT_LIBRARIES": "/owner/fake-dylib",
+            "PYTHONPATH": "/owner/private-python",
+            "VH_PSX_EXE": "/owner/retail/SLUS_004.47",
+        }
+        with mock.patch.dict(os.environ, danger):
+            with mock.patch(
+                "tools.check_map02_private_incremental_link.subprocess.run"
+            ) as execute:
+                execute.return_value = subprocess.CompletedProcess(
+                    ["ld", "--version"], 0, stdout="GNU ld")
+                self.assertEqual(
+                    _run_native_tool(["ld", "--version"], [], timeout=10),
+                    "GNU ld")
+                subprocess_env = execute.call_args.kwargs["env"]
+                for name in danger:
+                    self.assertNotIn(name, subprocess_env)
+                self.assertEqual(subprocess_env.get("PATH"),
+                                 os.environ.get("PATH"))
+                self.assertEqual(execute.call_args.kwargs["umask"], 0o077)
+
+    def test_mutated_candidate_during_real_ld_r_is_rejected(self):
+        """The final rehash must catch same-inode provider tampering."""
+        from tools import check_map02_private_incremental_link as module
+
+        provider = self.compile("late-provider", "int needed(void) {return 7;}\n")
+        original_run = module._run_native_tool
+
+        def alter_after_link(args, descriptors, **kwargs):
+            result = original_run(args, descriptors, **kwargs)
+            if args[0] == "ld" and "-r" in args:
+                with provider.open("ab") as changed:
+                    changed.write(b"tampered-after-link")
+            return result
+
+        with mock.patch.object(module, "_run_native_tool",
+                               side_effect=alter_after_link):
+            with self.assertRaisesRegex(ValueError, "changed during link"):
+                probe_private_incremental_link(
+                    self.manifest, self.base, [provider],
+                    self.root / "late-mutation")
 
 if __name__ == "__main__":
     unittest.main()
