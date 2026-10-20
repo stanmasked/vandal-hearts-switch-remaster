@@ -364,6 +364,41 @@ class PublicRelocatableELFTests(unittest.TestCase):
         finally:
             os.close(fd)
 
+    def test_source_elf_requires_valid_ident_and_header_versions(self):
+        obj = self.compile("void LoadCdFile(void) {}\n",
+                           name="elf-corrupt-version")
+        original = obj.read_bytes()
+        for index in (6, 20):  # EI_VERSION and e_version
+            with self.subTest(index=index):
+                mutated = bytearray(original)
+                mutated[index] = 2
+                obj.write_bytes(mutated)
+                with obj.open("rb") as stream:
+                    with self.assertRaisesRegex(ValueError, "requires x86-64"):
+                        function_images(stream.fileno(), ("LoadCdFile",))
+        obj.write_bytes(original)
+
+    def test_elf_symtab_cannot_use_non_string_section_for_names(self):
+        obj = self.compile("void LoadCdFile(void) {}\n",
+                           name="elf-fake-strtab")
+        raw = bytearray(obj.read_bytes())
+        header = EHDR.unpack_from(raw)
+        shoff, shnum = header[6], header[12]
+        symtabs = [(index, SHDR.unpack_from(raw, shoff + index * SHDR.size))
+                   for index in range(shnum)
+                   if SHDR.unpack_from(raw, shoff + index * SHDR.size)[1] == 2]
+        self.assertEqual(len(symtabs), 1)
+        index, symtab = symtabs[0]
+        self.assertEqual(
+            SHDR.unpack_from(raw, shoff + symtab[6] * SHDR.size)[1], 3)
+        changed = list(symtab)
+        changed[6] = 0  # SHT_NULL rather than SHT_STRTAB
+        SHDR.pack_into(raw, shoff + index * SHDR.size, *changed)
+        obj.write_bytes(raw)
+        with obj.open("rb") as stream:
+            with self.assertRaisesRegex(ValueError, "symbol string table invalid"):
+                function_images(stream.fileno(), ("LoadCdFile",))
+
     def make_relocation_mutation_fixture(self, *, name):
         obj = self.compile(
             "extern int outside(void);\n"
