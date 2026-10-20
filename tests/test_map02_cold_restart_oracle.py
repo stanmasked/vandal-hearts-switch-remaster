@@ -125,6 +125,41 @@ class ColdRestartOracle(unittest.TestCase):
             self.assertNotEqual(first["board_rgb_sha256"],
                                 second["board_rgb_sha256"])
 
+    @staticmethod
+    def save_manifest(folder):
+        (folder / "capture-sha256-manifest.json").write_text(
+            json.dumps(proof.evidence_manifest(folder), sort_keys=True),
+            encoding="utf-8")
+
+    def test_offline_manifest_audit_accepts_intact_evidence(self):
+        with tempfile.TemporaryDirectory(prefix="vh-cold-audit-") as tmp:
+            folder = Path(tmp)
+            fixtures(folder)
+            self.save_manifest(folder)
+            proof.audit_manifest(folder)
+
+    def test_offline_manifest_audit_rejects_tampered_png(self):
+        with tempfile.TemporaryDirectory(prefix="vh-cold-audit-") as tmp:
+            folder = Path(tmp)
+            fixtures(folder)
+            self.save_manifest(folder)
+            self.change(folder, "boot2_bow_ready",
+                        lambda im: self.change_one_rgb_channel(im, 740, 445))
+            with self.assertRaisesRegex(ValueError, "manifest mismatch"):
+                proof.audit_manifest(folder)
+
+    def test_offline_manifest_audit_rejects_tampered_digest(self):
+        with tempfile.TemporaryDirectory(prefix="vh-cold-audit-") as tmp:
+            folder = Path(tmp)
+            fixtures(folder)
+            self.save_manifest(folder)
+            path = folder / "capture-sha256-manifest.json"
+            tampered = json.loads(path.read_text(encoding="utf-8"))
+            tampered["captures"][0]["png_sha256"] = "0" * 64
+            path.write_text(json.dumps(tampered), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "manifest mismatch"):
+                proof.audit_manifest(folder)
+
     def test_valid_fake_reference(self):
         self.case()
 
