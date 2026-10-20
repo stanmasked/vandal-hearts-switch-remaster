@@ -1,0 +1,162 @@
+name: MAP02 guard-state interrupts across scene roster reset and MINUS
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-interrupted-states.yml'
+      - 'tests/run_map02_nexium_interrupts.py'
+      - 'tests/test_map02_interrupts_oracle.py'
+      - 'docs/MAP02_NEXIUM_INTERRUPT_STATES.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-oracle:
+    name: Reject stale guard, phantom rosters and altered legacy map screenshots
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install required PNG decoder for fake-image oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pil
+      - name: Compile scripted route and run positive and adversarial image tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tests/run_map02_nexium_interrupts.py tests/test_map02_interrupts_oracle.py
+          python3 -m unittest discover -s tests -p 'test_map02_interrupts_oracle.py' -v
+          echo 'VH_MAP02_INTERRUPTS_ORACLE_PASS real_nexium_claim=0 retail=0'
+
+  combined-switch-nro:
+    name: Build real optional 4v4 devkitPro/libnx NRO
+    needs: synthetic-oracle
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Check exact 4v4 JSON-to-C header and portable battle
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/opt/devkitpro/devkitA64/bin:/opt/devkitpro/tools/bin:$PATH"
+          python3 -m py_compile tests/run_map02_nexium_interrupts.py
+          python3 tools/generate_map02_fixture.py --all --check
+          python3 tools/generate_map02_roster8.py --output /tmp/map02_roster8_generated.h
+          cmp source/map02_roster8_smoke_data.h /tmp/map02_roster8_generated.h
+          python3 tools/generate_map02_roster8.py --scene secondary --output /tmp/map02_roster8_second_generated.h
+          cmp source/map02_roster8_second_data.h /tmp/map02_roster8_second_generated.h
+          make build/test_map02_two_scenarios
+          ./build/test_map02_two_scenarios
+          make verify-nro
+          test -s build/vandal-hearts-prototype.nro
+          printf '%s  %s\n' '564c29e4c6c47eaf80e356733b8bdb8e298f1e0c938575b20be0ae9d48680539' build/vandal-hearts-prototype.nro | sha256sum -c -
+          echo 'VH_MAP02_SWITCH_4V4_NRO_PASS original_maps=2 optional_mode=1 retail=0'
+      - name: Record immutable candidate SHA-256 and source identity
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          python3 tools/map02_candidate_receipt.py create \
+            --nro build/vandal-hearts-prototype.nro \
+            --receipt build/map02-candidate-receipt.json \
+            --source-commit "$EXPECTED_SOURCE" \
+            --source-tree "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD^{tree})"
+          python3 tools/map02_candidate_receipt.py verify \
+            --nro build/vandal-hearts-prototype.nro \
+            --receipt build/map02-candidate-receipt.json \
+            --source-commit "$EXPECTED_SOURCE" \
+            --source-tree "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD^{tree})"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: map02-interrupts-switch-nro
+          path: |
+            build/vandal-hearts-prototype.nro
+            build/map02-candidate-receipt.json
+          if-no-files-found: error
+
+  nexium-combined-session:
+    name: Real NeXium guarded scene roster Y toggle MINUS interruptions
+    needs: [synthetic-oracle, combined-switch-nro]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-interrupts-switch-nro
+          path: nros
+      - name: Verify candidate SHA-256 before guard emulator execution
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          python3 tools/map02_candidate_receipt.py verify \
+            --nro nros/vandal-hearts-prototype.nro \
+            --receipt nros/map02-candidate-receipt.json \
+            --source-commit "$EXPECTED_SOURCE" \
+            --source-tree "$(git rev-parse HEAD^{tree})"
+          mkdir -p map02-interrupts-evidence
+          cp nros/map02-candidate-receipt.json map02-interrupts-evidence/build-receipt.json
+      - name: Install Vulkan and screenshot dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl jq xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 libxkbcommon-x11-0 \
+            libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers
+      - name: Download pinned current NeXium nightly release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="$(curl -fsSL --retry 3 --retry-all-errors -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+          asset_url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          test -n "$asset_url"
+          curl -fL --retry 3 --retry-all-errors "$asset_url" -o /tmp/nexium-linux.tar.gz
+          mkdir -p /tmp/nexium
+          tar -xzf /tmp/nexium-linux.tar.gz -C /tmp/nexium
+          emu_bin="$(find /tmp/nexium -type f -executable \( -name nexium -o -name nexium-gui \) -print -quit)"
+          test -n "$emu_bin"
+          echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
+      - name: Drive actual guard mode interruption and verify restored maps
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p map02-interrupts-evidence
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          timeout --kill-after=5s 180s xvfb-run -a -s "-screen 0 1280x720x24" \
+            python3 tests/run_map02_nexium_interrupts.py \
+              --nro "$PWD/nros/vandal-hearts-prototype.nro" \
+              --evidence-dir map02-interrupts-evidence \
+            | tee map02-interrupts-evidence/result.log
+          grep -Fx 'VH_MAP02_NEXIUM_INTERRUPTS_PASS emulator_processes=1 guard_scene_cancel=1 guard_roster_cancel=1 guard_y_cancel=1 guard_blocked_exit=1 old_map_preserved=1 minus_reentry=1 scene_a_preserved=1 roster_3v3=1 roster_1v4=1 all_resets_exact=1 retail=0' map02-interrupts-evidence/result.log
+      - name: Upload authentic emulator screenshots and execution log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-map02-interrupts-runtime
+          path: map02-interrupts-evidence/
+          if-no-files-found: warn
+
