@@ -87,6 +87,23 @@ def make_images(folder):
 
 
 class FourVsFourOracleTest(unittest.TestCase):
+    def test_hp_detector_rejects_fixed_window_coordinates(self):
+        """NeXium viewport offset: frame-coordinate HP sampling is wrong."""
+        original = Image.new("RGB", (oracle.WIDTH, oracle.HEIGHT),
+                             BACKGROUND)
+        after = original.copy()
+        x, y = oracle.GX + 27, oracle.GY + 13
+        for frame, hp in ((original, 3), (after, 1)):
+            draw = ImageDraw.Draw(frame)
+            draw.rectangle((x, y, x + 35, y + 35), fill=oracle.HERO)
+            draw.rectangle((x - 1, y + 40,
+                            x - 2 + hp * 8, y + 43), fill=HP)
+            # The old fixed-coordinate test incorrectly read this outline.
+            draw.rectangle((oracle.GX + 16, oracle.GY + 59,
+                            oracle.GX + 25, oracle.GY + 62), fill=HP)
+        self.assertEqual(oracle.health_bar_pixels(original, 0, 0), 96)
+        self.assertEqual(oracle.health_bar_pixels(after, 0, 0), 32)
+
     def proof(self, action=None, issue=None):
         with tempfile.TemporaryDirectory(prefix="vh-map02-four-oracle-") as root:
             folder = Path(root)
