@@ -33,7 +33,7 @@ def supplemental_sources(sd:Path)->dict:
     for name in SUPPLEMENTAL:
         prefix=name.rsplit("-000.csv",1)[0]
         hits=list(sd.rglob(prefix+"-*.csv"))
-        if len(hits)>1 or (hits and hits[0].name!=name):
+        if len(hits)>1 or (hits and (hits[0].name!=name or hits[0].parent!=sd)):
             raise ValueError("ambiguous optional original guest telemetry: "+name)
         if not hits:
             values[name]={"present":False,"sha256":None,"parsed":False}
@@ -93,7 +93,7 @@ def trial(root:Path,run_id:int,tag:str,dwell:int,runner_temp:Path)->dict:
         family=name.rsplit("-000.csv",1)[0]+"-*.csv"
         found=list(sd.rglob(family))
         demand(len(found)==1 and found[0].name==name
-               and regular(found[0],1024),
+               and found[0].parent==sd and regular(found[0],1024),
                "ambiguous or missing fresh Stage371 original guest family: "+kind)
     checked=audit_directory(sd)  # stage351/357/368 genuine source bytes reread
     hashes=checked["source_sha256"]
