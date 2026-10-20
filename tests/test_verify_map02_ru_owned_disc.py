@@ -1,5 +1,6 @@
 """Asset-free tests for owned RU disc verification: no original 665MB disc required."""
 import copy
+from contextlib import ExitStack
 import json
 import os
 from pathlib import Path
@@ -95,13 +96,18 @@ class OriginalDiscMap02Tests(unittest.TestCase):
     def test_original_decoder_is_reused_without_exporting_assets(self):
         prs = b"a" * PRS_BYTES
         dat = b"b" * 238336
-        with (patch("tools.verify_map02_ru_owned_disc._readonly_disc_digest",
-                    return_value=os.stat(self.disc)) as digest,
-              patch("tools.verify_map02_ru_owned_disc.read_sectors",
-                    side_effect=[prs, dat]) as reader,
-              patch("tools.verify_map02_ru_owned_disc.audit_prs",
-                    return_value=audit_fixture()) as auditor,
-              patch("tools.verify_map02_ru_owned_disc._unchanged") as unchanged):
+        with ExitStack() as stack:
+            digest = stack.enter_context(patch(
+                "tools.verify_map02_ru_owned_disc._readonly_disc_digest",
+                return_value=os.stat(self.disc)))
+            reader = stack.enter_context(patch(
+                "tools.verify_map02_ru_owned_disc.read_sectors",
+                side_effect=[prs, dat]))
+            auditor = stack.enter_context(patch(
+                "tools.verify_map02_ru_owned_disc.audit_prs",
+                return_value=audit_fixture()))
+            unchanged = stack.enter_context(patch(
+                "tools.verify_map02_ru_owned_disc._unchanged"))
             outcome = verify_owned_ru_disc(self.disc, self.receipt)
         digest.assert_called_once()
         self.assertEqual(reader.call_count, 2)
@@ -118,29 +124,38 @@ class OriginalDiscMap02Tests(unittest.TestCase):
         self.assertNotIn(str(self.disc), json.dumps(outcome))
 
     def test_bad_sector_read_is_not_reported_as_success(self):
-        with (patch("tools.verify_map02_ru_owned_disc._readonly_disc_digest",
-                    return_value=os.stat(self.disc)),
-              patch("tools.verify_map02_ru_owned_disc.read_sectors",
-                    side_effect=ValueError("MODE2 sector EDC mismatch"))):
+        with ExitStack() as stack:
+            stack.enter_context(patch(
+                "tools.verify_map02_ru_owned_disc._readonly_disc_digest",
+                return_value=os.stat(self.disc)))
+            stack.enter_context(patch(
+                "tools.verify_map02_ru_owned_disc.read_sectors",
+                side_effect=ValueError("MODE2 sector EDC mismatch")))
             with self.assertRaisesRegex(ValueError, "EDC mismatch"):
                 verify_owned_ru_disc(self.disc, self.receipt)
 
     def test_optional_trace_remains_unattested(self):
-        with (patch("tools.verify_map02_ru_owned_disc._readonly_disc_digest",
-                    return_value=os.stat(self.disc)),
-              patch("tools.verify_map02_ru_owned_disc.read_sectors",
-                    side_effect=[b"x" * PRS_BYTES, b"y" * 238336]),
-              patch("tools.verify_map02_ru_owned_disc.audit_prs",
-                    return_value=audit_fixture()),
-              patch("tools.verify_map02_ru_owned_disc._unchanged"),
-              patch("tools.verify_map02_ru_owned_disc.reconcile",
-                    return_value={
-                        "capture_stdout_independently_replayed": True,
-                        "pc_trace_consistent_variant": "PRS",
-                        "capture_report_sha256": "f" * 64,
-                        "capture_executable_sha256": "e" * 64,
-                        "separate_map_loads_checked": 1,
-                    })):
+        with ExitStack() as stack:
+            stack.enter_context(patch(
+                "tools.verify_map02_ru_owned_disc._readonly_disc_digest",
+                return_value=os.stat(self.disc)))
+            stack.enter_context(patch(
+                "tools.verify_map02_ru_owned_disc.read_sectors",
+                side_effect=[b"x" * PRS_BYTES, b"y" * 238336]))
+            stack.enter_context(patch(
+                "tools.verify_map02_ru_owned_disc.audit_prs",
+                return_value=audit_fixture()))
+            stack.enter_context(patch(
+                "tools.verify_map02_ru_owned_disc._unchanged"))
+            stack.enter_context(patch(
+                "tools.verify_map02_ru_owned_disc.reconcile",
+                return_value={
+                    "capture_stdout_independently_replayed": True,
+                    "pc_trace_consistent_variant": "PRS",
+                    "capture_report_sha256": "f" * 64,
+                    "capture_executable_sha256": "e" * 64,
+                    "separate_map_loads_checked": 1,
+                }))
             result = verify_owned_ru_disc(
                 self.disc, self.receipt, capture_directory=self.disc.parent)
         self.assertTrue(result["pc_capture_present"])
