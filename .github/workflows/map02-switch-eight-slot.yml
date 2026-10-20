@@ -8,12 +8,29 @@ on:
       - 'source/map02_roster8.h'
       - 'source/map02_roster8_smoke_data.h'
       - 'tests/run_map02_nexium_4v4.py'
+      - 'tests/test_map02_nexium_4v4_oracle.py'
       - 'data/map02_roster8_4v4.json'
       - 'tools/generate_map02_roster8.py'
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
+  oracle-negative-tests:
+    name: Reject fake 4v4 NeXium victory, defeat and reset screenshots
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install screenshot test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pil
+      - name: Validate screenshot oracle against 11 fake/realistic cases
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tests/run_map02_nexium_4v4.py tests/test_map02_nexium_4v4_oracle.py
+          python3 -m unittest discover -s tests -p 'test_map02_nexium_4v4_oracle.py' -v
+          echo 'VH_MAP02_4V4_ORACLE_NEGATIVE_PASS images=synthetic no_emulator_claim=1'
   build-4v4-nro:
     name: Build real optional 4v4 devkitPro/libnx NRO
     runs-on: ubuntu-22.04
