@@ -10,6 +10,7 @@ from tools.check_map02_owned_disc_extent import (
     extract_layout, verify_map02_disc_extent,
 )
 from tools.prepare_map02_pcport import git_blob_sha1
+from tools.audit_map02_disc_prs import xa_edc
 
 
 class OwnedMap02DiscExtentTests(unittest.TestCase):
@@ -47,10 +48,14 @@ class OwnedMap02DiscExtentTests(unittest.TestCase):
                 pos = lba + 150
                 raw[12:15] = bytes((_bcd(pos // 4500),
                                     _bcd(pos // 75 % 60), _bcd(pos % 75)))
+                raw[15] = 2  # Mode 2, XA Form 1
+                raw[16:20] = b"\x00\x00\x08\x00"
+                raw[20:24] = raw[16:20]
                 if lba == BOOT_LBA_US:
                     raw[24:32] = b"PS-X EXE"
                 else:
                     raw[24:32] = lba.to_bytes(8, "little")
+                raw[0x818:0x81c] = xa_edc(raw[0x10:0x818]).to_bytes(4, "little")
                 f.seek(lba * SECTOR_RAW)
                 f.write(raw)
         self.image.chmod(0o600)
@@ -98,10 +103,50 @@ class OwnedMap02DiscExtentTests(unittest.TestCase):
             verify_map02_disc_extent(link, self.upstream)
 
     def test_rejects_other_disc_without_us_boot_signature(self):
+        # Preserve valid Form 1 EDC, so the rejection is specifically the
+        # source-pinned US boot marker rather than a corrupt sector.
         with self.image.open("r+b") as f:
-            f.seek(BOOT_LBA_US * SECTOR_RAW + 24)
-            f.write(b"XXXXXXXX")
+            f.seek(BOOT_LBA_US * SECTOR_RAW)
+            raw = bytearray(f.read(SECTOR_RAW))
+            raw[24:32] = b"XXXXXXXX"
+            raw[0x818:0x81c] = xa_edc(raw[0x10:0x818]).to_bytes(4, "little")
+            f.seek(BOOT_LBA_US * SECTOR_RAW)
+            f.write(raw)
         with self.assertRaisesRegex(ValueError, "boot signature"):
+            self.check()
+
+    def test_rejects_mode2_subheader_form2_and_invalid_edc(self):
+        # Exercise all four independent sector integrity gates, restoring
+        # the same valid baseline between negative cases.
+        offset = self.first * SECTOR_RAW
+        with self.image.open("rb") as f:
+            f.seek(offset)
+            original = f.read(SECTOR_RAW)
+        cases = (
+            (15, 1, "Mode 2"),
+            (20, 4, "subheaders"),
+            (18, 0x28, "Form 2"),
+            (24, 0x47, "EDC mismatch"),
+        )
+        for at, value, message in cases:
+            with self.subTest(message=message):
+                forged = bytearray(original)
+                forged[at] = value
+                with self.image.open("r+b") as f:
+                    f.seek(offset)
+                    f.write(forged)
+                with self.assertRaisesRegex(ValueError, message):
+                    self.check()
+        with self.image.open("r+b") as f:
+            f.seek(offset)
+            f.write(original)
+        self.assertEqual(self.check()["resource_user_data_bytes_checked"], 24576)
+
+    def test_rejects_corrupted_boot_sector_edc(self):
+        with self.image.open("r+b") as f:
+            f.seek(BOOT_LBA_US * SECTOR_RAW + 32)
+            f.write(b"!")
+        with self.assertRaisesRegex(ValueError, "EDC mismatch"):
             self.check()
 
     def test_source_table_drift_must_not_change_original_map02_lba(self):
