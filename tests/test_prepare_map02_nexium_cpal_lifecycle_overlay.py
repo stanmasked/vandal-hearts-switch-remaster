@@ -20,7 +20,42 @@ from prepare_map02_nexium_cpal_lifecycle_overlay import (
 
 class LifecycleSourceTests(unittest.TestCase):
     def setUp(self):
-        self.stage274=patch_stage274(RUNNER_SOURCE)
+        # Include genuine Stage274 callback anchor structure as well as the
+        # exact NeXium stream constructor/play/status statements. The old
+        # Stage274 fixture ended before actual lifecycle code existed.
+        fixture=RUNNER_SOURCE.replace(
+            "fn sink() {",
+            """fn init_host_audio_on_thread(preferred_device: Option<&str>, initial_volume: f32) {
+    let Some(device) = resolve_output_device(preferred_device) else {
+        log::warn!("Audio output disabled: no output device available");
+        return;
+    };
+    let (config, sample_format) = match pick_config(&device) {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("Audio output disabled: {}", e);
+            return;
+        }
+    };
+    let err_cb = |e| log::error!("cpal stream error: {}", e);""")
+        fixture=fixture.replace(
+            "    let sink_dyn: Arc<dyn HostPcmSink> = sink;",
+            """    let stream = match stream_result {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!("Audio output disabled: build_output_stream: {}", e);
+            return;
+        }
+    };
+    if let Err(e) = stream.play() {
+        log::warn!("Audio output disabled: stream.play: {}", e);
+        return;
+    }
+    let sink_dyn: Arc<dyn HostPcmSink> = sink;""")
+        fixture=fixture.replace(
+            "    }\n}",
+            "    }\n    AUDIO_STREAM.with(|s| *s.borrow_mut() = Some(stream));\n}")
+        self.stage274=patch_stage274(fixture)
 
     def test_collector_preserves_two_old_rt_callback_count_sites(self):
         updated=patch_runner(self.stage274)
