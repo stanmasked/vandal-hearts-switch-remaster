@@ -124,11 +124,14 @@ fn map02_start_cpal_reporter(sink: Arc<HostAudioSink>) {
 
     runner=once(
         runner,
-        "    let sink_dyn: Arc<dyn HostPcmSink> = sink;\n    set_host_audio_sink(sink_dyn);",
+        "    let sink_dyn: Arc<dyn HostPcmSink> = sink;\n"
+        "    set_host_audio_sink(sink_dyn);\n\n"
+        "    std::thread_local! {",
         "    let sink_dyn: Arc<dyn HostPcmSink> = sink.clone();\n"
         "    set_host_audio_sink(sink_dyn);\n"
         "    #[cfg(target_os = \"linux\")]\n"
-        "    map02_start_cpal_reporter(sink);",
+        "    map02_start_cpal_reporter(sink);\n\n"
+        "    std::thread_local! {",
         "reporter startup after host sink publication"
     )
     return runner
