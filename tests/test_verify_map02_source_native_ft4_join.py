@@ -104,25 +104,42 @@ class SourceToNativeFt4JoinTests(unittest.TestCase):
         legacy = verify_join(self.source, self.native)
         self.assertEqual(legacy["matched_ft4_draws_proven_no_coverage"], 0)
         self.assertEqual(legacy["matched_ft4_draws_zero_delta_cause_unknown"], 2)
-        # Native FT4 pairs occur at 2/3 and 4/5. Put the rejected
-        # geometry on the *last* draw so the forged POST does not also
-        # violate PR #55's strict next-draw PRE/POST VRAM continuity.
+        # A source-pinned DrawOTag sequence cannot change DRAWENV between
+        # registered draws without an observed state update. Test a wholly
+        # in-bounds capture, then a wholly clipped one, rather than
+        # synthesizing an impossible mid-walk offset change.
         for entry in self.entries:
-            entry["draw_env"] = ([0, 0, 1024, 512, 1500, 1500]
-                                  if entry["step"] == 4 else
-                                  [0, 0, 1024, 512, 0, 0])
+            entry["draw_env"] = [0, 0, 1024, 512, 0, 0]
         self.save()
         report = verify_join(self.source, self.native)
-        self.assertEqual(report["matched_ft4_draws_proven_no_coverage"], 1)
-        self.assertEqual(report["matched_ft4_draws_zero_delta_cause_unknown"], 1)
+        self.assertEqual(report["matched_ft4_draws_proven_no_coverage"], 0)
+        self.assertEqual(report["matched_ft4_draws_zero_delta_cause_unknown"], 2)
 
-        # This write is inside the GPU drawing area, but the last FT4's
-        # vertices are outside after DRAWENV offset. No later draw exists.
+        for entry in self.entries:
+            entry["draw_env"] = [0, 0, 1024, 512, 1500, 1500]
+        self.save()
+        report = verify_join(self.source, self.native)
+        self.assertEqual(report["matched_ft4_draws_proven_no_coverage"], 2)
+        self.assertEqual(report["matched_ft4_draws_zero_delta_cause_unknown"], 0)
+
+        # A pixel mutation is forbidden even when the last FT4 is
+        # provably outside the entire effective drawing area.
         changed = bytearray(self.bytes_before)
         fixture.word(changed, 0, 0, 0x801f)
         self.override_snapshots[5] = bytes(changed)
         self.save()
         with self.assertRaisesRegex(ValueError, "geometry entirely outside"):
+            verify_join(self.source, self.native)
+
+    def test_join_rejects_unobserved_drawenv_transition(self):
+        # Per-pair consistency alone cannot justify a new clip/offset
+        # half-way through one DrawOTag command walk.
+        for entry in self.entries:
+            entry["draw_env"] = ([0, 0, 1024, 512, 1500, 1500]
+                                 if entry["step"] == 4 else
+                                 [0, 0, 1024, 512, 0, 0])
+        self.save()
+        with self.assertRaisesRegex(ValueError, "discontinuous DRAWENV"):
             verify_join(self.source, self.native)
 
     def test_single_frame_native_ft4_post_draw_pixel_delta(self):
