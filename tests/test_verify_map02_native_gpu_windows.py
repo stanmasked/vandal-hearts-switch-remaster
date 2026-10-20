@@ -129,6 +129,43 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "continuity broken"):
             self.verify()
 
+    def test_second_window_loadimage_uses_local_upload_index(self):
+        # Real native recorder writes 64 hooks in window-000 followed by
+        # hooks 64/65 in window-001. The *post*-LoadImage upload must
+        # follow the local event index 1, not global index 65.
+        second = self.build_two_windows_across_recorder_capacity()
+        log = second / "gpu-native-events.jsonl"
+        events = [json.loads(line) for line in log.read_bytes().splitlines()]
+        self.assertEqual([event["step"] for event in events], [0, 1])
+        for event in events:
+            event.update(
+                operation="load", frame=6, rect=[0, 0, 1, 1],
+                primitive_type=0,
+            )
+        local_upload = "gpu-0001-upload.bin"
+        events[0]["upload"] = ""
+        events[1]["upload"] = local_upload
+        log.write_bytes(b"".join(jsonline(event) for event in events))
+        (second / local_upload).write_bytes((33).to_bytes(2, "little"))
+        self.status.update(draw_before_hooks=32, transfer_before_hooks=1)
+        self.save_status()
+        result = self.verify()
+        self.assertEqual(result["recorded_windows"], 2)
+        self.assertEqual(result["native_draw_pairs"], 32)
+        self.assertEqual(result["native_transfer_pairs"], 1)
+        self.assertEqual(result["vram_bridge_checks"], 32)
+        self.assertFalse(result["original_map02_authenticated"])
+
+        # This is the precise bug in the earlier C instrumentation:
+        # the global event number was reused as the upload basename
+        # after the second 64-event window began. It must be rejected.
+        global_upload = "gpu-0065-upload.bin"
+        (second / local_upload).rename(second / global_upload)
+        events[1]["upload"] = global_upload
+        log.write_bytes(b"".join(jsonline(event) for event in events))
+        with self.assertRaisesRegex(ValueError, "upload name"):
+            self.verify()
+
     def test_small_one_window_is_not_mislabeled_as_complete_gameplay(self):
         result = self.verify()
         self.assertEqual(result["recorded_windows"], 1)

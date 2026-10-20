@@ -1,0 +1,109 @@
+name: MAP02 native window-001 LoadImage upload index
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-native-window-upload-index.yml'
+      - 'tools/instrument_map02_gpu_native_events.py'
+      - 'tests/test_instrument_map02_gpu_native_events.py'
+      - 'tests/test_verify_map02_native_gpu_windows.py'
+      - 'tools/verify_map02_native_gpu_windows.py'
+      - 'tools/verify_map02_native_gpu_capture.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  source-pinned-two-window-load:
+    name: Actual pinned libgpu window recorder and 66 synthetic hooks
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout diagnostics
+        uses: actions/checkout@v4
+        with:
+          path: remaster
+          persist-credentials: false
+      - name: Checkout pinned PUBLIC PC libgpu and headers
+        uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: upstream
+          persist-credentials: false
+          sparse-checkout: |
+            include/
+            platform/pc/include/
+            platform/pc/src/libgpu.c
+            platform/pc/src/pc_gpu_internal.h
+          sparse-checkout-cone-mode: false
+      - name: Run real two-window VRAM/LoadImage and instrumentation regressions
+        working-directory: remaster
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_instrument_map02_gpu_native_events.py' -v \
+            2>&1 | tee /tmp/vh-window-upload-instrument-tests.log
+          grep -F 'Ran 3 tests' /tmp/vh-window-upload-instrument-tests.log
+          python3 -m unittest discover -s tests \
+            -p 'test_verify_map02_native_gpu_windows.py' -v \
+            2>&1 | tee /tmp/vh-window-upload-evidence-tests.log
+          grep -F 'test_second_window_loadimage_uses_local_upload_index' \
+            /tmp/vh-window-upload-evidence-tests.log
+          if grep -E '^FAILED|^ERROR' /tmp/vh-window-upload-evidence-tests.log; then
+            exit 1
+          fi
+          echo 'VH_MAP02_WINDOW1_LOCAL_UPLOAD_TESTS_PASS synthetic=1 original_disc=0'
+      - name: Generate actual pinned libgpu.c recorder and compile Windows + baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/vh-map02-window-upload
+          PYTHONPATH=remaster python3 -m tools.instrument_map02_gpu_native_events \
+            upstream/platform/pc/src/libgpu.c \
+            --output /tmp/vh-map02-window-upload/libgpu.window.c \
+            > /tmp/vh-map02-window-upload/pinned-result.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/vh-map02-window-upload/pinned-result.json').read_text())
+          assert r['source_pinned'] is True
+          text=Path('/tmp/vh-map02-window-upload/libgpu.window.c').read_text()
+          assert text.count('"gpu-%04u-upload.bin", local_seq') == 1
+          assert '"gpu-%04u-upload.bin", seq' not in text
+          print('VH_MAP02_WINDOW1_LOCAL_UPLOAD_PINNED_SOURCE_PASS owned_disc=0')
+          PY
+          (
+            cd upstream/platform/pc
+            mkdir -p build/include_stage
+            for header in ../../include/*.h ../../include/*.inc; do
+              ln -sf "$(realpath "$header")" "build/include_stage/$(basename "$header")"
+            done
+            for item in PsyQ types.h inline_gte.h; do
+              ln -sf "$(realpath "include/$item")" "build/include_stage/$item"
+            done
+            common_flags=(
+              -m64 -std=gnu89 -fno-builtin-csqrt
+              -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US
+              '-Dasm(x)=' -Ibuild/include_stage -Iinclude -I../.. -Isrc
+              -include pc_forward_decls.h
+              -Wno-incompatible-pointer-types -Wno-builtin-declaration-mismatch
+              -Wno-discarded-qualifiers -Wno-pointer-to-int-cast
+              -Wno-int-to-pointer-cast -Wno-int-conversion
+            )
+            mkdir -p build/map02-window-upload
+            gcc "${common_flags[@]}" -DVH_MAP02_GPU_CAPTURE \
+              -DVH_MAP02_POSIX_CAPTURE_WINDOWS \
+              -c /tmp/vh-map02-window-upload/libgpu.window.c \
+              -o build/map02-window-upload/windowed.o
+            gcc "${common_flags[@]}" \
+              -c /tmp/vh-map02-window-upload/libgpu.window.c \
+              -o build/map02-window-upload/baseline.o
+            nm -a build/map02-window-upload/windowed.o | grep VH_CaptureEvent
+            if nm -a build/map02-window-upload/baseline.o | grep -q VH_CaptureEvent; then
+              echo 'GPU recorder leaked into non-opt-in production source' >&2
+              exit 1
+            fi
+          )
+          test -z "$(cd upstream && git status --porcelain -- platform/pc/src/libgpu.c)"
+          echo 'VH_MAP02_WINDOW1_LOCAL_UPLOAD_C11_PASS pinned=1 two_windows=1 baseline_unchanged=1 retail=0'
