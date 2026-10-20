@@ -159,11 +159,57 @@ class PublicSdl2StaticWitnessTests(unittest.TestCase):
         self.assertEqual(verified["new_imports"], 1)
         self.assertEqual(verified["final_strong_imports"], 2)
         self.assertTrue(verified["saved_report_recount_verified"])
+        self.assertFalse(verified["independent_native_relink_executed"])
+        self.assertFalse(verified["byte_identical_native_relink_verified"])
         self.assertTrue(verified["copied_candidate_archive_identity_verified"])
         self.assertFalse(verified["full_game_executable_proven"])
         self.assertFalse(verified["authentic_map02_execution_proven"])
         for private_name in ("needed", "missing", "extra"):
             self.assertNotIn(private_name, json.dumps(verified))
+
+    def test_independent_gnu_relink_reproduces_saved_elf_sha(self):
+        _, saved, candidate, linked = self.make_saved_recount(
+            "relink-reproduces")
+        repeated = self.root / "fresh-relink-verified"
+        audit = verify_saved_sdl2_recount(
+            self.manifest, self.partial, candidate, linked, saved,
+            expected_initial_strong_imports=2,
+            relink_output_dir=repeated)
+        self.assertTrue(audit["independent_native_relink_executed"])
+        self.assertTrue(audit["byte_identical_native_relink_verified"])
+        relinked = repeated / OUTPUT
+        self.assertEqual(
+            hashlib.sha256(relinked.read_bytes()).hexdigest(),
+            hashlib.sha256(linked.read_bytes()).hexdigest())
+        self.assertEqual(relinked.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(repeated.stat().st_mode & 0o777, 0o700)
+
+    def test_modified_but_consistent_saved_elf_fails_relink_provenance(self):
+        """All saved SHA and counts may agree yet the ELF is not ld-r output."""
+        report, saved, candidate, linked = self.make_saved_recount(
+            "relink-detects-fabricated-elf")
+        extra = self.compile(
+            "other-object", "int unexpected_extra(void) {return 93;}\n")
+        fabricated = self.root / "fabricated-valid-elf.o"
+        subprocess.run(
+            ["ld", "-r", str(linked), str(extra), "-o", str(fabricated)],
+            check=True, capture_output=True, timeout=30)
+        fabricated.chmod(0o600)
+        fabricated.replace(linked)
+        report["linked_partial_elf_sha256"] = hashlib.sha256(
+            linked.read_bytes()).hexdigest()
+        saved.write_text(json.dumps(report), encoding="utf-8")
+        reread_only = verify_saved_sdl2_recount(
+            self.manifest, self.partial, candidate, linked, saved,
+            expected_initial_strong_imports=2)
+        self.assertTrue(reread_only["saved_report_recount_verified"])
+        self.assertFalse(reread_only["independent_native_relink_executed"])
+        second_run = self.root / "divergent-relink"
+        with self.assertRaisesRegex(ValueError, "relink differs"):
+            verify_saved_sdl2_recount(
+                self.manifest, self.partial, candidate, linked, saved,
+                expected_initial_strong_imports=2,
+                relink_output_dir=second_run)
 
     def test_changed_saved_count_fails_independent_recount(self):
         data, saved, candidate, linked = self.make_saved_recount(
