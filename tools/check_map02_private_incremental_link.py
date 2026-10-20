@@ -117,7 +117,8 @@ def _private_output_dir(path):
             or metadata.st_uid != os.geteuid()
             or stat.S_IMODE(metadata.st_mode) != 0o700):
         raise ValueError("private MAP02 link directory not owner-only")
-    return path, _identity(metadata)
+    return path, (metadata.st_dev, metadata.st_ino, metadata.st_uid,
+                  stat.S_IMODE(metadata.st_mode))
 
 
 def probe_private_incremental_link(manifest, partial, candidates, out_dir):
@@ -130,7 +131,8 @@ def probe_private_incremental_link(manifest, partial, candidates, out_dir):
         sources = [(partial, True), *((path, False) for path in candidates)]
         for path, is_partial in sources:
             suffix = Path(path).suffix
-            if suffix != ".o" if is_partial else suffix not in (".o", ".a"):
+            if ((is_partial and suffix != ".o") or
+                    (not is_partial and suffix not in (".o", ".a"))):
                 raise ValueError("private MAP02 candidate must be native .o/.a")
             item = _open_owned(path, require_private=is_partial)
             inputs.append(item)
@@ -146,7 +148,7 @@ def probe_private_incremental_link(manifest, partial, candidates, out_dir):
         output = output_dir / OUTPUT
         fds = [item[0] for item in inputs]
         _run_native_tool(
-            ["ld", "-r", "-o", str(output), "--",
+            ["ld", "-r", "-o", str(output),
              *(f"/proc/self/fd/{fd}" for fd in fds)],
             fds, timeout=120)
         info = output.lstat()
@@ -162,7 +164,8 @@ def probe_private_incremental_link(manifest, partial, candidates, out_dir):
                 _confirm_owned(entry)
             _confirm_owned(linked)
             after_dir = output_dir.lstat()
-            if _identity(after_dir) != dir_ident:
+            if (after_dir.st_dev, after_dir.st_ino, after_dir.st_uid,
+                    stat.S_IMODE(after_dir.st_mode)) != dir_ident:
                 raise ValueError("private MAP02 output directory changed during link")
             original = set(initial_strong)
             updated = set(after_strong)
