@@ -1,0 +1,114 @@
+name: MAP02 Intel Catalina true-host local acceptance receipt
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-intel-catalina-local-acceptance.yml'
+      - 'tools/map02_intel_mac_local_acceptance.py'
+      - 'tests/test_map02_intel_mac_local_acceptance.py'
+      - 'tools/build_map02_intel_mac_offline_kit.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  receipt-negative-and-host-spoof:
+    name: Local receipt contract, no claimed Catalina
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test nine bounded receipts and strict-host refusal
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_map02_intel_mac_local_acceptance.py' -v \
+            2>&1 | tee /tmp/vh-map02-catalina-local-receipt-tests.log
+          grep -F 'Ran 9 tests' /tmp/vh-map02-catalina-local-receipt-tests.log
+          if python3 -m tools.map02_intel_mac_local_acceptance \
+                --require-catalina-10-15-7 \
+                > /tmp/vh-map02-catalina-linux.out \
+                2> /tmp/vh-map02-catalina-linux.err; then
+            exit 1
+          fi
+          test ! -s /tmp/vh-map02-catalina-linux.out
+          grep -F 'Intel Mac local offline MAP02 compatibility not verified' \
+            /tmp/vh-map02-catalina-linux.err
+          echo 'VH_MAP02_CATALINA_LOCAL_RECEIPT_NEGATIVE_PASS methods=9 actual_catalina=0 private=0'
+
+  mac-intel-local-receipt:
+    name: Intel Mac synthetic receipt, do not spoof Catalina (Python ${{ matrix.python }})
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.11']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: upstream
+          sparse-checkout: |
+            platform/pc/src/pc_raster.c
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Check strict Catalina anti-spoof contract and real offline package
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          python -m unittest discover -s tests \
+            -p 'test_map02_intel_mac_local_acceptance.py' -v \
+            2>&1 | tee /tmp/vh-map02-local-mac-unit.log
+          grep -F 'Ran 9 tests' /tmp/vh-map02-local-mac-unit.log
+          python -m tools.build_map02_intel_mac_offline_kit \
+            upstream/platform/pc/src/pc_raster.c \
+            /tmp/vh-map02-local-host-acceptance.zip \
+            > /tmp/vh-map02-local-build.json
+          expected=$(python -c "import json; print(json.load(open('/tmp/vh-map02-local-build.json'))['zip_sha256'])")
+          python -m tools.verify_and_extract_map02_offline_kit \
+            /tmp/vh-map02-local-host-acceptance.zip "$expected" \
+            /tmp/vh-map02-local-acceptance-kit \
+            > /tmp/vh-map02-local-extract.json
+          cd /tmp/vh-map02-local-acceptance-kit
+          python -m tools.map02_intel_mac_local_acceptance \
+            > /tmp/vh-map02-local-host-report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/vh-map02-local-host-report.json').read_text())
+          assert r['schema']=='vh.map02.intel-mac.local-offline-acceptance.v1'
+          assert r['host_os']=='macOS'
+          assert r['host_architecture']=='x86_64'
+          assert r['host_macos_version']!='10.15.7'
+          assert r['synthetic_tests_verified']==49
+          assert r['compiled_pc_helpers_verified']==3
+          assert r['c11_macho_minimum']=='10.15'
+          assert r['actual_catalina_10_15_7_selfcheck_passed'] is False
+          assert r['owner_ps1_disc_authenticated'] is False
+          assert r['independent_trusted_machine_attestation'] is False
+          print('VH_MAP02_INTEL_MAC_LOCAL_RECEIPT_PASS python=${{ matrix.python }} tests=49 helpers=3 real_catalina=0 owned_disc=0')
+          PY
+          if python -m tools.map02_intel_mac_local_acceptance \
+              --require-catalina-10-15-7 \
+              > /tmp/vh-map02-fake-catalina.out \
+              2> /tmp/vh-map02-fake-catalina.err; then
+            echo "macOS 15 incorrectly accepted as actual Catalina"
+            exit 1
+          fi
+          test ! -s /tmp/vh-map02-fake-catalina.out
+          grep -F 'Intel Mac local offline MAP02 compatibility not verified' \
+            /tmp/vh-map02-fake-catalina.err
+          echo 'VH_MAP02_CATALINA_STRICT_MUST_REJECT_MAC15_PASS original_disc=0'
