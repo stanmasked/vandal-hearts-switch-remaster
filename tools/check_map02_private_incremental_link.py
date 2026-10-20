@@ -93,7 +93,15 @@ def _run_native_tool(args, descriptors, *, timeout=60):
 
 
 def _check_abi(entry):
-    fd = entry[0]
+    fd, path = entry[:2]
+    # Thin GNU archives refer to external member paths. Passing the archive
+    # through /proc/self/fd would not pin those external object bytes.
+    # Reject them before readelf or the linker can follow any members.
+    header = os.pread(fd, 8, 0)
+    if path.suffix == ".a" and header != b"!<arch>\n":
+        raise ValueError("private MAP02 thin or invalid archive rejected")
+    if path.suffix == ".o" and header[:4] != b"\x7fELF":
+        raise ValueError("private MAP02 candidate is not ELF")
     report = _run_native_tool(
         ["readelf", "-hW", f"/proc/self/fd/{fd}"], (fd,))
     _require_native_pc_elf_headers(report)
