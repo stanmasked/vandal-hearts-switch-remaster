@@ -101,6 +101,14 @@ class Stage365Tests(unittest.TestCase):
     def test_reject_success_wrong_guest_tail_original_sha(self):
         a,b=fixture();b["stage313_original_tail_csv_sha256"]=TIMEOUT_TAIL_SHA
         with self.assertRaises(ValueError):compare(a,b)
+    def test_reject_missing_true_original_success_abandoned_field(self):
+        a,b=fixture()
+        del b["guest_audio_abandoned_sessions"]
+        with self.assertRaises(ValueError):compare(a,b)
+    def test_reject_bool_disguised_as_zero_original_success_abandoned(self):
+        a,b=fixture()
+        b["guest_audio_abandoned_sessions"]=False
+        with self.assertRaises(ValueError):compare(a,b)
     def test_reject_success_earlier_timeout_lease_counts(self):
         a,b=fixture();b["guest_audio_lease_released"]=1413
         with self.assertRaises(ValueError):compare(a,b)
