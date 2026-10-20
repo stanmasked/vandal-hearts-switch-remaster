@@ -19,10 +19,16 @@ from decode_map02_guest_scene_trace import decode_packet_image
 from decode_map02_audout_presubmit import decode as decode_guest
 
 SCHEMA="vh-map02-stage283-six-run-source-pinned-cpal-optical-audit/v1"
-HOST="dd4ed55b6ce8477f19b77465f4ce6a0606b7d7ab5effd0"
+HOST="dd4ed55b6ce8477f19b77465f4ce6a0606b7a7315b3a0e2b8137b7d7ab5effd0"
 NRO="371c9fd9f1f41ad87cbb5f7f96a3e5e9d56878f8cfff2bf7fea2c17120c2611b"
 NRO_SOURCE="04b20024a50327091cff430eb5c28e4722d4ec76"
 NRO_BUILD_RUN=39460035568
+
+# Independently authenticated content identities MUST be complete SHA-256 hex.
+# A shortened literal previously caused a correct six-run audit to fail closed.
+if (len(HOST)!=64 or len(NRO)!=64 or
+        any(ch not in "0123456789abcdef" for ch in HOST+NRO)):
+    raise ValueError("Expected full 64-hex SHA-256 host and NRO provenance constants")
 
 
 def require(value,reason):
@@ -86,11 +92,16 @@ def verify_run(folder,hint,repeat,run_id,attempt):
             and manifest.get("hint_ms")==hint and manifest.get("repeat")==repeat
             and manifest.get("run_id")==run_id and manifest.get("attempt")==attempt,
             "Matrix evidence metadata does not match verified job identity")
-    require(manifest.get("expected_host_elf_sha256")==HOST
-            and manifest.get("expected_nro_sha256")==NRO
-            and manifest.get("runner_os")=="Linux"
-            and type(manifest.get("job_label")) is str,
-            "Matrix identity/runner or original executable mismatch")
+    require(manifest.get("expected_host_elf_sha256")==HOST,
+            f"{hint}/{repeat}: compiled host SHA declared by matrix differs")
+    require(manifest.get("expected_nro_sha256")==NRO,
+            f"{hint}/{repeat}: generated guest NRO SHA declared by matrix differs")
+    require(manifest.get("runner_os")=="Linux",
+            f"{hint}/{repeat}: matrix runner OS is not Linux")
+    require(type(manifest.get("job_label")) is str,
+            f"{hint}/{repeat}: nonstring matrix job label")
+    require(manifest["job_label"]==f"hint{hint}-repeat{repeat}",
+            f"{hint}/{repeat}: wrong job label within archived matrix receipt")
     provenance=data(folder/"pinned-host-and-nro.json")
     require(provenance["schema"]==f"vh-map02-stage{281 if hint==21 else 280}-guest-host-pair/v1",
             "Inherited guest provenance schema mismatch")
