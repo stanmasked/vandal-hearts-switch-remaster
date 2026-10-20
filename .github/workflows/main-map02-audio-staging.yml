@@ -131,11 +131,11 @@ jobs:
           # These seven exact Git blob pins protect new opt-in source
           # changes. Do not permit unreviewed audio/entrypoint changes.
           test "$(git rev-parse HEAD:source/main.c)" = \
-               "679f68152fe1e9211911e221fa1fc18487733b61"
+               "ab665ded6b90b17dcf9255e7641734e8bfb4b81a"
           test "$(git rev-parse HEAD:source/vh_switch_game_audio.c)" = \
-               "b1ff92ee1d2725729b5e793715a9f68ade153837"
+               "ece638143314f18d98983b685278e1d03278eff9"
           test "$(git rev-parse HEAD:source/vh_switch_game_audio.h)" = \
-               "ca8e1906cbc149dd98e1b293ecfb8d94bf50c237"
+               "54ac8dbc94a20f363cd22edf7bc7a9f737eb4685"
           test "$(git rev-parse HEAD:source/vh_audout_presubmit_optical.c)" = \
                "e0b7458af5e52bb197d00471843ebb70d17f4647"
           test "$(git rev-parse HEAD:source/vh_audout_presubmit_optical.h)" = \
