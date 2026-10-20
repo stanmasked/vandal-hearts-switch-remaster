@@ -20,6 +20,9 @@ import subprocess
 
 from tools.check_map02_cycle_make_plan import BUILD, preflight, clean_make_environment
 from tools.check_map02_cycle_object_inventory import audit_objects
+from tools.check_map02_elf_code_witness import (
+    compare_function_images, function_images,
+)
 
 OUTPUT = "map02-public-original-cd-gpu-reloc.o"
 REQUIRED_SYMBOLS = (
@@ -533,15 +536,14 @@ def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
             raise ValueError("original PC objects changed while sealing inputs")
         export_origins, export_source_sizes = inspect_sealed_export_origins(
             names, sealed, with_sizes=True)
-        source_code_hashes = {}
+        source_function_images = {}
         for source, fd in zip(names, sealed):
             owned = [name for name, owner in export_origins.items()
                      if owner == source]
             if owned:
-                source_code_hashes.update(function_code_sha256(
-                    f"/proc/self/fd/{fd}", owned, pass_fds=(fd,)))
-        if set(source_code_hashes) != set(REQUIRED_SYMBOLS):
-            raise ValueError("original CD/GPU sealed machine-code fingerprints incomplete")
+                source_function_images.update(function_images(fd, owned))
+        if set(source_function_images) != set(REQUIRED_SYMBOLS):
+            raise ValueError("original CD/GPU sealed machine-code witness incomplete")
         combined = subprocess.run(
             [linker, "-r", "-o", str(output),
              *(f"/proc/self/fd/{fd}" for fd in sealed)],
@@ -581,11 +583,9 @@ def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
         checked = inspect_relocatable(
             f"/proc/self/fd/{witness_fd}", pass_fds=(witness_fd,),
             expected_source_sizes=export_source_sizes)
-        linked_code_hashes = function_code_sha256(
-            f"/proc/self/fd/{witness_fd}", REQUIRED_SYMBOLS,
-            pass_fds=(witness_fd,))
-        if linked_code_hashes != source_code_hashes:
-            raise ValueError("original CD/GPU linked ELF code bytes differ from sealed inputs")
+        code_witness = compare_function_images(
+            source_function_images,
+            function_images(witness_fd, REQUIRED_SYMBOLS))
     finally:
         os.close(witness_fd)
     stable_relocatable_output(output, expected=output_proof)
@@ -603,10 +603,8 @@ def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
         "ordered_object_input_manifest_sha256": input_manifest_sha256,
         "verified_original_export_input_owners": export_origins,
         "original_cd_gpu_source_function_sizes_matched": True,
-        "original_cd_gpu_machine_code_bytes_matched": True,
-        "ordered_original_function_code_sha256": hashlib.sha256(json.dumps(
-            source_code_hashes, sort_keys=True, separators=(",", ":")
-        ).encode("utf-8")).hexdigest(),
+        "original_cd_gpu_relocation_normalized_code_matched": True,
+        **code_witness,
         "relocatable_elf_sha256": output_proof[0],
         **checked,
         "fully_linked_game_executable": False,
