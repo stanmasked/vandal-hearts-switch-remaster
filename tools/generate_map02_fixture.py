@@ -70,10 +70,12 @@ def validated(data: object) -> dict[str, object]:
         walls[y] |= 1 << x
     units: list[tuple[int, int, int]] = []
     occupied: set[tuple[int, int]] = set()
+    counts: dict[str, int] = {}
     for faction in ("allies", "enemies"):
         roster = d[faction]
-        if not isinstance(roster, list) or len(roster) != 2:
-            raise ValueError(f"{faction}: exactly two units are required")
+        if not isinstance(roster, list) or not 1 <= len(roster) <= 2:
+            raise ValueError(f"{faction}: require one or two active units")
+        counts[faction] = len(roster)
         for ix, actor in enumerate(roster):
             actor = keys(actor, {"x", "y", "hp"}, f"{faction}[{ix}]")
             x, y = location([actor["x"], actor["y"]], f"{faction}[{ix}]")
@@ -82,6 +84,9 @@ def validated(data: object) -> dict[str, object]:
                 raise ValueError("unit starts on blocked or occupied tile")
             units.append((x, y, hp))
             occupied.add((x, y))
+        # Fixed four-slot C storage: absent combatants are strictly inert.
+        for _ in range(2 - counts[faction]):
+            units.append((0, 0, 0))
     cursor = location(d["cursor"], "cursor")
     if cursor != units[0][:2]:
         raise ValueError("default cursor must begin on the first allied unit")
@@ -107,7 +112,8 @@ def validated(data: object) -> dict[str, object]:
     if len(used) != 2:
         raise ValueError("both win and lose outcome events must be present")
     return {"id": d["id"], "walls": walls, "units": units, "cursor": cursor,
-            "move": move, "damage": damage, "events": parsed_events}
+            "move": move, "damage": damage, "events": parsed_events,
+            "ally_count": counts["allies"], "enemy_count": counts["enemies"]}
 
 
 def render(data: object) -> str:
@@ -129,7 +135,8 @@ def render(data: object) -> str:
         f"    {cursor_x}, {cursor_y},\n"
         f"    {scene['move']}, {scene['damage']},\n"
         f"    {{{events}}},\n"
-        "    2\n"
+        "    2,\n"
+        f"    {{scene['ally_count']}}, {{scene['enemy_count']}}\n"
         "};\n"
         f"#endif /* {guard} */\n"
     )
