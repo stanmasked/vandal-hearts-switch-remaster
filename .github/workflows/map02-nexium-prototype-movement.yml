@@ -83,7 +83,7 @@ jobs:
           test -n "$asset_url"
           curl -fL --retry 3 --retry-all-errors "$asset_url" -o /tmp/nexium-linux.tar.gz
           # Exact release asset observed 2026-10-20; refuse mutable-tag drift.
-          printf '%s  %s\\n' 'c933fbbcf8d1b011de8d4a79c9d8eb55c0678a305947af9388ddb40ce5960a66' /tmp/nexium-linux.tar.gz | sha256sum -c -
+          printf '%s  %s\n' 'c933fbbcf8d1b011de8d4a79c9d8eb55c0678a305947af9388ddb40ce5960a66' /tmp/nexium-linux.tar.gz | sha256sum -c -
           mkdir -p /tmp/nexium
           tar -xzf /tmp/nexium-linux.tar.gz -C /tmp/nexium
           emu_bin="$(find /tmp/nexium -type f -executable \( -name nexium -o -name nexium-gui \) -print -quit)"
