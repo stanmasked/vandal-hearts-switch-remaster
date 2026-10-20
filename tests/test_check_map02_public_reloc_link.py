@@ -378,6 +378,49 @@ class PublicRelocatableELFTests(unittest.TestCase):
                         function_images(stream.fileno(), ("LoadCdFile",))
         obj.write_bytes(original)
 
+    def test_elf_header_size_and_section_names_index_must_be_consistent(self):
+        obj = self.compile("void LoadCdFile(void) {}\n",
+                           name="elf-section-name-header")
+        original = obj.read_bytes()
+        header = list(EHDR.unpack_from(original))
+        self.assertEqual(header[8], EHDR.size)
+        self.assertGreater(header[13], 0)
+        self.assertLess(header[13], header[12])
+        shoff = header[6]
+        self.assertEqual(SHDR.unpack_from(
+            original, shoff + header[13] * SHDR.size)[1], 3)
+
+        # Each mutation is based on the original compiler-generated ELF.
+        for label, changed_index, replacement in (
+                ("incorrect-header-byte-size", 8, EHDR.size - 1),
+                ("out-of-range-section-name-index", 13, header[12])):
+            with self.subTest(case=label):
+                mutated = bytearray(original)
+                fields = header.copy()
+                fields[changed_index] = replacement
+                EHDR.pack_into(mutated, 0, *fields)
+                obj.write_bytes(mutated)
+                with obj.open("rb") as stream:
+                    with self.assertRaisesRegex(ValueError, "requires x86-64"):
+                        function_images(stream.fileno(), ("LoadCdFile",))
+
+        # Index 1 points to an ordinary section, not .shstrtab.
+        fields = header.copy()
+        fields[13] = next(
+            i for i in range(1, header[12])
+            if SHDR.unpack_from(original, shoff + i * SHDR.size)[1] != 3)
+        mutated = bytearray(original)
+        EHDR.pack_into(mutated, 0, *fields)
+        obj.write_bytes(mutated)
+        with obj.open("rb") as stream:
+            with self.assertRaisesRegex(ValueError, "section name string table"):
+                function_images(stream.fileno(), ("LoadCdFile",))
+
+        obj.write_bytes(original)
+        with obj.open("rb") as stream:
+            self.assertIn(
+                "LoadCdFile", function_images(stream.fileno(), ("LoadCdFile",)))
+
     def test_elf_symtab_cannot_use_non_string_section_for_names(self):
         obj = self.compile("void LoadCdFile(void) {}\n",
                            name="elf-fake-strtab")
