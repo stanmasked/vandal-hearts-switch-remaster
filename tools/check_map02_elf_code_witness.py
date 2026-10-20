@@ -141,7 +141,16 @@ def compare_function_images(source, linked):
         b, reloc_b = linked[name]
         if len(a) != len(b) or not a:
             raise ValueError("original PC ELF witness function length differs")
-        ignored = reloc_a | reloc_b
+        # GNU ld -r may rewrite a relocation's value and symtab index,
+        # but must not introduce new relocation *byte locations* inside
+        # mandatory code. A union here lets an output-only relocation hide
+        # arbitrary instruction corruption by expanding the ignored region.
+        if reloc_a != reloc_b:
+            raise ValueError("original PC ELF witness relocated byte positions differ")
+        ignored = reloc_a
+        if (any(not isinstance(pos, int) or pos < 0 or pos >= len(a)
+                for pos in ignored)):
+            raise ValueError("original PC ELF witness invalid relocated byte position")
         if len(ignored) >= len(a):
             raise ValueError("original PC ELF witness no unrelocated function code")
         normalized = bytearray(a)
