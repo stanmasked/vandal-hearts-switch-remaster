@@ -1,0 +1,92 @@
+name: MAP02 read-only stacked integration preflight
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-stack-integration.yml'
+      - 'data/map02_pr_stack_snapshot.json'
+      - 'tools/audit_map02_stack.py'
+      - 'tests/test_map02_stack_audit.py'
+      - 'tests/test_map02_stacked_integration.c'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  no-merge-ancestry:
+    name: Verify 11 pinned PR heads, source preservation and dry-run merge tree
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Verify tool syntax, generated encounter headers and script tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/audit_map02_stack.py tests/test_map02_stack_audit.py
+          python3 -m unittest discover -s tests -p 'test_map02_stack_audit.py' -v
+          python3 tools/generate_map02_fixture.py --all --check
+          python3 tools/generate_map02_roster8.py --output /tmp/map02-stack-primary.h
+          cmp source/map02_roster8_smoke_data.h /tmp/map02-stack-primary.h
+          python3 tools/generate_map02_roster8.py --scene secondary --output /tmp/map02-stack-secondary.h
+          cmp source/map02_roster8_second_data.h /tmp/map02-stack-secondary.h
+      - name: Dry-run Git integration; never update branches or merge PRs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/map02-stack-preflight
+          python3 tools/audit_map02_stack.py \
+            --repo . \
+            --manifest data/map02_pr_stack_snapshot.json \
+            --report build/map02-stack-preflight/report.json \
+            | tee build/map02-stack-preflight/result.log
+          grep -Fx 'VH_MAP02_STACK_PREFLIGHT_PASS prs=11 divergent=1 merge_conflicts=0 preserved=4 core_modules=10 retail_assets=0 main_merge=0' build/map02-stack-preflight/result.log
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x = json.loads(Path('build/map02-stack-preflight/report.json').read_text())
+          assert x['integration_merge_performed'] is False
+          assert len(x['edges']) == 10
+          assert sum(e['result'] == 'diverged_identical_content'
+                     for e in x['edges']) == 1
+          assert len(x['preserved_files']) == 4
+          assert len(x['required_modules']) == 10
+          assert not x['forbidden_added_assets']
+          PY
+      - name: Upload machine-readable audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-stacked-integration-dry-run-report
+          path: build/map02-stack-preflight/
+          if-no-files-found: warn
+
+  combined-native:
+    name: Combined arena, archer, guard, medic integration (${{ matrix.compiler }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run original-data-free combined battle with sanitizers
+        shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            tests/test_map02_stacked_integration.c -o /tmp/map02-stack-native
+          /tmp/map02-stack-native | tee /tmp/map02-stack-native.log
+          grep -Fx 'VH_MAP02_STACK_NATIVE_PASS rosters=6 bow=1 medic=1 guard=1 original_scene=1 zero_retail=1' /tmp/map02-stack-native.log
+          "$CC" -std=c11 -O0 -g -Wall -Wextra -Werror -pedantic \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            tests/test_map02_stacked_integration.c -o /tmp/map02-stack-native-ubsan
+          /tmp/map02-stack-native-ubsan
