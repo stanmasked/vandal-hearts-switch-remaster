@@ -189,6 +189,9 @@ def probe_private_incremental_link(manifest, partial, candidates, out_dir):
                 "schema": SCHEMA,
                 "source_partial_elf_sha256": inputs[0][3],
                 "candidate_count": len(candidates),
+                "candidate_archive_count":
+                    sum(Path(candidate).suffix == ".a" for candidate in candidates),
+                "archive_selection_strategy": "single_pass_user_order",
                 "original_strong_import_count": len(original),
                 "original_strong_imports_resolved_by_ld_r":
                     len(original - updated),

@@ -90,6 +90,37 @@ class NativeIncrementalRelinkTests(unittest.TestCase):
         for name in ("missing", "needed", "followup"):
             self.assertNotIn(name, json.dumps(report))
 
+    def test_actual_archive_link_order_changes_unresolved_count(self):
+        """GNU ld scans archives in supplied order, not all possible orders."""
+        needed = self.compile(
+            "ordered-needed",
+            "extern int followup(void);\n"
+            "int needed(void) { return followup(); }\n")
+        followup = self.compile(
+            "ordered-followup", "int followup(void) { return 17; }\n")
+        first = self.archive("ordered-needed", needed)
+        second = self.archive("ordered-followup", followup)
+        ordered = probe_private_incremental_link(
+            self.manifest, self.base, [first, second],
+            self.root / "ordered-link")
+        reversed_order = probe_private_incremental_link(
+            self.manifest, self.base, [second, first],
+            self.root / "reversed-link")
+        for report in (ordered, reversed_order):
+            self.assertEqual(report["candidate_archive_count"], 2)
+            self.assertEqual(
+                report["archive_selection_strategy"], "single_pass_user_order")
+            self.assertEqual(report["original_strong_imports_resolved_by_ld_r"], 1)
+            self.assertEqual(report["original_strong_imports_remaining_after_ld_r"], 1)
+            self.assertNotIn("followup", json.dumps(report))
+            self.assertNotIn("needed", json.dumps(report))
+        self.assertEqual(
+            ordered["new_strong_imports_introduced_by_candidates"], 0)
+        self.assertEqual(
+            reversed_order["new_strong_imports_introduced_by_candidates"], 1)
+        self.assertEqual(ordered["final_strong_import_count"], 1)
+        self.assertEqual(reversed_order["final_strong_import_count"], 2)
+
     def test_direct_object_removes_required_import_without_new_ones(self):
         provider = self.compile("needed-direct", "int needed(void) {return 42;}\n")
         report = probe_private_incremental_link(
