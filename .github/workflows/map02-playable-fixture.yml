@@ -1,0 +1,65 @@
+name: MAP02 playable asset-free battle fixture
+on:
+  pull_request:
+    paths:
+      - 'source/map02_battle_fixture.h'
+      - 'tests/test_map02_battle_fixture.c'
+      - 'source/main.c'
+      - 'Makefile'
+      - '.github/workflows/map02-playable-fixture.yml'
+  push:
+    paths:
+      - 'source/map02_battle_fixture.h'
+      - 'tests/test_map02_battle_fixture.c'
+      - 'source/main.c'
+      - 'Makefile'
+      - '.github/workflows/map02-playable-fixture.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  portable-battle:
+    name: Portable 8x6 MAP02 fixture (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and execute real battle-state transitions
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -Wall -Wextra -Werror -pedantic -O2 tests/test_map02_battle_fixture.c -o /tmp/vh-map02-battle
+          /tmp/vh-map02-battle
+          "$CC" -std=c11 -Wall -Wextra -Werror -pedantic -O0 tests/test_map02_battle_fixture.c -o /tmp/vh-map02-battle-debug
+          /tmp/vh-map02-battle-debug
+          echo 'VH_MAP02_BATTLE_FIXTURE_HOST_PASS board=8x6 allies=2 enemies=2 bfs=1 ai=1 victory=1 defeat=1'
+  switch-nro:
+    name: Build libnx NRO with optional MAP02 battle mode
+    runs-on: ubuntu-22.04
+    container:
+      image: devkitpro/devkita64:latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and verify actual Nintendo Switch homebrew NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/opt/devkitpro/devkitA64/bin:/opt/devkitpro/tools/bin:$PATH"
+          make build/test_map02_battle_fixture
+          ./build/test_map02_battle_fixture
+          make verify-nro
+          test -s build/vandal-hearts-prototype.nro
+          echo 'VH_MAP02_BATTLE_FIXTURE_NRO_PASS optional_mode=minus existing_smoke_mode=preserved'
+      - name: Upload built NRO for emulator testing
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-playable-fixture-nro
+          path: build/vandal-hearts-prototype.nro
+          if-no-files-found: error
