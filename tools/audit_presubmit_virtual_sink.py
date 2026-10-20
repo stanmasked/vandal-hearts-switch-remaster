@@ -94,6 +94,21 @@ def audit(receipt, raw, max_seconds=20):
                 if at not in others[i]: break
             else: matches.add(first)
     exact=bool(matches)
+    # The first real NeXium monitor proved that every independent page
+    # occurred, yet the eight were not perfectly contiguous. Report the
+    # observed offsets and signed gaps WITHOUT guessing the cause. With
+    # duplicated/absent page fingerprints a single offset is ambiguous.
+    unique_offsets=[x[0] if len(x)==1 else None for x in matched]
+    all_unique=all(x is not None for x in unique_offsets)
+    order_preserved=(all(unique_offsets[i]<unique_offsets[i+1]
+                         for i in range(len(unique_offsets)-1))
+                     if all_unique else None)
+    gaps=[(unique_offsets[i+1]-unique_offsets[i]-pages[i]["frames"])
+          if unique_offsets[i] is not None and unique_offsets[i+1] is not None
+          else None for i in range(len(pages)-1)]
+    # Positive = extra PCM frames between complete exact page spans;
+    # negative = overlapping or reordered spans, not 'negative latency'.
+    gap_ms=[round(1000*g/RATE,6) if g is not None else None for g in gaps]
     signal=array.array("h")
     signal.frombytes(raw)
     if sys.byteorder!="little": signal.byteswap()
@@ -109,6 +124,16 @@ def audit(receipt, raw, max_seconds=20):
         "capture_duration_seconds":round(total/RATE,6),
         "capture_rms":round(rms,6),"monitor_samples_ge_256":count,
         "per_page_matches":[len(x) for x in matched],
+        "unique_page_frame_offsets":unique_offsets,
+        "all_eight_pages_found_once":all_unique,
+        "unique_page_order_preserved":order_preserved,
+        "inter_page_gap_frames":gaps,
+        "inter_page_gap_ms":gap_ms,
+        "total_positive_gap_frames":(
+            sum(max(0,g) for g in gaps) if all_unique else None),
+        "all_pages_contiguous_in_order":(
+            all(g==0 for g in gaps) and bool(order_preserved)
+            if all_unique else False),
         "crc_collision_candidates_hashed":examined,
         "exact_contiguous_chain_count":len(matches),
         "first_exact_chain_frame_offset":first,
