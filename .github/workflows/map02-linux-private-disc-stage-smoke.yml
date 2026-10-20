@@ -42,7 +42,7 @@ jobs:
       - name: Compile staged-copy and receipt modules
         run: |
           python -m py_compile tools/stage_map02_private_disc.py tools/emit_map02_local_disc_receipt.py tools/check_map02_local_disc_receipt.py
-      - name: Execute 43 asset-free owned-disc test cases
+      - name: Execute 45 asset-free owned-disc test cases
         run: |
           python -m unittest -v \
             tests.test_check_map02_local_disc_receipt \

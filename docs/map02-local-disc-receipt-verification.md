@@ -132,6 +132,12 @@ only after confirming that no earlier copy process is running. Avoid
 uploading a pending folder or its contents to any cloud service.
 Other projects' unrelated `.pending` files are left alone.
 
+**Mounted CUE stability:** After copying the full source BIN, the tool
+reopens the mounted CUE read-only and checks both its original file identity
+and byte-for-byte contents. If Google Drive synchronization replaces or
+changes the CUE during the long copy, staging fails before publication and
+cleans up only its own temporary data. The original Drive CUE is not edited.
+
 The stage command does **not** emit game bytes, upload files, make the original
 Drive files public or change their permissions. Only `$LOCAL/receipt`
 contains the generated digest-only JSON; keep both it and the 665-MB local
