@@ -4,6 +4,9 @@ on:
     paths:
       - 'source/map02_roster8.h'
       - 'tests/test_map02_roster8.c'
+      - 'tests/test_map02_roster8_source.py'
+      - 'tools/generate_map02_roster8.py'
+      - 'data/map02_roster8_4v4.json'
       - 'source/map02_battle_fixture.h'
       - 'source/map02_encounter_data.h'
       - 'source/map02_encounter_b_data.h'
@@ -35,6 +38,8 @@ jobs:
           /tmp/vh-map02-roster8-ubsan
           "$CC" -std=c11 -O0 -Wall -Wextra -Werror -pedantic tests/test_map02_two_scenarios.c -o /tmp/vh-map02-two-maps
           /tmp/vh-map02-two-maps
+          python3 -m unittest discover -s tests -p 'test_map02_roster8_source.py' -v
+          python3 tools/generate_map02_roster8.py --output /tmp/vh-map02-roster8-generated.h
   legacy-switch:
     name: Preserve baseline Nintendo Switch NRO
     runs-on: ubuntu-22.04
