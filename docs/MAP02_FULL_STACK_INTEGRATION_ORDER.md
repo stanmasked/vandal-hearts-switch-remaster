@@ -15,6 +15,12 @@ PS1 game. No physical Nintendo Switch test or PS1 asset verification is claimed.
   candidate SHA. Verify all 26 PR heads, 25 edges, root `main` ancestry,
   four protected original fixture files, no added binary/retail images, and
   zero Git branch or worktree merges.
+- In the **same CI run**, query GitHub's authenticated read-only pull-request
+  API for all 26 PRs. Require every PR to remain open, unmerged and Draft,
+  with pinned head/base branch names, head SHAs, source repository and base
+  SHAs. For #265, its base SHA is the historical merge-base of #262/#265,
+  not the later #262 head. Any network failure or metadata mismatch blocks
+  the audit; stored history alone is insufficient evidence of PR state.
 - Require `.github/workflows/map02-cold-restart.yml` on the exact candidate:
   adversarial Python tests; source-pinned devkitPro/libnx NRO; two genuinely
   terminated NeXium processes and 24 PNGs; exact board/HUD comparisons; and
@@ -81,7 +87,9 @@ For each PR, beginning at #241:
 
 ## Stop conditions and remaining gates
 
-**Stop** if upstream refs move, `main` advances unexpectedly, any
+**Stop** if a PR is closed, marked ready, retargeted, moved to another
+repository or updated to an unpinned head/base SHA; if GitHub metadata cannot
+be retrieved; if upstream refs move, `main` advances unexpectedly, any
 reconciliation changes the #265 tree, protected fixtures change, source
 receipts disagree, native tests fail, or genuine NeXium PNG comparison fails.
 The existing artifact-free playable demo is **not** evidence for retail PS1
