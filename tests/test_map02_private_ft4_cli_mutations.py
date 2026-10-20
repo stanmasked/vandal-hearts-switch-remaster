@@ -57,7 +57,7 @@ class Map02PrivateFt4MutationCliTests(unittest.TestCase):
             "gpu-native-events.jsonl", "gpu-vram-000.bin",
             "gpu-face-timeline-join.json", "map02.decoded.bin",
             "perimeter_xy", "bgr555", "camera", "31978", "801f",
-            "\\"source\\":", "\\"texture\\":",
+            '"source":', '"texture":',
         ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, combined)
