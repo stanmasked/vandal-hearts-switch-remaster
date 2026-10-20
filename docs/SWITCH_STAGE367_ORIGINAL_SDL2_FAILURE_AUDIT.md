@@ -40,5 +40,4 @@ of an **external dependency failure**, not remediation of the devkitPro
 mirror, and it cannot verify SDL2 music compilation, audibility on
 physical Nintendo Switch, or explain the historical `0xEA01` wait.
 
-Stage367 is not considered **verified** until the independent real
-archive workflow completes with a successful verdict.
+**Stage367 confirmed:** the independent real-archive [GitHub Actions #39385583138](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39385583138) passed all **6/6** negative-control tests and reaudited the actual failed original installer job and both preserved files. The independent verifier returned `STAGE367_ORIGINAL_SDL2_HTTP403_EVIDENCE_REAUDITED_CI_STILL_FAILED`. The resulting JSON audit is retained as [artifact #12246514516](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39385583138/artifacts/12246514516). This confirms the authenticity and retention of the external failure, not successful SDL2 compilation.
