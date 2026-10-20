@@ -5,7 +5,7 @@ on:
     paths:
       - '.github/workflows/map02-cpal-lifecycle-guest-21ms.yml'
       - 'tools/run_map02_lifecycle_guest_21ms.sh'
-      - 'docs/MAP02_CPAL_LIFECYCLE_GUEST_22MS.md'
+      - 'docs/MAP02_CPAL_LIFECYCLE_GUEST_21MS.md'
   workflow_dispatch:
 
 permissions:
@@ -42,7 +42,7 @@ jobs:
           allowed={
               ".github/workflows/map02-cpal-lifecycle-guest-21ms.yml",
               "tools/run_map02_lifecycle_guest_21ms.sh",
-              "docs/MAP02_CPAL_LIFECYCLE_GUEST_22MS.md",
+              "docs/MAP02_CPAL_LIFECYCLE_GUEST_21MS.md",
           }
           assert paths and paths<=allowed,sorted(paths-allowed)
           PY
