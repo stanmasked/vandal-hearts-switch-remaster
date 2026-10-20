@@ -26,7 +26,12 @@ The producer reads the local BIN only through owner-private `0600`
 file descriptors, hashes its full 664,849,248 bytes, checks the pinned
 US-layout boot sector plus 12 `M_MAP02.PRS` sectors (including Form 1
 CD-XA EDC), verifies the prior RU v1.6 compressed PRS SHA-256 and
-creates a digest-only JSON in a pinned `0700` directory. It then runs
+writes and fsyncs an owner-only temporary JSON in a pinned `0700` directory,
+then atomically creates the final receipt name using an exclusive same-directory
+hard link. Only a **complete** JSON is visible at the final name; a link,
+fsync, or directory-identity failure removes the publisher's own files
+without touching unrelated files. The filesystem must support same-directory
+hard links and directory fsync; there is no unsafe fallback. It then runs
 the separate receipt validator before reporting success. The source
 sector bytes, source filename and local paths are not included in the
 JSON. A private read/write on this user's computer is required; public
