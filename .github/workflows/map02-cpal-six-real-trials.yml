@@ -68,7 +68,6 @@ jobs:
           # Prevent silently falling back to the NeXium GUI Dynarmic default.
           grep -Fx 'export NEXIUM_CPU_BACKEND=rustarmic' "tools/run_map02_new_cpal_guest_${VH_HINT}ms.sh"
           grep -Fx "export PULSE_LATENCY_MSEC=${VH_HINT}" "tools/run_map02_new_cpal_guest_${VH_HINT}ms.sh"
-          python3 -m unittest discover -s tests -p 'test_audit_map02_cpal_six_real_trials.py' -v
           python3 - <<'PY'
           from pathlib import Path
           old=Path("tools/run_map02_new_cpal_guest_22ms.sh").read_text()
@@ -141,7 +140,7 @@ jobs:
               "physical_switch_speaker_proven":False,
           }
           Path("evidence/matrix-identity.json").write_text(
-              json.dumps(matrix,sort_keys=True,indent=2)+"\\n")
+              json.dumps(matrix,sort_keys=True,indent=2)+"\n")
           PY
       - name: Install audio/graphics libraries for genuine guest optical and virtual PCM
         shell: bash
@@ -261,4 +260,104 @@ jobs:
         with:
           name: map02-stage283-hint${{ matrix.hint }}-repeat${{ matrix.repeat }}
           path: evidence/
+          if-no-files-found: warn
+
+  independent-six-archive-audit:
+    name: Re-decode real PNG, CPAL and PCM from all six hosted guest jobs
+    needs: [six-guest-trials]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pixel decoder and run sixteen ROM-free falsification tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_HEAD"
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends python3-pil
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_map02_cpal_six_real_trials.py' -v
+      - name: Collect all six immutable current-workflow evidence artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: map02-stage283-hint*
+          path: all-six
+          merge-multiple: false
+      - name: Reject missing or duplicated matrix jobs and validate original raw files
+        shell: bash
+        run: |
+          set -euo pipefail
+          for hint in 21 22; do
+            for repeat in 1 2 3; do
+              old="all-six/map02-stage283-hint$hint-repeat$repeat"
+              new="all-six/hint$hint-repeat$repeat"
+              test -d "$old"
+              test ! -e "$new"
+              mv "$old" "$new"
+              test -s "$new/guest-prejoin.png"
+              test -s "$new/guest-final.png"
+              test -s "$new/host-cpal-audioout-timeline.csv"
+              test -s "$new/virtual-pulse-48k-stereo-s16le.pcm"
+            done
+          done
+          mkdir -p stage283-results
+          python3 tools/audit_map02_cpal_six_real_trials.py \
+            --root all-six --run-id "$GITHUB_RUN_ID" \
+            --attempt "$GITHUB_RUN_ATTEMPT" \
+            --output stage283-results/six-real-guest-runs-audit.json
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          r=json.loads(Path("stage283-results/six-real-guest-runs-audit.json").read_text())
+          assert r["result"]!="UNVERIFIED"
+          assert len(r["trials"])==6
+          assert r["actual_ci_run_id"]==int(os.environ["GITHUB_RUN_ID"])
+          assert r["identical_binary_host_and_nro_across_six"] is True
+          assert r["all_actual_optical_png_cpal_csv_and_raw_pcm_redecoded"] is True
+          assert r["physical_nintendo_switch_audio_proven"] is False
+          print("Verified exact-source six-run result:",r["result"])
+          PY
+      - name: Preserve successful or contradictory six-trial scientific conclusions
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path("stage283-results/six-real-guest-runs-audit.json")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              print("### Stage283 six actual guest runs (3x21ms, 3x22ms)",file=out)
+              if not p.is_file():
+                  print("**UNVERIFIED**: missing or incomplete per-run guest archive.",file=out)
+              else:
+                  r=json.loads(p.read_text())
+                  print("Result: "+r["result"],file=out)
+                  if "trials" in r:
+                      print("| Hint | Repeat | Audout prejoin | CPAL callbacks | "
+                            "Kernel appends | Raw nonzero PCM16 | Optical final |",file=out)
+                      print("|---:|---:|---:|---:|---:|---:|---|",file=out)
+                      for v in r["trials"]:
+                          print(f'| {v["hint_ms"]} | {v["repeat"]} | '
+                                f'{v["prejoin_guest_audout_entries"]}/'
+                                f'{v["prejoin_guest_audout_returns"]} | '
+                                f'{v["cpal_callback_entries"]}/'
+                                f'{v["cpal_callback_returns"]} | '
+                                f'{v["audioout_appends"]} | '
+                                f'{v["nonzero_virtual_pcm16"]} | '
+                                f'{v["strict_guest_result"]} |',file=out)
+                  print("Six runs with one host SHA do not establish a permanent "
+                        "deadlock, CPAL root cause, physical Switch audio or "
+                        "measured hardware callback latency.",file=out)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage283-independent-six-archive-receipt
+          path: stage283-results/
           if-no-files-found: warn
