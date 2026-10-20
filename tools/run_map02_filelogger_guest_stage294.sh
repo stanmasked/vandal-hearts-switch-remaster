@@ -26,11 +26,6 @@ export NEXIUM_X11=1
 # Otherwise the GUI/audio CPAL can run without launching the research NRO.
 export NEXIUM_CPU_BACKEND=rustarmic
 export NEXIUM_LOG_LEVEL=info
-# Use the documented NeXium root override to pin the GUI FileLogger
-# to the SAME isolated per-run directory already expected by the auditor.
-# Do not change the immutable guest NRO, ELF or audio parameters.
-export NEXIUM_DATA_ROOT="$HOME/.config/NeXium"
-mkdir -p "$NEXIUM_DATA_ROOT"
 export LIBGL_ALWAYS_SOFTWARE=1
 export WGPU_BACKEND=vulkan
 icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
@@ -47,6 +42,11 @@ sleep 1; kill -0 "$capture"
 : "${VH_HINT:?21 or 22 requested hint required}"
 [[ "$VH_HINT" = 21 || "$VH_HINT" = 22 ]]
 export PULSE_LATENCY_MSEC="$VH_HINT"
+# Use the documented NeXium root override to pin the GUI FileLogger
+# to the SAME isolated per-run directory already expected by the auditor.
+# Do not change the immutable guest NRO, ELF or audio parameters.
+export NEXIUM_DATA_ROOT="$HOME/.config/NeXium"
+mkdir -p "$NEXIUM_DATA_ROOT"
 export VH_MAP02_CPAL_TRACE_PATH="$MAP02_EVIDENCE/host-cpal-audioout-timeline.csv"
 timeout --kill-after=5s 75s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
   set -euo pipefail
