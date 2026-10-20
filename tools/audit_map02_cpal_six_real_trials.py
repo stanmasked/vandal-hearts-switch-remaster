@@ -86,11 +86,16 @@ def verify_run(folder,hint,repeat,run_id,attempt):
             and manifest.get("hint_ms")==hint and manifest.get("repeat")==repeat
             and manifest.get("run_id")==run_id and manifest.get("attempt")==attempt,
             "Matrix evidence metadata does not match verified job identity")
-    require(manifest.get("expected_host_elf_sha256")==HOST
-            and manifest.get("expected_nro_sha256")==NRO
-            and manifest.get("runner_os")=="Linux"
-            and type(manifest.get("job_label")) is str,
-            "Matrix identity/runner or original executable mismatch")
+    require(manifest.get("expected_host_elf_sha256")==HOST,
+            f"{hint}/{repeat}: compiled host SHA declared by matrix differs")
+    require(manifest.get("expected_nro_sha256")==NRO,
+            f"{hint}/{repeat}: generated guest NRO SHA declared by matrix differs")
+    require(manifest.get("runner_os")=="Linux",
+            f"{hint}/{repeat}: matrix runner OS is not Linux")
+    require(type(manifest.get("job_label")) is str,
+            f"{hint}/{repeat}: nonstring matrix job label")
+    require(manifest["job_label"]==f"hint{hint}-repeat{repeat}",
+            f"{hint}/{repeat}: wrong job label within archived matrix receipt")
     provenance=data(folder/"pinned-host-and-nro.json")
     require(provenance["schema"]==f"vh-map02-stage{281 if hint==21 else 280}-guest-host-pair/v1",
             "Inherited guest provenance schema mismatch")
