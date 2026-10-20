@@ -19,8 +19,13 @@ private destination, and byte-compares the staged CUE with the source CUE,
 **before** publishing the folder. A mismatch, truncation or changed inode
 causes cleanup; the observed source and staged-image hashes must match.
 It publishes the complete copy folder only after copying and syncing the
-files, refuses to overwrite existing folders and removes an incomplete
-temporary folder if copying fails. Allow at least 1 GiB free locally.
+files, using an **atomic no-replace directory rename**: macOS
+`renameatx_np(RENAME_EXCL)` or Linux `renameat2(RENAME_NOREPLACE)`.
+This prevents a second process from creating an empty destination between
+the preflight check and publication; an existing directory or symlink is
+never overwritten. Unsupported filesystems fail closed without falling back
+to `os.rename`. An incomplete temporary folder is removed if copying or
+publication fails. Allow at least 1 GiB free locally.
 
 The following is for **when the Drive files are mounted on your Mac**;
 replace the two source placeholders with actual, existing filesystem paths.
