@@ -76,6 +76,10 @@ class Map02OfflineKitTests(unittest.TestCase):
                 )
                 self.assertIn(PUBLIC_NAME, names)
                 self.assertIn("run-selfcheck.sh", names)
+                self.assertIn("verify-kit.py", names)
+                self.assertIn("run-selfcheck.sh", manifest["files"])
+                self.assertIn("verify-kit.py", manifest["files"])
+                self.assertIn("README.md", manifest["files"])
                 for name, expected in manifest["files"].items():
                     self.assertIn(name, names)
                     self.assertEqual(
@@ -84,6 +88,8 @@ class Map02OfflineKitTests(unittest.TestCase):
                 self.assertNotIn("source/main.c", names)
                 runner = archive.read("run-selfcheck.sh").decode()
                 self.assertIn("--deployment-target 10.15", runner)
+                self.assertLess(runner.index("python3 verify-kit.py"), runner.index("python3 -m tools."))
+                self.assertIn("PYTHONDONTWRITEBYTECODE=1", runner)
                 self.assertNotIn("curl ", runner)
                 self.assertNotIn("wget ", runner)
                 self.assertNotIn("git clone", runner)
