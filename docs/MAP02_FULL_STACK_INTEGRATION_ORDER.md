@@ -90,11 +90,17 @@ branch, tag, worktree, index, remote repository, or PR is changed**. The final
 simulated tree must equal the checked-out PR #352 tree, byte for byte.
 
 The required CI produces `virtual-merge.json` listing all 26 source commits,
-their expected/rehearsed tree hashes, and ephemeral commit hashes. Five
-synthetic tests prove successful linear/copied-history replay and rejection
-of conflicts, silent revived files and incorrect final heads. A successful
-rehearsal is an integration *safety proof for the pinned snapshot*, not a
-claim that any branch was merged, or that its tests passed after a real merge.
+their expected/rehearsed tree hashes, and ephemeral commit hashes. The report
+also records **every intermediate changed path** (added, modified, deleted or
+type-changed) from each simulated merge, not just the final merged tree.
+Added/modified/type-changed retail ROM, game-image, archive, audio or screenshot
+paths are rejected **even if a later PR deletes them**. Thus a final-tree-only
+scan cannot hide transient unwanted content. Eight synthetic tests cover
+linear/copied-history replay, detached CI checkouts, conflicts, revived files,
+incorrect final heads, temporary retail assets, and per-step deletions.
+A successful rehearsal is an integration *safety proof for the pinned
+snapshot*, not a claim that any branch was merged, or that its tests passed
+after a real merge.
 
 ## Human-gated integration procedure
 
