@@ -16,8 +16,24 @@ permissions:
   contents: read
   actions: read
 jobs:
+  validate-source:
+    name: Validate Stage371 isolated-source invariants before building NRO
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject duplicate, forged or cross-run original guest evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_stage371_two_original_wait_trials.py' -v
+          python3 -m py_compile tools/audit_stage371_two_original_wait_trials.py
+          bash -n tools/capture_nexium_scene_audio.sh
+          echo 'Stage371 pre-build source invariants passed; real NeXium evidence still required.' >> "$GITHUB_STEP_SUMMARY"
   build-current-nro:
     name: Build one original libnx NRO without SDL2
+    needs: validate-source
     runs-on: ubuntu-latest
     container:
       image: devkitpro/devkita64:latest
