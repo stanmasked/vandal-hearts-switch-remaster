@@ -91,6 +91,40 @@ class ColdRestartOracle(unittest.TestCase):
                 "101\n202", "25001", "25002"]):
             self.assertEqual(proof.find_window_for_process(25002), "202")
 
+    def test_manifest_has_24_captures_with_matching_cold_boot_rgb(self):
+        with tempfile.TemporaryDirectory(prefix="vh-cold-manifest-") as tmp:
+            folder = Path(tmp)
+            fixtures(folder)
+            proof.verify(folder)
+            manifest = proof.evidence_manifest(folder)
+            self.assertEqual(manifest["captures_expected"], 24)
+            self.assertEqual(len(manifest["captures"]), 24)
+            for stage in proof.STAGES:
+                one = next(c for c in manifest["captures"]
+                           if c["boot"] == 1 and c["stage"] == stage)
+                two = next(c for c in manifest["captures"]
+                           if c["boot"] == 2 and c["stage"] == stage)
+                self.assertEqual(one["board_rgb_sha256"],
+                                 two["board_rgb_sha256"])
+                self.assertEqual(one["guard_hud_rgb_sha256"],
+                                 two["guard_hud_rgb_sha256"])
+                self.assertEqual(len(one["png_sha256"]), 64)
+
+    def test_manifest_fingerprints_single_channel_difference(self):
+        with tempfile.TemporaryDirectory(prefix="vh-cold-manifest-") as tmp:
+            folder = Path(tmp)
+            fixtures(folder)
+            self.change(folder, "boot2_bow_ready",
+                        lambda im: self.change_one_rgb_channel(im, 740, 445))
+            manifest = proof.evidence_manifest(folder)
+            first = next(c for c in manifest["captures"]
+                         if c["boot"] == 1 and c["stage"] == "bow_ready")
+            second = next(c for c in manifest["captures"]
+                          if c["boot"] == 2 and c["stage"] == "bow_ready")
+            self.assertNotEqual(first["png_sha256"], second["png_sha256"])
+            self.assertNotEqual(first["board_rgb_sha256"],
+                                second["board_rgb_sha256"])
+
     def test_valid_fake_reference(self):
         self.case()
 
