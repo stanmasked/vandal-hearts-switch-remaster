@@ -5,6 +5,8 @@ Matches the pinned PC-port's 4-byte compressed-byte-count header and LZ
 decoder. Reports metadata and hashes only, never writes proprietary bytes.
 A matching SHA-256 proves local byte identity, not visible GPU pixels.
 """
+from __future__ import annotations
+
 import argparse
 import hashlib
 import json
