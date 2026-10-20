@@ -85,8 +85,17 @@ class Stage371Tests(unittest.TestCase):
                                           b"released_count_reported,0"))
         with self.assertRaises(ValueError):self.verify()
         path.write_bytes(previous)
-        (sd/"audio-exit-wait-descriptor-001.csv").write_bytes(previous)
+        extra=sd/"audio-exit-wait-descriptor-001.csv"
+        extra.write_bytes(previous)
         with self.assertRaises(ValueError):self.verify()
+        extra.unlink()
+        for name in ("audio-exit-tail-reason-000.csv",
+                     "audio-exit-tail-wait-result-000.csv"):
+            with self.subTest(name=name):
+                extra=sd/name.replace("-000.csv","-001.csv")
+                extra.write_bytes((sd/name).read_bytes())
+                with self.assertRaises(ValueError):self.verify()
+                extra.unlink()
     def test_linked_capture_or_wrong_optical_dimensions_rejected(self):
         shot=self.two/"scene-optical-trace.png"
         content=shot.read_bytes()
