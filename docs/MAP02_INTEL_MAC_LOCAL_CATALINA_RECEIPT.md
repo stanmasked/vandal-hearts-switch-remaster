@@ -25,8 +25,28 @@ This rejects any other host **before running the expensive tests**. The `-B` swi
 
 The exact field `actual_catalina_10_15_7_selfcheck_passed` can be true **only** if this code observes `Darwin/x86_64`, exactly macOS 10.15.7 and successfully completes the full suite on that host. It is a **self-reported local observation**, not a cryptographically trusted attestation or proof that the operating system has not been tampered with. The synthetic fixtures do not establish genuine retail Vandal Hearts image fidelity.
 
+## Triple-source Catalina host identity check
+
+Before importing or running private-format diagnostics, the local tool now
+cross-checks three independent *reported* indicators: Python's
+`platform.mac_ver()`, Apple's absolute `/usr/bin/sw_vers -productVersion`,
+and the major release of the running Darwin kernel
+(`platform.release()`). All three must agree. Catalina 10.15.x must
+correspond to **Darwin 19**; for macOS 11 or newer, the expected kernel
+major is macOS major + 9 (for example macOS 15 -> Darwin 24).
+A mismatched/failed `sw_vers`, malformed kernel version, Apple Silicon
+host, unexpectedly larger native output, or incompatible version is refused
+**before** executing the 49 synthetic FT4 tests.
+
+The public receipt stores only the bounded OS version and Darwin kernel
+**major**, plus boolean agreement and count. It deliberately does not
+record a kernel build string, machine serial, user account, absolute path,
+IP, or anything from original PS1 images. Agreement between these readings
+is not cryptographic proof of physical hardware identity; the OS itself
+could be modified, and all measurements are local self-report.
+
 ## Continuous integration verification
 
-GitHub's available `macos-15-intel` runners (Python 3.9 and 3.11) exercise the real new command from the authenticated extracted kit; they must produce a general compatibility receipt and **strictly reject** the Catalina-only switch. The Linux job tests nine mocked contracts and denies Linux or Apple Silicon pretending to be Intel macOS. Mocked Catalina fixture acceptance is merely a test of the rule, **not evidence that Catalina ran**.
+GitHub's available `macos-15-intel` runners (Python 3.9 and 3.11) exercise the real new command from the authenticated extracted kit; they must produce a general compatibility receipt and **strictly reject** the Catalina-only switch. The Linux job tests fifteen mocked contracts and denies Linux or Apple Silicon pretending to be Intel macOS. Mocked Catalina fixture acceptance is merely a test of the rule, **not evidence that Catalina ran**.
 
 No owner's external drive, original PS1 BIN/CUE, decoded MAP02 sectors, game textures, true GPU captures, private user paths or screenshots are required or uploaded. `main` is unchanged; keep this child PR Draft and unmerged until a real local test can be reviewed.

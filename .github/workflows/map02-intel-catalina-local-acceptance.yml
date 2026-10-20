@@ -19,14 +19,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Test nine bounded receipts and strict-host refusal
+      - name: Test fifteen bounded receipts and triple-source host refusal
         shell: bash
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests \
             -p 'test_map02_intel_mac_local_acceptance.py' -v \
             2>&1 | tee /tmp/vh-map02-catalina-local-receipt-tests.log
-          grep -F 'Ran 9 tests' /tmp/vh-map02-catalina-local-receipt-tests.log
+          grep -F 'Ran 15 tests' /tmp/vh-map02-catalina-local-receipt-tests.log
           if python3 -m tools.map02_intel_mac_local_acceptance \
                 --require-catalina-10-15-7 \
                 > /tmp/vh-map02-catalina-linux.out \
@@ -36,7 +36,7 @@ jobs:
           test ! -s /tmp/vh-map02-catalina-linux.out
           grep -F 'Intel Mac local offline MAP02 compatibility not verified' \
             /tmp/vh-map02-catalina-linux.err
-          echo 'VH_MAP02_CATALINA_LOCAL_RECEIPT_NEGATIVE_PASS methods=9 actual_catalina=0 private=0'
+          echo 'VH_MAP02_CATALINA_LOCAL_RECEIPT_NEGATIVE_PASS methods=15 actual_catalina=0 private=0'
 
   mac-intel-local-receipt:
     name: Intel Mac synthetic receipt, do not spoof Catalina (Python ${{ matrix.python }})
@@ -72,7 +72,7 @@ jobs:
           python -m unittest discover -s tests \
             -p 'test_map02_intel_mac_local_acceptance.py' -v \
             2>&1 | tee /tmp/vh-map02-local-mac-unit.log
-          grep -F 'Ran 9 tests' /tmp/vh-map02-local-mac-unit.log
+          grep -F 'Ran 15 tests' /tmp/vh-map02-local-mac-unit.log
           python -m tools.build_map02_intel_mac_offline_kit \
             upstream/platform/pc/src/pc_raster.c \
             /tmp/vh-map02-local-host-acceptance.zip \
@@ -93,13 +93,16 @@ jobs:
           assert r['host_os']=='macOS'
           assert r['host_architecture']=='x86_64'
           assert r['host_macos_version']!='10.15.7'
+          assert r['host_os_sources_agree'] is True
+          assert r['host_os_sources']==3
+          assert r['darwin_kernel_major']==24
           assert r['synthetic_tests_verified']==49
           assert r['compiled_pc_helpers_verified']==3
           assert r['c11_macho_minimum']=='10.15'
           assert r['actual_catalina_10_15_7_selfcheck_passed'] is False
           assert r['owner_ps1_disc_authenticated'] is False
           assert r['independent_trusted_machine_attestation'] is False
-          print('VH_MAP02_INTEL_MAC_LOCAL_RECEIPT_PASS python=${{ matrix.python }} tests=49 helpers=3 real_catalina=0 owned_disc=0')
+          print('VH_MAP02_INTEL_MAC_LOCAL_RECEIPT_PASS kernel=Darwin24 sources=3 python=${{ matrix.python }} tests=49 helpers=3 real_catalina=0 owned_disc=0')
           PY
           if python -B -m tools.map02_intel_mac_local_acceptance \
               --require-catalina-10-15-7 \

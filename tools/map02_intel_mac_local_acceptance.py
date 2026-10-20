@@ -35,6 +35,49 @@ def bounded_version(value: str) -> str:
     return value
 
 
+def inspect_host_identity() -> dict:
+    """Correlate Python, /usr/bin/sw_vers and Darwin kernel before testing.
+
+    Checks consistency rather than hardware authenticity. No serial number,
+    hostname, username, path or full kernel patch release is recorded.
+    """
+    if platform.system() != "Darwin" or platform.machine() != "x86_64":
+        raise ValueError("Intel macOS host required")
+    python_version = bounded_version(platform.mac_ver()[0])
+    kernel = platform.release()
+    if not isinstance(kernel, str):
+        raise ValueError("invalid Darwin kernel release")
+    parts = kernel.split(".")
+    if len(parts) < 2 or not all(part.isdigit() and 1 <= len(part) <= 3 for part in parts):
+        raise ValueError("invalid Darwin kernel release")
+    major = int(parts[0])
+    system_version = subprocess.run(
+        ["/usr/bin/sw_vers", "-productVersion"],
+        capture_output=True, text=True, timeout=10, check=False,
+    )
+    if (
+        system_version.returncode != 0 or system_version.stderr
+        or len(system_version.stdout) > 32
+    ):
+        raise ValueError("native macOS productVersion unavailable")
+    native_version = bounded_version(system_version.stdout.strip())
+    if python_version != native_version:
+        raise ValueError("Python and native macOS versions disagree")
+    macos_major = int(native_version.split(".")[0])
+    macos_minor = int(native_version.split(".")[1])
+    expected_kernel = 19 if (macos_major, macos_minor) == (10, 15) else (
+        macos_major + 9 if macos_major >= 11 else -1
+    )
+    if major != expected_kernel:
+        raise ValueError("macOS release inconsistent with Darwin kernel")
+    return {
+        "macos_version": native_version,
+        "darwin_kernel_major": major,
+        "host_os_sources_agree": True,
+        "host_os_sources": 3,
+    }
+
+
 def validate_json_stream(value: str) -> tuple:
     """Accept exactly two JSON documents; never parse arbitrary stdout."""
     if not isinstance(value, str) or len(value) > MAX_TEST_OUTPUT:
@@ -114,8 +157,9 @@ def local_acceptance(*, require_catalina: bool = False) -> dict:
         raise ValueError("Intel macOS host required")
     if sys.version_info < (3, 9):
         raise ValueError("Python 3.9 or newer required")
-    host_version = bounded_version(platform.mac_ver()[0])
-    actual_catalina = host_version == CATALINA
+    host = inspect_host_identity()
+    host_version = host["macos_version"]
+    actual_catalina = host_version == CATALINA and host["darwin_kernel_major"] == 19
     if require_catalina and not actual_catalina:
         # A macOS 15 CI host cannot invent a successful Catalina receipt.
         raise ValueError("required actual macOS Catalina 10.15.7 not running")
@@ -142,11 +186,16 @@ def local_acceptance(*, require_catalina: bool = False) -> dict:
         raise ValueError("local offline FT4 checker failed")
     selfcheck, helpers = validate_json_stream(suite.stdout)
     aggregate = validated_results(integrity, selfcheck, helpers)
+    if selfcheck.get("catalina_10_15_runtime_executed") is not actual_catalina:
+        raise ValueError("native host evidence and C11 selfcheck disagree")
     return {
         "schema": SCHEMA,
         "host_os": "macOS",
         "host_architecture": "x86_64",
         "host_macos_version": host_version,
+        "darwin_kernel_major": host["darwin_kernel_major"],
+        "host_os_sources_agree": True,
+        "host_os_sources": host["host_os_sources"],
         "python_version": "{}.{}".format(*sys.version_info[:2]),
         "actual_catalina_10_15_7_selfcheck_passed": actual_catalina,
         "c11_macho_minimum": "10.15",
