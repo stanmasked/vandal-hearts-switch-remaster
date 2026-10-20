@@ -11,6 +11,8 @@ on:
       - 'tests/test_presubmit_optical_pixels.py'
       - 'tests/test_audit_presubmit_virtual_sink.py'
       - 'tools/audit_presubmit_virtual_sink.py'
+      - 'tools/report_pulse_sink_input_latency.py'
+      - 'tests/test_report_pulse_sink_input_latency.py'
       - 'source/vh_switch_game_audio.c'
       - 'source/vh_switch_game_audio.h'
       - 'source/main.c'
@@ -176,6 +178,11 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests -p 'test_audit_presubmit_virtual_sink.py' -v
+      - name: Test observed sink-input parser against false target selection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_report_pulse_sink_input_latency.py' -v
       - name: Download pinned NeXium nightly asset
         shell: bash
         env:
@@ -358,6 +365,15 @@ jobs:
               json.dumps(result,sort_keys=True,indent=2)+"\n")
           print(json.dumps(result,sort_keys=True,indent=2))
           PY
+      - name: Record the actual 48k stereo host-client buffer delay
+        shell: bash
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 tools/report_pulse_sink_input_latency.py \
+            --during runtime-evidence/pulse-sink-inputs-during.txt \
+            --after runtime-evidence/pulse-sink-inputs-after-input.txt \
+            --output runtime-evidence/pulse-sink-input-observed.json
       - name: Decode actual guest CRC and assert eight descriptor identities
         shell: bash
         run: |
