@@ -34,6 +34,7 @@ ANCHORS = {
 HELPERS = r'''
 #if defined(VH_MAP02_GPU_CAPTURE)
 #if defined(VH_MAP02_POSIX_CAPTURE_WINDOWS)
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
@@ -59,6 +60,26 @@ static int vh_capture_init;
 #if defined(VH_MAP02_POSIX_CAPTURE_WINDOWS)
 static unsigned vh_capture_windows;
 static int vh_capture_window_failed;
+/* Two-window private capture is independent of the caller's umask.
+ * Each new snapshot/upload/index is exclusive and 0600. JSONL may
+ * reopen the same owner-private regular file for append, never a link. */
+static FILE *VH_CapturePrivateWindowFile(const char *path, int append) {
+    const int flags = O_WRONLY | O_CREAT | O_NOFOLLOW | O_CLOEXEC |
+                      (append ? O_APPEND : O_EXCL);
+    int fd = open(path, flags, 0600);
+    struct stat st;
+    FILE *file;
+    if (fd < 0) return NULL;
+    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) ||
+        (st.st_mode & 0777) != 0600 || st.st_nlink != 1 ||
+        st.st_uid != geteuid()) {
+        (void)close(fd);
+        return NULL;
+    }
+    file = fdopen(fd, append ? "ab" : "wb");
+    if (!file) (void)close(fd);
+    return file;
+}
 static int VH_CapturePrivateRoot(void) {
     struct stat st;
     return vh_capture_dir && lstat(vh_capture_dir, &st) == 0 &&
@@ -157,6 +178,11 @@ static void VH_CaptureEvent(const char *phase, const char *operation, int transf
     if (n < 0 || (size_t)n >= sizeof snapshot_path) return;
     vram = PC_GpuVramBytes(&bytes);
     if (!vram || bytes != 1024u * 512u * 2u) return;
+#if defined(VH_MAP02_POSIX_CAPTURE_WINDOWS)
+    if (vh_capture_windows)
+        file = VH_CapturePrivateWindowFile(snapshot_path, 0);
+    else
+#endif
     file = fopen(snapshot_path, "wb");
     if (!file) return;
     {
@@ -173,6 +199,11 @@ static void VH_CaptureEvent(const char *phase, const char *operation, int transf
         n = snprintf(upload_path, sizeof upload_path, "%s/%s",
                      directory, upload_name);
         if (n < 0 || (size_t)n >= sizeof upload_path) return;
+#if defined(VH_MAP02_POSIX_CAPTURE_WINDOWS)
+        if (vh_capture_windows)
+            file = VH_CapturePrivateWindowFile(upload_path, 0);
+        else
+#endif
         file = fopen(upload_path, "wb");
         if (!file) return;
         /* Original PC binary layout is little-endian on supported hosts. */
@@ -184,6 +215,11 @@ static void VH_CaptureEvent(const char *phase, const char *operation, int transf
     }
     n = snprintf(log_path, sizeof log_path, "%s/gpu-native-events.jsonl", directory);
     if (n < 0 || (size_t)n >= sizeof log_path) return;
+#if defined(VH_MAP02_POSIX_CAPTURE_WINDOWS)
+    if (vh_capture_windows)
+        log = VH_CapturePrivateWindowFile(log_path, 1);
+    else
+#endif
     log = fopen(log_path, "ab");
     if (!log) return;
     fprintf(log, "{\"stage\":\"native_vram\",\"step\":%u,\"frame\":%u,"
@@ -249,7 +285,12 @@ static void VH_CaptureFinish(unsigned frame, int walk_finished) {
         n = snprintf(status_path, sizeof status_path, "%s/gpu-native-window-index.json",
                      vh_capture_dir);
         if (n <= 0 || (size_t)n >= sizeof status_path) return;
+        /* Index is private even under a permissive host umask. */
+#if defined(VH_MAP02_POSIX_CAPTURE_WINDOWS)
+        file = VH_CapturePrivateWindowFile(status_path, 0);
+#else
         file = fopen(status_path, "wx");
+#endif
         if (!file) return;
         balanced = vh_capture_before == vh_capture_after &&
                    vh_capture_seen == vh_capture_before + vh_capture_after;
