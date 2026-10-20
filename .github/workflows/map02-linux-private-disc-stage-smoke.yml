@@ -1,0 +1,50 @@
+name: MAP02 Linux private disc staging smoke
+
+on:
+  push:
+    branches:
+      - 'work/map02-linux-private-disc-stage-smoke'
+    paths:
+      - '.github/workflows/map02-linux-private-disc-stage-smoke.yml'
+      - 'tools/stage_map02_private_disc.py'
+      - 'tests/test_stage_map02_private_disc.py'
+      - 'tools/emit_map02_local_disc_receipt.py'
+      - 'tools/check_map02_local_disc_receipt.py'
+  pull_request:
+    paths:
+      - '.github/workflows/map02-linux-private-disc-stage-smoke.yml'
+      - 'tools/stage_map02_private_disc.py'
+      - 'tests/test_stage_map02_private_disc.py'
+      - 'tools/emit_map02_local_disc_receipt.py'
+      - 'tools/check_map02_local_disc_receipt.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  private-stage:
+    name: Stage original-sized metadata with synthetic sectors (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout source only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile staged-copy and receipt modules
+        run: |
+          python -m py_compile tools/stage_map02_private_disc.py tools/emit_map02_local_disc_receipt.py tools/check_map02_local_disc_receipt.py
+      - name: Execute 33 asset-free owned-disc test cases
+        run: |
+          python -m unittest -v \
+            tests.test_check_map02_local_disc_receipt \
+            tests.test_emit_map02_local_disc_receipt \
+            tests.test_stage_map02_private_disc
