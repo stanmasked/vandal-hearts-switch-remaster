@@ -24,6 +24,12 @@ NRO="371c9fd9f1f41ad87cbb5f7f96a3e5e9d56878f8cfff2bf7fea2c17120c2611b"
 NRO_SOURCE="04b20024a50327091cff430eb5c28e4722d4ec76"
 NRO_BUILD_RUN=39460035568
 
+# Independently authenticated content identities MUST be complete SHA-256 hex.
+# A shortened literal previously caused a correct six-run audit to fail closed.
+if (len(HOST)!=64 or len(NRO)!=64 or
+        any(ch not in "0123456789abcdef" for ch in HOST+NRO)):
+    raise ValueError("Expected full 64-hex SHA-256 host and NRO provenance constants")
+
 
 def require(value,reason):
     if not value:
