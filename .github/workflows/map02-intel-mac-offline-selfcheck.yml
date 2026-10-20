@@ -6,6 +6,7 @@ on:
       - 'tools/map02_intel_mac_offline_selfcheck.py'
       - 'tests/test_map02_intel_mac_offline_selfcheck.py'
       - 'tests/test_map02_private_ft4_cli_contract.py'
+      - 'tests/test_map02_private_ft4_cli_mutations.py'
       - 'tools/verify_map02_private_pc_native_ft4.py'
       - 'tools/verify_map02_private_timeline_pc_vram4.py'
       - 'source/map02_vram4_page.h'
@@ -63,12 +64,13 @@ jobs:
           assert r["private_format_timeline_tests_passed"] == 14
           assert r["private_format_native_ft4_tests_passed"] == 25
           assert r["private_format_real_cli_tests_passed"] == 3
-          assert r["synthetic_regressions_total"] == 42
+          assert r["private_format_adversarial_cli_tests_passed"] == 7
+          assert r["synthetic_regressions_total"] == 49
           assert r["synthetic_c11_ft4_frame_passed"] is True
           assert r["external_network_used"] is False
           assert r["owner_ps1_disc_or_capture_read"] is False
           assert r["real_retail_map02_authenticated"] is False
-          print("VH_MAP02_INTEL_OFFLINE_SELFCHECK_PASS python=${{ matrix.python }} synthetic=42 cli=3 real_disc=0")
+          print("VH_MAP02_INTEL_OFFLINE_SELFCHECK_PASS python=${{ matrix.python }} synthetic=49 cli=10 real_disc=0")
           PY
 
   negative-host:
