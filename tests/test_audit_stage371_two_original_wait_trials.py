@@ -84,6 +84,7 @@ class Stage371Tests(unittest.TestCase):
     def test_wrong_nro_source_run_attempt_rejected(self):
         for key,value in (("run_id",RUN+1),("git_sha","f"*40),
                           ("run_attempt",2),("nro_sha256","bad"),
+                          ("nro_sha256","g"*64),("nro_sha256","B"*64),
                           ("hardware_status","TESTED")):
             with self.subTest(key=key):
                 x=copy.deepcopy(self.preflight);x[key]=value

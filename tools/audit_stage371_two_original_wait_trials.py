@@ -161,6 +161,7 @@ def audit(run_id:int,git_sha:str,attempt:int,runner_temp:Path,
            and preflight["run_attempt"]==attempt and
            type(preflight.get("nro_sha256")) is str and
            len(preflight["nro_sha256"])==64 and
+           all(c in "0123456789abcdef" for c in preflight["nro_sha256"]) and
            type(preflight.get("nro_bytes")) is int and
            preflight["nro_bytes"]>=1024 and
            preflight.get("hardware_status")=="HARDWARE NOT TESTED",
