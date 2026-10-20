@@ -147,3 +147,46 @@ deliberately marks `same_owned_disc_used_by_executable_proven=false`,
 Actual pixel correctness requires the existing independently verified,
 same-session source/GTE/FT4/VRAM capture chain. Do not replace art assets
 or label a source patch correct on the strength of a PRS/DAT classification.
+
+
+## Direct read-only check against the user-owned RU image
+
+A stronger optional gate re-reads the **full pinned raw image** on the Mac
+instead of trusting a JSON-only source receipt. Execute it from this
+repository's root, keeping both inputs **outside the repo**:
+
+```sh
+python3 -m tools.verify_map02_ru_owned_disc \
+  --disc-image "/private/path/to/Vandal_Hearts_(RU)_v1.6.bin" \
+  --receipt "$HOME/Documents/NintendoSwitchRemakesAudit/map02_ru_source_reconciliation.json" \
+  > "$HOME/Documents/NintendoSwitchRemakesAudit/map02_ru_owned_disc_verified.json"
+```
+
+The original image is opened read-only, must be a **regular file**, not a
+symlink, exactly 664,849,248 bytes, and match pinned SHA-256
+`48c686f9ae7e57615c06fd20d1048b2b8e9e7debabc371e6e941821b6b3b121a`.
+The existing Mode2/Form1 CD reader independently validates all 12 PRS
+and 117 DAT source sectors (sync, Mode2, XA Form1 and EDC); the existing
+PRS decoder must reproduce all pinned resource hashes, 187,264 decoded
+bytes and both exact target-face GFX differences. Image file identity
+and modification timestamp are checked after the sector reads.
+
+If a private, previously recorded **full** PC-port capture exists, append
+`--capture "/private/path/to/pc-capture-directory"` to cross-check the
+original stdout and rendered-face submission events. No capture is
+created by this command; the capture's provenance and two loaded/drawn
+faces are verified by `tools.reconcile_map02_ru_runtime_trace`.
+
+The output report is metadata-only: no image paths, original bytes, tile
+pixels, audio, textures or original source-file contents are written.
+Keep the image, private stdout and raw GPU/VRAM captures off GitHub.
+A successful independent disc read establishes the local image's source
+identity, not that a **separately launched process** opened precisely
+that image. The output always marks
+`same_owned_disc_used_by_executable_proven=false`,
+`actual_gameplay_authenticated=false`, and
+`native_gpu_vram_pixels_verified=false`.
+
+The CI test mocks the original disc read and PRS data. Its success means
+the failure gates and dataflow are exercised, **not** that a retail CD
+was present on the CI runner.
