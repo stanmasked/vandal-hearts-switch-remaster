@@ -1,0 +1,148 @@
+name: MAP02 Stage282 corrected-run re-audit paired real 21 and 22ms CPAL/AudioOut evidence
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-cpal-paired-21-22-audit.yml'
+      - 'tools/audit_map02_cpal_paired_21_22.py'
+      - 'tests/test_audit_map02_cpal_paired_21_22.py'
+      - 'docs/MAP02_CPAL_PAIRED_21_22_AUDIT.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  VH_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_STAGE281_FROZEN: '25f7fb835b23b6efe7d2accda7191c6132aa9ef5'
+
+jobs:
+  independent-paired-evidence:
+    name: Re-decode real guest PNGs and PCM against source-pinned CPAL 21/22 timelines
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Ensure only four new research audit files and frozen Stage281 parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_HEAD"
+          python3 - <<'PY'
+          import os,subprocess
+          changes=set(subprocess.check_output(
+              ["git","diff","--name-only",os.environ["VH_STAGE281_FROZEN"],"HEAD"],
+              text=True).splitlines())
+          allowed={
+              ".github/workflows/map02-cpal-paired-21-22-audit.yml",
+              "tools/audit_map02_cpal_paired_21_22.py",
+              "tests/test_audit_map02_cpal_paired_21_22.py",
+              "docs/MAP02_CPAL_PAIRED_21_22_AUDIT.md",
+          }
+          assert changes and changes<=allowed,sorted(changes-allowed)
+          print("Only independent ROM-free audit code added:",sorted(changes))
+          PY
+      - name: Install only CPU optical decoder dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends python3-pil
+      - name: Run generated-only 14 adversarial test scenarios
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_map02_cpal_paired_21_22.py' -v
+      - name: Download the actual 21ms pending audout experiment archive
+        uses: actions/download-artifact@v4
+        with:
+          name: map02-stage281-first-real-21ms-cpal-guest-evidence
+          run-id: 39477016362
+          github-token: ${{ github.token }}
+          path: real-21
+      - name: Download the actual 22ms verified guest CRC/PCM experiment archive
+        uses: actions/download-artifact@v4
+        with:
+          name: map02-stage280-first-real-22ms-cpal-guest-evidence
+          run-id: 39473162070
+          github-token: ${{ github.token }}
+          path: real-22
+      - name: Re-decode BOTH raw actual optical PNG/PCM archives and real CPAL counter CSVs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stage282-results
+          test -s real-21/guest-prejoin.png
+          test -s real-22/guest-prejoin.png
+          test -s real-21/guest-final.png
+          test -s real-22/guest-final.png
+          test -s real-21/virtual-pulse-48k-stereo-s16le.pcm
+          test -s real-22/virtual-pulse-48k-stereo-s16le.pcm
+          python3 tools/audit_map02_cpal_paired_21_22.py \
+            --run21 real-21 --run22 real-22 \
+            --output stage282-results/independent-real-21-22-cpal-audit.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("stage282-results/independent-real-21-22-cpal-audit.json")
+          r=json.loads(p.read_text())
+          assert r["result"]=="SINGLE_MATCHED_HOST_NRO_21_22_CONTRAST_VERIFIED"
+          assert r["exact_nro_host_binary_identical_in_both_runs"] is True
+          assert len(r["trials"])==2
+          assert r["trials"][0]["hint_ms"]==21
+          assert r["trials"][1]["hint_ms"]==22
+          assert r["guest_21ms_strict_crc_succeeded"] is False
+          assert r["guest_22ms_strict_8_pages_crc_succeeded"] is True
+          assert r["single_pair_does_not_establish_repeatability"] is True
+          assert r["cpal_root_cause_or_permanent_guest_deadlock_proven"] is False
+          assert r["physical_switch_dac_verified"] is False
+          print("ONE matched NeXium/NRO 21/22 guest contrast verified from original pixels, raw PCM and CPAL CSV")
+          PY
+      - name: Publish exact bounded comparison and scientific cautions
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path("stage282-results/independent-real-21-22-cpal-audit.json")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              print("### Stage282 independent source-pinned CPAL 21/22ms comparison",file=out)
+              if not p.exists():
+                  print("**UNVERIFIED**: actual paired host/guest archive audit unavailable.",file=out)
+              else:
+                  r=json.loads(p.read_text())
+                  print("Result: "+r["result"],file=out)
+                  if r["result"]=="SINGLE_MATCHED_HOST_NRO_21_22_CONTRAST_VERIFIED":
+                      print("Same host SHA-256: "+r["compiled_nexium_elf_sha256"],file=out)
+                      print("Same opt-in NRO SHA-256: "+r["generated_research_nro_sha256"],file=out)
+                      print("| Requested hint | CPAL callbacks after input | Guest AudioOut appends | "
+                            "Prejoin audout enter/return | Virtual nonzero PCM16 | Final 8-page CRC |",file=out)
+                      print("|---:|---:|---:|---:|---:|---|",file=out)
+                      for x in r["trials"]:
+                          print(f'| {x["hint_ms"]} ms | {x["cpal_entries_after_input"]}/'
+                                f'{x["cpal_returns_after_input"]} | '
+                                f'{x["audioout_appends_after_input"]} | '
+                                f'{x["prejoin_audout_entries"]}/'
+                                f'{x["prejoin_audout_returns"]} | '
+                                f'{x["actual_nonzero_pcm16_samples"]} | '
+                                f'{x["guest_final_optical_result"]} |',file=out)
+                      print("**One pair only, not proven repeatability or permanent deadlock**. "
+                            "Pulse latency is a requested hint, not measured CPAL hardware "
+                            "period. Not evidence of original game music or physical Nintendo "
+                            "Switch speaker output.",file=out)
+                  else:
+                      print("**No contrast claimed:** "+r.get("reason",""),file=out)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage282-independent-one-pair-21-22-audit
+          path: stage282-results/
+          if-no-files-found: warn
