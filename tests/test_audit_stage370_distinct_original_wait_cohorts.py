@@ -129,6 +129,12 @@ class Stage370Tests(unittest.TestCase):
         x=copy.deepcopy(self.latest)
         x["independently_reopened_original_csv_sha256"].pop("descriptor")
         with self.assertRaises(ValueError):self.check(latest=x)
+        x=copy.deepcopy(self.old)
+        x["timeout_original_guest_receipt_sha256"].pop("stage314")
+        with self.assertRaises(ValueError):self.check(old=x)
+        x=copy.deepcopy(self.old)
+        x["timeout_stage313_348_351_357_sha256"].pop("stage357")
+        with self.assertRaises(ValueError):self.check(old=x)
 
 if __name__=="__main__":
     unittest.main()
