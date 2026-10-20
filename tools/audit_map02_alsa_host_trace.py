@@ -47,14 +47,21 @@ def parse(path):
     hw = [r for r in entries if r["event"]=="HW_PARAMS" and
           r["returned_frames"]==0]
     xfers = [r for r in entries if r["event"] in ("WRITEI","MMAP_COMMIT")]
-    valid_hw = [r for r in hw if r["rate_hz"]==48000 and
-                r["channels"]==2 and r["period_frames"]>0 and
-                r["buffer_frames"]>=r["period_frames"]]
-    unexpected = [r for r in hw if r not in valid_hw]
-    if unexpected:
-        raise ValueError("ALSA hw_params present but not 48k stereo valid period/buffer")
+    target_hw = [r for r in hw if r["rate_hz"]==48000 and
+                 r["channels"]==2]
+    invalid_target = [r for r in target_hw if
+                      r["period_frames"]<=0 or
+                      r["buffer_frames"]<r["period_frames"]]
+    if invalid_target:
+        raise ValueError("Target 48k stereo ALSA hw_params invalid period/buffer")
+    valid_hw = target_hw
     if not valid_hw:
         raise ValueError("No valid 48k stereo ALSA hw_params observed")
+    # CPAL/NeXium can negotiate other ALSA playback instances in the
+    # same process (actual capture observed 768000 Hz / 32 channels).
+    # Do NOT silently equate these independent configurations with the
+    # primary 48-kHz guest output stream.
+    other_hw = [r for r in hw if r not in target_hw]
     if not xfers:
         raise ValueError("No ALSA write/commit calls intercepted")
     if any(r["returned_frames"]>r["requested_frames"] for r in xfers
@@ -68,6 +75,15 @@ def parse(path):
         "result":"OBSERVED_ALSA_HW_PARAMS_AND_TRANSFER_CALLS",
         "record_count":len(entries),
         "valid_48k_stereo_hw_params_count":len(valid_hw),
+        "other_successful_alsa_hw_params_count":len(other_hw),
+        "other_alsa_hw_configurations":[
+            {"rate_hz":hz,"channels":ch,
+             "period_frames":period,"buffer_frames":buf}
+            for hz,ch,period,buf in sorted({
+                (r["rate_hz"],r["channels"],
+                 r["period_frames"],r["buffer_frames"])
+                for r in other_hw})],
+        "transfer_calls_directly_attributed_to_48k_pcm":False,
         "transfer_call_count":len(xfers),
         "positive_frame_transfer_count":len(successful),
         "transfer_kinds":sorted({r["event"] for r in xfers}),
