@@ -89,6 +89,8 @@ on:
       - 'tests/test_check_map02_public_x11_after_sdl2.py'
       - 'tools/check_map02_public_xcb_after_x11.py'
       - 'tests/test_check_map02_public_xcb_after_x11.py'
+      - 'tools/check_map02_public_grouped_x11_xcb.py'
+      - 'tests/test_check_map02_public_grouped_x11_xcb.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -240,6 +242,8 @@ on:
       - 'tests/test_check_map02_public_x11_after_sdl2.py'
       - 'tools/check_map02_public_xcb_after_x11.py'
       - 'tests/test_check_map02_public_xcb_after_x11.py'
+      - 'tools/check_map02_public_grouped_x11_xcb.py'
+      - 'tests/test_check_map02_public_grouped_x11_xcb.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -333,6 +337,7 @@ jobs:
             tests.test_check_map02_public_sdl2_archive_witness \
             tests.test_check_map02_public_x11_after_sdl2 \
             tests.test_check_map02_public_xcb_after_x11 \
+            tests.test_check_map02_public_grouped_x11_xcb \
             tests.test_check_map02_private_archive_strategy_compare \
             tests.test_verify_map02_private_archive_comparison \
             tests.test_run_map02_private_link_gap_audit
@@ -664,6 +669,52 @@ jobs:
           assert xcb["authentic_map02_execution_proven"] is False
           print("Original public PC ELF tested sequentially with real Ubuntu SDL2, X11, and XCB static archives.")
           print("All XCB native partial-link import changes counted without original game media.")
+          PY
+      - name: Compare genuine X11 plus XCB grouped archive rescans on same SDL2 public ELF
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m tools.check_map02_public_grouped_x11_xcb \
+            "${RUNNER_TEMP}/map02-real-x11-native-provider/after-sdl2-unresolved.private.json" \
+            "${RUNNER_TEMP}/map02-real-sdl2-native-provider/linked/map02-private-candidate-linked.o" \
+            "${RUNNER_TEMP}/map02-real-x11-native-provider/x11-system-candidate.a" \
+            "${RUNNER_TEMP}/map02-real-xcb-native-provider/xcb-system-candidate.a" \
+            "${RUNNER_TEMP}/map02-real-grouped-x11-xcb-native" \
+            | tee "${RUNNER_TEMP}/map02-real-grouped-x11-xcb-aggregate.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          sdl = json.loads((root / "map02-real-sdl2-provider-aggregate.json").read_text())
+          x11 = json.loads((root / "map02-real-x11-aggregate.json").read_text())
+          xcb = json.loads((root / "map02-real-xcb-aggregate.json").read_text())
+          grouped = json.loads((root / "map02-real-grouped-x11-xcb-aggregate.json").read_text())
+          assert sdl["final_undefined_strong_count"] == 1085
+          assert x11["final_strong_undefined_after_x11"] == 996
+          assert xcb["initial_after_x11_strong_undefined"] == 996
+          assert grouped["initial_strong_undefined_after_sdl2"] == 1085
+          assert grouped["input_sdl2_partial_sha256"] == sdl["linked_partial_elf_sha256"]
+          assert grouped["copied_x11_archive_sha256"] == x11["copied_x11_archive_sha256"]
+          assert grouped["copied_xcb_archive_sha256"] == xcb["copied_xcb_archive_sha256"]
+          assert (grouped["original_imports_resolved_by_grouped_ld_r"] +
+                  grouped["original_imports_remaining_after_grouped_ld_r"] == 1085)
+          assert (grouped["original_imports_remaining_after_grouped_ld_r"] +
+                  grouped["new_imports_introduced_by_grouped_x11_xcb"] ==
+                  grouped["final_strong_undefined_after_grouped_x11_xcb"])
+          assert (grouped["original_inputs_with_any_x11_xcb_strong_provider"] +
+                  grouped["original_inputs_without_x11_xcb_strong_provider"] == 1085)
+          assert grouped["real_gnu_archive_group_executed"] is True
+          assert grouped["retail_assets_linked"] is False
+          assert grouped["fully_linked_game_executable"] is False
+          assert grouped["authentic_map02_execution_proven"] is False
+          sequential = xcb["final_strong_undefined_after_xcb"]
+          grouped_final = grouped["final_strong_undefined_after_grouped_x11_xcb"]
+          print("Actual sequential X11 then XCB unresolved count:", sequential)
+          print("Actual grouped X11/XCB GNU ld-r unresolved count:", grouped_final)
+          print("Sequential minus grouped (may be positive, zero, or negative):",
+                sequential - grouped_final)
+          print("No retail MAP02 data, private names, or executable game.")
           PY
       - name: Fail closed on upstream rasterizer source drift
         run: |
