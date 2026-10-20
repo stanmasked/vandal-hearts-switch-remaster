@@ -1,0 +1,152 @@
+name: MAP02 second-arena guard status HUD evidence
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-guard-hud.yml'
+      - 'source/main.c'
+      - 'source/map02_battle8.h'
+      - 'source/map02_ranged8.h'
+      - 'source/map02_medic8.h'
+      - 'source/map02_guard8.h'
+      - 'source/map02_guard_hud.h'
+      - 'source/map02_roster8.h'
+      - 'source/map02_roster8_smoke_data.h'
+      - 'tests/run_map02_nexium_guard_hud.py'
+      - 'source/map02_roster8_variants.h'
+      - 'source/map02_roster8_second_data.h'
+      - 'data/map02_roster8_second_4v4.json'
+      - 'tests/test_map02_two_arena_sources.py'
+      - 'tests/test_map02_guard_hud_oracle.py'
+      - 'tests/test_map02_nexium_4v4_oracle.py'
+      - 'tests/test_map02_guard_hud.c'
+      - 'data/map02_roster8_4v4.json'
+      - 'tools/generate_map02_roster8.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  portable-route:
+    name: Guard HUD follows exact battle state machine (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Replay illegal wall, real move, AI chase and reset in C
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -O2 -Wall -Wextra -Werror -pedantic tests/test_map02_guard_hud.c -o /tmp/vh-map02-4v4-path
+          /tmp/vh-map02-4v4-path | tee /tmp/vh-map02-4v4-path-proof
+          grep -Fx 'VH_MAP02_GUARD_HUD_PASS stages=2 rosters=3 armed=1 blocked=1 expired=1 reset=1 unused=1 zero_mutation=1' /tmp/vh-map02-4v4-path-proof
+          "$CC" -std=c11 -O0 -g -Wall -Wextra -Werror -pedantic -fsanitize=undefined -fno-sanitize-recover=all tests/test_map02_guard_hud.c -o /tmp/vh-map02-4v4-path-ubsan
+          /tmp/vh-map02-4v4-path-ubsan
+  oracle-negative-tests:
+    name: Reject synthetic forged guard HUD state screenshots
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install screenshot test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pil
+      - name: Check authored fixtures and fabricated guard-state transitions
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tests/run_map02_nexium_4v4.py tests/run_map02_nexium_guard_hud.py tests/test_map02_nexium_4v4_oracle.py tests/test_map02_guard_hud_oracle.py
+          python3 -m unittest discover -s tests -p 'test_map02_nexium_4v4_oracle.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_two_arena_sources.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_guard_oracle.py' -v
+          echo 'VH_MAP02_GUARD_HUD_ORACLE_PASS synthetic_cases=10 retail=0 real_nexium_claim=0'
+  build-4v4-nro:
+    name: Build real optional 4v4 devkitPro/libnx NRO
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check exact 4v4 JSON-to-C header and portable battle
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/opt/devkitpro/devkitA64/bin:/opt/devkitpro/tools/bin:$PATH"
+          python3 -m py_compile tests/run_map02_nexium_guard_hud.py
+          python3 tools/generate_map02_fixture.py --all --check
+          python3 tools/generate_map02_roster8.py --output /tmp/map02_roster8_generated.h
+          cmp source/map02_roster8_smoke_data.h /tmp/map02_roster8_generated.h
+          python3 tools/generate_map02_roster8.py --scene secondary --output /tmp/map02_roster8_second_generated.h
+          cmp source/map02_roster8_second_data.h /tmp/map02_roster8_second_generated.h
+          make build/test_map02_two_scenarios
+          ./build/test_map02_two_scenarios
+          make verify-nro
+          test -s build/vandal-hearts-prototype.nro
+          echo 'VH_MAP02_SWITCH_4V4_NRO_PASS original_maps=2 optional_mode=1 retail=0'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: map02-switch-scene-b-guard-hud-nro
+          path: build/vandal-hearts-prototype.nro
+          if-no-files-found: error
+  nexium-4v4:
+    name: NeXium guard READY ARMED BLOCKED statuses and reset
+    needs: build-4v4-nro
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-switch-scene-b-guard-hud-nro
+          path: nros
+      - name: Install Vulkan and screenshot dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl jq xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 libxkbcommon-x11-0 \
+            libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers
+      - name: Download pinned current NeXium nightly release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="$(curl -fsSL --retry 3 --retry-all-errors -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+          asset_url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          test -n "$asset_url"
+          curl -fL --retry 3 --retry-all-errors "$asset_url" -o /tmp/nexium-linux.tar.gz
+          mkdir -p /tmp/nexium
+          tar -xzf /tmp/nexium-linux.tar.gz -C /tmp/nexium
+          emu_bin="$(find /tmp/nexium -type f -executable \( -name nexium -o -name nexium-gui \) -print -quit)"
+          test -n "$emu_bin"
+          echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
+      - name: Capture actual guard HUD statuses and protected enemy hit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p map02-guard-hud-evidence
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          timeout --kill-after=5s 180s xvfb-run -a -s "-screen 0 1280x720x24" \
+            python3 tests/run_map02_nexium_guard_hud.py \
+              --nro "$PWD/nros/vandal-hearts-prototype.nro" \
+              --evidence-dir map02-guard-hud-evidence \
+            | tee map02-guard-hud-evidence/result.log
+          grep -Fx 'VH_MAP02_NEXIUM_GUARD_HUD_PASS ready=1 armed=1 no_hit_expired=1 actual_hit_blocked=1 reduced_damage=1 reset=1 first_arena_hidden=1 legacy_preserved=1 retail=0' map02-guard-hud-evidence/result.log
+      - name: Upload authentic emulator screenshots and execution log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-map02-guard-status-hud-runtime
+          path: map02-guard-hud-evidence/
+          if-no-files-found: warn
