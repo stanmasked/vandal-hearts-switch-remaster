@@ -1,0 +1,54 @@
+name: MAP02 Intel Mac Catalina minimum target binary audit
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-intel-catalina-min-target.yml'
+      - 'tests/test_map02_vram4_frame.c'
+      - 'source/map02_vram4_frame.h'
+      - 'source/map02_vram4_page.h'
+      - 'source/map02_terrain_ot_scene.h'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  min-catalina-target:
+    name: Apple Clang Mach-O minimum macOS 10.15 on Intel
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    steps:
+      - name: Checkout original-source-free FT4 tests
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Compile Intel x86-64 FT4 binary with explicit Catalina minimum
+        shell: bash
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '10.15'
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          /usr/bin/clang -std=c11 -O2 -Wall -Wextra -Werror \
+            -arch x86_64 -mmacosx-version-min=10.15 \
+            tests/test_map02_vram4_frame.c -o /tmp/vh-map02-catalina-ft4 -lm
+          file /tmp/vh-map02-catalina-ft4
+          xcrun otool -l /tmp/vh-map02-catalina-ft4 > /tmp/vh-map02-catalina-loadcommands.txt
+          python3 - <<'PY'
+          import pathlib
+          import re
+          import subprocess
+          f=pathlib.Path("/tmp/vh-map02-catalina-loadcommands.txt").read_text()
+          # Modern Apple Clang emits LC_BUILD_VERSION; older toolchains
+          # may instead use LC_VERSION_MIN_MACOSX.
+          modern=re.search(r"cmd LC_BUILD_VERSION\s+cmdsize \d+\s+platform \S+\s+minos (\d+\.\d+(?:\.\d+)?)", f)
+          legacy=re.search(r"cmd LC_VERSION_MIN_MACOSX\s+cmdsize \d+\s+version (\d+\.\d+(?:\.\d+)?)", f)
+          match=modern or legacy
+          if not match or tuple(map(int,match.group(1).split(".")))[:2] != (10,15):
+              raise SystemExit("No explicit Mach-O deployment minimum 10.15: fail closed")
+          machine=subprocess.check_output(["file","-b","/tmp/vh-map02-catalina-ft4"],text=True)
+          if "x86_64" not in machine or "Mach-O" not in machine:
+              raise SystemExit("wrong executable architecture")
+          print("VH_MAP02_CATALINA_MACHO_MIN_PASS arch=x86_64 minos=10.15 retail=0")
+          PY
+          /tmp/vh-map02-catalina-ft4
+          echo 'VH_MAP02_CATALINA_TARGET_BUILD_PASS target=10.15 executed_on=macos15_intel retail=0'
