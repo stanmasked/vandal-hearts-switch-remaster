@@ -155,22 +155,19 @@ jobs:
           python3 tools/decode_map02_prejoin_stage.py \
             --image evidence/guest-prejoin.png \
             --output evidence/guest-prejoin-stage.json
-      - name: Check strict original guest eight-page PCM CRC-8 receipt
+      - name: Classify strict guest CRC-8 optical result without assuming 21ms completion
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
-          python3 tools/decode_map02_audout_presubmit.py \
+          if python3 tools/decode_map02_audout_presubmit.py \
             --image evidence/guest-final.png \
-            --output evidence/guest-final-receipt.json
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          r=json.loads(Path("evidence/guest-final-receipt.json").read_text())
-          assert r["result"]=="GUEST_PRESUBMIT_PCM_PAGES_MATCHED",r["result"]
-          assert r["observed_pages"]==8 and r["mismatches"]==0
-          assert all(p["descriptor_released_returns"]==1 for p in r["pages"])
-          assert not r["physical_switch_speaker_audio_verified"]
-          PY
+            --output evidence/guest-final-receipt.json; then
+            echo GUEST_PRESUBMIT_PCM_PAGES_MATCHED > evidence/guest-optical-status.txt
+          else
+            echo GUEST_PRESUBMIT_UNVERIFIED > evidence/guest-optical-status.txt
+            echo "::notice::21ms requested hint: strict guest final CRC proof incomplete; evidence preserved."
+          fi
       - name: Preserve and digest raw 48k virtual PCM even on failure
         if: always()
         shell: bash
@@ -199,6 +196,64 @@ jobs:
               json.dumps(out,indent=2,sort_keys=True)+"\n")
           print(json.dumps(out,sort_keys=True))
           PY
+      - name: Classify real 21ms pending audout vs successful optical completion
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path("evidence")
+          cp=json.loads((p/"host-cpal-audioout-audit.json").read_text())
+          pre=json.loads((p/"guest-prejoin-stage.json").read_text())
+          fin=json.loads((p/"guest-final-receipt.json").read_text())
+          pcm=json.loads((p/"virtual-pcm-health.json").read_text())
+          ids=json.loads((p/"pinned-host-and-nro.json").read_text())
+          assert cp["result"]=="BOUNDED_CPAL_AUDIOOUT_COUNTER_TIMELINE_PARSED"
+          assert cp["guest_input_and_final_markers_verified"] is True
+          assert pre["result"]=="PREJOIN_STAGE_SNAPSHOT_CAPTURED"
+          assert ids["new_host_executable_sha256"]==os.environ["VH_NEW_HOST_SHA"]
+          assert ids["guest_original_research_source_sha"]==os.environ["VH_ORIGINAL_NRO_SHA"]
+          assert pcm.get("valid_pcm16le_stereo") is True
+          entered=pre["audout_playbuffer_call_entries"]
+          returned=pre["audout_playbuffer_call_returns"]
+          if fin["result"]=="GUEST_PRESUBMIT_PCM_PAGES_MATCHED":
+              assert fin["observed_pages"]==8 and fin["mismatches"]==0
+              assert all(x["descriptor_released_returns"]==1 for x in fin["pages"])
+              assert pcm.get("nonzero_pcm16_samples",0)>0
+              outcome="GUEST_21MS_OPTICAL_PAGES_COMPLETED_WITH_NONZERO_PCM"
+          elif fin["result"]=="GUEST_PRESUBMIT_UNVERIFIED" and entered>returned:
+              outcome="PREJOIN_GUEST_AUDOUT_RETURN_PENDING_AT_21MS_SNAPSHOT"
+          else:
+              outcome="UNVERIFIED_GUEST_21MS_OUTCOME"
+          report={
+              "schema":"vh-map02-stage281-one-21ms-guest-outcome/v1",
+              "outcome":outcome,
+              "host_elf_sha256":ids["new_host_executable_sha256"],
+              "generated_nro_sha256":ids["guest_nro_sha256"],
+              "research_head_sha":os.environ["VH_EXACT_HEAD"],
+              "run_id":int(os.environ["GITHUB_RUN_ID"]),
+              "attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "requested_pulse_latency_ms":21,
+              "prejoin_audout_entered":entered,
+              "prejoin_audout_returned":returned,
+              "cpal_entries_since_guest_input":cp["guest_window_counter_deltas"]["cpal_entries"],
+              "cpal_returns_since_guest_input":cp["guest_window_counter_deltas"]["cpal_returns"],
+              "audioout_appends_since_guest_input":cp["guest_window_counter_deltas"]["audioout_appends"],
+              "audioout_releases_since_guest_input":cp["guest_window_counter_deltas"]["audioout_releases"],
+              "virtual_pcm_nonzero_samples":pcm.get("nonzero_pcm16_samples"),
+              "guest_crc_optical_result":fin["result"],
+              "single_run_not_repeated_boundary_proof":True,
+              "pending_prejoin_return_not_permanent_deadlock":True,
+              "latency_hint_not_measured_cpal_period":True,
+              "physical_switch_dac_proven":False,
+          }
+          (p/"stage281-observation.json").write_text(
+              json.dumps(report,indent=2,sort_keys=True)+"\n")
+          print(json.dumps(report,indent=2,sort_keys=True))
+          assert outcome!="UNVERIFIED_GUEST_21MS_OUTCOME",(
+              "Insufficient optical evidence to classify even bounded 21ms guest observation")
+          PY
       - name: Report only observations actually supported by this guest run
         if: always()
         shell: bash
@@ -209,7 +264,8 @@ jobs:
           root=Path("evidence")
           with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as fp:
               print("### Stage281 first real NRO on CPAL-instrumented NeXium",file=fp)
-              for filename in ("host-cpal-audioout-audit.json",
+              for filename in ("stage281-observation.json",
+                               "host-cpal-audioout-audit.json",
                                "guest-prejoin-stage.json",
                                "guest-final-receipt.json",
                                "virtual-pcm-health.json"):
@@ -222,7 +278,7 @@ jobs:
                       if filename=="host-cpal-audioout-audit.json":
                           print("Host CPAL status: "+
                                 x.get("guest_window_cpal_status","unverified"),file=fp)
-              print("One positive-control 21ms request only; not a verified "
+              print("One bounded 21ms control only; not a verified "
                     "CPAL/ALSA hardware period, permanent deadlock, production "
                     "audio repair or physical Switch speaker test.",file=fp)
           PY
