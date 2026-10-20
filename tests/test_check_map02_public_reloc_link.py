@@ -67,6 +67,25 @@ class PublicRelocatableELFTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "export absent"):
             inspect_relocatable(obj)
 
+    def test_global_data_cannot_impersonate_original_code_export(self):
+        impostor = REQUIRED_SYMBOLS[0]
+        obj = self.compile(
+            "\n".join(f"void {name}(void) {{}}"
+                      for name in REQUIRED_SYMBOLS if name != impostor) +
+            f"\nint {impostor} = 1;\n")
+        with self.assertRaisesRegex(ValueError, "strong code export"):
+            inspect_relocatable(obj)
+
+    def test_weak_function_cannot_impersonate_original_code_export(self):
+        impostor = REQUIRED_SYMBOLS[-1]
+        obj = self.compile(
+            "\n".join(f"void {name}(void) {{}}"
+                      for name in REQUIRED_SYMBOLS if name != impostor) +
+            f"\nvoid {impostor}(void) __attribute__((weak));\n"
+            f"void {impostor}(void) {{}}\n")
+        with self.assertRaisesRegex(ValueError, "strong code export"):
+            inspect_relocatable(obj)
+
     def test_unresolved_capture_hook_rejected_even_if_other_exports_present(self):
         obj = self.compile(
             self.all_exports() +
