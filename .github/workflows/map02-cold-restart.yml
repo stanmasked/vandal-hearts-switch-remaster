@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile tests/run_map02_nexium_cold_restart.py tests/test_map02_cold_restart_oracle.py
-          python3 -m unittest discover -s tests -p 'test_map02_reentry_actions_oracle.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_cold_restart_oracle.py' -v
           echo 'VH_MAP02_COLD_RESTART_ORACLE_PASS real_nexium_claim=0 retail=0'
 
   combined-switch-nro:
