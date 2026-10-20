@@ -285,6 +285,7 @@ def verify_capture(directory: Path, *, target_frame: int):
     draw_boundary_gpu_state_checks=0
     previous_draw_post=None
     previous_draw_gpu_state=None
+    previous_draw_env=None
     entered_target_draw_frame=False
     for i in range(0,len(events),2):
         before,after=events[i:i+2]
@@ -330,6 +331,11 @@ def verify_capture(directory: Path, *, target_frame: int):
                 if state != previous_draw_gpu_state:
                     raise ValueError("adjacent DrawOTag primitives have discontinuous GPU state")
                 draw_boundary_gpu_state_checks+=1
+                # DRAWENV is optional in legacy recordings; compare both
+                # presence and content so a later draw cannot silently
+                # acquire, drop or change clip/offset metadata.
+                if before.get("draw_env") != previous_draw_env:
+                    raise ValueError("adjacent DrawOTag primitives have discontinuous DRAWENV")
             # Only DR_MODE (source-pinned primitive type 5) can change
             # the captured draw mode or texture-window globals during
             # the native primitive dispatch. Ordinary FT4/TILE/etc must
@@ -347,6 +353,7 @@ def verify_capture(directory: Path, *, target_frame: int):
                 raise ValueError("DR_MODE DrawOTag primitive modified VRAM")
             previous_draw_post=b
             previous_draw_gpu_state=(after["window"],after["draw_mode"])
+            previous_draw_env=after.get("draw_env")
             draws+=1
             draw_changed_words+=changed
         else:
