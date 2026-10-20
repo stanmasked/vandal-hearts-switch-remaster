@@ -7,6 +7,8 @@ on:
       - 'tests/test_map02_stacked_integration.c'
       - 'tools/audit_map02_stack.py'
       - 'source/main.c'
+      - 'tools/map02_candidate_receipt.py'
+      - 'tests/test_map02_candidate_receipt.py'
   workflow_dispatch:
 
 permissions:
@@ -14,6 +16,19 @@ permissions:
   pull-requests: read
 
 jobs:
+  candidate-receipt-tests:
+    name: Reject stale, modified and forged candidate NRO receipts
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test receipt parser and CLI against synthetic bytes only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/map02_candidate_receipt.py tests/test_map02_candidate_receipt.py
+          python3 -m unittest discover -s tests -p 'test_map02_candidate_receipt.py' -v
+          echo 'VH_MAP02_RECEIPT_UNIT_PASS forged_artifact_rejected=1 stale_source_rejected=1 symlinks_rejected=1 retail=0'
   ancestry-content-proof:
     name: Compare historical 4v4 fix to final integration tree without changing refs
     runs-on: ubuntu-22.04
@@ -105,12 +120,15 @@ jobs:
 
   integrated-switch-nro:
     name: Build real optional 4v4 devkitPro/libnx NRO
+    needs: candidate-receipt-tests
     runs-on: ubuntu-22.04
     timeout-minutes: 25
     container:
       image: devkitpro/devkita64:latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Check exact 4v4 JSON-to-C header and portable battle
         shell: bash
         run: |
@@ -127,10 +145,29 @@ jobs:
           make verify-nro
           test -s build/vandal-hearts-prototype.nro
           echo 'VH_MAP02_SWITCH_4V4_NRO_PASS original_maps=2 optional_mode=1 retail=0'
+      - name: Record immutable candidate SHA-256 and source identity
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          python3 tools/map02_candidate_receipt.py create \
+            --nro build/vandal-hearts-prototype.nro \
+            --receipt build/map02-candidate-receipt.json \
+            --source-commit "$EXPECTED_SOURCE" \
+            --source-tree "$(git rev-parse HEAD^{tree})"
+          python3 tools/map02_candidate_receipt.py verify \
+            --nro build/vandal-hearts-prototype.nro \
+            --receipt build/map02-candidate-receipt.json \
+            --source-commit "$EXPECTED_SOURCE" \
+            --source-tree "$(git rev-parse HEAD^{tree})"
       - uses: actions/upload-artifact@v4
         with:
           name: map02-reconciled-stack-switch-nro
-          path: build/vandal-hearts-prototype.nro
+          path: |
+            build/vandal-hearts-prototype.nro
+            build/map02-candidate-receipt.json
           if-no-files-found: error
   nexium-reconciled-guard:
     name: NeXium guard READY ARMED BLOCKED statuses and reset
@@ -139,10 +176,26 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/download-artifact@v4
         with:
           name: map02-reconciled-stack-switch-nro
           path: nros
+      - name: Verify candidate SHA-256 before guard emulator execution
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          python3 tools/map02_candidate_receipt.py verify \
+            --nro nros/vandal-hearts-prototype.nro \
+            --receipt nros/map02-candidate-receipt.json \
+            --source-commit "$EXPECTED_SOURCE" \
+            --source-tree "$(git rev-parse HEAD^{tree})"
+          mkdir -p map02-guard-hud-evidence
+          cp nros/map02-candidate-receipt.json map02-guard-hud-evidence/build-receipt.json
       - name: Install Vulkan and screenshot dependencies
         shell: bash
         run: |
@@ -201,10 +254,27 @@ jobs:
         scenario: [bow, medic]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/download-artifact@v4
         with:
           name: map02-reconciled-stack-switch-nro
           path: nros
+      - name: Verify identical candidate SHA-256 for specialist emulator
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          python3 tools/map02_candidate_receipt.py verify \
+            --nro nros/vandal-hearts-prototype.nro \
+            --receipt nros/map02-candidate-receipt.json \
+            --source-commit "$EXPECTED_SOURCE" \
+            --source-tree "$(git rev-parse HEAD^{tree})"
+          mkdir -p "map02-reconciled-$SCENARIO-evidence"
+          cp nros/map02-candidate-receipt.json "map02-reconciled-$SCENARIO-evidence/build-receipt.json"
       - name: Install Vulkan and screenshot dependencies
         shell: bash
         run: |
