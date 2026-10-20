@@ -487,6 +487,7 @@ jobs:
           assert len(owners) == report["original_cd_gpu_and_vram_exports_verified"] == 11
           assert all(value.startswith("build-map02-cycle/") and value.endswith(".o")
                      for value in owners.values())
+          assert report["original_cd_gpu_source_function_sizes_matched"] is True
           assert not report["fully_linked_game_executable"]
           assert not report["actual_gameplay_executed"]
           assert not report["original_map02_rendering_proven"]
