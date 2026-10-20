@@ -14,6 +14,7 @@ MONITOR="vh-map02-latency-monitor-health/v1"
 RASTER="vh-map02-optin-guest-raster-observation/v1"
 SINK="vh-map02-presubmit-sink-audit/v1"
 PULSE="vh-map02-pulse-sink-input-observation/v1"
+PREJOIN="vh-map02-audout-prejoin-stage/v1"
 
 def load_object(path):
     try:
@@ -24,7 +25,7 @@ def load_object(path):
     except (OSError,UnicodeError,ValueError) as exc:
         return None,str(exc)
 
-def classify(optical,monitor,raster=None,sink=None,pulse=None):
+def classify(optical,monitor,raster=None,sink=None,pulse=None,prejoin=None):
     result={
         "schema":"vh-map02-guest-evidence-conjunction/v1",
         "guest_8page_receipt_valid":False,
@@ -33,6 +34,10 @@ def classify(optical,monitor,raster=None,sink=None,pulse=None):
         "guest_raster_before_final_changed_pixels":None,
         "guest_raster_final_late_changed_pixels":None,
         "unique_48k_stereo_pulse_client":None,
+        "prejoin_stage":None,
+        "prejoin_audout_call_entries":None,
+        "prejoin_audout_call_returns":None,
+        "prejoin_call_inflight_at_snapshot":None,
         "audout_playbuffer_stall_proven":False,
         "guest_join_deadlock_proven":False,
         "physical_switch_dac_samples_proven":False,
@@ -47,6 +52,21 @@ def classify(optical,monitor,raster=None,sink=None,pulse=None):
     if isinstance(pulse,dict) and pulse.get("schema")==PULSE:
         if type(pulse.get("unique_target_each_snapshot")) is bool:
             result["unique_48k_stereo_pulse_client"]=pulse["unique_target_each_snapshot"]
+    if (isinstance(prejoin,dict) and prejoin.get("schema")==PREJOIN
+        and prejoin.get("result")=="PREJOIN_STAGE_SNAPSHOT_CAPTURED"):
+        stage=prejoin.get("stage")
+        entries=prejoin.get("audout_playbuffer_call_entries")
+        returns=prejoin.get("audout_playbuffer_call_returns")
+        requested=prejoin.get("cooperative_stop_requested")
+        if (type(stage) is int and 0<=stage<=6 and
+            type(entries) is int and 0<=entries<=65535 and
+            type(returns) is int and 0<=returns<=entries and
+            requested is True):
+            result["prejoin_stage"]=stage
+            result["prejoin_audout_call_entries"]=entries
+            result["prejoin_audout_call_returns"]=returns
+            result["prejoin_call_inflight_at_snapshot"]=(
+                stage==3 and entries>returns)
     valid_optical=(isinstance(optical,dict) and optical.get("schema")==OPTICAL
           and optical.get("result")=="GUEST_PRESUBMIT_PCM_PAGES_MATCHED"
           and type(optical.get("observed_pages")) is int and optical["observed_pages"]==8
@@ -100,7 +120,8 @@ def main():
         "monitor":"presubmit-monitor-health.json",
         "raster":"presubmit-guest-raster-sequence.json",
         "sink":"presubmit-sink-parity.json",
-        "pulse":"pulse-sink-input-observed.json"}
+        "pulse":"pulse-sink-input-observed.json",
+        "prejoin":"presubmit-guest-prejoin-stage.json"}
     objects={}
     errors={}
     for name,fn in filenames.items():
