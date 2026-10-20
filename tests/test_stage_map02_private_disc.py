@@ -366,6 +366,95 @@ class PrivateLocalCopyTests(unittest.TestCase):
         self.assertEqual(list(self.private.iterdir()), [])
         self.assertEqual(self.bin.read_bytes(), self.data)
 
+    def test_mounted_bin_replaced_during_staged_readback_refuses_publication(self):
+        real_verify = staging._verify_staged_copy
+
+        def replace_after_readback(*args, **kwargs):
+            real_verify(*args, **kwargs)
+            # Same bytes, new inode, after the prior source-stability check.
+            replacement = self.mount / "synthetic-drive-replaced-bin"
+            replacement.write_bytes(self.data)
+            os.replace(replacement, self.bin)
+
+        with patch("tools.stage_map02_private_disc._verify_staged_copy",
+                   side_effect=replace_after_readback):
+            with self.assertRaisesRegex(ValueError, "mounted source changed"):
+                self.run_stage()
+        self.assertEqual(list(self.private.iterdir()), [])
+        self.assertEqual(self.bin.read_bytes(), self.data)
+
+    def test_mounted_cue_replaced_during_staged_readback_refuses_publication(self):
+        original = self.cue.read_bytes()
+        real_verify = staging._verify_staged_copy
+
+        def replace_after_readback(*args, **kwargs):
+            real_verify(*args, **kwargs)
+            replacement = self.mount / "synthetic-drive-replaced-cue"
+            replacement.write_bytes(original)
+            os.replace(replacement, self.cue)
+
+        with patch("tools.stage_map02_private_disc._verify_staged_copy",
+                   side_effect=replace_after_readback):
+            with self.assertRaisesRegex(ValueError, "mounted CUE changed before private publication"):
+                self.run_stage()
+        self.assertEqual(list(self.private.iterdir()), [])
+        self.assertEqual(self.cue.read_bytes(), original)
+        self.assertEqual(self.bin.read_bytes(), self.data)
+
+    def test_mounted_bin_inplace_edit_during_staged_readback_refuses_publication(self):
+        real_verify = staging._verify_staged_copy
+        mutated = b"Z" + self.data[1:]
+
+        def edit_after_readback(*args, **kwargs):
+            real_verify(*args, **kwargs)
+            before = self.bin.stat()
+            # Same size and inode, modified payload/mtime while local readback
+            # is running. The guard must not assume inode equality is enough.
+            with self.bin.open("r+b") as writer:
+                writer.write(mutated[:1])
+                writer.flush()
+                os.fsync(writer.fileno())
+            os.utime(self.bin, ns=(before.st_atime_ns,
+                                   before.st_mtime_ns + 1000000000))
+            self.assertEqual(self.bin.stat().st_ino, before.st_ino)
+            self.assertEqual(self.bin.stat().st_size, before.st_size)
+
+        with patch("tools.stage_map02_private_disc._verify_staged_copy",
+                   side_effect=edit_after_readback):
+            with self.assertRaisesRegex(ValueError, "mounted source changed"):
+                self.run_stage()
+        self.assertEqual(list(self.private.iterdir()), [])
+        self.assertEqual(self.bin.read_bytes(), mutated)
+
+    def test_mounted_cue_inplace_same_length_edit_during_readback_refuses_publication(self):
+        real_verify = staging._verify_staged_copy
+        original = self.cue.read_bytes()
+        self.assertTrue(original.endswith(b"\r\n"))
+        # A second trailing newline preserves a valid CUE grammar and size.
+        changed = original[:-2] + b"\n\n"
+        self.assertEqual(len(changed), len(original))
+
+        def edit_after_readback(*args, **kwargs):
+            real_verify(*args, **kwargs)
+            before = self.cue.stat()
+            with self.cue.open("r+b") as writer:
+                writer.write(changed)
+                writer.flush()
+                os.fsync(writer.fileno())
+            os.utime(self.cue, ns=(before.st_atime_ns,
+                                   before.st_mtime_ns + 1000000000))
+            self.assertEqual(self.cue.stat().st_ino, before.st_ino)
+            self.assertEqual(self.cue.stat().st_size, before.st_size)
+            self.assertEqual(staging._read_cue(self.cue), changed)
+
+        with patch("tools.stage_map02_private_disc._verify_staged_copy",
+                   side_effect=edit_after_readback):
+            with self.assertRaisesRegex(ValueError, "mounted CUE changed before private publication"):
+                self.run_stage()
+        self.assertEqual(list(self.private.iterdir()), [])
+        self.assertEqual(self.cue.read_bytes(), changed)
+        self.assertEqual(self.bin.read_bytes(), self.data)
+
     def test_rejects_unsafe_destination_name(self):
         for label in ("..", "../external", ".hidden", "f" * 90):
             with self.subTest(label=label), self.assertRaises(ValueError):
