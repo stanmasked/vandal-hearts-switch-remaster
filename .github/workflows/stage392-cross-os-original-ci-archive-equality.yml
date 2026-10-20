@@ -1,0 +1,101 @@
+name: Stage392 source-pinned Intel macOS versus Linux original CI artifacts
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage392-cross-os-original-ci-archive-equality.yml'
+      - 'tools/compare_stage392_cross_os_reports.py'
+      - 'tests/test_compare_stage392_cross_os_reports.py'
+      - 'docs/SWITCH_STAGE392_CROSS_OS_OFFICIAL_ARCHIVE_EQUALITY.md'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: stage392-archives-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  original-ci-cross-os-equality:
+    name: Audit original Stage390/391 report archives, not guest execution
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Python 3.9 and verify interpreter
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.9'
+          architecture: x64
+      - name: Run 17 positive and fail-closed negative regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = x86_64
+          python3 -c 'import sys; assert sys.version_info[:2] == (3,9)'
+          python3 -m unittest discover -s tests -p 'test_compare_stage392_cross_os_reports.py' -v
+          python3 -m py_compile tools/compare_stage392_cross_os_reports.py
+      - name: Download exact archived run/artifact/job metadata and ZIP bytes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repo=stanmasked/vandal-hearts-switch-remaster
+          mkdir -p stage392-metadata stage392-archives
+          for platform in macos linux; do
+            case "$platform" in
+              macos) run_id=39504403456; artifact_id=12302043117 ;;
+              linux) run_id=39506085942; artifact_id=12303775933 ;;
+              *) exit 2 ;;
+            esac
+            gh api "repos/$repo/actions/runs/$run_id" > "stage392-metadata/$run_id-run.json"
+            gh api "repos/$repo/actions/artifacts/$artifact_id" > "stage392-metadata/$run_id-artifact.json"
+            gh api "repos/$repo/actions/runs/$run_id/jobs?per_page=100" > "stage392-metadata/$run_id-jobs.json"
+            curl --fail --location --silent --show-error --retry 3 \
+              --max-time 90 \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/$repo/actions/artifacts/$artifact_id/zip" \
+              --output "stage392-archives/$platform.zip"
+            test -s "stage392-archives/$platform.zip"
+          done
+      - name: Pin both official ZIP SHA-256 and require byte-identical original JSON
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/compare_stage392_cross_os_reports.py \
+            --macos-zip stage392-archives/macos.zip \
+            --linux-zip stage392-archives/linux.zip \
+            --metadata stage392-metadata \
+            --output stage392-cross-os-original-ci-equality.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path('stage392-cross-os-original-ci-equality.json').read_text())
+          assert p['result']=='STAGE392_BOTH_ORIGINAL_PLATFORM_REPORTS_IDENTICAL'
+          assert p['original_json_sha256']=='75c124bce710631ee7469d46159a05b7341382b3135207ffa6f93b30c4b4338d'
+          assert p['original_json_bytes']==21078
+          assert p['original_guest_sessions']==22
+          assert p['complete_music_scene_transitions']==88
+          assert not p['new_guest_sessions_created']
+          assert not p['emulator_executed_on_mac']
+          assert not p['physical_switch_speaker_tested']
+          assert not p['cause_of_historical_0xEA01_proven']
+          print('Stage392: two original official GitHub CI JSON reports identical')
+          PY
+          {
+            echo '### Stage392: official macOS Intel and Linux artifacts verified'
+            echo 'Both original archived ZIP bytes and workflow provenance match pinned identities.'
+            echo 'Original 21,078-byte JSON reports match SHA-256 and are byte-identical.'
+            echo '22 archived guest sessions and 88 transitions; **no new guest runs**.'
+            echo 'Not proof that NeXium executes on macOS or sound plays on physical Switch.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish compact machine-readable comparison (no original media)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage392-official-ci-macos-linux-archive-equality
+          path: stage392-cross-os-original-ci-equality.json
+          if-no-files-found: warn
+          retention-days: 90
