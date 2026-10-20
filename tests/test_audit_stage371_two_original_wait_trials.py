@@ -2,6 +2,8 @@
 """Stage371 source-scope negative controls (synthetic, NOT authentic NeXium)."""
 import copy
 import json
+import struct
+import zlib
 import sys
 import tempfile
 import unittest
@@ -14,6 +16,18 @@ from test_audit_nexium_stage368_wait_descriptor import make_sources
 RUN=39395120000
 SHA="a"*40
 
+def png_chunk(kind:bytes,data:bytes)->bytes:
+    return (struct.pack(">I",len(data))+kind+data+
+            struct.pack(">I",zlib.crc32(kind+data)))
+
+def make_synthetic_png()->bytes:
+    # Structurally valid blank PNG, NOT a genuine optical NeXium capture.
+    scanline=b"\x00"+b"\x00"*(1280*3)
+    return (b"\x89PNG\r\n\x1a\n"+
+            png_chunk(b"IHDR",struct.pack(">IIBBBBB",1280,720,8,2,0,0,0))+
+            png_chunk(b"IDAT",zlib.compress(scanline*720))+
+            png_chunk(b"IEND",b""))
+
 def layout(temp:Path,code_a=7,code_b=7):
     a_root=temp/"outputs"/"a"
     b_root=temp/"outputs"/"b"
@@ -24,10 +38,7 @@ def layout(temp:Path,code_a=7,code_b=7):
         params=(code,0xEA01,0,0,0) if code==4 else (code,0,1,1,1)
         make_sources(sd,*params)
         (path/"guest-sd-root.txt").write_text(str(original)+"\n")
-        (path/"scene-optical-trace.png").write_bytes(
-            b"\x89PNG\r\n\x1a\n"+b"\x00\x00\x00\x0dIHDR"+
-            (1280).to_bytes(4,"big")+(720).to_bytes(4,"big")+
-            b"synthetic-not-an-original-screenshot")
+        (path/"scene-optical-trace.png").write_bytes(make_synthetic_png())
     preflight={"result":a.EXPECTED_NRO,"git_sha":SHA,
                "run_id":RUN,"run_attempt":1,"nro_sha256":"b"*64,
                "nro_bytes":100000,"hardware_status":"HARDWARE NOT TESTED"}
@@ -117,6 +128,23 @@ class Stage371Tests(unittest.TestCase):
         target=self.temp/"external.png";target.write_bytes(content)
         shot.symlink_to(target)
         with self.assertRaises(ValueError):self.verify()
+    def test_png_chunks_crc_and_terminator_required(self):
+        shot=self.two/"scene-optical-trace.png"
+        good=shot.read_bytes()
+        self.assertEqual(len(self.verify()["captures"]),2)
+        ihdr_crc_offset=8+4+4+13
+        corrupt_crc=bytearray(good)
+        corrupt_crc[ihdr_crc_offset]^=1
+        no_idat=(b"\x89PNG\r\n\x1a\n"+good[8:33]+
+                 png_chunk(b"IEND",b""))
+        for invalid in (bytes(corrupt_crc),good[:-1],good+b"garbage",no_idat):
+            with self.subTest(length=len(invalid)):
+                shot.write_bytes(invalid)
+                with self.assertRaises(ValueError):
+                    self.verify()
+        shot.write_bytes(good)
+        self.assertEqual(len(self.verify()["captures"]),2)
+
     def test_optional_old_probe_and_lease_are_not_exit_queue_measurements(self):
         sd=self.temp/f"vh-nexium-stage266-{RUN}-b"/a.RUN_GUEST_PATH
         age=sd/"audio-exit-probe-context-000.csv"
