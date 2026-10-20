@@ -82,7 +82,34 @@ int main(void) {
         {31,65535,31,31,31,31},
         {0,0,0,0,0,0},
         {16,1234,17,9,4,5},
-        {7,0,31,0,3,0}
+        {7,0,31,0,3,0},
+        /* Page X/Y bounds, including the final 4bpp page at x=960,y=256. */
+        {0,0,0,0,0,0},
+        {15,63,0,0,0,0},
+        {16,32704,0,0,0,0},
+        {31,32767,0,0,0,0},
+        /* Valid CLUT extremes: first/last palette on rows 0 and 511. */
+        {0,0,31,31,0,0},
+        {31,65535,31,31,31,31},
+        {15,63,31,0,31,0},
+        {16,65472,0,31,0,31},
+        /* Asymmetric GP0(E2h) masks, offsets and 8-texel boundaries. */
+        {1,64,1,0,0,0},
+        {2,128,0,1,0,0},
+        {3,192,1,1,1,0},
+        {4,256,3,3,1,2},
+        {5,320,7,0,4,0},
+        {6,384,0,7,0,4},
+        {8,512,15,15,15,7},
+        {9,576,16,16,0,16},
+        {10,640,17,17,16,1},
+        {11,704,30,29,30,29},
+        {12,768,31,1,1,31},
+        {13,832,1,31,31,1},
+        {14,896,5,10,31,31},
+        {17,960,10,5,31,31},
+        {18,1024,24,3,24,3},
+        {30,65088,31,30,0,31}
     };
     uint32_t state=UINT32_C(0x19371016);
     unsigned t,x,y;
@@ -149,7 +176,7 @@ def compare(source: str, header: str, *, compiler="gcc") -> dict:
         if run.returncode:
             raise ValueError("PC 4bpp sample comparison failed: "+run.stderr[-2200:])
         result=json.loads(run.stdout)
-    if not (result["scenarios"]==8 and result["pixels_compared"]==524288
+    if not (result["scenarios"]==32 and result["pixels_compared"]==2097152
             and result["compiled_pc_sampletexture_matches"]
             and not result["real_gameplay_vram_verified"]
             and not result["ps1_hardware_pixels_verified"]):
