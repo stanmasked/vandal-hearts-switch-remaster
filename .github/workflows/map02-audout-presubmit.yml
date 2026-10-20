@@ -13,6 +13,8 @@ on:
       - 'tools/audit_presubmit_virtual_sink.py'
       - 'tools/report_pulse_sink_input_latency.py'
       - 'tests/test_report_pulse_sink_input_latency.py'
+      - 'tests/test_report_map02_guest_raster_sequence.py'
+      - 'tools/report_map02_guest_raster_sequence.py'
       - 'source/vh_switch_game_audio.c'
       - 'source/vh_switch_game_audio.h'
       - 'source/main.c'
@@ -188,6 +190,11 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests -p 'test_report_pulse_sink_input_latency.py' -v
+      - name: Verify generated guest raster metrics are not liveness claims
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_report_map02_guest_raster_sequence.py' -v
       - name: Download pinned NeXium nightly asset
         shell: bash
         env:
@@ -379,6 +386,16 @@ jobs:
             --during runtime-evidence/pulse-sink-inputs-during.txt \
             --after runtime-evidence/pulse-sink-inputs-after-input.txt \
             --output runtime-evidence/pulse-sink-input-observed.json
+      - name: Preserve actual GUI raster sequence without making liveness claims
+        shell: bash
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 tools/report_map02_guest_raster_sequence.py \
+            --before runtime-evidence/presubmit-guest-before-input.png \
+            --final runtime-evidence/presubmit-guest.png \
+            --late runtime-evidence/presubmit-guest-late.png \
+            --output runtime-evidence/presubmit-guest-raster-sequence.json
       - name: Decode actual guest CRC and assert eight descriptor identities
         shell: bash
         run: |
