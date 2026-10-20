@@ -83,6 +83,8 @@ on:
       - 'tools/check_map02_private_incremental_link.py'
       - 'tests/test_check_map02_private_provider_coverage.py'
       - 'tests/test_check_map02_private_incremental_link.py'
+      - 'tools/check_map02_private_archive_strategy_compare.py'
+      - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/check_map02_elf_code_witness.py'
       - 'tools/inspect_map02_private_inputs.py'
       - 'tools/check_map02_private_pc_inputs.py'
@@ -222,6 +224,8 @@ on:
       - 'tools/check_map02_private_incremental_link.py'
       - 'tests/test_check_map02_private_provider_coverage.py'
       - 'tests/test_check_map02_private_incremental_link.py'
+      - 'tools/check_map02_private_archive_strategy_compare.py'
+      - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/check_map02_elf_code_witness.py'
       - 'tools/inspect_map02_private_inputs.py'
       - 'tools/check_map02_private_pc_inputs.py'
@@ -305,7 +309,8 @@ jobs:
           python3 -m unittest -v \
             tests.test_check_map02_public_reloc_link \
             tests.test_check_map02_private_provider_coverage \
-            tests.test_check_map02_private_incremental_link
+            tests.test_check_map02_private_incremental_link \
+            tests.test_check_map02_private_archive_strategy_compare
       - name: Check synthetic source, sink, and generated-code integration
         run: |
           python3 -m unittest -v \
