@@ -7,6 +7,7 @@ No synthetic result is evidence of authentic MAP02 gameplay.
 import hashlib
 import io
 import json
+import os
 from contextlib import redirect_stderr
 from pathlib import Path
 import stat
@@ -28,6 +29,7 @@ from tools.publish_map02_native_window_source_witness import (
     verify_published_window_source_witness,
 )
 from tools.verify_map02_vram_timeline import VRAM_BYTES
+from tools.verify_map02_frame_bundle import MAP_BYTES
 
 
 def sha(data):
@@ -72,6 +74,7 @@ class WindowSourceWitnessTests(unittest.TestCase):
         (self.source / "bundle.json").write_bytes(self.source_bundle)
         (self.source / "gpu-events.jsonl").write_bytes(self.source_events)
         (self.source / "gpu-vram-le.bin").write_bytes(bytes(VRAM_BYTES))
+        (self.source / "map02.decoded.bin").write_bytes(bytes(MAP_BYTES))
         self.claim = {
             "schema": "vh.map02.native-window-source-claim.v1",
             "source_frame": 7, "gpu_draw_frame": 7,
@@ -100,6 +103,7 @@ class WindowSourceWitnessTests(unittest.TestCase):
         result = verify_window_source_join(self.source, self.native)
         self.checked_bundle.assert_called()
         self.assertTrue(result["original_gte_compiled_and_checked"])
+        self.assertTrue(result["source_map_vram_inode_and_bytes_reverified"])
         self.assertEqual(result["source_ft4_exact_matches"], 1)
         self.assertEqual(result["native_draw_pairs"], 2)
         self.assertEqual(result["native_gpu_events"], 4)
@@ -160,6 +164,47 @@ class WindowSourceWitnessTests(unittest.TestCase):
         window1_log.write_bytes(b"".join(jsonline(e) for e in window1))
         with self.assertRaisesRegex(ValueError, "upload name"):
             verify_published_window_source_witness(self.source, self.native)
+
+    def test_rejects_unsampled_source_vram_mutation_during_gte(self):
+        # This source VRAM word is outside the FT4 texture/CLUT
+        # material footprint. The material comparison alone would pass
+        # even though the source game asset was modified after capture.
+        def mutate_then_return(*args, **kwargs):
+            path = self.source / "gpu-vram-le.bin"
+            with path.open("r+b") as stream:
+                stream.seek(VRAM_BYTES - 2)
+                stream.write(b"\x01\x00")
+            return {"frame": 7, "submitted_faces_checked": 1}
+
+        self.checked_bundle.side_effect = mutate_then_return
+        with self.assertRaisesRegex(ValueError, "asset changed"):
+            verify_window_source_join(self.source, self.native)
+
+    def test_rejects_byte_identical_decoded_map_inode_swap_during_gte(self):
+        # Hash-only verification would accept an identically copied file;
+        # the verified private source inode must stay fixed as well.
+        def replace_inode_then_return(*args, **kwargs):
+            original = self.source / "map02.decoded.bin"
+            staged = self.source / "private-local-map02-replacement.tmp"
+            staged.write_bytes(original.read_bytes())
+            os.replace(staged, original)
+            return {"frame": 7, "submitted_faces_checked": 1}
+
+        self.checked_bundle.side_effect = replace_inode_then_return
+        with self.assertRaisesRegex(ValueError, "asset changed"):
+            verify_window_source_join(self.source, self.native)
+
+    def test_rejects_decoded_map_content_mutation_during_gte(self):
+        def mutate_then_return(*args, **kwargs):
+            original = self.source / "map02.decoded.bin"
+            with original.open("r+b") as stream:
+                stream.seek(MAP_BYTES - 1)
+                stream.write(b"\x40")
+            return {"frame": 7, "submitted_faces_checked": 1}
+
+        self.checked_bundle.side_effect = mutate_then_return
+        with self.assertRaisesRegex(ValueError, "asset changed"):
+            verify_window_source_join(self.source, self.native)
 
     def test_publish_reverify_exclusive_sha_and_0600(self):
         result = publish_window_source_witness(self.source, self.native)

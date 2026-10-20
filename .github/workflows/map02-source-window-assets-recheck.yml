@@ -1,0 +1,55 @@
+name: MAP02 source MAP/VRAM asset identity across native GPU window join
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-source-window-assets-recheck.yml'
+      - 'tools/verify_map02_source_native_windows.py'
+      - 'tests/test_map02_source_native_windows.py'
+      - 'tools/verify_map02_native_gpu_capture.py'
+      - 'tools/verify_map02_frame_bundle.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  immutable-source-map-vram:
+    name: MAP02 private-source asset double-read (${{ matrix.os }} Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: macos-15-intel
+            python: '3.9'
+          - os: macos-15-intel
+            python: '3.11'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Run 14 source witness and 15 native full-VRAM synthetic tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_map02_source_native_windows.py' -v \
+            2>&1 | tee /tmp/map02-source-asset-recheck.log
+          grep -F 'Ran 29 tests' /tmp/map02-source-asset-recheck.log
+          grep -F 'test_source_ft4_and_witness_survive_window1_loadimage_transfer' \
+            /tmp/map02-source-asset-recheck.log
+          grep -F 'test_rejects_unsampled_source_vram_mutation_during_gte' \
+            /tmp/map02-source-asset-recheck.log
+          grep -F 'test_rejects_byte_identical_decoded_map_inode_swap_during_gte' \
+            /tmp/map02-source-asset-recheck.log
+          grep -F 'test_rejects_decoded_map_content_mutation_during_gte' \
+            /tmp/map02-source-asset-recheck.log
+          grep -F 'test_source_join_cli_never_logs_private_capture_paths' \
+            /tmp/map02-source-asset-recheck.log
+          echo 'VH_MAP02_SOURCE_ASSET_POSTCHECK_PASS total=29 source=14 imported_native=15 game=0'
