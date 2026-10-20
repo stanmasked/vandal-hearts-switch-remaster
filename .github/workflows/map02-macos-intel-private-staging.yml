@@ -59,7 +59,7 @@ jobs:
       - name: Compile private-stage and receipt modules
         run: |
           python3 -m py_compile tools/stage_map02_private_disc.py tools/check_map02_local_disc_receipt.py tools/emit_map02_local_disc_receipt.py
-      - name: Run all 45 asset-free tests
+      - name: Run all 47 asset-free tests
         run: |
           python3 -m unittest -v \
             tests.test_check_map02_local_disc_receipt \
