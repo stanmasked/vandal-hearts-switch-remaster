@@ -9,6 +9,7 @@ it does NOT establish which disc a separate PC executable opened.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -17,7 +18,7 @@ import stat
 
 from tools.audit_map02_disc_prs import (
     START_SECTOR, SECTOR_COUNT, DAT_START_SECTOR, DAT_SECTOR_COUNT,
-    PRIOR_DAT_LENGTH, read_sectors, audit_prs,
+    PRIOR_DAT_LENGTH, read_sectors_from_stream, audit_prs,
 )
 from tools.check_map02_ru_receipt import check_receipt, EXPECTED_HASHES
 from tools.reconcile_map02_ru_runtime_trace import reconcile
@@ -30,45 +31,63 @@ PRS_BYTES = 22783
 CHUNK_BYTES = 1024 * 1024
 
 
-def _readonly_disc_digest(path):
-    """Hash the complete regular file through a no-follow file descriptor."""
+def _unchanged(path, original):
+    """Reject replacement, mutation or symlink substitution of the named image."""
+    current = os.stat(path, follow_symlinks=False)
+    if (not stat.S_ISREG(current.st_mode) or
+            (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns) !=
+            (original.st_dev, original.st_ino, original.st_size, original.st_mtime_ns)):
+        raise ValueError("source image changed during MAP02 verification")
+
+
+@contextmanager
+def _open_verified_disc(path):
+    """Hash and sector-read a single descriptor, never reopen by pathname.
+
+    Name identity and inode metadata are compared before and after reading.
+    The pinned SHA-256 authenticates the read bytes against this local baseline,
+    not a specific retail release or PC game's runtime disc selection.
+    """
     path = Path(path)
     if path.is_symlink():
         raise ValueError("source image must not be a symlink")
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     flags |= getattr(os, "O_CLOEXEC", 0)
     fd = os.open(str(path), flags)
-    try:
-        initial = os.fstat(fd)
+    with os.fdopen(fd, "rb") as handle:
+        initial = os.fstat(handle.fileno())
         if not stat.S_ISREG(initial.st_mode):
             raise ValueError("source image must be a regular file")
         if initial.st_size != EXPECTED_DISC_BYTES:
             raise ValueError("source image has unexpected length")
+        _unchanged(path, initial)
         digest = hashlib.sha256()
-        with os.fdopen(fd, "rb", closefd=False) as handle:
-            while True:
-                block = handle.read(CHUNK_BYTES)
-                if not block:
-                    break
-                digest.update(block)
-        final = os.fstat(fd)
+        while True:
+            block = handle.read(CHUNK_BYTES)
+            if not block:
+                break
+            digest.update(block)
+        after_hash = os.fstat(handle.fileno())
+        if (initial.st_dev, initial.st_ino, initial.st_size, initial.st_mtime_ns) != (
+            after_hash.st_dev, after_hash.st_ino, after_hash.st_size, after_hash.st_mtime_ns
+        ):
+            raise ValueError("source image changed during hashing")
+        _unchanged(path, initial)
+        if digest.hexdigest() != EXPECTED_DISC_SHA256:
+            raise ValueError("source image SHA-256 differs from the pinned RU image")
+        yield handle, initial
+        final = os.fstat(handle.fileno())
         if (initial.st_dev, initial.st_ino, initial.st_size, initial.st_mtime_ns) != (
             final.st_dev, final.st_ino, final.st_size, final.st_mtime_ns
         ):
-            raise ValueError("source image changed during hashing")
-        if digest.hexdigest() != EXPECTED_DISC_SHA256:
-            raise ValueError("source image SHA-256 differs from the pinned RU image")
+            raise ValueError("source image changed during MAP02 sector read")
+        _unchanged(path, initial)
+
+
+def _readonly_disc_digest(path):
+    """Backward-compatible, full-image hash check without sector extraction."""
+    with _open_verified_disc(path) as (_, initial):
         return initial
-    finally:
-        os.close(fd)
-
-
-def _unchanged(path, original):
-    current = os.stat(path, follow_symlinks=False)
-    if (not stat.S_ISREG(current.st_mode) or
-            (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns) !=
-            (original.st_dev, original.st_ino, original.st_size, original.st_mtime_ns)):
-        raise ValueError("source image changed during MAP02 verification")
 
 
 def _validate_audit(result):
@@ -129,15 +148,19 @@ def verify_owned_ru_disc(disc_image, receipt_file, *, capture_directory=None):
     check_receipt(json.loads(receipt_raw.decode("utf-8")))
 
     disc_image = Path(disc_image)
-    first = _readonly_disc_digest(disc_image)
-    # The CD reader verifies per-sector sync, mode and EDC on every requested sector.
-    prs = read_sectors(disc_image, "mode2-2352", start_sector=START_SECTOR,
-                       sector_count=SECTOR_COUNT)[:PRS_BYTES]
-    dat = read_sectors(disc_image, "mode2-2352", start_sector=DAT_START_SECTOR,
-                       sector_count=DAT_SECTOR_COUNT)[:PRIOR_DAT_LENGTH]
-    checked = audit_prs(prs, dat=dat)
-    _validate_audit(checked)
-    _unchanged(disc_image, first)
+    # The digest and both sector extents MUST use the exact same open inode.
+    with _open_verified_disc(disc_image) as (handle, initial):
+        # Existing CD reader validates raw sync, Mode2 Form1 and sector EDC.
+        prs = read_sectors_from_stream(
+            handle, "mode2-2352", start_sector=START_SECTOR,
+            sector_count=SECTOR_COUNT,
+        )[:PRS_BYTES]
+        dat = read_sectors_from_stream(
+            handle, "mode2-2352", start_sector=DAT_START_SECTOR,
+            sector_count=DAT_SECTOR_COUNT,
+        )[:PRIOR_DAT_LENGTH]
+        checked = audit_prs(prs, dat=dat)
+        _validate_audit(checked)
 
     report = {
         "schema": "vh.map02.ru-owned-disc-gate.v1",
