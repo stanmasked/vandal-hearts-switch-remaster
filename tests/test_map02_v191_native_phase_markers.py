@@ -57,6 +57,22 @@ class V191NativePhaseMarkerChain(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         verify_phase_log(bad, mode)
 
+    def test_plural_snapshot_pass_does_not_impersonate_singular_ram_record(self):
+        # The inherited v187 summary has a shared prefix with a singular
+        # native RAM receipt. It MUST NOT be parsed as an extra snapshot.
+        clean = phase_fixture(0)
+        self.assertIn("VH187_NATIVE_RAM_SNAPSHOTS_PASS", clean)
+        self.assertIn("VH187_NATIVE_RAM_SNAPSHOT phase=1", clean)
+        self.assertEqual(verify_phase_log(clean, 0), 4)
+        with self.assertRaisesRegex(ValueError, "obfuscated RAM"):
+            verify_phase_log(
+                clean.replace(
+                    "VH187_NATIVE_RAM_SNAPSHOT phase=1",
+                    "PREFIX VH187_NATIVE_RAM_SNAPSHOT phase=1",
+                    1,
+                ), 0,
+            )
+
     def test_refuses_false_final_pixel_success_in_every_bad_ram_run(self):
         for mode in range(1, 10):
             content = phase_fixture(mode)
