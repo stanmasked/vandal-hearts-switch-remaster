@@ -27,6 +27,7 @@ ENTRY_SCRIPTS = (
     "tools/map02_intel_mac_offline_selfcheck.py",
     "tools/map02_catalina_helper_macho_audit.py",
     "tools/verify_map02_private_pc_native_ft4.py",
+    "tools/map02_intel_mac_local_acceptance.py",
 )
 ENTRY_TESTS = (
     "tests/test_verify_map02_private_timeline_pc_vram4.py",
@@ -63,6 +64,18 @@ On an Intel Mac with macOS, Python 3.9+ and Apple Clang / Xcode command
 line tools installed, from the extracted directory, run:
 
     sh run-selfcheck.sh
+
+For a sanitized *locally observed* operating-system compatibility receipt
+that reruns all synthetic tests:
+
+    python3 -m tools.map02_intel_mac_local_acceptance
+
+On the physical Catalina 10.15.7 Mac, require that OS explicitly:
+
+    python3 -m tools.map02_intel_mac_local_acceptance --require-catalina-10-15-7
+
+The strict mode refuses GitHub macOS 15. This receipt is self-reported
+local runtime evidence, not remote attestation or proof of retail PS1 parity.
 
 The script performs synthetic FT4/VRAM and source/native CLI checks,
 compiles C helper binaries, and validates their x86_64 Mach-O minimum
