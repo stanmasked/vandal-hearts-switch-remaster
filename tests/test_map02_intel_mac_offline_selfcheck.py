@@ -46,7 +46,7 @@ class IntelMacOfflineSelfcheckContractTests(unittest.TestCase):
 
     def test_no_retail_input_suite_and_explicit_result_schema(self):
         self.assertEqual(SCHEMA, "vh.map02.intel-mac.offline-private-ft4-readiness.v1")
-        self.assertEqual(sum(n for _, n in SUITES), 42)
+        self.assertEqual(sum(n for _, n in SUITES), 49)
         for pattern, _ in SUITES:
             self.assertNotIn("retail", pattern)
             self.assertNotIn("owned", pattern)
