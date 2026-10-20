@@ -82,7 +82,9 @@ def _run_native_tool(args, descriptors, *, timeout=60):
         response = subprocess.run(
             args, pass_fds=tuple(descriptors), capture_output=True,
             text=True, timeout=timeout, check=False,
-            umask=0o077)
+            umask=0o077,
+            env={k: v for k, v in os.environ.items()
+                 if not k.startswith(("LD_", "DYLD_", "PYTHON", "VH_"))})
     except (OSError, subprocess.TimeoutExpired):
         raise ValueError("private MAP02 native linker tool unavailable") from None
     if response.returncode:
