@@ -5,7 +5,15 @@ These isolated tests create fake ELF-header files to test fail-closed
 inventory logic, NOT to emulate the original game or claim a full link.
 """
 from pathlib import Path
+from contextlib import redirect_stderr
+import io
+import os
+import subprocess
 import tempfile
+import tools.check_map02_cycle_object_inventory as inventory
+from tools.check_map02_cycle_make_plan import (
+    INHERITED_MAKE_CONTROLS, INHERITED_PYTHON_CONTROLS,
+)
 import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
@@ -120,6 +128,68 @@ class OriginalCodeObjectInventoryTests(unittest.TestCase):
         forged.write_bytes(b"\\x7fELF" + b"x" * 300)
         with self.assertRaisesRegex(ValueError, "private KROMDAT-derived backend"):
             self.verify()
+
+    def test_object_inventory_make_ignores_inherited_make_and_python_overrides(self):
+        controls = INHERITED_MAKE_CONTROLS + INHERITED_PYTHON_CONTROLS
+        injected = {key: "injected-" + key for key in controls}
+
+        def verify_clean_run(*args, **kwargs):
+            self.assertEqual(kwargs["cwd"], self.pc)
+            for key in controls:
+                self.assertNotIn(key, kwargs["env"])
+            self.assertTrue(kwargs["capture_output"])
+            self.assertTrue(kwargs["text"])
+            return SimpleNamespace(returncode=0, stdout=self.stdout, stderr="")
+
+        with (patch.dict(inventory.os.environ, injected),
+              patch.object(inventory.subprocess, "run",
+                           side_effect=verify_clean_run) as run):
+            report = audit_objects(self.upstream, self.bundle)
+        self.assertEqual(report["original_game_translation_units_compiled"], 80)
+        run.assert_called_once()
+
+    def test_real_make_does_not_load_inherited_untrusted_makefiles(self):
+        # This synthetic end-to-end test invokes real GNU Make without any
+        # retail original bytes or game executable. An inherited MAKEFILES
+        # can execute $(shell ...) while the Makefile is parsed even though
+        # the actual auditing target is otherwise a read-only list.
+        marker = self.pc / "untrusted-makefile-parsed"
+        injected = self.pc / "unexpected-inherited.mk"
+        injected.write_text("$(shell touch untrusted-makefile-parsed)\n")
+        (self.bundle / "map02_cycle.mk").write_text("# synthetic overlay\n")
+        game_objs = " ".join(BUILD + "/" + obj for obj in self.game)
+        backend_objs = " ".join(BUILD + "/" + obj for obj in self.backend)
+        (self.pc / "Makefile").write_text(
+            "VH_MAP02_PUBLIC_CODE_OBJS := " + game_objs + "\n"
+            "VH_MAP02_PUBLIC_BACKEND_OBJS := " + backend_objs + "\n"
+            "src/pc_kanji_font.c: tools/gen_kanji_font.py\n"
+        )
+        with patch.dict(inventory.os.environ, {"MAKEFILES": str(injected)}):
+            report = audit_objects(self.upstream, self.bundle)
+        self.assertEqual(report["original_game_translation_units_compiled"], 80)
+        self.assertEqual(report["native_backend_and_observer_objects_compiled"], 30)
+        self.assertFalse(marker.exists())
+        self.assertFalse(report["full_game_elf_linked"])
+
+    def test_object_inventory_cli_never_prints_original_path_on_failure(self):
+        path = str(self.upstream / "SLUS_004.47")
+        args = ["object-inventory", str(self.upstream), str(self.bundle)]
+        for fault in (
+            ValueError("private game source path " + path),
+            OSError("permission denied " + path),
+            subprocess.TimeoutExpired(["make", path], 60),
+        ):
+            with self.subTest(fault=type(fault).__name__):
+                stderr = io.StringIO()
+                with (patch("sys.argv", args),
+                      patch.object(inventory, "audit_objects", side_effect=fault),
+                      redirect_stderr(stderr)):
+                    with self.assertRaises(SystemExit) as caught:
+                        inventory.main()
+                self.assertEqual(caught.exception.code, 2)
+                self.assertIn("source-pinned public code object audit failed",
+                              stderr.getvalue())
+                self.assertNotIn(path, stderr.getvalue())
 
     def test_path_escape_and_bad_inventory_shape_rejected(self):
         with self.assertRaisesRegex(ValueError, "two lists"):
