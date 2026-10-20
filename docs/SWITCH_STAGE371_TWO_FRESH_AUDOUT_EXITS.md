@@ -42,8 +42,16 @@ two distinct original root locators and a corresponding nonempty
 as a semantic receipt, and do not establish speaker playback).
 All three original CSV byte sequences and their SHA-256 digests are
 preserved under separate `stage371-originals/a` and
-`stage371-originals/b` directories. A failure preserves any partial
-source files **as unverified evidence only**; no zero/empty queue,
+`stage371-originals/b` directories. Additionally the exporter saves,
+when present, the **existing** `audio-exit-probe-context-000.csv`
+(Stage360 last pre-submit sample, not exit queue) and
+`audio-lease-reconciliation-000.csv` (Stage347 software lease counters),
+with their SHA-256. Those two optional files are only inventoried;
+their values are **not interpreted** in Stage371. Missing optional
+sources remain `present=false, sha256=null`. The tests reject
+ambiguous multiple numbered copies, symlinks, and a missing source
+silently reported as zero. A failure preserves any partial source
+files **as unverified evidence only**; no zero/empty queue,
 returned descriptor count or success is fabricated.
 
 If either new capture actually returns `0xEA01`, that will be a new
