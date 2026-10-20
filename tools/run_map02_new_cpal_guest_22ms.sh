@@ -21,6 +21,11 @@ printf 'pcm.!default { type pulse }\nctl.!default { type pulse }\n' >"$RUNNER_TE
 export ALSA_CONFIG_PATH="$RUNNER_TEMP/stage280-alsa.conf"
 export SDL_AUDIODRIVER=pulse
 export NEXIUM_X11=1
+# NeXium app settings default to Dynarmic, but Stage276 ELF deliberately
+# compiled ONLY backend-rustarmic. Force its supported CPU variant.
+# Otherwise the GUI/audio CPAL can run without launching the research NRO.
+export NEXIUM_CPU_BACKEND=rustarmic
+export NEXIUM_LOG_LEVEL=info
 export LIBGL_ALWAYS_SOFTWARE=1
 export WGPU_BACKEND=vulkan
 icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
