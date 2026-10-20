@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from tools.map02_intel_mac_local_acceptance import (
-    CATALINA, SCHEMA, bounded_version, local_acceptance,
+    CATALINA, SCHEMA, bounded_version, inspect_host_identity, local_acceptance,
     validate_json_stream, validated_results,
 )
 
@@ -114,12 +114,23 @@ class Map02LocalCatalinaReceiptContracts(unittest.TestCase):
             SimpleNamespace(
                 returncode=0, stdout=json.dumps(INTEGRITY), stderr=""
             ),
-            SimpleNamespace(returncode=0, stdout=SUITE_STREAM, stderr=""),
+            SimpleNamespace(returncode=0, stdout=(
+                    json.dumps(dict(SELFCHECK, catalina_10_15_runtime_executed=(version == CATALINA)))
+                    + "\n" + json.dumps(HELPERS) + "\n"
+                ), stderr=""),
         ]
         with patch("platform.system", return_value="Darwin"), patch(
             "platform.machine", return_value="x86_64"
         ), patch("platform.mac_ver", return_value=(version, ("", "", ""), "x86_64")), patch(
             "pathlib.Path.is_file", return_value=True
+        ), patch(
+            "tools.map02_intel_mac_local_acceptance.inspect_host_identity",
+            return_value={
+                "macos_version": version,
+                "darwin_kernel_major": 19 if version == CATALINA else 24,
+                "host_os_sources_agree": True,
+                "host_os_sources": 3,
+            }
         ), patch("subprocess.run", side_effect=responses) as run:
             report = local_acceptance(require_catalina=strict)
             return report, run.call_count
@@ -139,8 +150,14 @@ class Map02LocalCatalinaReceiptContracts(unittest.TestCase):
         with patch("platform.system", return_value="Darwin"), patch(
             "platform.machine", return_value="x86_64"
         ), patch("platform.mac_ver", return_value=("15.7.1", ("", "", ""), "x86_64")), patch(
-            "subprocess.run"
-        ) as run:
+            "tools.map02_intel_mac_local_acceptance.inspect_host_identity",
+            return_value={
+                "macos_version": "15.7.1",
+                "darwin_kernel_major": 24,
+                "host_os_sources_agree": True,
+                "host_os_sources": 3,
+            }
+        ), patch("subprocess.run") as run:
             with self.assertRaisesRegex(ValueError, "required actual macOS Catalina"):
                 local_acceptance(require_catalina=True)
             run.assert_not_called()
@@ -151,6 +168,75 @@ class Map02LocalCatalinaReceiptContracts(unittest.TestCase):
         self.assertEqual(calls, 2)
         self.assertFalse(report["owner_ps1_disc_authenticated"])
         self.assertFalse(report["original_playstation_gpu_pixels_verified"])
+
+
+class IntelMacThreeSourceIdentityContracts(unittest.TestCase):
+    def fake(self, *, python_os="10.15.7", sw_os="10.15.7",
+             kernel="19.6.0", stderr="", exitcode=0):
+        output = SimpleNamespace(returncode=exitcode, stdout=sw_os + "\n", stderr=stderr)
+        with patch("platform.system", return_value="Darwin"), patch(
+            "platform.machine", return_value="x86_64"
+        ), patch("platform.mac_ver", return_value=(python_os, ("", "", ""), "x86_64")), patch(
+            "platform.release", return_value=kernel
+        ), patch("subprocess.run", return_value=output) as call:
+            if exitcode or stderr or python_os != sw_os or (
+                python_os == "10.15.7" and not kernel.startswith("19.")
+            ):
+                with self.assertRaises(ValueError):
+                    inspect_host_identity()
+                return None, call.call_args_list
+            return inspect_host_identity(), call.call_args_list
+
+    def test_three_sources_agree_on_mocked_catalina19(self):
+        receipt, calls = self.fake()
+        self.assertEqual(receipt["macos_version"], "10.15.7")
+        self.assertEqual(receipt["darwin_kernel_major"], 19)
+        self.assertTrue(receipt["host_os_sources_agree"])
+        self.assertEqual(receipt["host_os_sources"], 3)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0].args[0], ["/usr/bin/sw_vers", "-productVersion"])
+
+    def test_three_sources_agree_on_mocked_mac15_darwin24(self):
+        receipt, calls = self.fake(
+            python_os="15.7.1", sw_os="15.7.1", kernel="24.6.0"
+        )
+        self.assertEqual(receipt["darwin_kernel_major"], 24)
+        self.assertEqual(len(calls), 1)
+
+    def test_python_and_native_system_version_disagree_refused(self):
+        receipt, _ = self.fake(python_os="10.15.7", sw_os="15.7.1")
+        self.assertIsNone(receipt)
+
+    def test_mismatched_darwin_kernel_refused(self):
+        receipt, _ = self.fake(kernel="24.6.0")
+        self.assertIsNone(receipt)
+
+    def test_sw_vers_failure_and_stderr_are_refused(self):
+        for kw in ({"exitcode": 1}, {"stderr": "an error"}):
+            with self.subTest(case=kw):
+                receipt, _ = self.fake(**kw)
+                self.assertIsNone(receipt)
+
+    def test_native_output_injection_and_malformed_kernel_refused(self):
+        for version in ("10.15.7/Users/private", "10.15.7\nhostname", "NOT_A_VERSION"):
+            with self.subTest(version=version):
+                with patch("platform.system", return_value="Darwin"), patch(
+                    "platform.machine", return_value="x86_64"
+                ), patch("platform.mac_ver", return_value=("10.15.7", ("", "", ""), "x86_64")), patch(
+                    "platform.release", return_value="19.6.0"
+                ), patch("subprocess.run", return_value=SimpleNamespace(
+                    returncode=0, stderr="", stdout=version + "\n"
+                )):
+                    with self.assertRaises(ValueError):
+                        inspect_host_identity()
+        with patch("platform.system", return_value="Darwin"), patch(
+            "platform.machine", return_value="x86_64"
+        ), patch("platform.mac_ver", return_value=("10.15.7", ("", "", ""), "x86_64")), patch(
+            "platform.release", return_value="Darwin 19/private"
+        ), patch("subprocess.run") as run:
+            with self.assertRaises(ValueError):
+                inspect_host_identity()
+            run.assert_not_called()
 
 
 if __name__ == "__main__":
