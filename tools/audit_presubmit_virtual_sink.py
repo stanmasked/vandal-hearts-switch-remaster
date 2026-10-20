@@ -109,6 +109,29 @@ def audit(receipt, raw, max_seconds=20):
     # Positive = extra PCM frames between complete exact page spans;
     # negative = overlapping or reordered spans, not 'negative latency'.
     gap_ms=[round(1000*g/RATE,6) if g is not None else None for g in gaps]
+    start_deltas=[unique_offsets[i+1]-unique_offsets[i]
+                  if unique_offsets[i] is not None and unique_offsets[i+1] is not None
+                  else None for i in range(len(pages)-1)]
+    # Do not attribute the block cadence to audout/NeXium/PulseAudio
+    # without a controlled timing experiment. These are raw observables.
+    alignment_residues=[start % 512 if start is not None else None
+                        for start in unique_offsets]
+    same_512_phase=(len(set(alignment_residues))==1 if all_unique else None)
+    deltas_512_aligned=(all(delta%512==0 for delta in start_deltas)
+                        if all_unique else None)
+    # Examine PCM samples in each *positive* inter-page region, not
+    # only the position of individual CRC matches. An exact zero means
+    # genuine PCM16 digital silence in the captured virtual stream.
+    nonzero_between=[]
+    for i,gap in enumerate(gaps):
+        if gap is None or gap<0:
+            nonzero_between.append(None)
+            continue
+        a=(unique_offsets[i]+pages[i]["frames"])*FRAME_BYTES
+        b=unique_offsets[i+1]*FRAME_BYTES
+        nonzero_between.append(sum(1 for x in view[a:b] if x!=0))
+    all_gaps_silent=(all(n==0 for n in nonzero_between)
+                     if all_unique and all(g>=0 for g in gaps) else None)
     signal=array.array("h")
     signal.frombytes(raw)
     if sys.byteorder!="little": signal.byteswap()
@@ -129,6 +152,12 @@ def audit(receipt, raw, max_seconds=20):
         "unique_page_order_preserved":order_preserved,
         "inter_page_gap_frames":gaps,
         "inter_page_gap_ms":gap_ms,
+        "page_start_delta_frames":start_deltas,
+        "page_start_modulo_512":alignment_residues,
+        "all_page_starts_same_512_phase":same_512_phase,
+        "all_page_start_deltas_multiple_of_512":deltas_512_aligned,
+        "inter_page_gap_nonzero_pcm_bytes":nonzero_between,
+        "all_nonnegative_inter_page_gaps_digital_silence":all_gaps_silent,
         "total_positive_gap_frames":(
             sum(max(0,g) for g in gaps) if all_unique else None),
         "all_pages_contiguous_in_order":(
