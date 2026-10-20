@@ -1,0 +1,223 @@
+#ifndef VH_MAP02_BATTLE_FIXTURE_H
+#define VH_MAP02_BATTLE_FIXTURE_H
+
+/*
+ * Original, asset-free tactical encounter for Switch prototype validation.
+ * NOT a reconstruction or verified replay of Vandal Hearts retail MAP02.
+ * Header-only ISO C11 battle rules shared by native libnx and host tests.
+ */
+#include <string.h>
+
+enum { VH_BW = 8, VH_BH = 6, VH_BUNITS = 4, VH_BALLIES = 2 };
+enum { VH_BONGOING = 0, VH_BWIN = 1, VH_BLOSS = 2 };
+enum { VH_BINVALID = 0, VH_BSELECT = 1, VH_BMOVE = 2,
+       VH_BATTACK = 3, VH_BCANCEL = 4, VH_BEND = 5 };
+
+typedef struct {
+    int x, y, hp, acted;
+} VhBattleUnit;
+
+typedef struct {
+    VhBattleUnit units[VH_BUNITS]; /* 0-1 allies; 2-3 enemies */
+    int cursor_x, cursor_y;
+    int selected;                 /* -1 or allied unit index */
+    int status;                   /* VH_BONGOING / WIN / LOSS */
+    int turns_completed;
+    int last_action;
+} VhMap02Battle;
+
+static inline int vh_btile_inside(int x, int y) {
+    return x >= 0 && y >= 0 && x < VH_BW && y < VH_BH;
+}
+
+/* Deliberately authored prototype obstacles; not PS1 map tiles. */
+static inline int vh_bwall(int x, int y) {
+    return (x == 3 && y >= 1 && y <= 3) || (x == 4 && y == 4);
+}
+
+static inline int vh_balive(const VhBattleUnit *unit) {
+    return unit->hp > 0;
+}
+
+static inline int vh_boccupant(const VhMap02Battle *s, int x, int y,
+                               int ignore) {
+    int i;
+    for (i = 0; i < VH_BUNITS; ++i)
+        if (i != ignore && vh_balive(&s->units[i]) &&
+            s->units[i].x == x && s->units[i].y == y)
+            return i;
+    return -1;
+}
+
+static inline int vh_bdistance(int x, int y, int xx, int yy) {
+    int dx = x > xx ? x - xx : xx - x;
+    int dy = y > yy ? y - yy : yy - y;
+    return dx + dy;
+}
+
+/*
+ * Bounded breadth-first search: occupancy and solid terrain are respected.
+ * An occupied destination may be made reachable ONLY for the named target
+ * of an enemy path (enemy still stops on the preceding unoccupied tile).
+ */
+static inline int vh_bpath(const VhMap02Battle *s, int mover, int tx, int ty,
+                           int allowed_target, int *step_x, int *step_y) {
+    int dist[VH_BW * VH_BH], previous[VH_BW * VH_BH];
+    int queue[VH_BW * VH_BH], head = 0, tail = 0;
+    static const int dx[4] = {0, -1, 1, 0};
+    static const int dy[4] = {-1, 0, 0, 1};
+    int i, start, end, px, py;
+    const VhBattleUnit *u;
+    if (!s || mover < 0 || mover >= VH_BUNITS ||
+        !vh_balive(&s->units[mover]) || !vh_btile_inside(tx, ty) ||
+        vh_bwall(tx, ty))
+        return -1;
+    u = &s->units[mover];
+    if (!vh_btile_inside(u->x, u->y)) return -1;
+    start = u->y * VH_BW + u->x;
+    end = ty * VH_BW + tx;
+    for (i = 0; i < VH_BW * VH_BH; ++i) {
+        dist[i] = -1;
+        previous[i] = -1;
+    }
+    queue[tail++] = start;
+    dist[start] = 0;
+    while (head < tail) {
+        int cell = queue[head++], cx = cell % VH_BW, cy = cell / VH_BW;
+        int dir;
+        if (cell == end) break;
+        for (dir = 0; dir < 4; ++dir) {
+            const int nx = cx + dx[dir], ny = cy + dy[dir];
+            int occ, index;
+            if (!vh_btile_inside(nx, ny) || vh_bwall(nx, ny)) continue;
+            index = ny * VH_BW + nx;
+            if (dist[index] >= 0) continue;
+            occ = vh_boccupant(s, nx, ny, mover);
+            if (occ >= 0 && !(index == end && occ == allowed_target))
+                continue;
+            dist[index] = dist[cell] + 1;
+            previous[index] = cell;
+            queue[tail++] = index;
+        }
+    }
+    if (dist[end] < 0) return -1;
+    if (step_x && step_y) {
+        int next = end;
+        while (previous[next] >= 0 && previous[next] != start)
+            next = previous[next];
+        px = next % VH_BW;
+        py = next / VH_BW;
+        *step_x = px;
+        *step_y = py;
+    }
+    return dist[end];
+}
+
+static inline void vh_binit(VhMap02Battle *s) {
+    if (!s) return;
+    memset(s, 0, sizeof(*s));
+    s->units[0] = (VhBattleUnit){1, 2, 5, 0};
+    s->units[1] = (VhBattleUnit){1, 4, 5, 0};
+    s->units[2] = (VhBattleUnit){5, 2, 2, 0};
+    s->units[3] = (VhBattleUnit){6, 4, 2, 0};
+    s->cursor_x = 1;
+    s->cursor_y = 2;
+    s->selected = -1;
+}
+
+static inline void vh_bcursor(VhMap02Battle *s, int dx, int dy) {
+    int nx, ny;
+    if (!s || s->status != VH_BONGOING) return;
+    nx = s->cursor_x + dx;
+    ny = s->cursor_y + dy;
+    if (vh_btile_inside(nx, ny)) {
+        s->cursor_x = nx;
+        s->cursor_y = ny;
+    }
+}
+
+static inline void vh_bupdate_status(VhMap02Battle *s) {
+    int allies = vh_balive(&s->units[0]) + vh_balive(&s->units[1]);
+    int enemies = vh_balive(&s->units[2]) + vh_balive(&s->units[3]);
+    if (enemies == 0) s->status = VH_BWIN;
+    else if (allies == 0) s->status = VH_BLOSS;
+}
+
+static inline int vh_bcancel(VhMap02Battle *s) {
+    if (!s || s->selected < 0 || s->status != VH_BONGOING) return VH_BINVALID;
+    s->selected = -1;
+    return s->last_action = VH_BCANCEL;
+}
+
+static inline int vh_bchoose(VhMap02Battle *s) {
+    int occ, src, dist;
+    if (!s || s->status != VH_BONGOING) return VH_BINVALID;
+    occ = vh_boccupant(s, s->cursor_x, s->cursor_y, -1);
+    if (s->selected < 0) {
+        if (occ >= 0 && occ < VH_BALLIES && !s->units[occ].acted) {
+            s->selected = occ;
+            return s->last_action = VH_BSELECT;
+        }
+        return VH_BINVALID;
+    }
+    src = s->selected;
+    if (src < 0 || src >= VH_BALLIES ||
+        !vh_balive(&s->units[src]) || s->units[src].acted)
+        return VH_BINVALID;
+    if (occ >= VH_BALLIES && vh_bdistance(s->units[src].x, s->units[src].y,
+                                           s->cursor_x, s->cursor_y) == 1) {
+        s->units[occ].hp -= 1;
+        s->units[src].acted = 1;
+        s->selected = -1;
+        vh_bupdate_status(s);
+        return s->last_action = VH_BATTACK;
+    }
+    if (occ >= 0) return VH_BINVALID;
+    dist = vh_bpath(s, src, s->cursor_x, s->cursor_y, -1, 0, 0);
+    if (dist < 1 || dist > 2) return VH_BINVALID;
+    s->units[src].x = s->cursor_x;
+    s->units[src].y = s->cursor_y;
+    s->units[src].acted = 1;
+    s->selected = -1;
+    return s->last_action = VH_BMOVE;
+}
+
+static inline int vh_bend_turn(VhMap02Battle *s) {
+    int enemy;
+    if (!s || s->status != VH_BONGOING) return VH_BINVALID;
+    s->selected = -1;
+    for (enemy = VH_BALLIES; enemy < VH_BUNITS; ++enemy) {
+        int hero, closest = -1, shortest = 1000;
+        int step_x = -1, step_y = -1;
+        VhBattleUnit *foe = &s->units[enemy];
+        if (!vh_balive(foe)) continue;
+        for (hero = 0; hero < VH_BALLIES; ++hero) {
+            int d;
+            if (!vh_balive(&s->units[hero])) continue;
+            d = vh_bpath(s, enemy, s->units[hero].x, s->units[hero].y,
+                         hero, 0, 0);
+            if (d >= 0 && d < shortest) {
+                shortest = d;
+                closest = hero;
+            }
+        }
+        if (closest < 0) continue;
+        if (shortest == 1) {
+            s->units[closest].hp -= 1;
+            vh_bupdate_status(s);
+            if (s->status != VH_BONGOING) break;
+        } else if (shortest > 1 && vh_bpath(s, enemy, s->units[closest].x,
+                                           s->units[closest].y, closest,
+                                           &step_x, &step_y) > 1 &&
+                   vh_boccupant(s, step_x, step_y, enemy) < 0) {
+            foe->x = step_x;
+            foe->y = step_y;
+        }
+    }
+    ++s->turns_completed;
+    s->units[0].acted = 0;
+    s->units[1].acted = 0;
+    return s->last_action = VH_BEND;
+}
+
+#endif /* VH_MAP02_BATTLE_FIXTURE_H */
