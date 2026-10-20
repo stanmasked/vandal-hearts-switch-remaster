@@ -11,6 +11,9 @@ from tools.check_map02_private_incremental_link import OUTPUT
 from tools.check_map02_public_sdl2_archive_witness import (
     SCHEMA, probe_public_sdl2_archive,
 )
+from tools.verify_map02_public_sdl2_archive_recount import (
+    verify_saved_sdl2_recount,
+)
 
 
 class PublicSdl2StaticWitnessTests(unittest.TestCase):
@@ -131,6 +134,71 @@ class PublicSdl2StaticWitnessTests(unittest.TestCase):
             probe_public_sdl2_archive(
                 self.manifest, self.partial, self.archive, target)
         self.assertFalse(target.exists())
+
+    def make_saved_recount(self, label):
+        target = self.root / label
+        report = probe_public_sdl2_archive(
+            self.manifest, self.partial, self.archive, target,
+            expected_initial_strong_imports=2)
+        saved = target / "aggregate.json"
+        saved.write_text(json.dumps(report), encoding="utf-8")
+        local_archive = target / "sdl2-system-candidate.a"
+        linked = target / "linked" / OUTPUT
+        return report, saved, local_archive, linked
+
+    def test_saved_report_recounts_actual_source_candidate_and_linked_elf(self):
+        report, saved, candidate, linked = self.make_saved_recount(
+            "recount-valid")
+        self.assertEqual(len(report["sdl2_candidate_archive_sha256"]), 64)
+        verified = verify_saved_sdl2_recount(
+            self.manifest, self.partial, candidate, linked, saved,
+            expected_initial_strong_imports=2)
+        self.assertEqual(verified["baseline_strong_imports"], 2)
+        self.assertEqual(verified["original_imports_resolved"], 1)
+        self.assertEqual(verified["new_imports"], 1)
+        self.assertEqual(verified["final_strong_imports"], 2)
+        self.assertTrue(verified["saved_report_recount_verified"])
+        self.assertTrue(verified["copied_candidate_archive_identity_verified"])
+        self.assertFalse(verified["full_game_executable_proven"])
+        self.assertFalse(verified["authentic_map02_execution_proven"])
+        for private_name in ("needed", "missing", "extra"):
+            self.assertNotIn(private_name, json.dumps(verified))
+
+    def test_changed_saved_count_fails_independent_recount(self):
+        data, saved, candidate, linked = self.make_saved_recount(
+            "recount-corrupted")
+        data["original_imports_resolved_by_actual_ld_r"] = 0
+        saved.write_text(json.dumps(data), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "recount differs"):
+            verify_saved_sdl2_recount(
+                self.manifest, self.partial, candidate, linked, saved,
+                expected_initial_strong_imports=2)
+
+    def test_substituted_static_candidate_fails_digest_audit(self):
+        _, saved, candidate, linked = self.make_saved_recount(
+            "recount-changed-archive")
+        with candidate.open("ab") as output:
+            output.write(b"extra-bytes")
+        with self.assertRaisesRegex(ValueError, "identity mismatch"):
+            verify_saved_sdl2_recount(
+                self.manifest, self.partial, candidate, linked, saved,
+                expected_initial_strong_imports=2)
+
+    def test_saved_report_symlink_and_wrong_claims_are_rejected(self):
+        data, saved, candidate, linked = self.make_saved_recount(
+            "recount-symlink-unsafe")
+        data["fully_linked_game_executable"] = True
+        saved.write_text(json.dumps(data), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "claims invalid"):
+            verify_saved_sdl2_recount(
+                self.manifest, self.partial, candidate, linked, saved,
+                expected_initial_strong_imports=2)
+        alias = self.root / "aliased-report.json"
+        alias.symlink_to(saved)
+        with self.assertRaisesRegex(ValueError, "aggregate unavailable"):
+            verify_saved_sdl2_recount(
+                self.manifest, self.partial, candidate, linked, alias,
+                expected_initial_strong_imports=2)
 
     def test_thin_archive_and_symlink_refused(self):
         thin = self.root / "thin.a"
