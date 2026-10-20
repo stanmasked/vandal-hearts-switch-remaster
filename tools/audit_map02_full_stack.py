@@ -9,12 +9,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import re
 import sys
 
 from audit_map02_stack import (
     AuditError, git, preflight as core_preflight, unsafe_asset_paths,
+)
+from audit_map02_pr_metadata import (
+    fetch_live_prs, validate_branch_contract, validate_live_prs,
 )
 
 NUMBERS = (
@@ -64,6 +68,7 @@ def validate_snapshot(spec: dict, core_spec: dict) -> list[dict]:
         if pinned.get(old.get("number")) != old.get("head_sha"):
             raise AuditError(
                 f"existing protected core PR #{old.get('number')} pin changed")
+    validate_branch_contract(entries)
     return entries
 
 
@@ -176,12 +181,25 @@ def main() -> int:
                         default=Path("data/map02_full_stack_snapshot.json"))
     parser.add_argument("--report", type=Path)
     parser.add_argument("--no-fetch", action="store_true")
+    parser.add_argument("--verify-live-prs", action="store_true",
+                        help="require current GitHub API Draft/head/base status")
     args = parser.parse_args()
     try:
         spec = json.loads(args.manifest.read_text(encoding="utf-8"))
         core = json.loads(Path(spec["existing_core_stack_snapshot"])
                           .read_text(encoding="utf-8"))
         report = preflight(args.repo, spec, core, fetch=not args.no_fetch)
+        if args.verify_live_prs:
+            entries = validate_snapshot(spec, core)
+            earlier = next(e["head_sha"] for e in entries if e["number"] == 262)
+            later = next(e["head_sha"] for e in entries if e["number"] == 265)
+            divergence_base = git(args.repo.resolve(), "merge-base", earlier,
+                                  later).stdout.strip()
+            current = fetch_live_prs(spec["repo"], entries,
+                                     os.environ.get("GH_TOKEN", ""))
+            report["live_pr_metadata"] = validate_live_prs(
+                spec["repo"], entries, current, report["head_sha"],
+                report["main_sha"], divergence_base)
         if args.report:
             args.report.parent.mkdir(parents=True, exist_ok=True)
             args.report.write_text(json.dumps(report, indent=2) + "\n",
@@ -189,6 +207,9 @@ def main() -> int:
         print("VH_MAP02_FULL_STACK_AUDIT_PASS prs=26 pinned=25 "
               "linear_edges=24 reviewed_divergent=1 "
               "retail_assets=0 main_merge=0", flush=True)
+        if args.verify_live_prs:
+            print("VH_MAP02_FULL_STACK_LIVE_PRS_PASS count=26 "
+                  "draft=26 bases=26 head_shas=26", flush=True)
         return 0
     except (AuditError, OSError, KeyError, ValueError) as exc:
         print("VH_MAP02_FULL_STACK_AUDIT_FAIL: " + str(exc),
