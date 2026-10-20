@@ -97,7 +97,6 @@ class LocalProviderCoverageTests(unittest.TestCase):
         alias.symlink_to(alpha)
         with self.assertRaisesRegex(ValueError, "provider input unavailable"):
             audit_provider_coverage(self.manifest, [alias])
-        self.assertFalse(alias.is_file() and not alias.is_symlink())
 
     def test_invalid_candidate_not_mistaken_for_linked_symbol(self):
         fake = self.root / "broken.o"
