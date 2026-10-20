@@ -60,6 +60,18 @@ def _raw_sector(fd, lba):
         _bcd(frames % 75),
     )):
         raise ValueError("MAP02 raw CD sector MSF address mismatch")
+    # A 2048-byte user-data slice at offset 24 is meaningful only for
+    # XA Mode 2 Form 1. A Mode 1 sector starts at offset 16; a Mode 2
+    # Form 2 sector carries 2324 bytes. Neither can be silently hashed
+    # as the pinned MAP02 resource's Form 1 data.
+    if data[15] != 2:
+        raise ValueError("MAP02 raw CD sector is not XA Mode 2")
+    # XA's 4-byte file/channel/submode/coding header is repeated; a
+    # mismatched copy means the declared user-data offset is untrusted.
+    if data[16:20] != data[20:24]:
+        raise ValueError("MAP02 raw CD sector XA subheader copies differ")
+    if data[18] & 0x20:
+        raise ValueError("MAP02 raw CD sector is XA Form 2, not Form 1")
     return data
 
 
