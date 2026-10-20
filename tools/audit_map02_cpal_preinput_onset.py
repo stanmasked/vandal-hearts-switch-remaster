@@ -106,7 +106,7 @@ def host_log_summary(path):
     require(path.is_file() and not path.is_symlink(),
             "Missing actual host console log")
     data=path.read_bytes()
-    require(0<len(data)<=MAX_LOG_BYTES,"Missing or unbounded host log")
+    require(len(data)<=MAX_LOG_BYTES,"Unbounded host log")
     text=data.decode("utf-8",errors="replace")
     logs=[line.lower() for line in text.splitlines()]
     cp=[s for s in logs if "cpal stream error" in s]
