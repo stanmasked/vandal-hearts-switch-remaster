@@ -6,12 +6,16 @@ on:
     paths:
       - '.github/workflows/map02-local-disc-receipt.yml'
       - 'tools/check_map02_local_disc_receipt.py'
+      - 'tools/emit_map02_local_disc_receipt.py'
       - 'tests/test_check_map02_local_disc_receipt.py'
+      - 'tests/test_emit_map02_local_disc_receipt.py'
   pull_request:
     paths:
       - '.github/workflows/map02-local-disc-receipt.yml'
       - 'tools/check_map02_local_disc_receipt.py'
+      - 'tools/emit_map02_local_disc_receipt.py'
       - 'tests/test_check_map02_local_disc_receipt.py'
+      - 'tests/test_emit_map02_local_disc_receipt.py'
 
 permissions:
   contents: read
@@ -29,4 +33,4 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Run asset-free receipt test suite
-        run: python3 -m unittest tests.test_check_map02_local_disc_receipt -v
+        run: python3 -m unittest -v tests.test_check_map02_local_disc_receipt tests.test_emit_map02_local_disc_receipt
