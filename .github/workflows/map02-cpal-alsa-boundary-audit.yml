@@ -27,6 +27,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.VH_SOURCE_HEAD }}
+          fetch-depth: 0
       - name: Verify checkout and research-only child file boundary
         shell: bash
         run: |
@@ -46,6 +47,9 @@ jobs:
           assert not any(p.startswith("source/") for p in paths)
           print("Verified host-only child files:",sorted(paths))
           PY
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Install optical decoder dependency
         run: python3 -m pip install --disable-pip-version-check pillow
       - name: Reject forged provenance, CRC image, PCM and classification fixtures
