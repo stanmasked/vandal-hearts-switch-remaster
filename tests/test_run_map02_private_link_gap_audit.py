@@ -100,6 +100,8 @@ class OneShotPrivateMap02LinkGapTests(unittest.TestCase):
                 actual[prefix + "_final_strong_import_count"])
         self.assertTrue(actual["owner_only_saved_report"])
         self.assertTrue(actual["independent_elf_and_count_audit_passed"])
+        self.assertTrue(
+            actual["inputs_verified_unchanged_across_all_audit_stages"])
         self.assertFalse(actual["fully_linked_game_executable"])
         self.assertFalse(actual["original_map02_execution_proven"])
         receipt = root / "receipts" / "paired.private.json"
@@ -194,6 +196,71 @@ class OneShotPrivateMap02LinkGapTests(unittest.TestCase):
         for private_label in ("needed", "missing", "followup",
                               str(self.manifest), str(self.partial)):
             self.assertNotIn(private_label, execution.stdout + execution.stderr)
+
+    def test_candidate_modified_after_coverage_rejected_before_link(self):
+        """Provider exports and actual GNU linking cannot use different bytes."""
+        from tools import run_map02_private_link_gap_audit as module
+        actual = module.audit_provider_coverage
+        output = self.root / "candidate-mutated-after-preflight"
+
+        def change_candidate(*args, **kwargs):
+            result = actual(*args, **kwargs)
+            with self.supplies.open("ab") as handle:
+                handle.write(b"changed-after-preflight")
+            return result
+
+        with mock.patch.object(
+                module, "audit_provider_coverage", side_effect=change_candidate):
+            with self.assertRaisesRegex(ValueError, "changed during link"):
+                run_private_link_gap_audit(
+                    self.manifest, self.partial, self.archives, output,
+                    audit_strong_providers=True)
+        self.assertFalse(output.exists())
+
+    def test_same_bytes_new_inode_after_preflight_is_rejected(self):
+        """Even identical content from a newly substituted archive is unsafe."""
+        from tools import run_map02_private_link_gap_audit as module
+        actual = module.audit_provider_coverage
+        output = self.root / "provider-swapped-after-preflight"
+
+        def replace_provider(*args, **kwargs):
+            result = actual(*args, **kwargs)
+            replacement = self.root / "replacement-candidate.a"
+            replacement.write_bytes(self.supplies.read_bytes())
+            replacement.chmod(0o600)
+            replacement.replace(self.supplies)
+            return result
+
+        with mock.patch.object(
+                module, "audit_provider_coverage", side_effect=replace_provider):
+            with self.assertRaisesRegex(
+                    ValueError, "changed during link|path replaced"):
+                run_private_link_gap_audit(
+                    self.manifest, self.partial, self.archives, output,
+                    audit_strong_providers=True)
+        self.assertFalse(output.exists())
+
+    def test_candidate_modified_after_two_links_never_creates_receipt(self):
+        """Do not commit the saved receipt if private inputs changed mid-run."""
+        from tools import run_map02_private_link_gap_audit as module
+        actual = module.compare_private_archive_strategies
+        output = self.root / "candidate-changed-during-link"
+
+        def change_after_compare(*args, **kwargs):
+            report = actual(*args, **kwargs)
+            with self.needs.open("ab") as handle:
+                handle.write(b"changed-after-both-links")
+            return report
+
+        with mock.patch.object(
+                module, "compare_private_archive_strategies",
+                side_effect=change_after_compare):
+            with self.assertRaisesRegex(ValueError, "changed during link"):
+                run_private_link_gap_audit(
+                    self.manifest, self.partial, self.archives, output,
+                    audit_strong_providers=True)
+        self.assertFalse(
+            (output / "receipts" / "paired.private.json").exists())
 
     def test_bad_archive_set_rejected_before_creating_root(self):
         cases = [[self.needs], [self.needs, self.partial]]
