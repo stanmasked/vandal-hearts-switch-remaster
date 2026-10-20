@@ -122,7 +122,7 @@ class SyntheticCpalTimelineTests(unittest.TestCase):
 
     def test_cumulative_cpal_return_counter_cannot_go_backwards(self):
         raw=self.path.read_text().splitlines(keepends=True)
-        raw[9]=raw[9].replace(",27,27,",",27,26,")
+        raw[9]=raw[9].replace(",27,27,",",27,20,")
         self.path.write_text("".join(raw))
         with self.assertRaisesRegex(ValueError,"Decreasing cumulative"):
             parse(self.path)
