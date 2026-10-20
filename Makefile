@@ -28,7 +28,8 @@ LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 .PHONY: all clean test test-sanitize verify-nro sdl2-probe sdl2-gl-probe sdl2-texture-probe sdl2-audio-probe openal-probe
 all: $(BUILD)/$(TARGET).nro
 
-test: $(BUILD)/test_map02_two_scenarios $(BUILD)/test_map02_data_driven $(BUILD)/test_map02_battle_fixture $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_texture_sample $(BUILD)/test_ft4_textured_quad $(BUILD)/test_ps1_indexed_texture $(BUILD)/test_ps1_abr_blend $(BUILD)/test_map02_terrain_lighting $(BUILD)/test_map02_face_direction $(BUILD)/test_map02_projection $(BUILD)/test_map02_terrain_quad $(BUILD)/test_map02_source_projection_batch $(BUILD)/test_map02_captured_projection_batch $(BUILD)/test_map02_captured_vram4_bridge $(BUILD)/test_map02_terrain_ot_scene $(BUILD)/test_map02_external_gte_ft4 $(BUILD)/test_map02_vram4_page $(BUILD)/test_map02_vram4_frame
+test: $(BUILD)/test_map02_variable_rosters $(BUILD)/test_map02_two_scenarios $(BUILD)/test_map02_data_driven $(BUILD)/test_map02_battle_fixture $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_texture_sample $(BUILD)/test_ft4_textured_quad $(BUILD)/test_ps1_indexed_texture $(BUILD)/test_ps1_abr_blend $(BUILD)/test_map02_terrain_lighting $(BUILD)/test_map02_face_direction $(BUILD)/test_map02_projection $(BUILD)/test_map02_terrain_quad $(BUILD)/test_map02_source_projection_batch $(BUILD)/test_map02_captured_projection_batch $(BUILD)/test_map02_captured_vram4_bridge $(BUILD)/test_map02_terrain_ot_scene $(BUILD)/test_map02_external_gte_ft4 $(BUILD)/test_map02_vram4_page $(BUILD)/test_map02_vram4_frame
+	./$(BUILD)/test_map02_variable_rosters
 	./$(BUILD)/test_map02_two_scenarios
 	./$(BUILD)/test_map02_data_driven
 	./$(BUILD)/test_map02_battle_fixture
@@ -50,6 +51,7 @@ test: $(BUILD)/test_map02_two_scenarios $(BUILD)/test_map02_data_driven $(BUILD)
 	./$(BUILD)/test_map02_vram4_page
 	./$(BUILD)/test_map02_vram4_frame
 	python3 tools/generate_map02_fixture.py --all --check
+	python3 -m unittest discover -s tests -p 'test_map02_variable_rosters.py' -v
 	python3 -m unittest discover -s tests -p 'test_map02_two_scenarios.py' -v
 	python3 -m unittest discover -s tests -p 'test_map02_encounter_data.py' -v
 	python3 tests/test_restore_ps1_str.py
@@ -86,6 +88,7 @@ test: $(BUILD)/test_map02_two_scenarios $(BUILD)/test_map02_data_driven $(BUILD)
 
 # Host-only memory and undefined-behavior checks; requires GCC or Clang sanitizers.
 test-sanitize: | $(BUILD)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_map02_variable_rosters.c -o $(BUILD)/test_map02_variable_rosters_sanitize
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_map02_two_scenarios.c -o $(BUILD)/test_map02_two_scenarios_sanitize
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_map02_data_driven.c -o $(BUILD)/test_map02_data_driven_sanitize
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_map02_battle_fixture.c -o $(BUILD)/test_map02_battle_fixture_sanitize
@@ -106,6 +109,7 @@ test-sanitize: | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_map02_external_gte_ft4.c -o $(BUILD)/test_map02_external_gte_ft4_sanitize -lm
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_map02_vram4_page.c -o $(BUILD)/test_map02_vram4_page_sanitize -lm
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_map02_vram4_frame.c -o $(BUILD)/test_map02_vram4_frame_sanitize -lm
+	./$(BUILD)/test_map02_variable_rosters_sanitize
 	./$(BUILD)/test_map02_two_scenarios_sanitize
 	./$(BUILD)/test_map02_data_driven_sanitize
 	./$(BUILD)/test_map02_battle_fixture_sanitize
@@ -147,6 +151,9 @@ sdl2-audio-probe: $(BUILD)/$(SDL2_AUDIO_TARGET).nro
 
 $(BUILD):
 	mkdir -p $@
+
+$(BUILD)/test_map02_variable_rosters: tests/test_map02_variable_rosters.c source/map02_battle_fixture.h source/map02_encounter_data.h source/map02_encounter_b_data.h | $(BUILD)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
 
 $(BUILD)/test_map02_two_scenarios: tests/test_map02_two_scenarios.c source/map02_battle_fixture.h source/map02_encounter_data.h source/map02_encounter_b_data.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
