@@ -95,3 +95,34 @@ jobs:
           grep -F 'offline synthetic MAP02 checks unavailable' \
             /tmp/vh-map02-invalid-mac.stderr
           echo 'VH_MAP02_FAKE_INTEL_MAC_REJECTED host=linux original_disc=0'
+
+  linux-adversarial-cli:
+    name: Full source/native FT4 CLI adversaries on Linux
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: upstream
+          sparse-checkout: |
+            platform/pc/src/pc_raster.c
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Exercise actual CLI with all corrupted synthetic GPU packets
+        shell: bash
+        env:
+          MAP02_PINNED_RASTER: upstream/platform/pc/src/pc_raster.c
+          CC: clang
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_map02_private_ft4_cli_mutations.py' -v \
+            2>&1 | tee /tmp/vh-map02-actual-cli-mutants.log
+          grep -F 'Ran 7 tests' /tmp/vh-map02-actual-cli-mutants.log
+          if grep -E 'FAILED|ERROR:' /tmp/vh-map02-actual-cli-mutants.log; then exit 1; fi
+          echo 'VH_MAP02_FULL_CLI_MUTATIONS_PASS methods=7 adversaries=11 original_disc=0'
