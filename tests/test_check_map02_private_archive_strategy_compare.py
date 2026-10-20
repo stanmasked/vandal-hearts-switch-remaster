@@ -78,6 +78,7 @@ class PairedArchiveComparisonTests(unittest.TestCase):
         self.assertEqual(report["grouped_final_strong_import_count"], 1)
         self.assertEqual(report["group_minus_single_final_strong_imports"], -1)
         self.assertTrue(report["inputs_verified_unchanged_after_both_links"])
+        self.assertTrue(report["outputs_verified_unchanged_after_both_links"])
         self.assertFalse(report["fully_linked_game_executable"])
         self.assertFalse(report["original_map02_execution_proven"])
         self.assertEqual(parent.stat().st_mode & 0o777, 0o700)
@@ -92,6 +93,74 @@ class PairedArchiveComparisonTests(unittest.TestCase):
                              report[hash_field])
         for name in ("needed", "missing", "followup"):
             self.assertNotIn(name, json.dumps(report))
+
+    def test_first_output_mutation_after_grouped_link_is_rejected(self):
+        """Do not publish a comparison after its earlier ELF was modified."""
+        original = comparison.probe_private_incremental_link
+        destination = self.root / "output-changed"
+
+        def mutate_after_second(*args, **kwargs):
+            report = original(*args, **kwargs)
+            if kwargs.get("group_archives"):
+                previous = destination / "single-pass" / OUTPUT
+                with previous.open("ab") as handle:
+                    handle.write(b"changed-output-after-group")
+            return report
+
+        with mock.patch.object(
+                comparison, "probe_private_incremental_link",
+                side_effect=mutate_after_second):
+            with self.assertRaisesRegex(ValueError, "changed during link"):
+                comparison.compare_private_archive_strategies(
+                    self.manifest, self.base,
+                    [self.second, self.first], destination)
+
+    def test_same_bytes_new_inode_of_first_output_is_rejected(self):
+        """An identically copied ELF cannot replace the original pinned inode."""
+        original = comparison.probe_private_incremental_link
+        destination = self.root / "output-swapped"
+
+        def swap_after_second(*args, **kwargs):
+            report = original(*args, **kwargs)
+            if kwargs.get("group_archives"):
+                previous = destination / "single-pass" / OUTPUT
+                original_bytes = previous.read_bytes()
+                previous.unlink()
+                previous.write_bytes(original_bytes)
+                previous.chmod(0o600)
+            return report
+
+        with mock.patch.object(
+                comparison, "probe_private_incremental_link",
+                side_effect=swap_after_second):
+            # Reusing the pinned inode after unlink changes its ctime;
+            # the earliest fail-closed check may report either mutation
+            # or a replaced pathname, depending on filesystem behavior.
+            with self.assertRaisesRegex(
+                    ValueError, "changed during link|path replaced"):
+                comparison.compare_private_archive_strategies(
+                    self.manifest, self.base,
+                    [self.second, self.first], destination)
+
+    def test_modified_grouped_elf_is_rejected_before_receipt(self):
+        """The second linked ELF must match its immediately returned SHA."""
+        original = comparison.probe_private_incremental_link
+        destination = self.root / "group-output-corrupt"
+
+        def mutate_group_result(*args, **kwargs):
+            report = original(*args, **kwargs)
+            if kwargs.get("group_archives"):
+                with (destination / "grouped" / OUTPUT).open("ab") as handle:
+                    handle.write(b"group-output-corrupt")
+            return report
+
+        with mock.patch.object(
+                comparison, "probe_private_incremental_link",
+                side_effect=mutate_group_result):
+            with self.assertRaisesRegex(ValueError, "digest mismatch"):
+                comparison.compare_private_archive_strategies(
+                    self.manifest, self.base,
+                    [self.second, self.first], destination)
 
     def test_invalid_candidates_and_existing_parent_rejected(self):
         for label, candidates in [

@@ -8,15 +8,47 @@ import argparse
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 
 from tools.check_map02_private_provider_coverage import read_private_manifest
 from tools.check_map02_private_incremental_link import (
-    _confirm_owned, _open_owned, _private_output_dir,
+    OUTPUT, _confirm_owned, _open_owned, _private_output_dir,
     probe_private_incremental_link,
 )
 
 SCHEMA = "vh.map02.private-archive-strategy-comparison.v1"
+
+
+def _pin_link_output(parent, name, expected_sha):
+    """Hold actual linked ET_REL descriptors open across both passes."""
+    folder = parent / name
+    try:
+        info = folder.lstat()
+    except OSError:
+        raise ValueError("private MAP02 paired output directory inaccessible") from None
+    if (not stat.S_ISDIR(info.st_mode)
+            or info.st_uid != os.geteuid()
+            or stat.S_IMODE(info.st_mode) != 0o700):
+        raise ValueError("private MAP02 paired output directory unsafe")
+    ident = (info.st_dev, info.st_ino, info.st_uid, info.st_mode)
+    entry = _open_owned(folder / OUTPUT, require_private=True)
+    if entry[3] != expected_sha:
+        os.close(entry[0])
+        raise ValueError("private MAP02 paired output ELF digest mismatch")
+    return entry, folder, ident
+
+
+def _confirm_link_output(pinned):
+    entry, folder, ident = pinned
+    _confirm_owned(entry)
+    try:
+        current = folder.lstat()
+    except OSError:
+        raise ValueError("private MAP02 paired output directory inaccessible") from None
+    if (current.st_dev, current.st_ino, current.st_uid,
+            current.st_mode) != ident:
+        raise ValueError("private MAP02 paired output directory replaced")
 
 
 def compare_private_archive_strategies(manifest, partial, archives, out_dir):
@@ -28,6 +60,7 @@ def compare_private_archive_strategies(manifest, partial, archives, out_dir):
             "private MAP02 comparison requires 2..64 native archive inputs")
     manifest_doc = read_private_manifest(manifest)
     entries = []
+    outputs = []
     try:
         # Hold descriptors across both invocations so an inode, a same-size
         # write, or an altered archive cannot silently change the comparison.
@@ -46,13 +79,19 @@ def compare_private_archive_strategies(manifest, partial, archives, out_dir):
         parent, parent_identity = _private_output_dir(out_dir)
         single = probe_private_incremental_link(
             manifest, partial, archives, parent / "single-pass")
+        outputs.append(_pin_link_output(
+            parent, "single-pass", single["linked_candidate_elf_sha256"]))
         for entry in entries:
             _confirm_owned(entry)
         grouped = probe_private_incremental_link(
             manifest, partial, archives, parent / "grouped",
             group_archives=True)
+        outputs.append(_pin_link_output(
+            parent, "grouped", grouped["linked_candidate_elf_sha256"]))
         for entry in entries:
             _confirm_owned(entry)
+        for pinned in outputs:
+            _confirm_link_output(pinned)
         info = parent.lstat()
         if (info.st_dev, info.st_ino, info.st_uid,
                 info.st_mode & 0o777) != parent_identity:
@@ -92,10 +131,13 @@ def compare_private_archive_strategies(manifest, partial, archives, out_dir):
             "grouped_partial_elf_sha256":
                 grouped["linked_candidate_elf_sha256"],
             "inputs_verified_unchanged_after_both_links": True,
+            "outputs_verified_unchanged_after_both_links": True,
             "fully_linked_game_executable": False,
             "original_map02_execution_proven": False,
         }
     finally:
+        for pinned in outputs:
+            os.close(pinned[0][0])
         for entry in entries:
             os.close(entry[0])
 
