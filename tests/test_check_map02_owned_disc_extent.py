@@ -166,9 +166,15 @@ class OwnedMap02DiscExtentTests(unittest.TestCase):
 
     def test_new_disc_user_data_byte_changes_cryptographic_digest(self):
         first = self.check()["resource_user_data_sha256"]
+        # Recompute XA EDC so the second check reaches the expected
+        # cryptographic digest comparison, not the corruption guard.
         with self.image.open("r+b") as f:
-            f.seek(self.first * SECTOR_RAW + 24)
-            f.write(b"changed!")
+            f.seek(self.first * SECTOR_RAW)
+            raw = bytearray(f.read(SECTOR_RAW))
+            raw[24:32] = b"changed!"
+            raw[0x818:0x81c] = xa_edc(raw[0x10:0x818]).to_bytes(4, "little")
+            f.seek(self.first * SECTOR_RAW)
+            f.write(raw)
         self.assertNotEqual(first, self.check()["resource_user_data_sha256"])
 
 
