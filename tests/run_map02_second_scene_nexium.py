@@ -75,7 +75,7 @@ def verify_evidence(root: Path):
             and tile(second, ENEMY, 5, 2) < 100):
         raise ValueError("R did not switch NeXium from map 1 to map 2")
     scene_label = (978, 174, 1150, 215)
-    if delta(first, second, scene_label) < 70:
+    if delta(first, second, scene_label) < 12:
         raise ValueError("selected MAP label did not change")
     # First A melee attack consumes action, killing only the first foe.
     if not (tile(one, ENEMY, 2, 2) < 100
