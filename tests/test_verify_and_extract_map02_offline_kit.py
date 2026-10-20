@@ -2,6 +2,7 @@
 import copy
 import hashlib
 import os
+import stat
 from pathlib import Path
 import subprocess
 import sys
@@ -53,7 +54,7 @@ class SafeMap02PreExtractTests(unittest.TestCase):
         info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
         info.create_system = 3
         info.compress_type = zipfile.ZIP_DEFLATED
-        info.external_attr = mode << 16
+        info.external_attr = (stat.S_IFREG | mode) << 16
         return info, data
 
     def test_verified_original_archive_extracts_and_preexec_verifies(self):
