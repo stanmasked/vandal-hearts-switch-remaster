@@ -97,6 +97,16 @@ class V190NativeEvidenceStability(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 snapshot_directory(root)
 
+    def test_rejects_two_mode_labels_hardlinked_to_the_same_inode(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            make_private_native_logs(root)
+            target = root / "v186-8.log"
+            target.unlink()
+            os.link(root / "v186-7.log", target)
+            with self.assertRaisesRegex(ValueError, "share an inode"):
+                snapshot_directory(root)
+
     def test_real_pcsx_job_runs_provenance_after_v189_against_private_logs(self):
         parent = (ROOT / ".github/workflows/map02-v104-content-guard.yml").read_text()
         independent = (ROOT / ".github/workflows/map02-v190-native-log-stability.yml").read_text()
