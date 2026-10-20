@@ -1,0 +1,140 @@
+name: MAP02 selectable four-three-one troop compositions
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-roster-variants-switch.yml'
+      - 'source/main.c'
+      - 'source/map02_battle8.h'
+      - 'source/map02_roster8.h'
+      - 'source/map02_roster8_smoke_data.h'
+      - 'tests/run_map02_nexium_roster_variants.py'
+      - 'source/map02_roster8_variants.h'
+      - 'tests/test_map02_nexium_4v4_oracle.py'
+      - 'tests/test_map02_roster8_variants.c'
+      - 'data/map02_roster8_4v4.json'
+      - 'tools/generate_map02_roster8.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  portable-route:
+    name: Four-three-one roster-state rules (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Replay illegal wall, real move, AI chase and reset in C
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -O2 -Wall -Wextra -Werror -pedantic tests/test_map02_roster8_variants.c -o /tmp/vh-map02-4v4-path
+          /tmp/vh-map02-4v4-path | tee /tmp/vh-map02-4v4-path-proof
+          grep -Fx 'VH_MAP02_4V4_VARIANTS_PASS default=4v4 second=3v3 third=1v4 padding=1 reset_current=1 fail_closed=1 retail=0' /tmp/vh-map02-4v4-path-proof
+          "$CC" -std=c11 -O0 -g -Wall -Wextra -Werror -pedantic -fsanitize=undefined -fno-sanitize-recover=all tests/test_map02_roster8_variants.c -o /tmp/vh-map02-4v4-path-ubsan
+          /tmp/vh-map02-4v4-path-ubsan
+  oracle-negative-tests:
+    name: Check roster selection script and prior verified 4v4 oracles
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install screenshot test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pil
+      - name: Validate existing screenshot oracle and new roster script syntax
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tests/run_map02_nexium_4v4.py tests/run_map02_nexium_roster_variants.py tests/test_map02_nexium_4v4_oracle.py
+          python3 -m unittest discover -s tests -p 'test_map02_nexium_4v4_oracle.py' -v
+          echo 'VH_MAP02_ROSTER_SELECT_ORACLE_PASS base_images=synthetic no_emulator_claim=1'
+  build-4v4-nro:
+    name: Build real optional 4v4 devkitPro/libnx NRO
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check exact 4v4 JSON-to-C header and portable battle
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/opt/devkitpro/devkitA64/bin:/opt/devkitpro/tools/bin:$PATH"
+          python3 -m py_compile tests/run_map02_nexium_roster_variants.py
+          python3 tools/generate_map02_fixture.py --all --check
+          python3 tools/generate_map02_roster8.py --output /tmp/map02_roster8_generated.h
+          cmp source/map02_roster8_smoke_data.h /tmp/map02_roster8_generated.h
+          make build/test_map02_two_scenarios
+          ./build/test_map02_two_scenarios
+          make verify-nro
+          test -s build/vandal-hearts-prototype.nro
+          echo 'VH_MAP02_SWITCH_4V4_NRO_PASS original_maps=2 optional_mode=1 retail=0'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: map02-switch-roster-variants-nro
+          path: build/vandal-hearts-prototype.nro
+          if-no-files-found: error
+  nexium-4v4:
+    name: Real NeXium R cycling 4v4, 3v3, 1v4 and safe reset
+    needs: build-4v4-nro
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-switch-roster-variants-nro
+          path: nros
+      - name: Install Vulkan and screenshot dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl jq xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 libxkbcommon-x11-0 \
+            libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers
+      - name: Download pinned current NeXium nightly release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="$(curl -fsSL --retry 3 --retry-all-errors -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+          asset_url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          test -n "$asset_url"
+          curl -fL --retry 3 --retry-all-errors "$asset_url" -o /tmp/nexium-linux.tar.gz
+          mkdir -p /tmp/nexium
+          tar -xzf /tmp/nexium-linux.tar.gz -C /tmp/nexium
+          emu_bin="$(find /tmp/nexium -type f -executable \( -name nexium -o -name nexium-gui \) -print -quit)"
+          test -n "$emu_bin"
+          echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
+      - name: Use real R to cycle, fight 1v4, reset and restore old map
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p map02-roster-variants-evidence
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          timeout --kill-after=5s 180s xvfb-run -a -s "-screen 0 1280x720x24" \
+            python3 tests/run_map02_nexium_roster_variants.py \
+              --nro "$PWD/nros/vandal-hearts-prototype.nro" \
+              --evidence-dir map02-roster-variants-evidence \
+            | tee map02-roster-variants-evidence/result.log
+          grep -Fx 'VH_MAP02_NEXIUM_VARIANTS_PASS default_4v4=1 three_by_three=1 one_by_four=1 legal_melee=1 reset_selected=1 roundtrip_4v4=1 legacy_restored=1 retail=0' map02-roster-variants-evidence/result.log
+      - name: Upload authentic emulator screenshots and execution log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-map02-roster-variants-runtime
+          path: map02-roster-variants-evidence/
+          if-no-files-found: warn
