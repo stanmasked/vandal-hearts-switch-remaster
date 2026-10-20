@@ -45,7 +45,7 @@ class LifecyclePatchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"ambiguous"):
             patch(baseline().replace("let calls = MAP02_CPAL_ENTER.load(Ordering::Relaxed);",
                 "let calls = MAP02_CPAL_ENTER.load(Ordering::Relaxed);\n"
-                "let calls = MAP02_CPAL_ENTER.load(Ordering::Relaxed);"))
+                "            let calls = MAP02_CPAL_ENTER.load(Ordering::Relaxed);"))
     def test_missing_play_failure_anchor_refused(self):
         with self.assertRaisesRegex(ValueError,"anchor"):
             patch(baseline().replace('stream.play()','not_playing()'))
