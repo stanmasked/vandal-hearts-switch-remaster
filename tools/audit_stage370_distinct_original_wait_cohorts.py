@@ -83,10 +83,14 @@ def compare(old:dict,latest:dict,meta365:dict,meta369:dict)->dict:
             and old.get("timeout_root_cause_unique_to_kernel_callsite_proven") is False
             and old.get("real_hardware_Nintendo_Switch_speaker_or_DAC_verified") is False,
             "historical independently verified timeout and prior success were altered")
-    for key in ("timeout_stage313_348_351_357_sha256",
-                "timeout_original_guest_receipt_sha256"):
+    for key,expected_keys in (
+        ("timeout_stage313_348_351_357_sha256",
+         {"stage313","stage348","stage351","stage357"}),
+        ("timeout_original_guest_receipt_sha256",
+         {"stage313","stage314","stage348","stage351","stage357"}),
+    ):
         obj=old.get(key)
-        require(type(obj) is dict and bool(obj)
+        require(type(obj) is dict and set(obj)==expected_keys
                 and all(type(x) is str and len(x)==64 and
                         all(c in "0123456789abcdef" for c in x)
                         for x in obj.values()),"historical original-source SHA provenance missing")
