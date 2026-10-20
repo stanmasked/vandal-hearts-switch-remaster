@@ -3,6 +3,10 @@ on:
   pull_request:
     paths:
       - 'data/map02_fixture.json'
+      - 'data/map02_fixture_b.json'
+      - 'source/map02_encounter_b_data.h'
+      - 'tests/test_map02_two_scenarios.c'
+      - 'tests/test_map02_two_scenarios.py'
       - 'source/map02_encounter_data.h'
       - 'source/map02_battle_fixture.h'
       - 'source/main.c'
@@ -29,7 +33,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 tools/generate_map02_fixture.py --check
+          python3 tools/generate_map02_fixture.py --all --check
           python3 -m unittest discover -s tests -p 'test_map02_encounter_data.py' -v
       - name: Compile and exercise original plus alternate battles
         shell: bash

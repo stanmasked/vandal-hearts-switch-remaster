@@ -323,9 +323,12 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
  * this deterministic two-ally/two-enemy playable battle demonstration.
  */
 static void draw_map02_battle(u32 *pixels, u32 stride,
-                              const VhMap02Battle *battle, u32 frame_tick) {
+                              const VhMap02Battle *battle, int scenario_id,
+                              u32 frame_tick) {
     VhCanvas canvas = {(uint32_t *)pixels, (size_t)stride, FB_WIDTH, FB_HEIGHT};
     char count_label[] = "TURN 000";
+    char scene_label[] = "MAP 1/2";
+    scene_label[4] = (char)('1' + scenario_id);
     int x, y, unit;
     fill_rect(pixels, stride, 0, 0, FB_WIDTH, FB_HEIGHT, COLOR_BG);
     draw_text(pixels, stride, 70, 24, "MAP02 BATTLE DEMO", COLOR_WHITE, 3);
@@ -340,6 +343,7 @@ static void draw_map02_battle(u32 *pixels, u32 stride,
     count_label[6] = (char)('0' + (battle->turns_completed / 10) % 10);
     count_label[7] = (char)('0' + battle->turns_completed % 10);
     draw_text(pixels, stride, 985, 145, count_label, COLOR_WHITE, 2);
+    draw_text(pixels, stride, 985, 183, scene_label, COLOR_CURSOR, 2);
     for (y = 0; y < VH_BH; ++y) {
         for (x = 0; x < VH_BW; ++x) {
             const int px = GRID_X + x * CELL_SIZE, py = GRID_Y + y * CELL_SIZE;
@@ -391,6 +395,7 @@ static void draw_map02_battle(u32 *pixels, u32 stride,
     draw_text(pixels, stride, 985, 346, "B CANCEL", COLOR_WHITE, 1);
     draw_text(pixels, stride, 985, 370, "X END TURN", COLOR_WHITE, 1);
     draw_text(pixels, stride, 985, 394, "Y RESTART", COLOR_WHITE, 1);
+    draw_text(pixels, stride, 985, 418, "L R CHANGE MAP", COLOR_WHITE, 1);
     draw_text(pixels, stride, 70, 622, "MINUS SWITCH DEMO  PLUS EXIT", COLOR_MUTED, 2);
     draw_text(pixels, stride, 70, 661, "D-PAD CURSOR  A MOVE OR ATTACK  X ENEMY TURN", COLOR_MUTED, 1);
     fill_rect(pixels, stride, 1000, 610, 8 + (int)(frame_tick % 89), 6, COLOR_HERO);
@@ -419,6 +424,7 @@ int main(int argc, char **argv) {
     VhGameState state = {1, 2, 1, 2, 6, 3, 0};
     VhMap02Battle battle;
     int battle_mode = 0;
+    int scenario_id = 0;
     vh_binit(&battle);
     u32 frame_tick = 0;
 
@@ -437,11 +443,19 @@ int main(int argc, char **argv) {
 
         if (buttons_down & HidNpadButton_Minus) {
             battle_mode = !battle_mode;
-            if (battle_mode) vh_binit(&battle);
+            if (battle_mode) {
+                scenario_id = 0;  /* preserves existing NeXium default path */
+                (void)vh_binit_index(&battle, scenario_id);
+            }
         }
         if (battle_mode) {
             if (actions & VH_INPUT_QUIT) break;
-            if (buttons_down & HidNpadButton_Y) vh_binit(&battle);
+            if (buttons_down & (HidNpadButton_L | HidNpadButton_R)) {
+                int next = (scenario_id + 1) % VH_BSCENARIOS;
+                if (vh_binit_index(&battle, next)) scenario_id = next;
+            }
+            if (buttons_down & HidNpadButton_Y)
+                (void)vh_binit_index(&battle, scenario_id);
             if (actions & VH_INPUT_LEFT)  vh_bcursor(&battle, -1, 0);
             if (actions & VH_INPUT_RIGHT) vh_bcursor(&battle, 1, 0);
             if (actions & VH_INPUT_UP)    vh_bcursor(&battle, 0, -1);
@@ -459,7 +473,8 @@ int main(int argc, char **argv) {
         if (pixels) {
             const u32 stride_pixels = stride_bytes / sizeof(u32);
             if (battle_mode)
-                draw_map02_battle(pixels, stride_pixels, &battle, frame_tick++);
+                draw_map02_battle(pixels, stride_pixels, &battle,
+                                  scenario_id, frame_tick++);
             else
                 draw_frame(pixels, stride_pixels, state.cursor_x, state.cursor_y,
                            state.hero_x, state.hero_y, state.enemy_x, state.enemy_y,
