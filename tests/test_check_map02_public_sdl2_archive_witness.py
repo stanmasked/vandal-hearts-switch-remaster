@@ -123,7 +123,8 @@ class PublicSdl2StaticWitnessTests(unittest.TestCase):
 
         with mock.patch.object(module, "audit_provider_coverage",
                                side_effect=swap_copy):
-            with self.assertRaisesRegex(ValueError, "path replaced"):
+            with self.assertRaisesRegex(
+                    ValueError, "changed during link|path replaced"):
                 probe_public_sdl2_archive(
                     self.manifest, self.partial, self.archive, destination,
                     expected_initial_strong_imports=2)
