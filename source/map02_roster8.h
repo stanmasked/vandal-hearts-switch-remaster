@@ -10,7 +10,7 @@
 #include "map02_battle_fixture.h"
 #include <string.h>
 
-enum { VH_R8_SIDE_CAP = 4, VH_R8_CAPACITY = 8 };
+enum { VH_R8_SIDE_CAP = 4, VH_R8_CAPACITY = 8, VH_R8_INVALID_STATUS = -1 };
 
 typedef struct {
     VhBattleUnit units[VH_R8_CAPACITY]; /* allies [0,4), enemies [4,8) */
@@ -102,7 +102,7 @@ static inline int vh_r8_alive(const VhRoster8 *r, int side) {
 }
 
 static inline int vh_r8_result(const VhRoster8 *r) {
-    if (!r) return VH_BINVALID;
+    if (!r) return VH_R8_INVALID_STATUS;
     if (!vh_r8_alive(r, 0)) return VH_BLOSS;
     if (!vh_r8_alive(r, 1)) return VH_BWIN;
     return VH_BONGOING;
