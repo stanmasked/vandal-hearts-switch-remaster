@@ -367,6 +367,63 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
                 private_window_file(self.window, LOG, max_bytes=128 * 1024)
         self.assertTrue(swapped)
 
+    def test_window_replay_is_pinned_to_inventory_then_rejects_late_mutation(self):
+        # Mutate disk between the initial file-tree hash and the native
+        # raster replay. The replay must receive the original frozen bytes
+        # rather than the altered pathname, and the final inventory audit
+        # must then reject the changed on-disk snapshot.
+        from tools.verify_map02_native_gpu_capture import verify_capture
+
+        target = self.window / "gpu-0003-vram.bin"
+        original = target.read_bytes()
+        forged = bytearray(original)
+        forged[:2] = (99).to_bytes(2, "little")
+        replayed = []
+
+        def mutate_before_native_replay(*args, **kwargs):
+            reader = kwargs["file_reader"]
+            self.assertEqual(
+                reader(self.window, target.name, expected=VRAM_BYTES), original)
+            private_bytes(target, forged)
+            result = verify_capture(*args, **kwargs)
+            replayed.append(result["draw_otag_primitive_pairs"])
+            return result
+
+        with patch("tools.verify_map02_native_gpu_windows.verify_capture",
+                   side_effect=mutate_before_native_replay):
+            with self.assertRaisesRegex(
+                    ValueError, "evidence changed during window audit"):
+                self.verify()
+        self.assertEqual(replayed, [2])
+
+    def test_journal_change_before_inventory_snapshot_rejected(self):
+        # The file list comes from an earlier securely read JSONL. If the
+        # on-disk journal changes before inventory pinning, reject rather
+        # than mixing event metadata with a different journal hash.
+        from tools.verify_map02_native_gpu_capture import LOG
+        from tools.verify_map02_native_gpu_windows import private_window_file
+
+        log = self.window / LOG
+        modified_events = [dict(event) for event in self.events]
+        modified_events[0]["rgb"] = [201, 0, 0]
+        altered = b"".join(jsonline(e) for e in modified_events)
+        modified = False
+
+        def swap_after_initial_log_read(directory, name, **kwargs):
+            nonlocal modified
+            raw = private_window_file(directory, name, **kwargs)
+            if not modified and Path(directory) == self.window and name == LOG:
+                private_bytes(log, altered)
+                modified = True
+            return raw
+
+        with patch("tools.verify_map02_native_gpu_windows.private_window_file",
+                   side_effect=swap_after_initial_log_read):
+            with self.assertRaisesRegex(
+                    ValueError, "journal changed before inventory snapshot"):
+                self.verify()
+        self.assertTrue(modified)
+
     def test_private_reader_rejects_pathname_traversal(self):
         from tools.verify_map02_native_gpu_windows import private_window_file
         for candidate in ("../gpu-native-window-index.json", "nested/file",
