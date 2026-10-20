@@ -1,0 +1,72 @@
+name: Stage364 original triple guest PCM-tail and successful host clocks source replay
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage364-authentic-guest-host-triple.yml'
+      - 'tools/audit_nexium_stage364_guest_host_triple.py'
+      - 'tests/test_audit_nexium_stage364_guest_host_triple.py'
+      - 'tools/audit_nexium_stage352_three_original_tail_sources.py'
+      - 'tools/audit_nexium_stage363_authentic_guest_host_dual.py'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  guest-host-same-original-source:
+    name: Independently replay original Stage313 314 348 351 and Stage303 362 357 360
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate source pin, forged software ownership and guest-host provenance barriers
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_nexium_stage364_guest_host_triple.py' -v
+          python3 -m py_compile tools/audit_nexium_stage364_guest_host_triple.py
+      - name: Download exact original completed NeXium #39340120727 archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 39340120727 --repo stanmasked/vandal-hearts-switch-remaster \
+            --name nexium-runtime-evidence --dir original-same-run-stage364
+      - name: Re-audit real preserved Stage313/314/348/351 raw guests and Stage363 host/guest
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_stage364_guest_host_triple.py \
+            --archive-root original-same-run-stage364 \
+            --output stage364-authentic-guest-host-triple.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("stage364-authentic-guest-host-triple.json").read_text())
+          if (r["result"]!="STAGE364_SAME_ORIGINAL_RUN_TRIPLE_GUEST_LEASE_EXIT_AND_HOST_CLOCKS_REAUDITED"
+              or r["original_neXium_run_id"]!=39340120727
+              or r["original_three_guest_families_independently_replayed"] is not True
+              or r["original_stage363_host_and_guest_source_replayed"] is not True
+              or r["guest_audio_lease_acquired"]!=1438
+              or r["guest_audio_lease_released"]!=1438
+              or r["guest_audio_abandoned_sessions"]!=0
+              or r["guest_tail_reason_code"]!=7
+              or r["guest_bounded_tail_return_confirmed"] is not True
+              or r["guest_raw_audout_wait_result"]!=0
+              or r["host_strict_stage303_success"] is not True
+              or r["host_recorder_stop_wall_delta_ms"]!=21
+              or r["host_recorder_stop_monotonic_delta_ns"]!=20788687
+              or r["guest_to_host_clock_sync_proven"] is not False
+              or r["old_host_wall_regression_cause_proven"] is not False
+              or r["older_timeout_has_matched_stage360_probe"] is not False
+              or r["direct_exit_time_queue_depth_observed"] is not False
+              or r["physical_Nintendo_Switch_audio_tested"] is not False
+              or r["audible_DAC_or_speaker_audio_tested"] is not False):
+              raise SystemExit("Stage364 original same-run source proof rejected")
+          print("Stage364: three independently original guest CSV families + prior verified same-run Stage363 host clocks agree.")
+          PY
+          echo "Stage364: independent original Stage313/314/348/351 triple guest re-audit bound to real Stage303/362/357/360 same-run sources; zero hardware/DAC or matched-timeout claims." >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve compact independent original-source verdict
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage364-authentic-guest-host-triple-source
+          path: stage364-authentic-guest-host-triple.json
+          if-no-files-found: error
