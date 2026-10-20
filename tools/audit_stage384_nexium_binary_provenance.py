@@ -69,7 +69,7 @@ def make_receipt(release:Path, archive:Path, binary:Path, *, run_id:int, head:st
     require(type(head) is str and GIT.fullmatch(head),"invalid Git commit")
     rel=file_bytes(release,2_000_000)
     art=file_bytes(archive,500_000_000)
-    executable=file_bytes(binary,200_000_000)
+    executable=file_bytes(binary,1_000_000_000)
     require(os.access(binary,os.X_OK),"NeXium binary lacks execute permission")
     asset=release_identity(rel,art)
     return {"schema":SCHEMA,"result":RESULT,
@@ -92,7 +92,7 @@ def verify_receipt(receipt:Path, archive:Path, binary:Path, *, run_id:int, head:
             type(r.get("release_asset_id")) is int and r["release_asset_id"]>0,
             "invalid source release identity")
     art=file_bytes(archive,500_000_000)
-    exe=file_bytes(binary,200_000_000)
+    exe=file_bytes(binary,1_000_000_000)
     require(os.access(binary,os.X_OK),"NeXium executable permission changed")
     require(r.get("asset_size_bytes")==len(art) and
             r.get("asset_sha256")==digest(art),"downloaded nightly archive changed")
@@ -134,8 +134,12 @@ def main(argv=None):
                           run_id=a.run_id,head=a.head),sort_keys=True))
         return 0
     except (OSError,ValueError,TypeError,UnicodeError) as e:
+        # Report only our fixed validation failure messages: the old generic
+        # ProvenanceError hid whether release hash, size or executable bounds failed.
+        reason=str(e) if isinstance(e,ProvenanceError) else None
         print(json.dumps({"result":"STAGE384_NEIXUM_BYTES_NOT_VERIFIED",
                           "error_kind":type(e).__name__,
+                          "validation_reason":reason,
                           "hardware_status":"HARDWARE NOT TESTED"},sort_keys=True),file=sys.stderr)
         return 2
 
