@@ -36,6 +36,7 @@ jobs:
           ref: 089562567a0a8760dfdd8420e1f57c35159a9219
           path: upstream
           fetch-depth: 1
+          submodules: recursive
           persist-credentials: false
       - name: Fail closed on unexpected source or code changes
         shell: bash
@@ -43,6 +44,8 @@ jobs:
           set -euo pipefail
           test "$(git -C research rev-parse HEAD)" = "$VH_RESEARCH_SHA"
           test "$(git -C upstream rev-parse HEAD)" = "$NEXIUM_SOURCE_SHA"
+          test -s upstream/rustarmic/Cargo.toml
+          test "$(git -C upstream submodule status --recursive | grep -c rustarmic)" -ge 1
           python3 - <<'PY'
           import os,subprocess
           changed=set(subprocess.check_output(
