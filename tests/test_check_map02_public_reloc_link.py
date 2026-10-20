@@ -460,6 +460,22 @@ class PublicRelocatableELFTests(unittest.TestCase):
                 return obj, raw, section, sections[section[7]]
         self.fail("expected at least two real executable-section ELF relocations")
 
+    def test_elf_relocation_unknown_target_section_is_rejected(self):
+        obj, raw, reloc, _ = self.make_relocation_mutation_fixture(
+            name="relocation-forged-sh-info")
+        header = EHDR.unpack_from(raw)
+        shoff, shnum = header[6], header[12]
+        section_index = next(
+            index for index in range(shnum)
+            if SHDR.unpack_from(raw, shoff + index * SHDR.size) == reloc)
+        mutated = list(reloc)
+        mutated[7] = shnum + 3  # sh_info points to no section
+        SHDR.pack_into(raw, shoff + section_index * SHDR.size, *mutated)
+        obj.write_bytes(raw)
+        with obj.open("rb") as stream:
+            with self.assertRaisesRegex(ValueError, "relocation target section invalid"):
+                function_images(stream.fileno(), ("LoadCdFile",))
+
     def test_elf_relocation_outside_executable_section_is_rejected(self):
         obj, raw, reloc, target = self.make_relocation_mutation_fixture(
             name="relocation-outside")
