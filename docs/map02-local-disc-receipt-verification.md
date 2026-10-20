@@ -16,7 +16,9 @@ python3 -m tools.check_map02_local_disc_receipt \
 ```
 
 The read-only validator requires a singly-linked owner-private regular JSON
-file, rejects symlinks, duplicate/unknown/missing fields, invalid framing,
+file (mode `0600`) inside an owner-only `0700` directory; it opens the file
+relative to a held, no-follow directory descriptor and checks directory identity
+again before returning. It rejects symlinks, duplicate/unknown/missing fields, invalid framing,
 incorrect scalar types and false retail/PS1/gameplay claims. It checks the
 previously audited **RU v1.6** size (664,849,248 bytes / 282,674 raw sectors),
 12 source-pinned MAP02 PRS sectors at LBA 0x1BCC, 13 reported Mode 2 Form 1
