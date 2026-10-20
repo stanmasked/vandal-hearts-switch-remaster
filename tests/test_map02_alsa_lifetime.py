@@ -121,6 +121,8 @@ class LifetimeTests(unittest.TestCase):
                 last_observation_ns=1650000000)
         self.assertTrue(r["guest_input_markers_checked"])
         self.assertEqual(r["per_stream"]["1"]["sampled_first_last_delta_write_calls"],18)
+        self.assertTrue(r["per_stream"]["1"]["input_to_final_sample_window_covered"])
+        self.assertEqual(r["per_stream"]["1"]["input_to_final_sample_delta_write_calls"],12)
 
     def test_missing_heartbeat(self):
         self.path.write_text("S,123,1,48000,2,512,1536,1,0,512,0\n")
@@ -150,6 +152,22 @@ class LifetimeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"not bracketed"):
             parse(self.path,first_input_ns=400000000,
                   last_observation_ns=4000000000)
+
+    def test_stream_created_after_guest_input_reports_unknown_not_zero(self):
+        sample(self.path)
+        txt=self.path.read_text()
+        # Remove initial stream rows through input (800ms); heartbeat
+        # coverage exists but this stream has no pre-input baseline.
+        txt="".join(line for line in txt.splitlines(keepends=True)
+                    if not (line.startswith("S,") and
+                            int(line.split(",")[1])<=800000000))
+        self.path.write_text(txt)
+        r=parse(self.path,first_input_ns=800000000,
+                last_observation_ns=1650000000)
+        x=r["per_stream"]["1"]
+        self.assertFalse(x["input_to_final_sample_window_covered"])
+        self.assertIsNone(x["input_to_final_sample_delta_write_calls"])
+
 
     def test_wrong_stream_class_does_not_claim_48k(self):
         sample(self.path)
