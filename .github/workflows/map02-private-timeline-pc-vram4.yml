@@ -1,0 +1,46 @@
+name: MAP02 private timeline PC texture source differential
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-private-timeline-pc-vram4.yml'
+      - 'tools/verify_map02_private_timeline_pc_vram4.py'
+      - 'tests/test_verify_map02_private_timeline_pc_vram4.py'
+      - 'tools/verify_map02_vram_timeline.py'
+      - 'tools/verify_map02_pc_vram4_equivalence.py'
+      - 'source/map02_vram4_page.h'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-bound-synthetic-timeline:
+    name: Private-format synthetic 4bpp provenance (${{ matrix.compiler }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: upstream
+          sparse-checkout: |
+            platform/pc/src/pc_raster.c
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Two snapshots GTE provenance and compiled PC raster math
+        shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
+          MAP02_PINNED_RASTER: upstream/platform/pc/src/pc_raster.c
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/verify_map02_private_timeline_pc_vram4.py
+          python3 -m unittest discover -s tests \
+            -p 'test_verify_map02_private_timeline_pc_vram4.py' -v
+          echo 'VH_MAP02_PRIVATE_TIMELINE_SOURCE_TEST_PASS tests=6 original_vram=0'
