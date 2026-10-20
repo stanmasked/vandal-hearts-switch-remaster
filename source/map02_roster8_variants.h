@@ -8,8 +8,9 @@
  */
 #include "map02_battle8.h"
 #include "map02_roster8_smoke_data.h"
+#include "map02_roster8_second_data.h"
 
-enum { VH_R8_VARIANTS = 3 };
+enum { VH_R8_VARIANTS = 3, VH_R8_SCENES = 2 };
 
 static inline const char *vh_r8_variant_label(int variant) {
     switch (variant) {
@@ -20,10 +21,12 @@ static inline const char *vh_r8_variant_label(int variant) {
     }
 }
 
-/* Produce a fresh validated roster, never mutating the destination on
- * invalid input. Clear absent actors entirely to prevent ghost slots. */
-static inline int vh_r8_variant(VhRoster8 *out, int variant) {
-    VhRoster8 stage = VH_MAP02_ROSTER8_SMOKE;
+/* Each scene and capacity combination is an independently reset state.
+ * Invalid scene/variant selection never changes an existing battle. */
+static inline int vh_r8_scene_variant(VhRoster8 *out, int scene, int variant) {
+    VhRoster8 stage;
+    if (scene < 0 || scene >= VH_R8_SCENES) return 0;
+    stage = scene == 0 ? VH_MAP02_ROSTER8_SMOKE : VH_MAP02_ROSTER8_SECOND;
     const VhBattleUnit empty = {0, 0, 0, 0};
     int i;
     if (!out || variant < 0 || variant >= VH_R8_VARIANTS)
@@ -43,10 +46,19 @@ static inline int vh_r8_variant(VhRoster8 *out, int variant) {
     return 1;
 }
 
-static inline int vh_b8_init_variant(VhBattle8 *out, int variant) {
+static inline int vh_r8_variant(VhRoster8 *out, int variant) {
+    return vh_r8_scene_variant(out, 0, variant);
+}
+
+static inline int vh_b8_init_scene_variant(VhBattle8 *out,
+                                           int scene, int variant) {
     VhRoster8 stage;
-    if (!out || !vh_r8_variant(&stage, variant)) return 0;
+    if (!out || !vh_r8_scene_variant(&stage, scene, variant)) return 0;
     return vh_b8_init(out, &stage, 2, 2);
+}
+
+static inline int vh_b8_init_variant(VhBattle8 *out, int variant) {
+    return vh_b8_init_scene_variant(out, 0, variant);
 }
 
 #endif /* VH_MAP02_ROSTER8_VARIANTS_H */
