@@ -27,6 +27,21 @@ never overwritten. Unsupported filesystems fail closed without falling back
 to `os.rename`. An incomplete temporary folder is removed if copying or
 publication fails. Allow at least 1 GiB free locally.
 
+### Full-size synthetic validation, without your original disc
+
+The additional `tests/test_stage_map02_fullsize_synthetic.py` constructs a
+**sparse fake** 664,849,248-byte file. It contains only zero-filled space
+and three literal `SYNTHETIC_TEST_BYTES_ONLY_NOT_A_GAME_DISC` markers.
+It then streams the **entire** fake image through the protected staging
+logic, independently compares source and local-copy SHA-256 digests, checks
+the first/MAP02-offset/end markers, and confirms the 0600/0700 permissions.
+
+Dedicated `map02-fullsize-synthetic-disc-staging.yml` jobs run the test
+on Linux and macOS Intel without downloading, publishing or inspecting the
+user's BIN/CUE. This checks full-length I/O behavior and filesystem space,
+not CD-XA payload authenticity, ownership of the retail image or real
+gameplay/VRAM rendering.
+
 The following is for **when the Drive files are mounted on your Mac**;
 replace the two source placeholders with actual, existing filesystem paths.
 
