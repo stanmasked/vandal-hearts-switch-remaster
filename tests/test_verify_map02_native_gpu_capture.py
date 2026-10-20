@@ -244,6 +244,40 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
                                     "before/after metadata diverges"):
             verify_capture(self.root, target_frame=12)
 
+    def test_drawenv_must_not_change_between_adjacent_draw_pairs(self):
+        # Two valid draw pairs may not silently switch clipping or the
+        # origin between registered callbacks. Legacy absent metadata
+        # remains valid only when absent from BOTH adjacent draws.
+        extra = [dict(self.events[2]), dict(self.events[3])]
+        for step, event in enumerate(extra, start=4):
+            event["step"] = step
+            event["snapshot"] = f"gpu-{step:04d}-vram.bin"
+        self.events.extend(extra)
+        self.save()
+        for step in (4, 5):
+            (self.root / f"gpu-{step:04d}-vram.bin").write_bytes(self.post)
+        self.assertEqual(
+            verify_capture(self.root, target_frame=12)["draw_otag_primitive_pairs"], 2)
+
+        clip = [0, 0, 1024, 512, 0, 0]
+        for event in self.events[2:]:
+            event["draw_env"] = clip[:]
+        self.save()
+        self.assertEqual(
+            verify_capture(self.root, target_frame=12)["draw_otag_primitive_pairs"], 2)
+
+        for event in self.events[4:]:
+            event["draw_env"] = [1, 0, 1023, 512, 0, 0]
+        self.save()
+        with self.assertRaisesRegex(ValueError, "discontinuous DRAWENV"):
+            verify_capture(self.root, target_frame=12)
+
+        for event in self.events[4:]:
+            del event["draw_env"]
+        self.save()
+        with self.assertRaisesRegex(ValueError, "discontinuous DRAWENV"):
+            verify_capture(self.root, target_frame=12)
+
     def test_adjacent_draw_pairs_have_exact_vram_continuity(self):
         # The first captured draw may start with changes from an
         # unobserved preceding frame. Two draws within target DrawOTag
