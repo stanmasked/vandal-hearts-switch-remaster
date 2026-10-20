@@ -20,6 +20,7 @@ from audit_map02_stack import (
 from audit_map02_pr_metadata import (
     fetch_live_prs, validate_branch_contract, validate_live_prs,
 )
+from audit_map02_upstream_ci import audit_upstream_ci
 
 NUMBERS = (
     241, 243, 247, 250, 251, 252, 253, 256, 259, 262, 265, 270,
@@ -183,6 +184,8 @@ def main() -> int:
     parser.add_argument("--no-fetch", action="store_true")
     parser.add_argument("--verify-live-prs", action="store_true",
                         help="require current GitHub API Draft/head/base status")
+    parser.add_argument("--verify-upstream-ci", action="store_true",
+                        help="require exact-SHA successful Actions evidence for 25 upstream PRs")
     args = parser.parse_args()
     try:
         spec = json.loads(args.manifest.read_text(encoding="utf-8"))
@@ -200,6 +203,10 @@ def main() -> int:
             report["live_pr_metadata"] = validate_live_prs(
                 spec["repo"], entries, current, report["head_sha"],
                 report["main_sha"], divergence_base)
+        if args.verify_upstream_ci:
+            entries = validate_snapshot(spec, core)
+            report["upstream_ci_provenance"] = audit_upstream_ci(
+                spec["repo"], entries, os.environ.get("GH_TOKEN", ""))
         if args.report:
             args.report.parent.mkdir(parents=True, exist_ok=True)
             args.report.write_text(json.dumps(report, indent=2) + "\n",
@@ -210,6 +217,9 @@ def main() -> int:
         if args.verify_live_prs:
             print("VH_MAP02_FULL_STACK_LIVE_PRS_PASS count=26 "
                   "draft=26 bases=26 head_shas=26", flush=True)
+        if args.verify_upstream_ci:
+            print("VH_MAP02_UPSTREAM_CI_PASS pinned=25 "
+                  "success_exact_sha=25 self_excluded=1", flush=True)
         return 0
     except (AuditError, OSError, KeyError, ValueError) as exc:
         print("VH_MAP02_FULL_STACK_AUDIT_FAIL: " + str(exc),
