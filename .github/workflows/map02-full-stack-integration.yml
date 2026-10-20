@@ -8,9 +8,11 @@ on:
       - 'tools/audit_map02_full_stack.py'
       - 'tools/audit_map02_pr_metadata.py'
       - 'tools/audit_map02_upstream_ci.py'
+      - 'tools/rehearse_map02_full_stack.py'
       - 'tests/test_map02_full_stack_audit.py'
       - 'tests/test_map02_live_pr_metadata.py'
       - 'tests/test_map02_upstream_ci.py'
+      - 'tests/test_map02_virtual_merge.py'
   workflow_dispatch:
 
 permissions:
@@ -37,6 +39,8 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_map02_full_stack_audit.py' -v
           python3 -m unittest discover -s tests -p 'test_map02_live_pr_metadata.py' -v
           python3 -m unittest discover -s tests -p 'test_map02_upstream_ci.py' -v
+          python3 -m py_compile tools/rehearse_map02_full_stack.py tests/test_map02_virtual_merge.py
+          python3 -m unittest discover -s tests -p 'test_map02_virtual_merge.py' -v
       - name: Compare all 26 immutable PR refs and live GitHub Draft metadata
         shell: bash
         env:
@@ -81,6 +85,27 @@ jobs:
           assert upstream["successful_exact_commit_workflows"] == 25
           assert upstream["current_pr_self_run_excluded"] is True
           assert all(p["conclusion"] == "success" for p in upstream["prs"])
+          PY
+      - name: Rehearse every merge in disposable Git objects with exact tree match
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/rehearse_map02_full_stack.py \
+            --repo . --manifest data/map02_full_stack_snapshot.json \
+            --report build/map02-full-stack-audit/virtual-merge.json \
+            | tee build/map02-full-stack-audit/virtual-merge.log
+          grep -Fx 'VH_MAP02_VIRTUAL_MERGE_PASS stages=26 unchanged_trees=26 git_refs_updated=0 worktree_updated=0' build/map02-full-stack-audit/virtual-merge.log
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path("build/map02-full-stack-audit/virtual-merge.json").read_text())
+          assert r["stages"] == 26 and r["unchanged_trees"] == 26
+          assert r["virtual_object_only_commits"] == 26
+          assert r["final_source_tree"] == r["final_virtual_tree"]
+          assert r["git_refs_updated"] is False
+          assert r["worktree_updated"] is False
+          assert r["real_merge_performed"] is False
+          assert all(x["identical"] for x in r["steps"])
           PY
       - name: Save the read-only integration evidence
         if: always()
