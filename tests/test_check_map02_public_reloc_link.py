@@ -461,6 +461,32 @@ class PublicRelocatableELFTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unrelocated instruction bytes changed"):
             compare_function_images({**cd, **gpu}, changed)
 
+    def test_output_only_relocation_cannot_hide_changed_instruction(self):
+        # An extra linked relocation must not mask bytes absent from the
+        # sealed original source relocation table, even if its size is valid.
+        source = {"LoadCdFile": (b"\\x55\\xe8\\x00\\x00\\x00\\x00\\x5d",
+                                 frozenset({2, 3, 4, 5}))}
+        forged = {"LoadCdFile": (b"\\x90\\xe8\\x00\\x00\\x00\\x00\\x5d",
+                                 frozenset({0, 2, 3, 4, 5}))}
+        with self.assertRaisesRegex(ValueError, "relocated byte positions differ"):
+            compare_function_images(source, forged)
+
+    def test_source_only_relocation_cannot_hide_missing_output_relocation(self):
+        source = {"DrawOTag": (b"\\x90\\x00\\x00\\x00\\x00\\xc3",
+                               frozenset({1, 2, 3, 4}))}
+        linked = {"DrawOTag": (b"\\x90\\x00\\x00\\x00\\x00\\xc3",
+                               frozenset())}
+        with self.assertRaisesRegex(ValueError, "relocated byte positions differ"):
+            compare_function_images(source, linked)
+
+    def test_out_of_bounds_relocation_mask_rejected(self):
+        for bad_mask in (frozenset({-1}), frozenset({3})):
+            with self.subTest(mask=bad_mask):
+                with self.assertRaisesRegex(ValueError, "invalid relocated byte position"):
+                    compare_function_images(
+                        {"CdRead": (b"\\x55\\xc3", bad_mask)},
+                        {"CdRead": (b"\\x55\\xc3", bad_mask)})
+
     def test_relocation_mask_cannot_cover_entire_function(self):
         with self.assertRaisesRegex(ValueError, "no unrelocated function code"):
             compare_function_images(
