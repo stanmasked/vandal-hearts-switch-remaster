@@ -366,6 +366,41 @@ class PrivateLocalCopyTests(unittest.TestCase):
         self.assertEqual(list(self.private.iterdir()), [])
         self.assertEqual(self.bin.read_bytes(), self.data)
 
+    def test_mounted_bin_replaced_during_staged_readback_refuses_publication(self):
+        real_verify = staging._verify_staged_copy
+
+        def replace_after_readback(*args, **kwargs):
+            real_verify(*args, **kwargs)
+            # Same bytes, new inode, after the prior source-stability check.
+            replacement = self.mount / "synthetic-drive-replaced-bin"
+            replacement.write_bytes(self.data)
+            os.replace(replacement, self.bin)
+
+        with patch("tools.stage_map02_private_disc._verify_staged_copy",
+                   side_effect=replace_after_readback):
+            with self.assertRaisesRegex(ValueError, "mounted source changed"):
+                self.run_stage()
+        self.assertEqual(list(self.private.iterdir()), [])
+        self.assertEqual(self.bin.read_bytes(), self.data)
+
+    def test_mounted_cue_replaced_during_staged_readback_refuses_publication(self):
+        original = self.cue.read_bytes()
+        real_verify = staging._verify_staged_copy
+
+        def replace_after_readback(*args, **kwargs):
+            real_verify(*args, **kwargs)
+            replacement = self.mount / "synthetic-drive-replaced-cue"
+            replacement.write_bytes(original)
+            os.replace(replacement, self.cue)
+
+        with patch("tools.stage_map02_private_disc._verify_staged_copy",
+                   side_effect=replace_after_readback):
+            with self.assertRaisesRegex(ValueError, "mounted CUE changed before private publication"):
+                self.run_stage()
+        self.assertEqual(list(self.private.iterdir()), [])
+        self.assertEqual(self.cue.read_bytes(), original)
+        self.assertEqual(self.bin.read_bytes(), self.data)
+
     def test_rejects_unsafe_destination_name(self):
         for label in ("..", "../external", ".hidden", "f" * 90):
             with self.subTest(label=label), self.assertRaises(ValueError):
