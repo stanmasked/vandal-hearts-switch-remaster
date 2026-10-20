@@ -84,8 +84,12 @@ def _read_aggregate(path):
 
 
 def verify_saved_sdl2_recount(manifest, original_partial, copied_archive,
-                              linked_partial, saved_aggregate):
+                              linked_partial, saved_aggregate,
+                              *, expected_initial_strong_imports=520):
     """Re-read both ET_REL files, archive export coverage and saved totals."""
+    if (type(expected_initial_strong_imports) is not int
+            or expected_initial_strong_imports < 0):
+        raise ValueError("MAP02 expected baseline invalid")
     doc = read_private_manifest(manifest)
     report = _read_aggregate(saved_aggregate)
     entries = []
@@ -125,7 +129,7 @@ def verify_saved_sdl2_recount(manifest, original_partial, copied_archive,
             "final_undefined_strong_count": len(linked_names),
         }
         if (any(counted[k] != report[k] for k in COUNT_KEYS)
-                or report["initial_strong_undefined"] != 520
+                or report["initial_strong_undefined"] != expected_initial_strong_imports
                 or coverage["candidate_provider_file_count"] != 1):
             raise ValueError("MAP02 saved SDL2 import recount differs")
         for entry in entries:
