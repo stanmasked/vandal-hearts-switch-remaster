@@ -85,6 +85,8 @@ on:
       - 'tests/test_check_map02_private_incremental_link.py'
       - 'tools/check_map02_public_sdl2_archive_witness.py'
       - 'tests/test_check_map02_public_sdl2_archive_witness.py'
+      - 'tools/check_map02_public_x11_after_sdl2.py'
+      - 'tests/test_check_map02_public_x11_after_sdl2.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -232,6 +234,8 @@ on:
       - 'tests/test_check_map02_private_incremental_link.py'
       - 'tools/check_map02_public_sdl2_archive_witness.py'
       - 'tests/test_check_map02_public_sdl2_archive_witness.py'
+      - 'tools/check_map02_public_x11_after_sdl2.py'
+      - 'tests/test_check_map02_public_x11_after_sdl2.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -323,6 +327,7 @@ jobs:
             tests.test_check_map02_private_provider_coverage \
             tests.test_check_map02_private_incremental_link \
             tests.test_check_map02_public_sdl2_archive_witness \
+            tests.test_check_map02_public_x11_after_sdl2 \
             tests.test_check_map02_private_archive_strategy_compare \
             tests.test_verify_map02_private_archive_comparison \
             tests.test_run_map02_private_link_gap_audit
@@ -577,6 +582,45 @@ jobs:
           assert result["original_map02_execution_proven"] is False
           print("Asset-free original PC 520-import ELF tested against genuine Ubuntu SDL2 static archive.")
           print("No owned disc/game data, executable retail ELF, or MAP02 gameplay involved.")
+          PY
+      - name: Measure real X11 static library against SDL2-linked 1085-import public ELF
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Ubuntu noble libx11-dev ships the real libX11.a static archive.
+          # Preserve the original retail-free 118-object PC source provenance.
+          sudo apt-get install -y --no-install-recommends libx11-dev
+          x11_static="$(pkg-config --variable=libdir x11)/libX11.a"
+          test -s "${x11_static}"
+          python3 -m tools.check_map02_public_x11_after_sdl2 \
+            "${RUNNER_TEMP}/map02-real-sdl2-native-provider/linked/map02-private-candidate-linked.o" \
+            "${x11_static}" \
+            "${RUNNER_TEMP}/map02-real-x11-native-provider" \
+            | tee "${RUNNER_TEMP}/map02-real-x11-aggregate.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          sdl = json.loads((root / "map02-real-sdl2-provider-aggregate.json").read_text())
+          x11 = json.loads((root / "map02-real-x11-aggregate.json").read_text())
+          assert sdl["initial_strong_undefined"] == 520
+          assert sdl["final_undefined_strong_count"] == 1085
+          assert x11["initial_after_sdl2_undefined"] == 1085
+          assert x11["input_sdl2_partial_sha256"] == sdl["linked_partial_elf_sha256"]
+          assert (x11["original_after_sdl2_imports_resolved"] +
+                  x11["original_after_sdl2_imports_remaining"] == 1085)
+          assert (x11["original_after_sdl2_imports_remaining"] +
+                  x11["new_imports_introduced_by_x11"] ==
+                  x11["final_strong_undefined_after_x11"])
+          assert x11["x11_strong_export_matches"] >= x11["original_after_sdl2_imports_resolved"]
+          assert x11["ordinary_native_static_archive_tested"] is True
+          assert x11["system_package_origin_independently_attested"] is False
+          assert x11["retail_assets_linked"] is False
+          assert x11["fully_linked_game_executable"] is False
+          assert x11["authentic_map02_execution_proven"] is False
+          print("Original public PC ELF: genuine SDL2.a followed by genuine X11.a GNU ld-r.")
+          print("Second-stage unresolved counts independently checked without retail data.")
           PY
       - name: Fail closed on upstream rasterizer source drift
         run: |
