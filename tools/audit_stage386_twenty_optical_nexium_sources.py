@@ -134,7 +134,7 @@ def combine(prior: dict, pair: list[dict], emulator: dict) -> dict:
 
 
 def audit(originals:Path,metadata:Path) -> dict:
-    original.need(tuple(original.RUNS)==tuple(previous.sixteen.eight.SIX_RUNS)
+    original.need(tuple(original.RUNS)==tuple(previous.prior.eight.SIX_RUNS)
                   and TENTH_RUN not in original.RUNS
                   and TENTH_RUN not in previous.ALL_RUNS,
                   "historical source pins unexpectedly changed")
