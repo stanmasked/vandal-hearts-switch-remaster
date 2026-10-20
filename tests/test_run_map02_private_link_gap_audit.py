@@ -83,6 +83,16 @@ class OneShotPrivateMap02LinkGapTests(unittest.TestCase):
         self.assertEqual(actual["single_pass_final_strong_import_count"], 2)
         self.assertEqual(actual["grouped_final_strong_import_count"], 1)
         self.assertEqual(actual["group_minus_single_final_strong_imports"], -1)
+        self.assertEqual(actual["single_pass_original_imports_remaining"], 1)
+        self.assertEqual(actual["grouped_original_imports_remaining"], 1)
+        self.assertEqual(actual["single_pass_new_strong_imports"], 1)
+        self.assertEqual(actual["grouped_new_strong_imports"], 0)
+        self.assertFalse(actual["expected_initial_import_count_confirmed"])
+        for prefix in ("single_pass", "grouped"):
+            self.assertEqual(
+                actual[prefix + "_original_imports_remaining"]
+                + actual[prefix + "_new_strong_imports"],
+                actual[prefix + "_final_strong_import_count"])
         self.assertTrue(actual["owner_only_saved_report"])
         self.assertTrue(actual["independent_elf_and_count_audit_passed"])
         self.assertFalse(actual["fully_linked_game_executable"])
@@ -111,6 +121,46 @@ class OneShotPrivateMap02LinkGapTests(unittest.TestCase):
                     run_private_link_gap_audit(
                         self.manifest, self.partial, candidates, target)
                 self.assertFalse(target.exists())
+
+    def test_expected_initial_import_count_preflights_before_creating_output(self):
+        """Reject a wrong claimed 520-like baseline before any I/O outputs."""
+        wrong = self.root / "wrong-expected"
+        with self.assertRaisesRegex(ValueError, "count differs"):
+            run_private_link_gap_audit(
+                self.manifest, self.partial, self.archives, wrong,
+                expected_initial_strong_imports=520)
+        self.assertFalse(wrong.exists())
+
+        for malformed in (True, -1, "2"):
+            target = self.root / ("bad-type-" + str(malformed))
+            with self.subTest(value=malformed):
+                with self.assertRaisesRegex(ValueError, "count differs"):
+                    run_private_link_gap_audit(
+                        self.manifest, self.partial, self.archives, target,
+                        expected_initial_strong_imports=malformed)
+                self.assertFalse(target.exists())
+
+        matched = self.root / "matched-expected"
+        report = run_private_link_gap_audit(
+            self.manifest, self.partial, self.archives, matched,
+            expected_initial_strong_imports=2)
+        self.assertEqual(report["initial_strong_import_count"], 2)
+        self.assertTrue(report["expected_initial_import_count_confirmed"])
+
+    def test_cli_expected_baseline_failure_is_private_and_has_no_output(self):
+        """Real CLI must reject a false baseline without printing raw symbols."""
+        target = self.root / "cli-baseline-reject"
+        run = subprocess.run(
+            [sys.executable, "-m", "tools.run_map02_private_link_gap_audit",
+             str(self.manifest), str(self.partial), str(target),
+             *(str(x) for x in self.archives),
+             "--expect-initial-strong-imports", "520"],
+            text=True, capture_output=True, timeout=120)
+        self.assertNotEqual(run.returncode, 0)
+        self.assertFalse(target.exists())
+        for private_name in ("needed", "missing", "followup",
+                             str(self.partial), str(self.manifest)):
+            self.assertNotIn(private_name, run.stdout + run.stderr)
 
     def test_failure_to_reverify_never_claims_success(self):
         root = self.root / "failed-verification"
