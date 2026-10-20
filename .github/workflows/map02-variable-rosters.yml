@@ -1,0 +1,71 @@
+name: MAP02 variable active troop rosters
+on:
+  pull_request:
+    paths:
+      - 'tools/generate_map02_fixture.py'
+      - 'source/map02_battle_fixture.h'
+      - 'source/map02_encounter_data.h'
+      - 'source/map02_encounter_b_data.h'
+      - 'tests/test_map02_variable_rosters.c'
+      - 'tests/test_map02_variable_rosters.py'
+      - 'Makefile'
+      - '.github/workflows/map02-variable-rosters.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  roster-model:
+    name: Active troop counts and battle-state safety (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refuse forged troop counts and stale authored headers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/generate_map02_fixture.py --all --check
+          python3 -m unittest discover -s tests -p 'test_map02_variable_rosters.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_two_scenarios.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_encounter_data.py' -v
+      - name: Execute 1/1, 1/2, 2/1 and inherited 2/2 games
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -Wall -Wextra -Werror -pedantic -O2 tests/test_map02_variable_rosters.c -o /tmp/vh-rosters
+          /tmp/vh-rosters | tee /tmp/vh-rosters-proof
+          "$CC" -std=c11 -Wall -Wextra -Werror -pedantic -O0 tests/test_map02_two_scenarios.c -o /tmp/vh-catalog
+          /tmp/vh-catalog
+          "$CC" -std=c11 -Wall -Wextra -Werror -pedantic -O0 tests/test_map02_battle_fixture.c -o /tmp/vh-original
+          /tmp/vh-original
+          grep -Fx 'VH_MAP02_VARIABLE_ROSTERS_PASS combinations=4 alternate_victory=1 enemy_phase=1 defeat=1 corrupted_rejections=9 original_retail=0' /tmp/vh-rosters-proof
+  switch-nro:
+    name: Build actual Switch NRO with variable-sized troop data
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate catalog and build real libnx NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/opt/devkitpro/devkitA64/bin:/opt/devkitpro/tools/bin:$PATH"
+          python3 tools/generate_map02_fixture.py --all --check
+          make build/test_map02_variable_rosters
+          ./build/test_map02_variable_rosters
+          make verify-nro
+          test -s build/vandal-hearts-prototype.nro
+          echo 'VH_MAP02_VARIABLE_ROSTERS_NRO_PASS old_maps=2 variable_model=1'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: map02-variable-rosters-nro
+          path: build/vandal-hearts-prototype.nro
+          if-no-files-found: error
