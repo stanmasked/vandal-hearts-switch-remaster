@@ -98,6 +98,23 @@ class Stage371Tests(unittest.TestCase):
         target=self.temp/"external.png";target.write_bytes(content)
         shot.symlink_to(target)
         with self.assertRaises(ValueError):self.verify()
+    def test_optional_old_probe_and_lease_are_not_exit_queue_measurements(self):
+        sd=self.temp/f"vh-nexium-stage266-{RUN}-b"/a.RUN_GUEST_PATH
+        age=sd/"audio-exit-probe-context-000.csv"
+        age.write_bytes(b"scope,value\nsoftware_exit_probe_context_only,1\n")
+        lease=sd/"audio-lease-reconciliation-000.csv"
+        lease.write_bytes(b"scope,value\nsoftware_lease_only,1\n")
+        report=self.verify()
+        b=report["captures"][1]
+        self.assertFalse(b["supplemental_telemetry_interpreted_as_exit_queue"])
+        self.assertTrue(b["optional_original_telemetry"][age.name]["present"])
+        self.assertFalse(b["optional_original_telemetry"][age.name]["parsed"])
+        self.assertTrue(b["optional_original_telemetry"][lease.name]["present"])
+        self.assertFalse(report["captures"][0]["optional_original_telemetry"][age.name]["present"])
+        self.assertIsNone(report["captures"][0]["optional_original_telemetry"][age.name]["sha256"])
+        (sd/"audio-exit-probe-context-001.csv").write_bytes(age.read_bytes())
+        with self.assertRaises(ValueError):
+            self.verify()
     def test_no_unproven_guest_capture_can_be_backfilled(self):
         x=self.two/"guest-sd-root.txt"
         text=x.read_text()
