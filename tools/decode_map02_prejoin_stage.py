@@ -10,6 +10,15 @@ SIZE=(1280,720)
 BORDER=(244,154,92,112)
 LEFT,TOP,STEP=250,160,10
 
+def crc8_atm(data):
+    """CRC-8/ATM: polynomial 0x07, init 0, no reflection or final XOR."""
+    value=0
+    for byte in data:
+        value^=byte
+        for _ in range(8):
+            value=((value<<1)^0x07)&0xff if value&0x80 else (value<<1)&0xff
+    return value
+
 def decode_image(path):
     with Image.open(path) as fp:
         if fp.format!="PNG" or fp.size!=SIZE:
@@ -47,8 +56,10 @@ def decode_image(path):
             else:
                 raise ValueError("Invalid stage panel bit module")
         values.append(value)
-    if values[:2]!=[0xa5,0x5a] or (values[8]^0xc3)!=values[9]:
-        raise ValueError("Invalid pre-join panel signature or checksum")
+    if values[:2]!=[0xa5,0x5a]:
+        raise ValueError("Invalid pre-join panel signature")
+    if values[9]!=crc8_atm(values[:8]):
+        raise ValueError("Pre-join panel CRC-8 checksum mismatch")
     calc=0
     for v in values[:8]:calc^=v
     if calc!=values[8]:
