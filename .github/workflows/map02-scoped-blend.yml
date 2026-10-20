@@ -83,6 +83,8 @@ on:
       - 'tools/check_map02_private_incremental_link.py'
       - 'tests/test_check_map02_private_provider_coverage.py'
       - 'tests/test_check_map02_private_incremental_link.py'
+      - 'tools/check_map02_public_sdl2_archive_witness.py'
+      - 'tests/test_check_map02_public_sdl2_archive_witness.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -228,6 +230,8 @@ on:
       - 'tools/check_map02_private_incremental_link.py'
       - 'tests/test_check_map02_private_provider_coverage.py'
       - 'tests/test_check_map02_private_incremental_link.py'
+      - 'tools/check_map02_public_sdl2_archive_witness.py'
+      - 'tests/test_check_map02_public_sdl2_archive_witness.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -318,6 +322,7 @@ jobs:
             tests.test_check_map02_public_reloc_link \
             tests.test_check_map02_private_provider_coverage \
             tests.test_check_map02_private_incremental_link \
+            tests.test_check_map02_public_sdl2_archive_witness \
             tests.test_check_map02_private_archive_strategy_compare \
             tests.test_verify_map02_private_archive_comparison \
             tests.test_run_map02_private_link_gap_audit
@@ -501,6 +506,7 @@ jobs:
           python3 -m tools.check_map02_public_reloc_link \
             upstream-pc "${RUNNER_TEMP}/map02-cycle-private-build" \
             "${RUNNER_TEMP}/map02-public-code-reloc" \
+            --write-private-undefined-manifest \
             | tee "${RUNNER_TEMP}/map02-public-reloc-report.json"
           python3 - <<'PY'
           import json
@@ -536,6 +542,42 @@ jobs:
           PY
           echo "Asset-free original game/backend objects joined in one relocatable ELF."
           echo "NOT a retail executable or authentic MAP02 gameplay."
+      - name: Measure real SDL2 static library against asset-free 520-import original PC ELF
+        shell: bash
+        run: |
+          set -euo pipefail
+          # SDL2 comes from the already installed Ubuntu libsdl2-dev package.
+          # It is a genuine system archive, not a generated symbol stub.
+          sdl_static="$(pkg-config --variable=libdir sdl2)/libSDL2.a"
+          test -s "${sdl_static}"
+          python3 -m tools.check_map02_public_sdl2_archive_witness \
+            "${RUNNER_TEMP}/map02-public-code-reloc/map02-unresolved-symbols.private.json" \
+            "${RUNNER_TEMP}/map02-public-code-reloc/map02-public-original-cd-gpu-reloc.o" \
+            "${sdl_static}" \
+            "${RUNNER_TEMP}/map02-real-sdl2-native-provider" \
+            | tee "${RUNNER_TEMP}/map02-real-sdl2-provider-aggregate.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          p = Path(os.environ["RUNNER_TEMP"]) / "map02-real-sdl2-provider-aggregate.json"
+          result = json.loads(p.read_text())
+          assert result["initial_strong_undefined"] == 520
+          assert 0 <= result["sdl2_candidate_strong_exports_matching_initial"] <= 520
+          assert result["original_imports_resolved_by_actual_ld_r"] <= 520
+          assert (result["original_imports_still_unresolved"] +
+                  result["original_imports_resolved_by_actual_ld_r"] == 520)
+          assert (result["original_imports_still_unresolved"] +
+                  result["new_undefined_imports_introduced_by_sdl2"] ==
+                  result["final_undefined_strong_count"])
+          assert result["ordinary_native_static_archive_tested"] is True
+          assert result["system_archive_package_origin_independently_attested"] is False
+          assert result["asset_free_public_pc_code_only"] is True
+          assert result["fully_linked_game_executable"] is False
+          assert result["original_map02_execution_proven"] is False
+          print("Asset-free original PC 520-import ELF tested against genuine Ubuntu SDL2 static archive.")
+          print("No owned disc/game data, executable retail ELF, or MAP02 gameplay involved.")
+          PY
       - name: Fail closed on upstream rasterizer source drift
         run: |
           python3 -m tools.instrument_map02_scoped_blend \
