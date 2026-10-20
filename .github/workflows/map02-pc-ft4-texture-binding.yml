@@ -1,0 +1,72 @@
+name: MAP02 source-pinned PC per-FT4 texture binding
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-pc-ft4-texture-binding.yml'
+      - 'tools/verify_map02_pc_vram4_ft4_binding.py'
+      - 'tests/test_verify_map02_pc_vram4_ft4_binding.py'
+      - 'tests/test_map02_vram4_frame.c'
+      - 'source/map02_vram4_page.h'
+      - 'source/map02_vram4_frame.h'
+      - 'source/map02_terrain_ot_scene.h'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  compare-real-PC-source:
+    name: Frame and pinned SampleTexture (${{ matrix.compiler }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Obtain exact public PC-port raster source
+        uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: upstream
+          sparse-checkout: |
+            platform/pc/src/pc_raster.c
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Validate three-face renderer fixture and injected source boundaries
+        env:
+          CC: ${{ matrix.compiler }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_verify_map02_pc_vram4_ft4_binding.py' -v
+          "$CC" -std=c11 -O2 -Wall -Wextra -Werror \
+            tests/test_map02_vram4_frame.c -o /tmp/vh-map02-original-frame -lm
+          /tmp/vh-map02-original-frame
+      - name: Compare three per-face atlas CLUT buffers with compiled pinned PC SampleTexture
+        env:
+          CC: ${{ matrix.compiler }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m tools.verify_map02_pc_vram4_ft4_binding \
+            upstream/platform/pc/src/pc_raster.c \
+            tests/test_map02_vram4_frame.c --compiler "$CC" \
+            > /tmp/vh-map02-face-source-report.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/vh-map02-face-source-report.json').read_text())
+          assert r['authored_frame_faces']==3
+          assert r['compared_source_reference_texels']==196608
+          assert r['clut_identity_mutation_rejected'] is True
+          assert r['texture_window_mutation_rejected'] is True
+          assert r['real_ps1_vram_authenticated'] is False
+          assert r['physical_ps1_equivalence_proven'] is False
+          assert r['marker'] == ('VH_MAP02_PC_FT4_BINDING_PASS faces=3 samples=196608 '
+              'clut_mutant=1 window_mutant=1 retail=0')
+          print(r['marker'])
+          PY
