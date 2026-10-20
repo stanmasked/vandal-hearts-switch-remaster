@@ -177,7 +177,9 @@ jobs:
               find "$source" -maxdepth 1 -type f \
                 \( -name 'audio-exit-tail-reason-*.csv' \
                 -o -name 'audio-exit-tail-wait-result-*.csv' \
-                -o -name 'audio-exit-wait-descriptor-*.csv' \) \
+                -o -name 'audio-exit-wait-descriptor-*.csv' \
+                -o -name 'audio-exit-probe-context-*.csv' \
+                -o -name 'audio-lease-reconciliation-*.csv' \) \
                 -exec cp -n -- '{}' "stage371-unverified-partial/$tag/" \;
             fi
           done
