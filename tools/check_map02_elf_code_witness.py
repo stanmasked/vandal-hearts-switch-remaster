@@ -107,9 +107,21 @@ def function_images(fd, names):
         relevant = {name: row for name, row in found.items() if row[1] == target}
         if not relevant:
             continue
+        # sh_link must point to a well-formed symbol table. A bogus high
+        # r_info symbol index may otherwise mask instruction bytes without
+        # referencing any symbol in this ELF.
+        if section[6] >= shnum:
+            raise ValueError("original PC ELF witness relocation symbol table invalid")
+        symtab = sections[section[6]]
+        if (symtab[1] != 2 or symtab[9] != SYM.size
+                or symtab[5] % SYM.size):
+            raise ValueError("original PC ELF witness relocation symbol table invalid")
+        symbol_count = symtab[5] // SYM.size
         entries = _require_slice(data, section[4], section[5])
         for i in range(0, len(entries), relfmt.size):
             offset, info = relfmt.unpack_from(entries, i)[:2]
+            if info >> 32 >= symbol_count:
+                raise ValueError("original PC ELF witness relocation symbol index invalid")
             kind = info & 0xffffffff
             if kind == 0:  # R_X86_64_NONE, writes no bytes
                 continue
@@ -127,6 +139,12 @@ def function_images(fd, names):
                     if masks[name] & affected:
                         raise ValueError("original PC ELF witness overlapping relocations")
                     masks[name].update(affected)
+                elif (offset < start and WIDTH.get(kind) is not None
+                      and offset + WIDTH[kind] > start):
+                    # A relocation just before a required FUNC must not
+                    # modify its first instruction bytes without appearing
+                    # in that function's relocation mask.
+                    raise ValueError("original PC ELF witness cross-function relocation")
     return {name: (found[name][0], frozenset(masks[name])) for name in names}
 
 
