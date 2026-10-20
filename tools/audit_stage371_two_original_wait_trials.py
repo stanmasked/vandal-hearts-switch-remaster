@@ -21,6 +21,32 @@ VERDICT="STAGE371_TWO_SEPARATE_GUEST_WAIT_TUPLES_FROM_SAME_NRO_RECORDED"
 EXPECTED_NRO="SAME_WORKFLOW_BUILD_ARTIFACT_HASH_AND_STRUCTURE_VERIFIED"
 RUN_GUEST_PATH="sdmc/switch/vandal-hearts-remake"
 TRIALS=(("a",6),("b",12))
+# Optional already-written original sources, not new service measurements.
+# Missing = unknown, never queue zero or a software lease of zero.
+SUPPLEMENTAL=(
+    "audio-exit-probe-context-000.csv",
+    "audio-lease-reconciliation-000.csv",
+)
+
+def supplemental_sources(sd:Path)->dict:
+    values={}
+    for name in SUPPLEMENTAL:
+        prefix=name.rsplit("-000.csv",1)[0]
+        hits=list(sd.glob(prefix+"-*.csv"))
+        if len(hits)>1 or (hits and hits[0].name!=name):
+            raise ValueError("ambiguous optional original guest telemetry: "+name)
+        if not hits:
+            values[name]={"present":False,"sha256":None,"parsed":False}
+            continue
+        p=hits[0]
+        if not regular(p,2048):
+            raise ValueError("invalid optional original guest telemetry: "+name)
+        original=p.read_bytes()
+        if not original.startswith(b"scope,value\\n") or not original.endswith(b"\\n"):
+            raise ValueError("invalid optional telemetry canonical header: "+name)
+        values[name]={"present":True,"sha256":hashlib.sha256(original).hexdigest(),
+                      "parsed":False}
+    return values
 
 def demand(condition,reason):
     if not condition:
@@ -61,12 +87,15 @@ def trial(root:Path,run_id:int,tag:str,dwell:int,runner_temp:Path)->dict:
            "missing/linked original guest data")
     checked=audit_directory(sd)  # stage351/357/368 genuine source bytes reread
     hashes=checked["source_sha256"]
+    additional=supplemental_sources(sd)
     optical=png_original(root/"scene-optical-trace.png")
     out={
         "capture_tag":tag,
         "exit_dwell_seconds":dwell,
         "source_guest_sd_root":str(expected_sd_root),
         "source_guest_csv_sha256":hashes,
+        "optional_original_telemetry":additional,
+        "supplemental_telemetry_interpreted_as_exit_queue":False,
         "source_guest_reason_code":checked["tail_reason_code"],
         "original_service_result":checked["raw_wait_result"],
         "reported_return_count":checked["reported_released_count"],
@@ -148,6 +177,15 @@ def main(argv=None):
                 data=(source_dir/name).read_bytes()
                 demand(hashlib.sha256(data).hexdigest()==expected_hashes[kind],
                        "original guest CSV changed after audit")
+                (folder/name).write_bytes(data)
+            optional=doc["captures"][0 if tag=="a" else 1]["optional_original_telemetry"]
+            for name in SUPPLEMENTAL:
+                entry=optional[name]
+                if not entry["present"]:
+                    continue
+                data=(source_dir/name).read_bytes()
+                demand(hashlib.sha256(data).hexdigest()==entry["sha256"],
+                       "optional guest original telemetry changed after audit")
                 (folder/name).write_bytes(data)
             img=source/"scene-optical-trace.png"
             data=img.read_bytes()
