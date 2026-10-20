@@ -13,6 +13,8 @@ on:
       - 'tools/audit_presubmit_virtual_sink.py'
       - 'tools/report_pulse_sink_input_latency.py'
       - 'tests/test_report_pulse_sink_input_latency.py'
+      - 'tools/report_nexium_aout_trace.py'
+      - 'tests/test_report_nexium_aout_trace.py'
       - 'source/vh_switch_game_audio.c'
       - 'source/vh_switch_game_audio.h'
       - 'source/main.c'
@@ -126,7 +128,9 @@ jobs:
         # 20-ms trial failed twice and both 40/80-ms trials passed twice.
         # The actual 48-kHz sink-input buffer latency is observed below,
         # not assumed to equal the requested client hint.
-        latency_ms: [24, 32]
+        # Re-test known green versus reproducible silent configuration,
+        # now using built-in NeXium IPC AudioOut append instrumentation.
+        latency_ms: [default, 20]
         repeat: [1, 2]
     steps:
       - uses: actions/checkout@v4
@@ -183,6 +187,11 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests -p 'test_report_pulse_sink_input_latency.py' -v
+      - name: Test address-free NeXium AudioOut trace decoder
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_report_nexium_aout_trace.py' -v
       - name: Download pinned NeXium nightly asset
         shell: bash
         env:
@@ -256,6 +265,14 @@ jobs:
           export VK_ICD_FILENAMES="$icd"
           export ROOT="$PWD/runtime-evidence"
           export NRO="$PWD/nros/vandal-hearts-map02-audio.nro"
+          # Built-in NeXium instrumentation; NO changes to the guest
+          # AudioOut/libnx code. Isolate the file logger outside uploaded
+          # runtime-evidence, since the raw log includes guest addresses.
+          export NEXIUM_DATA_ROOT="$RUNNER_TEMP/vh-map02-aout-trace"
+          export NEXIUM_LOG_LEVEL=info
+          export NEXIUM_AUDIO_TRACE=1
+          export NEXIUM_AUDIO_RATE=1
+          mkdir -p "$NEXIUM_DATA_ROOT"
           # Record the very same 48-kHz virtual output used by this
           # guest, including unknown warm-up delay. The guest optical
           # receipt remains the independent source of PCM digests.
@@ -374,6 +391,25 @@ jobs:
             --during runtime-evidence/pulse-sink-inputs-during.txt \
             --after runtime-evidence/pulse-sink-inputs-after-input.txt \
             --output runtime-evidence/pulse-sink-input-observed.json
+      - name: Export sanitized NeXium AudioOut append evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          logdir="$RUNNER_TEMP/vh-map02-aout-trace/logs"
+          if [ ! -d "$logdir" ]; then
+            echo "Missing NeXium host file logger directory" >&2
+            exit 1
+          fi
+          logfile="$(find "$logdir" -maxdepth 1 -type f -name 'nexium-*.log' \
+            -print | sort | tail -n1)"
+          test -n "$logfile"
+          # DO NOT archive or echo raw emulator log: it contains
+          # guest pointer/tag/header fields. Only scalar allowlist JSON.
+          python3 tools/report_nexium_aout_trace.py \
+            --nexium-log "$logfile" \
+            --output runtime-evidence/nexium-aout-append-summary.json \
+            --require-logger
       - name: Decode actual guest CRC and assert eight descriptor identities
         shell: bash
         run: |
