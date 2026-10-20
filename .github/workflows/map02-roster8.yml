@@ -1,0 +1,53 @@
+name: MAP02 eight-slot opt-in roster contract
+on:
+  pull_request:
+    paths:
+      - 'source/map02_roster8.h'
+      - 'tests/test_map02_roster8.c'
+      - 'source/map02_battle_fixture.h'
+      - 'source/map02_encounter_data.h'
+      - 'source/map02_encounter_b_data.h'
+      - '.github/workflows/map02-roster8.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  portable-contract:
+    name: Verify independent 3v3 and 4v4 roster contract (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run eight-slot state safety
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -O2 -Wall -Wextra -Werror -pedantic tests/test_map02_roster8.c -o /tmp/vh-map02-roster8
+          /tmp/vh-map02-roster8 | tee /tmp/vh-map02-roster8-proof
+          grep -Fx 'VH_MAP02_ROSTER8_PASS max_allies=4 max_enemies=4 legacy_scenes=2 three_vs_three=1 four_vs_four=1 hidden_rejection=1 retail=0' /tmp/vh-map02-roster8-proof
+          "$CC" -std=c11 -O0 -g -Wall -Wextra -Werror -pedantic -fsanitize=undefined -fno-sanitize-recover=all tests/test_map02_roster8.c -o /tmp/vh-map02-roster8-ubsan
+          /tmp/vh-map02-roster8-ubsan
+          "$CC" -std=c11 -O0 -Wall -Wextra -Werror -pedantic tests/test_map02_two_scenarios.c -o /tmp/vh-map02-two-maps
+          /tmp/vh-map02-two-maps
+  legacy-switch:
+    name: Preserve baseline Nintendo Switch NRO
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build real baseline libnx NRO without eight-slot integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/opt/devkitpro/devkitA64/bin:/opt/devkitpro/tools/bin:$PATH"
+          make verify-nro
+          test -s build/vandal-hearts-prototype.nro
+          echo 'VH_MAP02_ROSTER8_NRO_BASELINE_PASS integrated=0'
