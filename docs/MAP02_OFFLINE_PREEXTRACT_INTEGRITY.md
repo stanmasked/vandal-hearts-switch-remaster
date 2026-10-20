@@ -97,7 +97,7 @@ Keep this work in Draft; no merges and no original assets uploaded.
 ## Local host acceptance receipt (optional)
 
 After verifying and extracting the public-only kit, use the included
-`python3 -m tools.map02_intel_mac_local_acceptance` to run the actual
+`python3 -B -m tools.map02_intel_mac_local_acceptance` to run the actual
 49-test synthetic suite and the three C helpers again, producing a
 sanitized operating-system compatibility receipt. The stricter
 `--require-catalina-10-15-7` option refuses any host other than actual
