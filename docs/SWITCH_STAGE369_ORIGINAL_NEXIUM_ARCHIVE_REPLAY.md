@@ -53,10 +53,15 @@ original results, altered CSV, fake archive metadata, illegal pointer
 claims and old-kernel-cause overstatements. An independently emitted
 Stage369 JSON verdict is uploaded only after all validations succeed.
 
-A successful original Stage368 guest step is *not* itself independent
-verification of preserved archive bytes. Stage369 must pass
-[its own CI](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/workflows/stage369-original-nexium-archive-replay.yml)
-before the archival replay is declared verified.
+**Independent replay confirmed.** [Stage369 GitHub Actions #39390450645](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39390450645)
+completed successfully, including **8/8** adversarial tests and a fresh
+download and parsing of the authentic Stage368 original guest CSV bytes.
+The archive replay returned `service_result_raw=0` and
+`service_returned_descriptor_count=1`; its independent proof is
+retained as [artifact #12250010822](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39390450645/artifacts/12250010822),
+name `stage369-independent-original-nexium-wait-replay`.
+This is a successful software-level descriptor return, **not** an
+explanation or reproduction of the old `0xEA01` timeout.
 
 **Scope:** software result `0` with exactly one matching returned
 descriptor. Queue depth at exit, the old kernel wait's exact subcall,
