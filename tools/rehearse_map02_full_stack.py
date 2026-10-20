@@ -79,7 +79,7 @@ def inspect_step_changes(repo: Path, before_tree: str,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     if result.returncode:
         raise AuditError(f"PR #{number}: cannot enumerate staged tree changes")
-    tokens = result.stdout.split(b"\\0")
+    tokens = result.stdout.split(b"\0")
     if not tokens or tokens[-1] != b"":
         raise AuditError(f"PR #{number}: truncated Git change inventory")
     tokens.pop()
