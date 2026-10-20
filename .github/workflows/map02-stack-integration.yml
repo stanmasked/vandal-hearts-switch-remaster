@@ -8,6 +8,9 @@ on:
       - 'tools/audit_map02_stack.py'
       - 'tests/test_map02_stack_audit.py'
       - 'tests/test_map02_stacked_integration.c'
+      - '.github/workflows/map02-stack-runtime-replay.yml'
+      - 'tests/run_map02_nexium_guard_boundary.py'
+      - 'tests/test_map02_nexium_guard_boundary_oracle.py'
   workflow_dispatch:
 
 permissions:
