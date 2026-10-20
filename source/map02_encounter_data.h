@@ -8,6 +8,7 @@ static const VhBattleScenario VH_MAP02_DEFAULT_SCENARIO = {
     1, 2,
     2, 1,
     {{VH_BEVENT_ENEMIES_DOWN, VH_BWIN}, {VH_BEVENT_ALLIES_DOWN, VH_BLOSS}},
-    2
+    2,
+    2, 2
 };
 #endif /* VH_MAP02_ENCOUNTER_DATA_H */
