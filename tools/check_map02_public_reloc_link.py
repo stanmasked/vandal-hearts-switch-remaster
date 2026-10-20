@@ -256,7 +256,7 @@ def make_inventory(upstream, bundle, *, make="make"):
     return [line.split() for line in lines]
 
 
-def inspect_sealed_export_origins(names, sealed):
+def inspect_sealed_export_origins(names, sealed, *, with_sizes=False):
     """Attribute each required strong code export to exactly one sealed .o.
 
     This checks the compiler inputs consumed by ld -r, rather than trusting
@@ -268,7 +268,7 @@ def inspect_sealed_export_origins(names, sealed):
     owners = {name: [] for name in REQUIRED_SYMBOLS}
     for source, fd in zip(names, sealed):
         result = subprocess.run(
-            ["nm", "-g", "--defined-only", f"/proc/self/fd/{fd}"],
+            ["nm", "-g", "-S", "--defined-only", f"/proc/self/fd/{fd}"],
             pass_fds=(fd,), capture_output=True, text=True,
             timeout=30, check=False)
         if result.returncode:
@@ -279,14 +279,26 @@ def inspect_sealed_export_origins(names, sealed):
                 continue
             symbol = cells[-1]
             if symbol in owners:
-                owners[symbol].append((source, cells[-2]))
+                size = None
+                if len(cells) >= 4:
+                    try:
+                        size = int(cells[-3], 16)
+                    except ValueError:
+                        pass
+                owners[symbol].append((source, cells[-2], size))
     if any(len(values) != 1 or values[0][1] != "T"
            for values in owners.values()):
         raise ValueError("original CD/GPU or observer sealed input export absent/duplicated")
-    return {name: owners[name][0][0] for name in REQUIRED_SYMBOLS}
+    paths = {name: owners[name][0][0] for name in REQUIRED_SYMBOLS}
+    if not with_sizes:
+        return paths
+    if any(owners[name][0][2] is None or owners[name][0][2] < 1
+           for name in REQUIRED_SYMBOLS):
+        raise ValueError("original CD/GPU sealed input function size unavailable")
+    return paths, {name: owners[name][0][2] for name in REQUIRED_SYMBOLS}
 
 
-def check_elf_function_sections(path, *, pass_fds=()):
+def check_elf_function_sections(path, *, pass_fds=(), expected_source_sizes=None):
     """Require original API entrypoints to be sized global ELF FUNC symbols.
 
     A global NOTYPE label inside .text is reported as 'T' by nm but must
@@ -342,6 +354,10 @@ def check_elf_function_sections(path, *, pass_fds=()):
             size = int(candidates[0][2], 0)
         except ValueError:
             raise ValueError("original CD/GPU or observer ELF FUNC bounds invalid") from None
+        if (expected_source_sizes is not None
+                and (name not in expected_source_sizes
+                     or size != expected_source_sizes[name])):
+            raise ValueError("original CD/GPU linked ELF FUNC size differs from sealed input")
         section_start, section_size = code_sections[candidates[0][6]]
         # Checking only Ndx and nonzero size accepts a forged FUNC symbol
         # placed after .text or a huge size extending beyond its section.
@@ -362,7 +378,7 @@ def check_elf_function_sections(path, *, pass_fds=()):
     return len(exported)
 
 
-def inspect_relocatable(path, *, pass_fds=()):
+def inspect_relocatable(path, *, pass_fds=(), expected_source_sizes=None):
     header = subprocess.run(
         ["readelf", "-h", str(path)], capture_output=True,
         text=True, timeout=30, check=False, pass_fds=pass_fds)
@@ -396,7 +412,8 @@ def inspect_relocatable(path, *, pass_fds=()):
     if any(re.search(r"\bU\s+vh_map02_\w+", line)
            for line in undefined.stdout.splitlines()):
         raise ValueError("combined original PC code has unresolved MAP02 observer hooks")
-    function_count = check_elf_function_sections(path, pass_fds=pass_fds)
+    function_count = check_elf_function_sections(
+        path, pass_fds=pass_fds, expected_source_sizes=expected_source_sizes)
     return {
         "original_cd_gpu_and_vram_exports_verified": function_count,
         "ordinary_game_or_private_asset_symbols_may_be_unresolved": True,
@@ -454,7 +471,8 @@ def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
             sealed.append(sealed_input_fd(source, proof, index=index))
         if [stable_object_input(path) for path in sources] != initial:
             raise ValueError("original PC objects changed while sealing inputs")
-        export_origins = inspect_sealed_export_origins(names, sealed)
+        export_origins, export_source_sizes = inspect_sealed_export_origins(
+            names, sealed, with_sizes=True)
         combined = subprocess.run(
             [linker, "-r", "-o", str(output),
              *(f"/proc/self/fd/{fd}" for fd in sealed)],
@@ -492,7 +510,8 @@ def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
     witness_fd = sealed_input_fd(output, output_proof, index=len(sources))
     try:
         checked = inspect_relocatable(
-            f"/proc/self/fd/{witness_fd}", pass_fds=(witness_fd,))
+            f"/proc/self/fd/{witness_fd}", pass_fds=(witness_fd,),
+            expected_source_sizes=export_source_sizes)
     finally:
         os.close(witness_fd)
     stable_relocatable_output(output, expected=output_proof)
@@ -509,6 +528,7 @@ def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
         "total_compiled_elf_objects": len(names),
         "ordered_object_input_manifest_sha256": input_manifest_sha256,
         "verified_original_export_input_owners": export_origins,
+        "original_cd_gpu_source_function_sizes_matched": True,
         "relocatable_elf_sha256": output_proof[0],
         **checked,
         "fully_linked_game_executable": False,
