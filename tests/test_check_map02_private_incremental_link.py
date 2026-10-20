@@ -155,6 +155,44 @@ class NativeIncrementalRelinkTests(unittest.TestCase):
             for name in ("followup", "needed", "missing"):
                 self.assertNotIn(name, json.dumps(report))
 
+    def test_real_mixed_direct_object_before_archive_group(self):
+        """A mixed scan must pin all candidates and show reordered strategy."""
+        direct = self.compile(
+            "mixed-direct",
+            "extern int followup(void);\n"
+            "int needed(void) { return followup(); }\n")
+        followup = self.compile(
+            "mixed-followup",
+            "extern int leaf(void);\n"
+            "int followup(void) { return leaf(); }\n")
+        leaf = self.compile("mixed-leaf", "int leaf(void) { return 19; }\n")
+        archive_needed = self.archive("mixed-followup-lib", followup)
+        archive_leaf = self.archive("mixed-leaf-lib", leaf)
+        # The initial library is scanned before the direct .o creates
+        # the need for it; an ordinary one-pass link leaves leaf unresolved.
+        candidates = [archive_leaf, direct, archive_needed]
+        plain = probe_private_incremental_link(
+            self.manifest, self.base, candidates,
+            self.root / "mixed-plain")
+        group = probe_private_incremental_link(
+            self.manifest, self.base, candidates,
+            self.root / "mixed-group", group_archives=True)
+        self.assertEqual(plain["archive_selection_strategy"],
+                         "single_pass_user_order")
+        self.assertEqual(group["archive_selection_strategy"],
+                         "direct_objects_before_archive_group")
+        self.assertEqual(plain["candidate_count"], 3)
+        self.assertEqual(group["candidate_count"], 3)
+        self.assertEqual(group["candidate_archive_count"], 2)
+        self.assertEqual(plain["final_strong_import_count"], 2)
+        self.assertEqual(group["final_strong_import_count"], 1)
+        self.assertEqual(
+            plain["new_strong_imports_introduced_by_candidates"], 1)
+        self.assertEqual(
+            group["new_strong_imports_introduced_by_candidates"], 0)
+        for name in ("followup", "leaf", "needed", "missing"):
+            self.assertNotIn(name, json.dumps(group))
+
     def test_group_strategy_requires_only_multiple_archive_candidates(self):
         """Disallow mixed .o/.a ordering claims before touching output files."""
         direct = self.compile("group-direct", "int needed(void) {return 5;}\n")
