@@ -1,10 +1,14 @@
 """Synthetic native ELF-only regressions; never ingest original game resources."""
+import errno
 import hashlib
+import os
+import stat
 import json
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 from tools.check_map02_private_archive_strategy_compare import (
     compare_private_archive_strategies, write_private_archive_receipt,
@@ -92,6 +96,56 @@ class IndependentPairedAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "write unavailable"):
             write_private_archive_receipt(report, destination)
         self.assertEqual(json.loads(destination.read_text(encoding="utf-8")), report)
+
+    def test_failed_disk_write_removes_incomplete_receipt(self):
+        """An ENOSPC following a partial write leaves no misleading JSON."""
+        data = json.loads(self.report.read_text(encoding="utf-8"))
+        target = self.report_dir / "disk-full.private.json"
+        original_write = os.write
+        calls = []
+
+        def disk_full(fd, payload):
+            calls.append(1)
+            if len(calls) == 1:
+                return original_write(fd, payload[:20])
+            raise OSError(errno.ENOSPC, "synthetic disk full")
+
+        with mock.patch(
+                "tools.check_map02_private_archive_strategy_compare.os.write",
+                side_effect=disk_full):
+            with self.assertRaisesRegex(ValueError, "write unavailable"):
+                write_private_archive_receipt(data, target)
+        self.assertGreaterEqual(len(calls), 2)
+        self.assertFalse(target.exists())
+
+    def test_directory_sync_failure_removes_incomplete_receipt(self):
+        """A failed durability check must not leave a purported good report."""
+        data = json.loads(self.report.read_text(encoding="utf-8"))
+        target = self.report_dir / "sync-failed.private.json"
+        original_sync = os.fsync
+
+        def fail_directory_sync(fd):
+            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                raise OSError(errno.EIO, "synthetic fsync failure")
+            return original_sync(fd)
+
+        with mock.patch(
+                "tools.check_map02_private_archive_strategy_compare.os.fsync",
+                side_effect=fail_directory_sync):
+            with self.assertRaisesRegex(ValueError, "write unavailable"):
+                write_private_archive_receipt(data, target)
+        self.assertFalse(target.exists())
+
+    def test_zero_length_write_removes_incomplete_receipt(self):
+        """An unusable write result must not strand an invalid report."""
+        data = json.loads(self.report.read_text(encoding="utf-8"))
+        target = self.report_dir / "short-write.private.json"
+        with mock.patch(
+                "tools.check_map02_private_archive_strategy_compare.os.write",
+                return_value=0):
+            with self.assertRaisesRegex(ValueError, "write incomplete"):
+                write_private_archive_receipt(data, target)
+        self.assertFalse(target.exists())
 
     def test_sealed_report_rejects_unsafe_parent_and_symlink(self):
         report = json.loads(self.report.read_text(encoding="utf-8"))

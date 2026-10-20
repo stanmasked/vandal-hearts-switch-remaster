@@ -151,6 +151,7 @@ def write_private_archive_receipt(report, destination):
         raise ValueError("private MAP02 paired report invalid")
     directory_fd = None
     report_fd = None
+    committed = False
     try:
         directory_fd = os.open(
             destination.parent,
@@ -188,9 +189,31 @@ def write_private_archive_receipt(report, destination):
                     named_output.st_mode)):
             raise ValueError("private MAP02 receipt metadata unsafe")
         os.fsync(directory_fd)
+        committed = True
     except OSError:
         raise ValueError("private MAP02 receipt write unavailable") from None
     finally:
+        if not committed and report_fd is not None and directory_fd is not None:
+            # An interrupted/failed new receipt must not be left behind as
+            # plausible evidence. Unlink only the inode opened with O_EXCL;
+            # never remove an unrelated file substituted at the same name.
+            try:
+                opened = os.fstat(report_fd)
+                named_failed = os.stat(
+                    destination.name, dir_fd=directory_fd,
+                    follow_symlinks=False)
+                if (stat.S_ISREG(named_failed.st_mode)
+                        and opened.st_dev == named_failed.st_dev
+                        and opened.st_ino == named_failed.st_ino
+                        and opened.st_uid == named_failed.st_uid
+                        and opened.st_nlink == 1):
+                    os.unlink(destination.name, dir_fd=directory_fd)
+                    try:
+                        os.fsync(directory_fd)
+                    except OSError:
+                        pass
+            except OSError:
+                pass
         if report_fd is not None:
             os.close(report_fd)
         if directory_fd is not None:
