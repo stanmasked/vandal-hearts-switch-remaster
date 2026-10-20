@@ -10,6 +10,8 @@ on:
       - 'source/main.c'
       - 'tests/test_vh_audio_exit_wait_descriptor_stage368.c'
       - 'tests/test_stage368_guest_wiring.py'
+      - 'tools/audit_nexium_stage368_wait_descriptor.py'
+      - 'tests/test_audit_nexium_stage368_wait_descriptor.py'
 permissions:
   contents: read
 jobs:
@@ -44,4 +46,7 @@ jobs:
           done
           python3 -m unittest discover -s tests \
             -p 'test_stage368_guest_wiring.py' -v
-          echo 'Stage368: software-only descriptor/count tuple from existing wait; no extra service call, clock, or physical DAC claim. New genuine guest capture remains necessary.' >> "$GITHUB_STEP_SUMMARY"
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_nexium_stage368_wait_descriptor.py' -v
+          python3 -m py_compile tools/audit_nexium_stage368_wait_descriptor.py
+          echo 'Stage368: software-only descriptor/count tuple from existing wait; no extra service call, clock, or physical DAC claim. Same-directory CSV parsing is NOT an independently attested original NeXium capture.' >> "$GITHUB_STEP_SUMMARY"
