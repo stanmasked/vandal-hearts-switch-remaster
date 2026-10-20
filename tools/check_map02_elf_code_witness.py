@@ -58,9 +58,10 @@ def function_images(fd, names):
     data = os.pread(fd, size, 0)
     if len(data) != size:
         raise ValueError("original PC ELF witness short read")
-    (ident, etype, machine, _, _, _, shoff, _, _, _, _, shentsize,
+    (ident, etype, machine, elf_version, _, _, shoff, _, _, _, _, shentsize,
      shnum, _) = EHDR.unpack(_require_slice(data, 0, EHDR.size))
     if (ident[:4] != b"\x7fELF" or ident[4] != 2 or ident[5] != 1
+            or ident[6] != 1 or elf_version != 1
             or etype != 1 or machine != 62 or shentsize != SHDR.size
             or not 0 < shnum < 4096):
         raise ValueError("original PC ELF witness requires x86-64 little-endian ET_REL")
@@ -75,6 +76,11 @@ def function_images(fd, names):
                 or section[6] >= shnum):
             raise ValueError("original PC ELF witness malformed symbol table")
         strings_section = sections[section[6]]
+        # An ELF symtab's sh_link must refer to a real SHT_STRTAB.
+        # Reinterpreting arbitrary section bytes as symbol names would
+        # undermine the claimed source-function provenance.
+        if strings_section[1] != 3 or strings_section[5] < 1:
+            raise ValueError("original PC ELF witness symbol string table invalid")
         strings = _require_slice(data, strings_section[4], strings_section[5])
         table = _require_slice(data, section[4], section[5])
         for i in range(0, len(table), SYM.size):
