@@ -104,7 +104,7 @@ def verify(root):
         "result":"EXACT_SOURCE_INSTRUMENTED_HOST_ELF_ARTIFACT_VERIFIED",
         "observed_elf_sha256":hashlib.sha256(raw).hexdigest(),
         "observed_elf_size_bytes":len(raw),
-        "pinned_neixum_source_sha":SOURCE,
+        "pinned_nexium_source_sha":SOURCE,
         "pinned_research_build_source_sha":RESEARCH,
         "pinned_cargo_lock_sha256":LOCK,
         "source_overlay_paths_verified":sorted(FILES),
