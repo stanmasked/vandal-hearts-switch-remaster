@@ -1,0 +1,144 @@
+name: MAP02 Stage285 time-bound first and last CPAL callback vs guest first input
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-cpal-preinput-onset-audit.yml'
+      - 'tools/audit_map02_cpal_preinput_onset.py'
+      - 'tests/test_audit_map02_cpal_preinput_onset.py'
+      - 'docs/MAP02_CPAL_PREINPUT_ONSET.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  VH_EXACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_FROZEN_STAGE284_SHA: '3786510115a4d0be76e7e1fc2bc004178839f23d'
+
+jobs:
+  bound-callback-onset:
+    name: Independent six archived CPAL callback onset diagnostics (no guests rerun)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fail closed if any game, emulator, guest binary or earlier research tool changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
+          python3 - <<'PY'
+          import os,subprocess
+          observed=set(subprocess.check_output([
+              "git","diff","--name-only",
+              os.environ["VH_FROZEN_STAGE284_SHA"],"HEAD"],
+              text=True).splitlines())
+          allowed={
+              ".github/workflows/map02-cpal-preinput-onset-audit.yml",
+              "tools/audit_map02_cpal_preinput_onset.py",
+              "tests/test_audit_map02_cpal_preinput_onset.py",
+              "docs/MAP02_CPAL_PREINPUT_ONSET.md",
+          }
+          assert observed and observed<=allowed,sorted(observed-allowed)
+          print("Only new bounded-offline diagnostic files:",sorted(observed))
+          PY
+      - name: Install offline optical PNG decoder and execute 15 ROM-free timing falsification tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends python3-pil
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_map02_cpal_preinput_onset.py' -v
+      - name: Download only six immutable previously verified real NRO/CPAL capture archives
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 39479885398
+          pattern: map02-stage283-hint*
+          github-token: ${{ github.token }}
+          merge-multiple: false
+          path: all-six
+      - name: Verify six original archive labels and derive callback cessation intervals
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stage285-results
+          for hint in 21 22; do
+            for repeat in 1 2 3; do
+              old="all-six/map02-stage283-hint$hint-repeat$repeat"
+              next="all-six/hint$hint-repeat$repeat"
+              test -d "$old"
+              test ! -e "$next"
+              mv "$old" "$next"
+              test -s "$next/nexium-guest-stdout.log"
+              test -s "$next/host-cpal-audioout-timeline.csv"
+              test -s "$next/guest-first-input-monotonic-ns.txt"
+              test -s "$next/guest-final-observation-monotonic-ns.txt"
+            done
+          done
+          python3 tools/audit_map02_cpal_preinput_onset.py \
+            --root all-six \
+            --output stage285-results/actual-six-cpal-onset-vs-guest-input.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result=json.loads(Path(
+              "stage285-results/actual-six-cpal-onset-vs-guest-input.json").read_text())
+          assert result["result"]=="SIX_REAL_GUEST_CPAL_PREINPUT_TIMING_AUDITED"
+          assert result["same_elf_and_nro_across_six"] is True
+          assert len(result["trials"])==6
+          assert result["cpal_audio_backend_cause_proven"] is False
+          assert result["controller_input_caused_stream_stop_proven"] is False
+          assert result["physical_switch_dac_output_proven"] is False
+          print("SIX ACTUAL CALLBACK TIMELINES independently classified")
+          PY
+      - name: Publish objective callback timing bounds and leave causality explicitly open
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path("stage285-results/actual-six-cpal-onset-vs-guest-input.json")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              print("### Stage285 last host CPAL callback vs first NRO game input",file=out)
+              if not p.is_file():
+                  print("**UNVERIFIED**: no complete six archive onset audit.",file=out)
+              else:
+                  data=json.loads(p.read_text())
+                  print("Result: "+data["result"],file=out)
+                  if "trials" in data:
+                      print("| Hint | Repeat | CPAL first sample | Last increase upper bound "
+                            "before input (ms) | CPAL after input | Stream errors logged |",file=out)
+                      print("|---:|---:|---:|---:|---:|---:|",file=out)
+                      for r in data["trials"]:
+                          pre=r["lower_bound_ms_between_last_preinput_increase_and_input"]
+                          lower=("unknown" if pre is None else f"{pre:.1f}")
+                          print(f'| {r["hint_ms"]} | {r["repeat"]} | '
+                                f'{r["first_sample_entered"]} | {lower} | '
+                                f'{r["cpal_entries_after_guest_input"]}/'
+                                f'{r["cpal_returns_after_guest_input"]} | '
+                                f'{r["logged_cpal_stream_error_line_count"]} |',file=out)
+                      print("All three 21ms quiet 1s before input: "+
+                            str(data["observed_21ms_stopped_at_least_1s_before_input_in_all_three"]),file=out)
+                      print("All three 22ms callback progress after input: "+
+                            str(data["observed_22ms_callback_progress_after_input_in_all_three"]),file=out)
+                  else:
+                      print("Audit blocker: "+data.get("reason","unknown"),file=out)
+                  print("Callbacks are interval-censored by 200ms snapshots. An absent "
+                        "error line does not show no error. No causal CPAL/ALSA root "
+                        "cause, infinite deadlock, measured Pulse hardware latency or "
+                        "physical Switch audio is proven.",file=out)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage285-six-preinput-cpal-timing-independent-audit
+          path: stage285-results/
+          if-no-files-found: warn
