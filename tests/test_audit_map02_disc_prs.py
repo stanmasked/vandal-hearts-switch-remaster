@@ -9,7 +9,7 @@ from pathlib import Path
 from tools.audit_map02_disc_prs import (
     START_SECTOR, SECTOR_COUNT, DAT_START_SECTOR, DAT_SECTOR_COUNT,
     PRIOR_DAT_LENGTH, USER_BYTES, RAW_BYTES, SYNC,
-    audit_prs, read_sectors, unpack_prs, xa_edc,
+    audit_prs, read_sectors, read_sectors_from_stream, unpack_prs, xa_edc,
 )
 from tools.compare_map02_variants import (
     EXPECTED_LENGTH, RECORD_SIZE, FACE_GFX_OFFSET, TARGET_RECORDS,
@@ -165,6 +165,33 @@ class AuditMap02DiscPRSTests(unittest.TestCase):
                     result = audit_prs(extracted)
                     self.assertTrue(result["matches_prior_target_gfx"])
                     self.assertEqual(result["available_bytes"], SECTOR_COUNT * USER_BYTES)
+
+    def test_stream_reader_reuses_open_image_for_raw_mode2_and_iso(self):
+        for layout in ("mode2-2352", "iso-2048"):
+            with self.subTest(layout=layout):
+                with tempfile.TemporaryDirectory() as folder:
+                    path = Path(folder) / "one-open-image.bin"
+                    write_fake_image(path, self.prs, layout)
+                    with path.open("rb") as source:
+                        payload = read_sectors_from_stream(source, layout)
+                        self.assertEqual(payload, read_sectors(path, layout))
+                        self.assertEqual(payload[:len(self.prs)], self.prs)
+                        self.assertFalse(source.closed)
+
+    def test_stream_reader_retains_original_inode_after_filename_replace(self):
+        with tempfile.TemporaryDirectory() as folder:
+            image = Path(folder) / "disc.bin"
+            old = Path(folder) / "original-inode.bin"
+            write_fake_image(image, self.prs, "mode2-2352")
+            with image.open("rb") as stream:
+                image.rename(old)
+                image.write_bytes(b"substituted content")
+                self.assertEqual(
+                    read_sectors_from_stream(stream, "mode2-2352")[:len(self.prs)],
+                    self.prs,
+                )
+                with self.assertRaisesRegex(ValueError, "too short"):
+                    read_sectors(image, "mode2-2352")
 
     def test_disc_sector_adjustment_must_be_explicit(self):
         with tempfile.TemporaryDirectory() as folder:
