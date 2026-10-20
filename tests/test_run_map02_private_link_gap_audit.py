@@ -79,6 +79,9 @@ class OneShotPrivateMap02LinkGapTests(unittest.TestCase):
         self.assertEqual(actual["initial_strong_import_count"], 2)
         self.assertEqual(actual["candidate_archive_count"], 2)
         self.assertEqual(actual["candidate_direct_object_count"], 0)
+        self.assertFalse(actual["candidate_strong_provider_coverage_checked"])
+        self.assertIsNone(actual["initial_imports_with_strong_provider_candidate"])
+        self.assertFalse(actual["provider_presence_proves_actual_link_resolution"])
         self.assertFalse(actual["group_strategy_reorders_direct_objects_before_archives"])
         self.assertEqual(actual["single_pass_original_imports_resolved"], 1)
         self.assertEqual(actual["grouped_original_imports_resolved"], 1)
@@ -140,6 +143,57 @@ class OneShotPrivateMap02LinkGapTests(unittest.TestCase):
         self.assertTrue(result["independent_elf_and_count_audit_passed"])
         self.assertFalse(result["fully_linked_game_executable"])
         self.assertFalse(result["original_map02_execution_proven"])
+
+    def test_optional_strong_provider_preflight_reports_missing_candidates(self):
+        """Strong export coverage counts are evidence, not actual ld resolution."""
+        target = self.root / "candidate-coverage"
+        status = run_private_link_gap_audit(
+            self.manifest, self.partial, self.archives, target,
+            expected_initial_strong_imports=2, audit_strong_providers=True)
+        self.assertTrue(status["candidate_strong_provider_coverage_checked"])
+        self.assertEqual(
+            status["initial_imports_with_strong_provider_candidate"], 1)
+        self.assertEqual(
+            status["initial_imports_without_strong_provider_candidate"], 1)
+        self.assertEqual(
+            status["initial_imports_with_multiple_strong_provider_candidates"], 0)
+        self.assertFalse(status["provider_presence_proves_actual_link_resolution"])
+        self.assertEqual(status["grouped_original_imports_remaining"], 1)
+        self.assertTrue(status["independent_elf_and_count_audit_passed"])
+        for private_name in ("needed", "missing", "followup"):
+            self.assertNotIn(private_name, json.dumps(status))
+
+    def test_thin_archive_in_optional_coverage_fails_before_creating_root(self):
+        """Prevent external .a member traversal before any output is created."""
+        thin = self.root / "external-refs.a"
+        provider = self.compile("external-obj", "int needed(void) {return 8;}\n")
+        subprocess.run(
+            ["ar", "rcsT", str(thin), str(provider)],
+            check=True, capture_output=True, timeout=30)
+        self.assertEqual(thin.read_bytes()[:8], b"!<thin>\n")
+        target = self.root / "thin-probe-rejected"
+        with self.assertRaisesRegex(ValueError, "thin or invalid"):
+            run_private_link_gap_audit(
+                self.manifest, self.partial, [thin, self.needs], target,
+                audit_strong_providers=True)
+        self.assertFalse(target.exists())
+
+    def test_real_cli_provider_preflight_has_only_aggregate_output(self):
+        """CLI excludes private symbol labels and source filesystem names."""
+        target = self.root / "cli-provider-preflight"
+        execution = subprocess.run(
+            [sys.executable, "-m", "tools.run_map02_private_link_gap_audit",
+             str(self.manifest), str(self.partial), str(target),
+             *(str(arc) for arc in self.archives),
+             "--audit-strong-provider-coverage",
+             "--expect-initial-strong-imports", "2"],
+            capture_output=True, text=True, check=True, timeout=120)
+        report = json.loads(execution.stdout)
+        self.assertEqual(report["initial_imports_without_strong_provider_candidate"], 1)
+        self.assertTrue(report["candidate_strong_provider_coverage_checked"])
+        for private_label in ("needed", "missing", "followup",
+                              str(self.manifest), str(self.partial)):
+            self.assertNotIn(private_label, execution.stdout + execution.stderr)
 
     def test_bad_archive_set_rejected_before_creating_root(self):
         cases = [[self.needs], [self.needs, self.partial]]

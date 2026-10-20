@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 from tools.check_map02_private_provider_coverage import (
     audit_provider_coverage, read_private_manifest,
@@ -119,7 +120,51 @@ class LocalProviderCoverageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "incompatible PC ELF ABI"):
             audit_provider_coverage(self.manifest, [mixed])
 
-    def test_shared_library_disguised_as_object_rejected(self):
+    def test_thin_archive_rejected_without_following_outside_member(self):
+        """A pinned thin archive is insufficient to seal outside objects."""
+        external = self.compile(
+            "outside-provider", "void alpha(void) {}\n")
+        thin = self.root / "external-members.a"
+        subprocess.run(
+            ["ar", "rcsT", str(thin), str(external)],
+            check=True, capture_output=True, timeout=30)
+        self.assertEqual(thin.read_bytes()[:8], b"!<thin>\n")
+        with self.assertRaisesRegex(ValueError, "thin or invalid"):
+            audit_provider_coverage(self.manifest, [thin])
+
+    def test_native_inspection_ignores_caller_loader_and_python_hooks(self):
+        """readelf/nm must not inherit private-path loader injections."""
+        valid = self.compile("safe-provider", "void alpha(void) {}\n")
+        origin = subprocess.run
+        calls = []
+
+        def inspect_native(*args, **kwargs):
+            calls.append((args, kwargs))
+            return origin(*args, **kwargs)
+
+        dangerous = {
+            "LD_PRELOAD": "/private/evil-preload.so",
+            "LD_LIBRARY_PATH": "/private/libraries",
+            "LD_AUDIT": "/private/evil-audit.so",
+            "DYLD_INSERT_LIBRARIES": "/private/evil-dylib",
+            "PYTHONPATH": "/private/python",
+            "VH_SECRET_INPUT": "/private/owned/SLUS_004.47",
+        }
+        with mock.patch.dict(os.environ, dangerous):
+            with mock.patch(
+                    "tools.check_map02_private_provider_coverage.subprocess.run",
+                    side_effect=inspect_native):
+                report = audit_provider_coverage(self.manifest, [valid])
+        self.assertEqual(report["strong_symbols_with_candidate_provider"], 1)
+        self.assertEqual(len(calls), 2)
+        for args, kwargs in calls:
+            self.assertIn(args[0][0], ("readelf", "nm"))
+            env = kwargs["env"]
+            for name in dangerous:
+                self.assertNotIn(name, env)
+            self.assertEqual(kwargs["umask"], 0o077)
+            self.assertEqual(env.get("PATH"), os.environ.get("PATH"))
+
         code = self.root / "shared-as-object.c"
         code.write_text("void alpha(void) {}\n", encoding="ascii")
         fake_object = self.root / "dynamic-file.o"

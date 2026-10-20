@@ -133,11 +133,19 @@ def _candidate_strong_exports(candidate):
             raise ValueError("private MAP02 provider input metadata unsafe")
         before = (info.st_dev, info.st_ino, info.st_size,
                   info.st_mtime_ns, info.st_ctime_ns)
+        # GNU thin archives refer to files outside the pinned archive fd.
+        # Reject before readelf/nm can follow any external members.
+        if path.suffix == ".a" and os.pread(fd, 8, 0) != b"!<arch>\n":
+            raise ValueError("private MAP02 thin or invalid provider archive rejected")
+        safe_env = {
+            k: v for k, v in os.environ.items()
+            if not k.startswith(("LD_", "DYLD_", "PYTHON", "VH_"))
+        }
         try:
             headers = subprocess.run(
                 ["readelf", "-hW", f"/proc/self/fd/{fd}"],
                 pass_fds=(fd,), capture_output=True, text=True,
-                check=False, timeout=45)
+                check=False, timeout=45, umask=0o077, env=safe_env)
             if headers.returncode:
                 raise ValueError("private MAP02 provider ELF inspection failed")
             _require_native_pc_elf_headers(headers.stdout)
@@ -145,7 +153,7 @@ def _candidate_strong_exports(candidate):
                 ["nm", "-g", "-P", "--defined-only",
                  f"/proc/self/fd/{fd}"],
                 pass_fds=(fd,), capture_output=True, text=True,
-                check=False, timeout=45)
+                check=False, timeout=45, umask=0o077, env=safe_env)
         except (OSError, subprocess.TimeoutExpired):
             raise ValueError("private MAP02 provider symbol inspector unavailable") from None
         if res.returncode:
