@@ -45,6 +45,8 @@ INCLUDE_RE = re.compile(r'^\s*#\s*include\s*"([^"]+)"', re.M)
 RUNNER = """#!/bin/sh
 set -eu
 cd "$(dirname "$0")"
+python3 verify-kit.py --root . >/dev/null
+export PYTHONDONTWRITEBYTECODE=1
 test -f upstream/platform/pc/src/pc_raster.c
 python3 -m tools.map02_intel_mac_offline_selfcheck \
   upstream/platform/pc/src/pc_raster.c --deployment-target 10.15
@@ -68,7 +70,10 @@ deployment target 10.15 and system dylib dependencies. This kit includes
 one hash-pinned PUBLIC pc_raster.c from VandalHearts-PcPort. It never
 contacts GitHub or downloads private data while running.
 
-The files.json manifest lists every shipped source file and SHA-256.
+run-selfcheck.sh first invokes verify-kit.py to validate each extracted
+file against its SHA-256 manifest, rejecting injected files and symlinks.
+The files.json manifest lists every shipped file and SHA-256.
+Authenticate the ZIP using its independently published SHA-256.
 All paths are relative and intended for local verification. No PS1
 BIN/CUE, original proprietary assets, live GPU recordings, or private
 owner credentials are packaged.
@@ -184,6 +189,9 @@ def bundle(root: Path, public_raster: Path, destination: Path) -> dict:
         raise ValueError("unexpected binary public raster")
     payload = dict(sources)
     payload[PUBLIC_NAME] = public_bytes
+    payload["README.md"] = README.encode("utf-8")
+    payload["run-selfcheck.sh"] = RUNNER.encode("utf-8")
+    payload["verify-kit.py"] = secure_file(root, "tools/verify_map02_offline_kit.py")
     file_receipts = {
         name: hashlib.sha256(data).hexdigest()
         for name, data in sorted(payload.items())
@@ -200,8 +208,6 @@ def bundle(root: Path, public_raster: Path, destination: Path) -> dict:
     payload["files.json"] = (
         json.dumps(manifest, sort_keys=True, indent=2) + "\n"
     ).encode("utf-8")
-    payload["README.md"] = README.encode("utf-8")
-    payload["run-selfcheck.sh"] = RUNNER.encode("utf-8")
     destination = Path(destination).absolute()
     raw_parent = destination.parent
     if not raw_parent.is_dir():
