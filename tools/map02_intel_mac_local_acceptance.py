@@ -88,7 +88,7 @@ def checked_manifest_fingerprint(root: Path) -> str:
     if not 0 < length <= 2 * 1024 * 1024:
         raise ValueError("public kit manifest outside safe bounds")
     data = path.read_bytes()
-    if len(data) != length or b"\\0" in data:
+    if len(data) != length or b"\0" in data:
         raise ValueError("public kit manifest malformed or changed")
     return hashlib.sha256(data).hexdigest()
 
