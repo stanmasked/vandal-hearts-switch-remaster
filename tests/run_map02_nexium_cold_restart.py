@@ -8,6 +8,7 @@ injection, no synthetic evidence, no retail PlayStation assets.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -32,6 +33,31 @@ STAGES = (
 def identical_pixels(a, b, rect) -> bool:
     """Require exact RGB equality; the semantic diff() permits channel noise <=30."""
     return ImageChops.difference(a.crop(rect), b.crop(rect)).getbbox() is None
+
+
+def evidence_manifest(folder: Path) -> dict:
+    """Fingerprint every captured PNG and the decoded tactical RGB regions."""
+    captures = []
+    for boot in (1, 2):
+        for stage in STAGES:
+            label = f"boot{boot}_{stage}"
+            png = folder / (label + ".png")
+            frame = read(folder, label)
+            captures.append({
+                "boot": boot,
+                "stage": stage,
+                "filename": png.name,
+                "png_sha256": hashlib.sha256(png.read_bytes()).hexdigest(),
+                "board_rgb_sha256": hashlib.sha256(
+                    frame.crop(BOARD).tobytes()).hexdigest(),
+                "guard_hud_rgb_sha256": hashlib.sha256(
+                    frame.crop(GUARD_HUD).tobytes()).hexdigest(),
+            })
+    return {
+        "format": "VH_MAP02_COLD_RESTART_EVIDENCE_V1",
+        "captures_expected": 2 * len(STAGES),
+        "captures": captures,
+    }
 
 
 def verify(folder: Path) -> None:
@@ -230,6 +256,12 @@ def main() -> None:
             "first_process_exited_before_second": True,
         }, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     verify(args.evidence_dir)
+    manifest = evidence_manifest(args.evidence_dir)
+    (args.evidence_dir / "capture-sha256-manifest.json").write_text(
+        json.dumps(manifest, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8")
+    print(f"cold-restart PNG manifest: captures={len(manifest['captures'])} "
+          "rgb_regions=BOARD,GUARD_HUD sha256=1", flush=True)
 
 
 if __name__ == "__main__":
