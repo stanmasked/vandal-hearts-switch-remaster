@@ -565,3 +565,70 @@ jobs:
           name: map02-presubmit-nexium-guest-proof-${{ matrix.latency_ms }}-r${{ matrix.repeat }}
           path: runtime-evidence/
           if-no-files-found: warn
+
+  compare-all-six-exact-host-binaries:
+    name: Audit six verified host SHA-256 and raw guest PCM receipts
+    if: always()
+    needs: [nexiom-presubmit, nexiom-host, research-nro]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Verify exact source commit and create Python environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
+          python3 -m pip install --disable-pip-version-check pillow
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-nexium-once-binary
+          path: same-run/map02-nexium-once-binary
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-audout-presubmit-research-nro
+          path: same-run/map02-audout-presubmit-research-nro
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: map02-presubmit-nexium-guest-proof-*
+          path: same-run
+          merge-multiple: false
+      - name: Verify original guest PNG CRC8, PCM SHA256, NRO and host identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/verify_map02_nexium_one_binary.py \
+            --root same-run --source-sha "$VH_EXACT_SOURCE_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --output stage265-six-host-identity.json
+      - name: Preserve causal limits and trial report even on failure
+        shell: bash
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          path=Path('stage265-six-host-identity.json')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as stream:
+              if not path.is_file():
+                  print("Stage265 audit not executed; **UNVERIFIED**.",file=stream)
+              else:
+                  result=json.loads(path.read_text())
+                  print("### Stage265 exact host binary cross-trial audit",file=stream)
+                  print("Result: "+result["result"],file=stream)
+                  if result.get("same_host_executable_sha256_all_six_verified"):
+                      print("One NeXium binary SHA-256: "+result["host_executable_sha256"],file=stream)
+                  else:
+                      print("**No six-run host identity claim.** "+result.get("reason",""),file=stream)
+                  print("Requested latency hint is not an observed host period. "
+                        "CPAL root cause, infinite guest deadlock and physical "
+                        "Switch DAC are **not proven**.",file=stream)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage265-six-host-identity
+          path: stage265-six-host-identity.json
+          if-no-files-found: warn
