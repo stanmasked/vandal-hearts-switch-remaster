@@ -60,6 +60,17 @@ def evidence_manifest(folder: Path) -> dict:
     }
 
 
+def audit_manifest(folder: Path) -> None:
+    """Independently rehash a saved 24-frame artifact without launching NeXium."""
+    path = folder / "capture-sha256-manifest.json"
+    try:
+        recorded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError("cold boot PNG SHA-256 manifest missing or invalid") from exc
+    if recorded != evidence_manifest(folder):
+        raise ValueError("cold boot PNG SHA-256 manifest mismatch")
+
+
 def verify(folder: Path) -> None:
     record_path = folder / "processes.json"
     record = json.loads(record_path.read_text(encoding="utf-8"))
@@ -235,9 +246,20 @@ def run_once(executable: Path, folder: Path, boot: int) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--nro", type=Path, required=True)
+    parser.add_argument("--nro", type=Path)
     parser.add_argument("--evidence-dir", type=Path, required=True)
+    parser.add_argument("--audit-only", action="store_true",
+                        help="recheck saved PNGs, gameplay, and manifest offline")
     args = parser.parse_args()
+    if args.audit_only:
+        verify(args.evidence_dir)
+        audit_manifest(args.evidence_dir)
+        print("VH_MAP02_COLD_RESTART_OFFLINE_AUDIT_PASS "
+              "frames=24 png_sha256=1 board_rgb_sha256=1 "
+              "guard_hud_rgb_sha256=1", flush=True)
+        return
+    if args.nro is None:
+        parser.error("--nro is required unless --audit-only is set")
     args.evidence_dir.mkdir(parents=True, exist_ok=True)
     first = run_once(args.nro, args.evidence_dir, 1)
     # Avoid accidentally reusing a remaining NeXium window from boot 1.
@@ -260,6 +282,7 @@ def main() -> None:
     (args.evidence_dir / "capture-sha256-manifest.json").write_text(
         json.dumps(manifest, sort_keys=True, indent=2) + "\n",
         encoding="utf-8")
+    audit_manifest(args.evidence_dir)
     print(f"cold-restart PNG manifest: captures={len(manifest['captures'])} "
           "rgb_regions=BOARD,GUARD_HUD sha256=1", flush=True)
 
