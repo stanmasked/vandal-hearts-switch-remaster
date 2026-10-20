@@ -45,6 +45,13 @@ static VhMap02PcmMetrics first_page_metrics;
 #include "vh_audout_presubmit_witness.h"
 #include "vh_audout_presubmit_optical.h"
 static VhAudoutPresubmitWitness presubmit_witness;
+/* Opt-in-only single-writer progress counters: main reads atomically
+ * BEFORE its potentially blocking join. No PCM pointers, logging, heap,
+ * locks, guest filesystem, or additional libnx service calls. */
+static atomic_uint prejoin_stage;
+static atomic_uint prejoin_entered;
+static atomic_uint prejoin_returned;
+static atomic_uint prejoin_stop_requested;
 #endif
 #include "vh_audio_output_edges.h"
 #include "vh_game_music_banks.h"
@@ -206,7 +213,17 @@ static int output_submit(void *opaque, const int16_t *stereo,
         (const int16_t *)s->buffer->buffer,
         s->buffer->data_size/(2u*sizeof(int16_t)))<0) return -1;
 #endif
+#if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+    atomic_fetch_add_explicit(&prejoin_entered,1u,memory_order_relaxed);
+    atomic_store_explicit(&prejoin_stage,3u,memory_order_release);
+#endif
     const Result played=audoutPlayBuffer(s->buffer,&released);
+#if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+    /* Return from the REAL libnx call, before lease validation. A
+     * returned descriptor is not proof that speakers produced sound. */
+    atomic_fetch_add_explicit(&prejoin_returned,1u,memory_order_relaxed);
+    atomic_store_explicit(&prejoin_stage,4u,memory_order_release);
+#endif
     const int returned=R_SUCCEEDED(played) &&
         vh_audio_buffer_lease_release(&s->lease,released)==0;
 #if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
@@ -314,6 +331,9 @@ static void publish_audio_diagnostics(const VhAudioOutputRecovery *r,
 
 static void audio_worker(void *unused) {
     (void)unused;
+#if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+    atomic_store_explicit(&prejoin_stage,1u,memory_order_release);
+#endif
     int state = -1;
     int opened = 0, playing = 0;
     /* Available also on startup failure paths that jump to cleanup. */
@@ -380,6 +400,9 @@ static void audio_worker(void *unused) {
         state = -3;
         goto cleanup;
     }
+#if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+    atomic_store_explicit(&prejoin_stage,2u,memory_order_release);
+#endif
     /* Initialize the output session, but start playback only when the
      * applet is actually focused. Keeping the service stopped during
      * HOME/sleep avoids stale queued data on resume.
@@ -582,6 +605,9 @@ static void audio_worker(void *unused) {
     }
     if (state == -1) state = 0; /* clean stop requested by main thread */
 cleanup:
+#if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+    atomic_store_explicit(&prejoin_stage,5u,memory_order_release);
+#endif
     /* A cooperative exit may send a SHORT last-sample-to-zero tail.
      * Never attempt output after HOME/focus loss: audout can already
      * be suspended, and a non-bounded submit could deadlock shutdown.
@@ -619,6 +645,9 @@ cleanup:
     publish_audio_diagnostics(&recovery_stats,
                               &recovery_backend.lease);
     atomic_store_explicit(&audio_status, state, memory_order_release);
+#if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+    atomic_store_explicit(&prejoin_stage,6u,memory_order_release);
+#endif
 }
 
 int vh_switch_game_audio_start(unsigned initial_scene) {
@@ -635,6 +664,12 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
     atomic_store_explicit(&scene_trace_latest_ticket,
                           (uint64_t)initial_scene,memory_order_release);
     vh_game_music_mailbox_init(&mailbox,initial_scene);
+#if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+    atomic_store_explicit(&prejoin_stage,0u,memory_order_relaxed);
+    atomic_store_explicit(&prejoin_entered,0u,memory_order_relaxed);
+    atomic_store_explicit(&prejoin_returned,0u,memory_order_relaxed);
+    atomic_store_explicit(&prejoin_stop_requested,0u,memory_order_relaxed);
+#endif
     atomic_store_explicit(&audio_status, 0, memory_order_release);
     atomic_store_explicit(&bank_warning_notes, 0u,
                           memory_order_release);
@@ -821,6 +856,62 @@ int vh_switch_game_audio_status(void) {
 unsigned vh_switch_game_audio_bank_warnings(void) {
     return atomic_load_explicit(&bank_warning_notes,
                                 memory_order_acquire);
+}
+
+int vh_switch_game_audio_presubmit_request_stop(void) {
+#if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+    if (!thread_started) return -1;
+    atomic_store_explicit(&prejoin_stop_requested,1u,memory_order_release);
+    vh_game_music_mailbox_stop(&mailbox);
+    return 0;
+#else
+    return -1;
+#endif
+}
+
+/* Independent pre-join optical byte rows: A5,5A,stage,entered(lo,hi),
+ * returned(lo,hi),stop,stage^entered^returned^stop^A5,5A, plus checksum.
+ * The phase is the latest observed *stage*, not a guarantee that a
+ * particular OS/libnx call is blocked in the absence of later change.
+ * Counters saturate to 16-bit for transport, never wrap in the packet.
+ */
+int vh_switch_game_audio_presubmit_stage_render(VhCanvas *canvas,
+    uint32_t black,uint32_t white,uint32_t marker) {
+#if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+    if (!canvas || !canvas->pixels || canvas->width!=1280 ||
+        canvas->height!=720 || canvas->stride_pixels<(size_t)1280)
+        return -1;
+    const unsigned stage=atomic_load_explicit(
+        &prejoin_stage,memory_order_acquire);
+    const unsigned entered=atomic_load_explicit(
+        &prejoin_entered,memory_order_acquire);
+    const unsigned returned=atomic_load_explicit(
+        &prejoin_returned,memory_order_acquire);
+    const unsigned stop=atomic_load_explicit(
+        &prejoin_stop_requested,memory_order_acquire);
+    if (stage>6u || returned>entered || stop>1u) return -1;
+    const unsigned e=entered>65535u?65535u:entered;
+    const unsigned v=returned>65535u?65535u:returned;
+    uint8_t byte[10]={
+        0xa5,0x5a,(uint8_t)stage,(uint8_t)e,(uint8_t)(e>>8),
+        (uint8_t)v,(uint8_t)(v>>8),(uint8_t)stop,0,0
+    };
+    for(unsigned i=0;i<8u;i++) byte[8]^=byte[i];
+    byte[9]=(uint8_t)(byte[8]^0xc3u);
+    vh_canvas_fill_rect(canvas,0,0,1280,720,black);
+    vh_canvas_fill_rect(canvas,244,154,92,112,marker);
+    vh_canvas_fill_rect(canvas,246,156,88,108,black);
+    for(unsigned row=0;row<10u;row++) {
+        for(unsigned bit=0;bit<8u;bit++)
+            vh_canvas_fill_rect(canvas,250+(int)bit*10,
+                160+(int)row*10,8,8,
+                (byte[row] & (uint8_t)(1u<<bit))?white:black);
+    }
+    return 0;
+#else
+    (void)canvas;(void)black;(void)white;(void)marker;
+    return -1;
+#endif
 }
 
 void vh_switch_game_audio_stop(void) {
