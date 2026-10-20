@@ -10,6 +10,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -77,6 +78,18 @@ class ColdRestartOracle(unittest.TestCase):
         record = json.loads(path.read_text())
         record.update(kwargs)
         path.write_text(json.dumps(record), encoding="utf-8")
+
+    def test_reject_window_owned_by_different_emulator_pid(self):
+        with patch.object(proof, "cmd", side_effect=[
+                "101\\n202", "25001", "25002"]):
+            with self.assertRaisesRegex(RuntimeError,
+                                        "owned by boot PID 25003"):
+                proof.find_window_for_process(25003)
+
+    def test_select_window_owned_by_current_boot_pid(self):
+        with patch.object(proof, "cmd", side_effect=[
+                "101\\n202", "25001", "25002"]):
+            self.assertEqual(proof.find_window_for_process(25002), "202")
 
     def test_valid_fake_reference(self):
         self.case()
