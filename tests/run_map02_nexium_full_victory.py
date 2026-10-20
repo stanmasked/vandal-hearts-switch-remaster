@@ -98,7 +98,9 @@ def check_screens(evidence: Path):
         ("turn3 enemy3", tile_color(t3,5,5,ENEMY)>500),
         ("turn4 enemy3 defeated", tile_color(t4,5,5,ENEMY)<100),
         ("turn4 last enemy", tile_color(t4,4,0,ENEMY)>500),
-        ("victory ally0 survived", tile_color(win,3,0,HERO)>500),
+        # Ally 0 delivers the final blow and is marked acted (muted grey),
+        # not active cyan. Require its actual on-screen acted palette here.
+        ("victory ally0 survived and acted", tile_color(win,3,0,ACTED)>500),
         ("victory ally1 survived", tile_color(win,4,5,HERO)>500),
         ("reset ally0", tile_color(reset,1,2,HERO)>500),
         ("reset enemy2", tile_color(reset,5,2,ENEMY)>500),
