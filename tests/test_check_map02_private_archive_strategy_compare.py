@@ -133,7 +133,11 @@ class PairedArchiveComparisonTests(unittest.TestCase):
         with mock.patch.object(
                 comparison, "probe_private_incremental_link",
                 side_effect=swap_after_second):
-            with self.assertRaisesRegex(ValueError, "path replaced"):
+            # Reusing the pinned inode after unlink changes its ctime;
+            # the earliest fail-closed check may report either mutation
+            # or a replaced pathname, depending on filesystem behavior.
+            with self.assertRaisesRegex(
+                    ValueError, "changed during link|path replaced"):
                 comparison.compare_private_archive_strategies(
                     self.manifest, self.base,
                     [self.second, self.first], destination)
