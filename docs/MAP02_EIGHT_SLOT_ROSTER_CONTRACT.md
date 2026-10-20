@@ -13,6 +13,12 @@ An independently authored eight-slot roster uses allies at positions 0–3 and o
 - Independent 3v3 ally attacks and 4v4 enemy attacks establish non-premature win/loss. Other tests reject duplicate coordinates, blocked tiles, out-of-range counts, hidden forged units, friendly fire and invalid attack distances.
 - CI checks GCC, Clang, UBSan and the unchanged devkitPro baseline NRO. A successful baseline NRO check verifies preservation of the existing program, **not playable 4v4 on Switch**.
 
+## Independent authored source pipeline
+
+A separately named schema-v2 capacity fixture, `data/map02_roster8_4v4.json`, is compiled by `tools/generate_map02_roster8.py` to an opt-in C header. It is entirely original placeholder data, not a replacement for either approved two-unit MAP02 map. The compiler only accepts the capacity-smoke fixture ID, rejects duplicate/unknown fields, illegal positions, overlapping or blocked spawns, boolean/invalid HP, malformed cursors, and out-of-range roster lengths. Absent units are generated as exact zero-padding.
+
+`tests/test_map02_roster8_source.py` compiles the C header and runs a tiny native executable for 1v1, 1v4, 3v3, and 4v4 configurations, under both GCC and Clang in CI. The generated header remains a test artifact, deliberately not included by `source/main.c`.
+
 ## Later integration (NOT included)
 
 1. Generalize portable movement/path occupancy and enemy AI to use the expanded side-capacity index contract; preserve four-slot APIs for inherited NeXium tests.
