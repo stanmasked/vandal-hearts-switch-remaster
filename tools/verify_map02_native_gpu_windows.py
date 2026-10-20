@@ -170,6 +170,7 @@ def verify_native_windows(directory, *, target_frame):
     last_draw_post_env = None
     logs_hash = hashlib.sha256()
     file_tree_hash = hashlib.sha256()
+    inventory_digests = []
     for idx in range(window_count):
         window = _private_directory(root / f"window-{idx:03d}")
         if (window / STATUS).exists() or (window / STATUS).is_symlink():
@@ -192,14 +193,37 @@ def verify_native_windows(directory, *, target_frame):
             raise ValueError("unlisted or missing files in native GPU capture window")
         # Hash ALL published capture bytes, not only JSONL: unreferenced or
         # replaced snapshots must never inherit the same source binding.
+        # Freeze each bounded file's bytes for this verifier pass. The
+        # cryptographic inventory, native transfer replay, and event/window
+        # bridges must not observe different versions of the same pathname.
+        inventory = {}
         for name in sorted(expected_files):
             data = private_window_file(window, name, max_bytes=VRAM_BYTES + 128 * 1024)
+            inventory[name] = data
             file_tree_hash.update(f"window-{idx:03d}/{name}\0".encode("ascii"))
             file_tree_hash.update(hashlib.sha256(data).digest())
-        # The existing full 1-MiB VRAM auditor is reused, but its
-        # missing-receipt result is deliberately not interpreted as a
-        # complete original frame.
-        checked = verify_capture(window, target_frame=target_frame)
+        if inventory[LOG] != log:
+            raise ValueError("native GPU window journal changed before inventory snapshot")
+        inventory_digests.append((
+            window, tuple((name, hashlib.sha256(raw).digest())
+                          for name, raw in sorted(inventory.items()))
+        ))
+
+        def inventory_file(directory, name, *, expected=None, max_bytes=None):
+            if Path(directory).absolute() != window or name not in inventory:
+                raise ValueError("native GPU verifier requested unbound inventory file")
+            raw = inventory[name]
+            if expected is not None and len(raw) != expected:
+                raise ValueError("native GPU inventory file has wrong size")
+            if max_bytes is not None and not 0 < len(raw) <= max_bytes:
+                raise ValueError("native GPU inventory file exceeds byte bound")
+            return raw
+
+        # Reuse the full 1-MiB native raster/transfer validator, but feed
+        # the very same immutable bytes that were included in the digest.
+        # Missing terminal receipt still cannot certify a complete frame.
+        checked = verify_capture(
+            window, target_frame=target_frame, file_reader=inventory_file)
         if checked["capture_receipt_supplied"]:
             raise ValueError("window may not be certified as a full frame")
         total_draws += checked["draw_otag_primitive_pairs"]
@@ -209,9 +233,9 @@ def verify_native_windows(directory, *, target_frame):
         )
         for offset in range(0, count, 2):
             first, second = events[offset:offset + 2]
-            before_vram = private_window_file(
+            before_vram = inventory_file(
                 window, first["snapshot"], expected=VRAM_BYTES)
-            after_vram = private_window_file(
+            after_vram = inventory_file(
                 window, second["snapshot"], expected=VRAM_BYTES)
             if idx and offset == 0 and last_operation == "draw":
                 # Every transfer for target frame N happens while the
@@ -247,6 +271,15 @@ def verify_native_windows(directory, *, target_frame):
         raise ValueError("unlisted native GPU window directory")
     if seen != written or total_draws != draws or total_transfers != transfers:
         raise ValueError("global native GPU event count does not match window evidence")
+    # At the end of BOTH window audits, reject persistent mutations on disk.
+    # A report can then be tied to one coherent, privately rechecked file
+    # tree rather than a mixture of earlier hashes and later reads.
+    for window, bound_files in inventory_digests:
+        for name, digest in bound_files:
+            fresh = private_window_file(
+                window, name, max_bytes=VRAM_BYTES + 128 * 1024)
+            if hashlib.sha256(fresh).digest() != digest:
+                raise ValueError("native GPU evidence changed during window audit")
     # Preframe transfers alone cannot certify that the requested target
     # DrawOTag frame was ever reached by the native recorder.
     if total_draws == 0:
