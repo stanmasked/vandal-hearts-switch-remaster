@@ -3,13 +3,17 @@
 Source fixtures are tiny, independent synthetic C snippets. These tests do
 NOT link actual game resources or claim to run original MAP02.
 """
+from contextlib import redirect_stderr
+import io
+import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from tools.check_map02_public_reloc_link import (
-    REQUIRED_SYMBOLS, inspect_relocatable,
+    REQUIRED_SYMBOLS, inspect_relocatable, make_inventory, main,
 )
 
 
@@ -81,6 +85,54 @@ class PublicRelocatableELFTests(unittest.TestCase):
         invalid.write_bytes(b"invalid-original-code")
         with self.assertRaisesRegex(ValueError, "relocatable ELF"):
             inspect_relocatable(invalid)
+
+    def test_make_inventory_ignores_inherited_untrusted_makefile(self):
+        # Only tiny synthetic inventories are evaluated. A caller-supplied
+        # MAKEFILES script must never run during the audit's GNU Make read.
+        upstream = self.root / "upstream"
+        pc = upstream / "platform" / "pc"
+        pc.mkdir(parents=True)
+        bundle = self.root / "private-bundle"
+        bundle.mkdir()
+        (pc / "Makefile").write_text(
+            "VH_MAP02_PUBLIC_CODE_OBJS := build-map02-cycle/game.o\n"
+            "VH_MAP02_PUBLIC_BACKEND_OBJS := build-map02-cycle/gpu.o\n",
+            encoding="utf-8")
+        (bundle / "map02_cycle.mk").write_text(
+            "# Synthetic opt-in overlay\n", encoding="utf-8")
+        hostile = self.root / "unexpected-makefile"
+        hostile.write_text(
+            "$(shell touch untrusted-makefile-parsed)\n", encoding="utf-8")
+        marker = pc / "untrusted-makefile-parsed"
+        injected = {
+            "MAKEFILES": str(hostile),
+            "MAKEFLAGS": "--no-print-directory",
+            "PYTHONPATH": str(self.root / "foreign-python"),
+        }
+        with patch.dict(os.environ, injected):
+            result = make_inventory(upstream, bundle)
+        self.assertEqual(result, [
+            ["build-map02-cycle/game.o"], ["build-map02-cycle/gpu.o"]])
+        self.assertFalse(marker.exists())
+
+    def test_cli_redacts_filesystem_paths_and_linker_errors(self):
+        private_path = str(self.root / "owned-original-private-psx-image")
+        arguments = [
+            "check_map02_public_reloc_link", "pinned-upstream",
+            "private-bundle", "new-partial-output"]
+        for failure in (
+                OSError("private file: " + private_path),
+                subprocess.TimeoutExpired(["ld", private_path], 30),
+                ValueError("ld stderr included " + private_path)):
+            output = io.StringIO()
+            with patch("sys.argv", arguments), patch(
+                    "tools.check_map02_public_reloc_link.audit_public_link",
+                    side_effect=failure), redirect_stderr(output):
+                with self.assertRaises(SystemExit) as error:
+                    main()
+            self.assertEqual(error.exception.code, 2)
+            self.assertNotIn(private_path, output.getvalue())
+            self.assertIn("public relocatable audit failed", output.getvalue())
 
 
 if __name__ == "__main__":
