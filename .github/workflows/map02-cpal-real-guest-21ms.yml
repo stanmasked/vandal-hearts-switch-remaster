@@ -60,7 +60,8 @@ jobs:
           assert new==expected, "Other launcher changes would confound 21/22 A/B"
           print("Only requested Pulse hint and output paths differ from verified 22ms control")
           # Written experiment context must agree with the actual 21ms script.
-          grep -F '"pulse_hint_ms":21,' .github/workflows/map02-cpal-real-guest-21ms.yml
+          assert '"pulse_hint_ms":21,' in Path(
+              ".github/workflows/map02-cpal-real-guest-21ms.yml").read_text()
           PY
       - uses: actions/download-artifact@v4
         with:
