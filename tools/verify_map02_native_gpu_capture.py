@@ -204,11 +204,12 @@ def validate_meta(event, step, target_frame):
             raise ValueError("unexpected upload filename")
 
 
-def verify_capture_receipt(directory: Path, *, target_frame: int, events):
+def verify_capture_receipt(directory: Path, *, target_frame: int, events,
+                           file_reader=private_file):
     """Require an exclusive recorder terminal receipt; old captures are not
     automatically treated as complete. This is a consistency check only."""
     directory = Path(directory).absolute()
-    raw = private_file(directory, STATUS, max_bytes=4096)
+    raw = file_reader(directory, STATUS, max_bytes=4096)
     status = parse_json(raw, STATUS)
     fields(status, (
         "schema", "gpu_draw_frame", "observed_hooks",
@@ -259,12 +260,13 @@ def verify_capture_receipt(directory: Path, *, target_frame: int, events):
     }
 
 
-def verify_capture(directory: Path, *, target_frame: int):
+def verify_capture(directory: Path, *, target_frame: int,
+                   file_reader=private_file):
     directory = Path(directory).absolute()
     if directory.is_symlink() or not directory.is_dir():
         raise ValueError("capture directory is missing or is a symlink")
     number(target_frame,"target DrawOTag frame",1,2**32-1)
-    log_raw=private_file(directory,LOG,max_bytes=MAX_EVENT_BYTES)
+    log_raw=file_reader(directory,LOG,max_bytes=MAX_EVENT_BYTES)
     # This binary-mode original observer always ends each JSON record in
     # one LF. Do not normalize CRLF or accept an interrupted final line.
     if not log_raw.endswith(b"\n") or b"\r" in log_raw or b"\x00" in log_raw:
@@ -301,8 +303,8 @@ def verify_capture(directory: Path, *, target_frame: int):
         # must not trigger KeyError or falsely assert clip provenance.
         if before.get("draw_env") != after.get("draw_env"):
             raise ValueError(f"GPU event {i}: before/after metadata diverges (draw_env)")
-        a=private_file(directory,before["snapshot"],expected=VRAM_BYTES)
-        b=private_file(directory,after["snapshot"],expected=VRAM_BYTES)
+        a=file_reader(directory,before["snapshot"],expected=VRAM_BYTES)
+        b=file_reader(directory,after["snapshot"],expected=VRAM_BYTES)
         snapshot_hashes.extend((sha(a),sha(b)))
         changed=sum(a[j:j+2]!=b[j:j+2] for j in range(0,VRAM_BYTES,2))
         assignments+=changed
@@ -372,7 +374,7 @@ def verify_capture(directory: Path, *, target_frame: int):
                 if expected_payload:
                     if not upload:
                         raise ValueError("bounded LoadImage missing mandatory upload payload")
-                    payload = private_file(directory,upload,expected=rect[2]*rect[3]*2)
+                    payload = file_reader(directory,upload,expected=rect[2]*rect[3]*2)
                     validate_bounded_load_vram(a, b, payload, rect)
                     upload_hashes.append(sha(payload))
                 else:
@@ -392,7 +394,8 @@ def verify_capture(directory: Path, *, target_frame: int):
     status_path = directory / STATUS
     if status_path.exists() or status_path.is_symlink():
         status_report = verify_capture_receipt(
-            directory, target_frame=target_frame, events=events)
+            directory, target_frame=target_frame, events=events,
+            file_reader=file_reader)
     else:
         status_report = {
             "capture_receipt_supplied": False,
