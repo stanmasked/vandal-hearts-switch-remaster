@@ -13,7 +13,7 @@ This stage is stacked on the eight-slot roster contract in Draft PR #256, and th
 
 ## Verifiable tests
 
-`tests/test_map02_battle8.c` exercises a 4v4 player-action victory, a 4v4 enemy-phase defeat, a 1v2 two-turn victory, a 2v1 multi-turn enemy victory, collision and pathfinding around blocked terrain, and invalid-init preservation of a live state. CI compiles the portable tests independently on GCC and Clang with UBSan, reruns previous two-scenario/variable-roster tests, validates the unchanged generated map headers and rebuilds the existing Switch NRO.
+`tests/test_map02_battle8.c` exercises a 4v4 player-action victory, a 4v4 enemy-phase defeat, a 1v2 two-turn victory, a 2v1 multi-turn enemy victory, collision and pathfinding around blocked terrain, and invalid-init preservation of a live state. It also compares every grid-cell path distance and one enemy phase against the original four-slot engine for **both unchanged authored maps**, to detect behavior drift during migration. CI compiles the portable tests independently on GCC and Clang with UBSan, reruns previous two-scenario/variable-roster tests, validates the unchanged generated map headers and rebuilds the existing Switch NRO.
 
 ## Important limitations
 
