@@ -101,3 +101,7 @@ Independent NeXium evidence from a newly built NRO must still establish
 whether a real timed-out tail returns zero or nonzero descriptors and
 how those outcomes differ between actual captures. Synthetic native
 tests alone cannot explain the old timeout or verify physical speakers.
+
+## Verified Stage368 CI (software-only)
+
+Independent [run #39386632327](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39386632327) passed. [Run #39387185093](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39387185093) also passed four C11 GCC/Clang optimized/UBSan executions, **3/3** source-wiring checks and **8/8** hostile/synthetic guest CSV parsing tests. These prove software diagnostics and invariants only, not a newly captured real NeXium exit, physical Switch sound, or the old `0xEA01` root cause. Newer branch revisions require their own CI results.
