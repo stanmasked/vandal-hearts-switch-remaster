@@ -336,6 +336,37 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
         # changed inode at the cryptographic evidence boundary.
         self.assertEqual(self.verify()["native_draw_pairs"], 2)
 
+    def test_same_bytes_directory_swap_during_read_is_rejected(self):
+        # A held dirfd continues to resolve the *old* directory's
+        # entries after the directory itself has been renamed. Its
+        # pathname must still point to the original directory inode.
+        from tools.verify_map02_native_gpu_capture import LOG
+        from tools.verify_map02_native_gpu_windows import private_window_file
+
+        source = self.window / LOG
+        old_inode = source.stat().st_ino
+        backup = Path(self.tmp.name) / "previous-window"
+        replacement = Path(self.tmp.name) / "replacement-window"
+        replacement.mkdir(mode=0o700)
+        private_bytes(replacement / LOG, source.read_bytes())
+        original_read = os.read
+        swapped = False
+
+        def replace_directory_when_reading(fd, amount):
+            nonlocal swapped
+            if not swapped and os.fstat(fd).st_ino == old_inode:
+                os.rename(self.window, backup)
+                os.rename(replacement, self.window)
+                swapped = True
+            return original_read(fd, amount)
+
+        with patch("tools.verify_map02_native_gpu_windows.os.read",
+                   side_effect=replace_directory_when_reading):
+            with self.assertRaisesRegex(
+                    ValueError, "directory changed during secure read"):
+                private_window_file(self.window, LOG, max_bytes=128 * 1024)
+        self.assertTrue(swapped)
+
     def test_private_reader_rejects_pathname_traversal(self):
         from tools.verify_map02_native_gpu_windows import private_window_file
         for candidate in ("../gpu-native-window-index.json", "nested/file",
