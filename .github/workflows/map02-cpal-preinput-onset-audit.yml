@@ -76,7 +76,7 @@ jobs:
               test -d "$old"
               test ! -e "$next"
               mv "$old" "$next"
-              test -s "$next/nexium-guest-stdout.log"
+              test -f "$next/nexium-guest-stdout.log"
               test -s "$next/host-cpal-audioout-timeline.csv"
               test -s "$next/guest-first-input-monotonic-ns.txt"
               test -s "$next/guest-final-observation-monotonic-ns.txt"
