@@ -159,8 +159,12 @@ def stage_disc(bin_path, cue_path, destination_parent, *,
             os.mkdir("receipt", 0o700, dir_fd=stagedfd)
             os.fsync(stagedfd)
             now = parent.lstat()
-            if (_stamp(ancestor) != _stamp(os.fstat(parentfd)) or
-                    _stamp(ancestor) != _stamp(now)):
+            stable = lambda info: (info.st_dev, info.st_ino,
+                                   info.st_uid, info.st_mode)
+            # Creating pending child entries legitimately updates mtime/ctime.
+            if (not stat.S_ISDIR(now.st_mode)
+                    or stable(ancestor) != stable(os.fstat(parentfd))
+                    or stable(ancestor) != stable(now)):
                 raise ValueError("private parent changed during staging")
             # The private parent is 0700; refuse preexisting destinations.
             try:
