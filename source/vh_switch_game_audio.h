@@ -39,6 +39,12 @@ int vh_switch_game_audio_presubmit_dump(FILE *stream);
  * Draws no game assets and does not establish DAC/speaker playback. */
 int vh_switch_game_audio_presubmit_render(VhCanvas *canvas,
     uint32_t black,uint32_t white,uint32_t marker);
+/* EXPERIMENTAL ONLY: request cooperative stop without joining, then draw
+ * a bounded atomic progress snapshot in a distinct pre-join raster.
+ * A captured stage is an observation, never proof of a stuck service. */
+int vh_switch_game_audio_presubmit_request_stop(void);
+int vh_switch_game_audio_presubmit_stage_render(VhCanvas *canvas,
+    uint32_t black,uint32_t white,uint32_t marker);
 VhAudoutQueueExportResult vh_switch_game_audio_queue_export(
     char *committed_path,size_t capacity);
 /* Separate per-call latency band CSV, only after worker join. */

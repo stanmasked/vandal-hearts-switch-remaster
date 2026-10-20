@@ -17,6 +17,8 @@ on:
       - 'tools/report_map02_guest_raster_sequence.py'
       - 'tools/classify_map02_guest_evidence.py'
       - 'tests/test_classify_map02_guest_evidence.py'
+      - 'tools/decode_map02_prejoin_stage.py'
+      - 'tests/test_decode_map02_prejoin_stage.py'
       - 'source/vh_switch_game_audio.c'
       - 'source/vh_switch_game_audio.h'
       - 'source/main.c'
@@ -202,6 +204,11 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests -p 'test_classify_map02_guest_evidence.py' -v
+      - name: Validate synthetic pre-join atomic stage pixels and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_decode_map02_prejoin_stage.py' -v
       - name: Download pinned NeXium nightly asset
         shell: bash
         env:
@@ -328,6 +335,12 @@ jobs:
             sleep 0.15
             timeout 3 xdotool keyup --window "$window" m
             sleep 3
+            # NEW research-only screen, rendered after cooperative stop
+            # request but BEFORE main enters threadWaitForExit().
+            import -window "$window" "$ROOT/presubmit-guest-prejoin-stage.png" || true
+            sleep 9
+            # After the bounded 8s prejoin panel, successful guest audio
+            # joins and shows the original strict VHPRE001 packet.
             import -window "$window" "$ROOT/presubmit-guest.png"
             test -s "$ROOT/presubmit-guest.png"
             sleep 5
@@ -403,6 +416,14 @@ jobs:
             --final runtime-evidence/presubmit-guest.png \
             --late runtime-evidence/presubmit-guest-late.png \
             --output runtime-evidence/presubmit-guest-raster-sequence.json
+      - name: Decode atomic guest stage BEFORE the potentially blocking join
+        shell: bash
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 tools/decode_map02_prejoin_stage.py \
+            --image runtime-evidence/presubmit-guest-prejoin-stage.png \
+            --output runtime-evidence/presubmit-guest-prejoin-stage.json
       - name: Decode actual guest CRC and assert eight descriptor identities
         shell: bash
         run: |
@@ -425,10 +446,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # The pre-join stage adds 9s to guest exit. Bounded 45s
+          # monitor scan prevents false rejection by the old 30s limit.
           python3 tools/audit_presubmit_virtual_sink.py \
             --guest runtime-evidence/presubmit-guest.json \
             --monitor runtime-evidence/presubmit-virtual-sink-s16le-48k.pcm \
-            --max-seconds 30 \
+            --max-seconds 45 \
             --output runtime-evidence/presubmit-sink-parity.json
           result="$(python3 - <<'PY'
           import json
