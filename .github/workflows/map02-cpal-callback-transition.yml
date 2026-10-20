@@ -1,0 +1,109 @@
+name: MAP02 Stage285 bracket real CPAL callback snapshot transitions at game input
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-cpal-callback-transition.yml'
+      - 'tools/audit_map02_cpal_callback_transition.py'
+      - 'tests/test_audit_map02_cpal_callback_transition.py'
+      - 'docs/MAP02_CPAL_CALLBACK_TRANSITION.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  VH_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_BASE: '3786510115a4d0be76e7e1fc2bc004178839f23d'
+
+jobs:
+  analyze-six-real-snapshot-traces:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Enforce only Stage285 offline trace diagnostics changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_HEAD"
+          python3 - <<'PY'
+          import os,subprocess
+          actual=set(subprocess.check_output(
+              ["git","diff","--name-only",os.environ["VH_BASE"],"HEAD"],
+              text=True).splitlines())
+          expected={
+              ".github/workflows/map02-cpal-callback-transition.yml",
+              "tools/audit_map02_cpal_callback_transition.py",
+              "tests/test_audit_map02_cpal_callback_transition.py",
+              "docs/MAP02_CPAL_CALLBACK_TRANSITION.md",
+          }
+          assert actual and actual<=expected,sorted(actual-expected)
+          PY
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_map02_cpal_callback_transition.py' -v
+      - name: Download six real guest source archives, no emulator execution
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 39479885398
+          pattern: map02-stage283-hint*
+          path: raw-six
+          merge-multiple: false
+          github-token: ${{ github.token }}
+      - name: Reparse original monotonic CPAL raw CSVs around guest input
+        shell: bash
+        run: |
+          set -euo pipefail
+          for h in 21 22; do
+            for i in 1 2 3; do
+              mv "raw-six/map02-stage283-hint$h-repeat$i" "raw-six/hint$h-repeat$i"
+            done
+          done
+          python3 tools/audit_map02_cpal_callback_transition.py \
+            --root raw-six --output stage285-results/cpal-snapshot-transition.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path("stage285-results/cpal-snapshot-transition.json").read_text())
+          assert x["result"]=="SIX_GUEST_SNAPSHOT_TRANSITION_WINDOWS_INDEPENDENTLY_RECHECKED"
+          assert len(x["cases"])==6
+          assert x["cannot_infer_exact_callback_stop_time_or_causal_order"] is True
+          assert x["no_cpal_stream_lifecycle_events_available"] is True
+          PY
+      - name: Record bounded conclusions
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path("stage285-results/cpal-snapshot-transition.json")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              print("### Stage285 CPAL input-boundary snapshots",file=out)
+              if not p.exists():
+                  print("UNVERIFIED: no six-archive source timeline audit.",file=out)
+              else:
+                  x=json.loads(p.read_text())
+                  print("Result: "+x["result"],file=out)
+                  if "cases" in x:
+                      for t in x["cases"]:
+                          print(f'- {t["hint_ms"]}ms repeat {t["repeat"]}: '
+                                f'{t["cpal_entries_after_input_sample_delta"]} '
+                                f'post-input callback entries; '
+                                f'{t["post_input_positive_entry_snapshot_intervals"]} '
+                                f'fully post-input active sample intervals',file=out)
+                  print("No per-callback clock, stream state transitions or error callback "
+                        "events were collected in Stage274. Onset and root cause are "
+                        "NOT inferred; no physical Switch audio claim.",file=out)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage285-six-guest-cpal-snapshot-onset
+          path: stage285-results/
+          if-no-files-found: warn
