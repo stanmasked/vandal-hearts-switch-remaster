@@ -39,6 +39,11 @@ This runs the following **invented-data** checks on the actual Mac:
   symlinked native VRAM file. Rejected inputs must not expose private
   paths, GPU colors, geometry, raw file names or captured binary data
   through stdout/stderr.
+- 7 new **real subprocess CLI adversarial** tests (11 independently
+  corrupted variants including GPU XY, UV, tpage, CLUT and E2 window,
+  ambiguous packets, missing/changed VRAM, source/native material mismatch,
+  path traversal and incorrect private-folder permissions). Their error
+  output must never expose original paths, pixel values or raw payloads.
 - Compilation and execution of the existing three-face C11 FT4
   source/CLUT/ordering-table fixture with local Clang.
 
