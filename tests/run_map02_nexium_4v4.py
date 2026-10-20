@@ -92,10 +92,11 @@ def diff(a: Image.Image, b: Image.Image, rect) -> int:
 
 
 def verify(folder: Path):
-    before, start, partial, victory, reset, after = (
+    before, start, partial, victory, reset, enemy_t1, defeat, defeat_reset, after = (
         read(folder, k) for k in
         ("legacy", "four_start", "first_kill", "four_victory",
-         "four_reset", "legacy_return")
+         "four_reset", "enemy_turn_1", "four_defeat",
+         "defeat_reset", "legacy_return")
     )
     for y in range(4):
         if not (tile(start, HERO, 0, y) > 500 and
@@ -116,6 +117,28 @@ def verify(folder: Path):
         raise ValueError("visible victory status did not change")
     if diff(start, reset, BOARD) > 150:
         raise ValueError("Y failed to restore original four-by-four board")
+    # Confirm a full opponent phase does not cause premature defeat.
+    # All four enemy AI agents attack once: hero HP goes from 3 to 1.
+    for y in range(4):
+        if tile(enemy_t1, HERO, 0, y) < 500:
+            raise ValueError(f"ally {y} died prematurely in first enemy phase")
+        if tile(defeat, HERO, 0, y) > 100:
+            raise ValueError(f"ally {y} survived the second enemy attack")
+        if tile(defeat, ENEMY, 1, y) < 500:
+            raise ValueError(f"enemy {y} missing after victorious AI phase")
+    if diff(enemy_t1, defeat, STATUS) < 20:
+        raise ValueError("enemy-caused 4v4 defeat was not visibly announced")
+    if diff(start, defeat_reset, BOARD) > 150:
+        raise ValueError("Y did not reset the AI-caused four-by-four loss")
+    # HP bars are yellow and change from 24 pixels (3 HP) to 8 (1 HP).
+    hp_color = (255, 219, 102)
+    start_hp = count(start, hp_color,
+                     (GX + 16, GY + 59, GX + 56, GY + 63))
+    turn_hp = count(enemy_t1, hp_color,
+                    (GX + 16, GY + 59, GX + 56, GY + 63))
+    if not (start_hp >= 80 and 20 <= turn_hp <= start_hp - 40):
+        raise ValueError(f"first AI phase did not reduce live ally HP "
+                         f"(start={start_hp}, after={turn_hp})")
     if not (tile(before, ENEMY, 5, 2) > 500 and
             tile(after, ENEMY, 5, 2) > 500):
         raise ValueError("return from capacity demo did not restore MAP 1")
@@ -124,7 +147,8 @@ def verify(folder: Path):
     if diff(before, start, BOARD) < 5000:
         raise ValueError("L+R did not switch into separate 4v4 runtime")
     print("VH_MAP02_NEXIUM_4V4_PASS entered=1 allies=4 opponents=4 "
-          "real_attacks=4 victory=1 reset=1 legacy_restore=1 retail=0",
+          "real_attacks=4 victory=1 enemy_phases=2 defeat=1 "
+          "reset=1 legacy_restore=1 retail=0",
           flush=True)
     print(f"4v4 screenshots: victory_status_diff={diff(partial, victory, STATUS)} "
           f"reset_diff={diff(start, reset, BOARD)} "
@@ -165,8 +189,14 @@ def main():
             for y in (1, 2, 3):
                 pad.attack(y)
             pad.snapshot("four_victory")
-            pad.press("z")  # Y reset
+            pad.press("z")  # Y reset after victory
             pad.snapshot("four_reset")
+            pad.press("v")  # X: four enemies attack; all allies survive with 1HP
+            pad.snapshot("enemy_turn_1")
+            pad.press("v")  # X: four enemies attack again; all allies die
+            pad.snapshot("four_defeat")
+            pad.press("z")  # Y reset after AI-caused defeat
+            pad.snapshot("defeat_reset")
             pad.toggle_eight()  # exit eight-slot battle
             pad.press("q")  # restore MAP 1, even if entering chord selected MAP 2
             pad.snapshot("legacy_return")
