@@ -1,0 +1,32 @@
+name: MAP02 local-disc receipt schema (asset-free)
+on:
+  push:
+    branches:
+      - 'work/map02-local-disc-receipt-structure'
+    paths:
+      - '.github/workflows/map02-local-disc-receipt.yml'
+      - 'tools/check_map02_local_disc_receipt.py'
+      - 'tests/test_check_map02_local_disc_receipt.py'
+  pull_request:
+    paths:
+      - '.github/workflows/map02-local-disc-receipt.yml'
+      - 'tools/check_map02_local_disc_receipt.py'
+      - 'tests/test_check_map02_local_disc_receipt.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  synthetic-receipt:
+    name: Validate digest-only MAP02 receipt
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Run asset-free receipt test suite
+        run: python3 -m unittest tests.test_check_map02_local_disc_receipt -v
