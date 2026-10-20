@@ -271,17 +271,24 @@ def check_elf_function_sections(path, *, pass_fds=()):
         text=True, timeout=30, check=False, pass_fds=pass_fds)
     if section_result.returncode or symbol_result.returncode:
         raise ValueError("original PC ELF section/function symbols unavailable")
-    code_sections = set()
+    code_sections = {}
     for line in section_result.stdout.splitlines():
         match = re.match(r"^\s*\[\s*(\d+)\]\s+(.+)$", line)
         if not match:
             continue
         cells = match.group(2).split()
-        # GNU readelf -W -S: name type addr off size ES flags link info align
+        # GNU readelf -W -S: name type addr off size ES flags link info align.
+        # For ET_REL, symbol values are offsets relative to their sections.
         if (len(cells) >= 7 and cells[1] == "PROGBITS"
                 and "A" in cells[6] and "X" in cells[6]
                 and "W" not in cells[6]):
-            code_sections.add(match.group(1))
+            try:
+                bounds = (int(cells[2], 16), int(cells[4], 16))
+            except ValueError:
+                raise ValueError("original PC ELF code section bounds invalid") from None
+            if match.group(1) in code_sections or bounds[1] < 1:
+                raise ValueError("original PC ELF code section bounds invalid")
+            code_sections[match.group(1)] = bounds
     if not code_sections:
         raise ValueError("original PC ELF executable code sections unavailable")
     exported = {name: [] for name in REQUIRED_SYMBOLS}
@@ -297,10 +304,20 @@ def check_elf_function_sections(path, *, pass_fds=()):
     for name, candidates in exported.items():
         if (len(candidates) != 1
                 or candidates[0][3:5] != ["FUNC", "GLOBAL"]
-                or candidates[0][6] not in code_sections
-                or not candidates[0][2].isdigit()
-                or int(candidates[0][2]) < 1):
+                or candidates[0][6] not in code_sections):
             raise ValueError("original CD/GPU or observer ELF FUNC export invalid")
+        try:
+            start = int(candidates[0][1], 16)
+            size = int(candidates[0][2], 0)
+        except ValueError:
+            raise ValueError("original CD/GPU or observer ELF FUNC bounds invalid") from None
+        section_start, section_size = code_sections[candidates[0][6]]
+        # Checking only Ndx and nonzero size accepts a forged FUNC symbol
+        # placed after .text or a huge size extending beyond its section.
+        if (size < 1 or start < section_start
+                or start >= section_start + section_size
+                or size > section_start + section_size - start):
+            raise ValueError("original CD/GPU or observer ELF FUNC bounds invalid")
     return len(exported)
 
 
