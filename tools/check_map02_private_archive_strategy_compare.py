@@ -54,10 +54,11 @@ def _confirm_link_output(pinned):
 def compare_private_archive_strategies(manifest, partial, archives, out_dir):
     """Return aggregate evidence only; pin inputs across both actual links."""
     archives = [Path(item) for item in archives]
-    if not 2 <= len(archives) <= 64 or any(
-            item.suffix != ".a" for item in archives):
+    archive_count = sum(item.suffix == ".a" for item in archives)
+    if (not 2 <= len(archives) <= 64 or archive_count < 2
+            or any(item.suffix not in (".o", ".a") for item in archives)):
         raise ValueError(
-            "private MAP02 comparison requires 2..64 native archive inputs")
+            "private MAP02 comparison requires 2..64 native candidates, at least two archives")
     manifest_doc = read_private_manifest(manifest)
     entries = []
     outputs = []
@@ -97,20 +98,23 @@ def compare_private_archive_strategies(manifest, partial, archives, out_dir):
                 info.st_mode & 0o777) != parent_identity:
             raise ValueError("private MAP02 paired output directory replaced")
         if (single["archive_selection_strategy"] != "single_pass_user_order"
-                or grouped["archive_selection_strategy"] != "repeated_archive_group"
+                or grouped["archive_selection_strategy"] != (
+                    "direct_objects_before_archive_group"
+                    if archive_count != len(archives)
+                    else "repeated_archive_group")
                 or single["source_partial_elf_sha256"] != entries[1][3]
                 or grouped["source_partial_elf_sha256"] != entries[1][3]
                 or single["candidate_count"] != len(archives)
                 or grouped["candidate_count"] != len(archives)
-                or single["candidate_archive_count"] != len(archives)
-                or grouped["candidate_archive_count"] != len(archives)
+                or single["candidate_archive_count"] != archive_count
+                or grouped["candidate_archive_count"] != archive_count
                 or single["original_strong_import_count"] !=
                    grouped["original_strong_import_count"]):
             raise ValueError("private MAP02 paired native link reports inconsistent")
         return {
             "schema": SCHEMA,
             "source_partial_elf_sha256": entries[1][3],
-            "candidate_archive_count": len(archives),
+            "candidate_archive_count": archive_count,
             "single_pass_original_imports_resolved":
                 single["original_strong_imports_resolved_by_ld_r"],
             "grouped_original_imports_resolved":
