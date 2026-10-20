@@ -65,6 +65,10 @@ class NativeGpuProbeTests(unittest.TestCase):
         self.assertIn("vh_capture_seen < 0xffffffffUL",rendered)
         self.assertIn("gpu-native-capture-status.json",rendered)
         self.assertIn("observed_window_closed_without_detected_loss",rendered)
+        # Capture names are per-window, so window-001's upload must be
+        # gpu-0001-upload.bin rather than the global gpu-0065-upload.bin.
+        self.assertIn('"gpu-%04u-upload.bin", local_seq', rendered)
+        self.assertNotIn('"gpu-%04u-upload.bin", seq', rendered)
         self.assertIn('fwrite(vram, 1u, bytes, file)',rendered)
         self.assertIn('ft4',rendered)
 
