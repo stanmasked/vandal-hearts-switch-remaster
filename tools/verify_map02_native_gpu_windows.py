@@ -158,6 +158,10 @@ def verify_native_windows(directory, *, target_frame):
         raise ValueError("unlisted native GPU window directory")
     if seen != written or total_draws != draws or total_transfers != transfers:
         raise ValueError("global native GPU event count does not match window evidence")
+    # Preframe transfers alone cannot certify that the requested target
+    # DrawOTag frame was ever reached by the native recorder.
+    if total_draws == 0:
+        raise ValueError("no target DrawOTag primitive in native GPU window capture")
     return {
         "native_window_schema": SCHEMA,
         "recorded_windows": window_count,
