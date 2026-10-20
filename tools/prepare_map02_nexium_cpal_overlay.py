@@ -197,10 +197,18 @@ def apply(repo: Path, expected_head: str=UPSTREAM) -> dict:
     paths=[RUNNER,KERNEL,"nexium-runner/Cargo.toml"]
     data={p:(repo/p).read_bytes() for p in paths}
     sha={p:hashlib.sha256(blob).hexdigest() for p,blob in data.items()}
-    runner=patch_runner(data[RUNNER].decode("utf-8"))
-    kernel=patch_kernel(data[KERNEL].decode("utf-8"))
-    manifest=patch_manifest(data["nexium-runner/Cargo.toml"].decode("utf-8"))
-    changes={RUNNER:runner,KERNEL:kernel,"nexium-runner/Cargo.toml":manifest}
+    def normalize(blob: bytes) -> str:
+        return blob.decode("utf-8").replace("\r\n","\n")
+    runner=patch_runner(normalize(data[RUNNER]))
+    kernel=patch_kernel(normalize(data[KERNEL]))
+    manifest=patch_manifest(normalize(data["nexium-runner/Cargo.toml"]))
+    raw_changes={RUNNER:runner,KERNEL:kernel,"nexium-runner/Cargo.toml":manifest}
+    # Preserve each upstream file's original newline style. Otherwise
+    # upstream CRLF Rust files would appear to be rewritten wholesale.
+    changes={
+        path: updated.replace("\n","\r\n") if b"\r\n" in data[path] else updated
+        for path,updated in raw_changes.items()
+    }
     # No partial upstream edits if any anchor fails.
     for path,updated in changes.items():
         (repo/path).write_text(updated,encoding="utf-8")
