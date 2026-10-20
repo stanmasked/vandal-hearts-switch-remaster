@@ -4,6 +4,9 @@ on:
     paths:
       - 'source/map02_battle8.h'
       - 'tests/test_map02_battle8.c'
+      - 'tests/test_map02_battle8_source.py'
+      - 'data/map02_roster8_4v4.json'
+      - 'tools/generate_map02_roster8.py'
       - 'source/map02_roster8.h'
       - 'source/map02_battle_fixture.h'
       - 'source/map02_encounter_data.h'
@@ -41,6 +44,7 @@ jobs:
           "$CC" -std=c11 -O2 -Wall -Wextra -Werror -pedantic tests/test_map02_variable_rosters.c -o /tmp/vh-map02-old-rosters
           /tmp/vh-map02-old-rosters
           python3 tools/generate_map02_fixture.py --all --check
+          python3 -m unittest discover -s tests -p 'test_map02_battle8_source.py' -v
   unchanged-switch:
     name: Build existing libnx NRO without eight-slot integration
     runs-on: ubuntu-22.04
