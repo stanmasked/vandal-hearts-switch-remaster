@@ -25,6 +25,16 @@ NUMBERS = (
 SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
+def verify_divergent_tree(merged_tree: str, child_tree: str) -> None:
+    """Fail closed if a dry-run merge resurrects any older-only content."""
+    if not SHA.fullmatch(merged_tree) or not SHA.fullmatch(child_tree):
+        raise AuditError("malformed #262/#265 reconciliation tree SHA")
+    if merged_tree != child_tree:
+        raise AuditError(
+            "#262/#265 dry-run merge changes the #265 tree; "
+            "manual reconciliation required before integration")
+
+
 def validate_snapshot(spec: dict, core_spec: dict) -> list[dict]:
     if spec.get("schema_version") != 1:
         raise AuditError("unsupported full-stack schema")
@@ -101,6 +111,15 @@ def preflight(repo: Path, spec: dict, core_spec: dict, fetch: bool = True):
     ] != [262, 265]:
         raise AuditError("historical #262/#265 divergence not validated")
 
+    # The earlier #262 commits were copied independently onto #265's
+    # ancestry. A conflict-free merge alone is NOT enough: require the
+    # resulting Git tree to equal the unchanged downstream #265 tree.
+    # This check never updates refs, index or the working tree.
+    child_sha = next(e["sha"] for e in resolved if e["number"] == 265)
+    child_tree = git(repo, "rev-parse", f"{child_sha}^{{tree}}").stdout.strip()
+    merged_tree = divergence[0]["dry_run_tree"]
+    verify_divergent_tree(merged_tree, child_tree)
+
     edges = []
     for previous, following in zip(resolved, resolved[1:]):
         parent, child = previous["number"], following["number"]
@@ -137,6 +156,13 @@ def preflight(repo: Path, spec: dict, core_spec: dict, fetch: bool = True):
         "checked_edges": len(edges),
         "edges": edges,
         "core_audit": core,
+        "divergent_tree_reconciliation": {
+            "edge": [262, 265],
+            "simulated_merge_tree": merged_tree,
+            "unchanged_downstream_tree": child_tree,
+            "tree_identical": True,
+            "history_rewritten": False,
+        },
         "changed_paths_checked": len(changed),
         "forbidden_added_assets": banned,
         "integration_merge_performed": False,
