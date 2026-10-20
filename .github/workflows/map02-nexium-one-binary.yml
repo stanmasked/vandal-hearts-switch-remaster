@@ -5,6 +5,8 @@ on:
     paths:
       - '.github/workflows/map02-nexium-one-binary.yml'
       - 'docs/MAP02_NEXIUM_SINGLE_BINARY_TRIAL.md'
+      - 'tools/verify_map02_nexium_one_binary.py'
+      - 'tests/test_verify_map02_nexium_one_binary.py'
   workflow_dispatch:
 
 permissions:
@@ -582,6 +584,11 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
           python3 -m pip install --disable-pip-version-check pillow
+      - name: Reject forged or missing host identity in eight generated trials
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_verify_map02_nexium_one_binary.py' -v
       - uses: actions/download-artifact@v4
         with:
           name: map02-nexium-once-binary
