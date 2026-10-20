@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 from PIL import Image, ImageDraw
-from tests.run_map02_nexium_prototype_move import verify, GX, GY, CELL
+from run_map02_nexium_prototype_move import verify, GX, GY, CELL
 
 NAMES = ("initial", "selected", "hover", "rejected", "moved",
          "reselected", "canceled", "returned")
