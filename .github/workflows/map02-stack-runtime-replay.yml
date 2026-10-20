@@ -50,7 +50,7 @@ jobs:
           if-no-files-found: error
 
   nexim-transition:
-    name: Same NRO: real guard HUD and roster-boundary replays
+    name: "Same NRO: real guard HUD and roster-boundary replays"
     needs: real-switch-nro
     runs-on: ubuntu-26.04
     timeout-minutes: 20
