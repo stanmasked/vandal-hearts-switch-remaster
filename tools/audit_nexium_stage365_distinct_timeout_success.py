@@ -19,7 +19,7 @@ from audit_nexium_stage358_original_kernel_timeout import (
 )
 from audit_nexium_stage364_guest_host_triple import (
     original_archive as verify_success, RUN_ID as SUCCESS_RUN,
-    VERIFIED as SUCCESS_VERIFIED,
+    VERIFIED as SUCCESS_VERIFIED, TRIPLE_PINS as SUCCESS_PINS,
 )
 
 VERIFIED="STAGE365_DISTINCT_AUTHENTIC_KERNEL_TIMEOUT_AND_SUCCESS_REAUDITED_NO_CAUSAL_PAIR"
@@ -91,9 +91,10 @@ def compare(timeout:dict,success:dict)->dict:
             "stage313":TIMEOUT_TAIL_SHA,"stage348":TIMEOUT_LEASE_SHA,
             "stage351":TIMEOUT_REASON_SHA,"stage357":TIMEOUT_WAIT_SHA,
         }
-        or success.get("stage313_original_tail_csv_sha256") is None
-        or success.get("stage348_original_lease_csv_sha256") is None
-        or success.get("stage351_original_reason_csv_sha256") is None
+        or success.get("stage313_original_tail_csv_sha256")!=SUCCESS_PINS["tail"]
+        or success.get("stage348_original_lease_csv_sha256")!=SUCCESS_PINS["lease"]
+        or success.get("stage351_original_reason_csv_sha256")!=SUCCESS_PINS["reason"]
+        or success.get("original_three_guest_families_independently_replayed") is not True
         or type(timeout.get("stage351_reason_code")) is not int
         or timeout["stage351_reason_code"]!=4
         or type(timeout.get("stage357_audout_wait_raw_result_decimal")) is not int
