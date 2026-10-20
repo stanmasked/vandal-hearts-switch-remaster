@@ -9,6 +9,8 @@ on:
       - 'tests/test_audit_stage371_two_original_wait_trials.py'
       - 'tools/audit_stage384_nexium_binary_provenance.py'
       - 'tests/test_audit_stage384_nexium_binary_provenance.py'
+      - 'tools/audit_stage385_nexium_tar_preextract.py'
+      - 'tests/test_audit_stage385_nexium_tar_preextract.py'
       - 'tools/audit_nexium_stage368_wait_descriptor.py'
       - 'source/vh_audio_exit_wait_descriptor_stage368.h'
       - 'source/vh_switch_game_audio.c'
@@ -40,6 +42,9 @@ jobs:
           python3 -m unittest discover -s tests \
             -p 'test_audit_stage384_nexium_binary_provenance.py' -v
           python3 -m py_compile tools/audit_stage384_nexium_binary_provenance.py
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_stage385_nexium_tar_preextract.py' -v
+          python3 -m py_compile tools/audit_stage385_nexium_tar_preextract.py
           bash -n tools/capture_nexium_scene_audio.sh
           echo 'Stage371 pre-build source invariants passed; real NeXium evidence still required.' >> "$GITHUB_STEP_SUMMARY"
   build-current-nro:
@@ -112,6 +117,9 @@ jobs:
           python3 -m unittest discover -s tests \
             -p 'test_audit_stage384_nexium_binary_provenance.py' -v
           python3 -m py_compile tools/audit_stage384_nexium_binary_provenance.py
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_stage385_nexium_tar_preextract.py' -v
+          python3 -m py_compile tools/audit_stage385_nexium_tar_preextract.py
           bash -n tools/capture_nexium_scene_audio.sh
       - name: Install virtual audio and headless NeXium requirements
         shell: bash
@@ -140,6 +148,12 @@ jobs:
           mkdir -p runtime-evidence
           printf '%s' "$release_json" > runtime-evidence/nexium-release-metadata.json
           curl -fL --retry 3 --retry-all-errors "$url" -o /tmp/vh-stage371-nexium.tar.gz
+          # Stage385: first verify GitHub-advertised source bytes AND inspect
+          # the original TAR paths. Do not extract any unverified member.
+          python3 tools/audit_stage385_nexium_tar_preextract.py \
+            --release runtime-evidence/nexium-release-metadata.json \
+            --archive /tmp/vh-stage371-nexium.tar.gz \
+            --receipt runtime-evidence/nexium-tar-preextract.json
           mkdir -p /tmp/vh-stage371-nexium
           tar -xzf /tmp/vh-stage371-nexium.tar.gz -C /tmp/vh-stage371-nexium
           emu_bin="$(find /tmp/vh-stage371-nexium -type f -executable \
@@ -241,6 +255,7 @@ jobs:
             stage371-originals/
             stage371-unverified-partial/
             runtime-evidence/nexium-runtime-binary-provenance.json
+            runtime-evidence/nexium-tar-preextract.json
             runtime-evidence/a/guest-sd-root.txt
             runtime-evidence/b/guest-sd-root.txt
             runtime-evidence/a/scene-optical-trace.png
