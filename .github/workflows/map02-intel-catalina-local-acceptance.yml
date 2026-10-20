@@ -83,7 +83,7 @@ jobs:
             /tmp/vh-map02-local-acceptance-kit \
             > /tmp/vh-map02-local-extract.json
           cd /tmp/vh-map02-local-acceptance-kit
-          python -m tools.map02_intel_mac_local_acceptance \
+          python -B -m tools.map02_intel_mac_local_acceptance \
             > /tmp/vh-map02-local-host-report.json
           python - <<'PY'
           import json
@@ -101,7 +101,7 @@ jobs:
           assert r['independent_trusted_machine_attestation'] is False
           print('VH_MAP02_INTEL_MAC_LOCAL_RECEIPT_PASS python=${{ matrix.python }} tests=49 helpers=3 real_catalina=0 owned_disc=0')
           PY
-          if python -m tools.map02_intel_mac_local_acceptance \
+          if python -B -m tools.map02_intel_mac_local_acceptance \
               --require-catalina-10-15-7 \
               > /tmp/vh-map02-fake-catalina.out \
               2> /tmp/vh-map02-fake-catalina.err; then
