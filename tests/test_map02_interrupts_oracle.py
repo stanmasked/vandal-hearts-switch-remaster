@@ -50,7 +50,8 @@ def fixtures(folder: Path):
         "after_y": initial, "pre_hit": initial,
         "armed_before_hit": armed, "blocked": blocked,
         "legacy_after_block": old, "primary_reentry": primary,
-        "second_reentry": initial, "legacy_after_minus": old,
+        "second_reentry": initial, "demo_off": Image.new("RGB", old.size),
+        "legacy_after_minus": old,
         "primary_after_minus": primary, "second_after_minus": initial,
         "final_legacy": old,
     }
@@ -138,6 +139,10 @@ class InterruptFrameOracle(unittest.TestCase):
     def test_reject_changed_scene_a_after_return(self):
         self.case(lambda p: self.replace(
             p, "primary_reentry", "second"), "scene A inherited")
+
+    def test_reject_minus_that_did_not_disable_demo(self):
+        self.case(lambda p: self.replace(
+            p, "demo_off", "legacy"), "MINUS did not actually disable")
 
     def test_reject_missing_minus_reset(self):
         self.case(lambda p: self.replace(
