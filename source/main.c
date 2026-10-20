@@ -9,6 +9,7 @@
 #include "map02_ranged8.h"
 #include "map02_medic8.h"
 #include "map02_guard8.h"
+#include "map02_guard_hud.h"
 #include "game_renderer.h"
 #include "platform_input.h"
 #include "software_renderer.h"
@@ -411,8 +412,9 @@ static void draw_map02_battle(u32 *pixels, u32 stride,
  * Trigger ZR while in MAP02 battle mode; ZR again returns to old maps.
  * The default 2v2 renderer and its NeXium cursor paths are untouched. */
 static void draw_map02_battle8(u32 *pixels, u32 stride,
-                               const VhBattle8 *battle, int roster_variant,
-                               int battle8_scene, u32 frame_tick) {
+                               const VhBattle8 *battle, const VhGuard8 *guard,
+                               int roster_variant, int battle8_scene,
+                               u32 frame_tick) {
     const VhRoster8 *r = &battle->roster;
     VhCanvas canvas = {(uint32_t *)pixels, (size_t)stride, FB_WIDTH, FB_HEIGHT};
     char count_label[] = "TURN 000";
@@ -494,6 +496,15 @@ static void draw_map02_battle8(u32 *pixels, u32 stride,
         draw_text(pixels, stride, 985, 513, "ALLY 1 BOW: B", COLOR_HERO, 1);
         draw_text(pixels, stride, 985, 536, "ALLY 2 HEAL: B", COLOR_HERO, 1);
         draw_text(pixels, stride, 985, 559, "ALLY 3 GUARD: B", COLOR_HERO, 1);
+        {
+            const int state = vh_b8_guard_hud_state(battle, guard,
+                                                   battle8_scene);
+            const u32 color =
+                state == VH_GHUD_ARMED ? COLOR_CURSOR :
+                state == VH_GHUD_BLOCKED ? COLOR_HERO : COLOR_MUTED;
+            draw_text(pixels, stride, 985, 582,
+                      vh_b8_guard_hud_label(state), color, 1);
+        }
     }
     draw_text(pixels, stride, 70, 622,
               "ZR OR L+R RETURN  MINUS DEMO  PLUS EXIT", COLOR_MUTED, 2);
@@ -675,7 +686,7 @@ int main(int argc, char **argv) {
         if (pixels) {
             const u32 stride_pixels = stride_bytes / sizeof(u32);
             if (battle_mode && battle8_mode)
-                draw_map02_battle8(pixels, stride_pixels, &battle8,
+                draw_map02_battle8(pixels, stride_pixels, &battle8, &battle8_guard,
                                    battle8_variant, battle8_scene, frame_tick++);
             else if (battle_mode)
                 draw_map02_battle(pixels, stride_pixels, &battle,
