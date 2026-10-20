@@ -7,13 +7,16 @@ on:
       - 'data/map02_full_stack_snapshot.json'
       - 'tools/audit_map02_full_stack.py'
       - 'tools/audit_map02_pr_metadata.py'
+      - 'tools/audit_map02_upstream_ci.py'
       - 'tests/test_map02_full_stack_audit.py'
       - 'tests/test_map02_live_pr_metadata.py'
+      - 'tests/test_map02_upstream_ci.py'
   workflow_dispatch:
 
 permissions:
   contents: read
   pull-requests: read
+  actions: read
 
 jobs:
   full-stack-audit:
@@ -30,9 +33,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile tools/audit_map02_full_stack.py tools/audit_map02_pr_metadata.py tests/test_map02_full_stack_audit.py tests/test_map02_live_pr_metadata.py
+          python3 -m py_compile tools/audit_map02_full_stack.py tools/audit_map02_pr_metadata.py tools/audit_map02_upstream_ci.py tests/test_map02_full_stack_audit.py tests/test_map02_live_pr_metadata.py tests/test_map02_upstream_ci.py
           python3 -m unittest discover -s tests -p 'test_map02_full_stack_audit.py' -v
           python3 -m unittest discover -s tests -p 'test_map02_live_pr_metadata.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_upstream_ci.py' -v
       - name: Compare all 26 immutable PR refs and live GitHub Draft metadata
         shell: bash
         env:
@@ -44,10 +48,12 @@ jobs:
             --repo . \
             --manifest data/map02_full_stack_snapshot.json \
             --verify-live-prs \
+            --verify-upstream-ci \
             --report build/map02-full-stack-audit/report.json \
             | tee build/map02-full-stack-audit/result.log
           grep -Fx 'VH_MAP02_FULL_STACK_AUDIT_PASS prs=26 pinned=25 linear_edges=24 reviewed_divergent=1 retail_assets=0 main_merge=0' build/map02-full-stack-audit/result.log
           grep -Fx 'VH_MAP02_FULL_STACK_LIVE_PRS_PASS count=26 draft=26 bases=26 head_shas=26' build/map02-full-stack-audit/result.log
+          grep -Fx 'VH_MAP02_UPSTREAM_CI_PASS pinned=25 success_exact_sha=25 self_excluded=1' build/map02-full-stack-audit/result.log
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -69,6 +75,12 @@ jobs:
           assert live["verified"] and live["pr_count"] == 26
           assert live["open_draft_unmerged"] == 26
           assert live["head_and_base_sha_pinned"] == 26
+          upstream = x["upstream_ci_provenance"]
+          assert upstream["verified"] is True
+          assert upstream["upstream_pr_count"] == 25
+          assert upstream["successful_exact_commit_workflows"] == 25
+          assert upstream["current_pr_self_run_excluded"] is True
+          assert all(p["conclusion"] == "success" for p in upstream["prs"])
           PY
       - name: Save the read-only integration evidence
         if: always()
