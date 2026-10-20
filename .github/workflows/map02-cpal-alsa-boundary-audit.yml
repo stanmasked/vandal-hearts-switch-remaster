@@ -106,7 +106,13 @@ jobs:
                                 f'{r["virtual_monitor_pcm_nonzero_samples"]} | '
                                 f'{r["buffer_latency_during_us"]} | '
                                 f'{r["stage_name"]} |',file=out)
-                      print("\n**Limit:** observational association only; not "
+                      assert x["same_guest_nro_sha256_all_six_verified"] is True
+                      assert x["same_nexium_host_binary_all_six_verified"] is False
+                      print("\n**Host caveat:** identical research NRO confirmed; original "
+                            "guest jobs independently downloaded a mutable nightly NeXium "
+                            "asset without recording its SHA-256. Identical host NeXium "
+                            "binary across six runs is **UNVERIFIED**.",file=out)
+                      print("\n**Limit:** observational association only; not 
                             "CPAL root-cause, guest deadlock or Switch DAC proof.",file=out)
           PY
       - uses: actions/upload-artifact@v4
