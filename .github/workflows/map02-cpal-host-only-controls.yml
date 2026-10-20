@@ -1,0 +1,310 @@
+name: MAP02 Stage286 CPAL host-only 21/22ms control without any game NRO
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-cpal-host-only-controls.yml'
+      - 'tools/audit_map02_host_only_cpal.py'
+      - 'tests/test_audit_map02_host_only_cpal.py'
+      - 'docs/MAP02_CPAL_HOST_ONLY_21_22.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  VH_EXACT_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_FROZEN_STAGE285: '8177b825f76dac26b2abebe81b7c42fa2b167c68'
+  VH_HOST_SHA: 'dd4ed55b6ce8477f19b77465f4ce6a0606b7a7315b3a0e2b8137b7d7ab5effd0'
+
+jobs:
+  host-no-rom:
+    name: No-ROM NeXium requested ${{ matrix.hint }}ms / repeat ${{ matrix.repeat }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - {hint: 21, repeat: 1}
+          - {hint: 21, repeat: 2}
+          - {hint: 22, repeat: 1}
+          - {hint: 22, repeat: 2}
+    env:
+      VH_HINT: ${{ matrix.hint }}
+      VH_REPEAT: ${{ matrix.repeat }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Ensure no Nintendo Switch game source or NeXium ELF modified
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE"
+          python3 - <<'PY'
+          import os,subprocess
+          changed=set(subprocess.check_output(
+              ["git","diff","--name-only",os.environ["VH_FROZEN_STAGE285"],"HEAD"],
+              text=True).splitlines())
+          allowed={
+              ".github/workflows/map02-cpal-host-only-controls.yml",
+              "tools/audit_map02_host_only_cpal.py",
+              "tests/test_audit_map02_host_only_cpal.py",
+              "docs/MAP02_CPAL_HOST_ONLY_21_22.md",
+          }
+          assert changed and changed<=allowed,sorted(changed-allowed)
+          print("Only no-ROM research tests, not any game code:",sorted(changed))
+          PY
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_map02_host_only_cpal.py' -v
+      - name: Download exact Stage276 source-pinned CPAL-instrumented NeXium ELF
+        uses: actions/download-artifact@v4
+        with:
+          name: map02-stage276-experimental-nexium-linux-x86_64
+          run-id: 39467347590
+          github-token: ${{ github.token }}
+          path: host
+      - name: Verify immutable real binary identity, no guest NRO downloaded
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          test ! -e guest
+          chmod 0755 host/nexium
+          echo "$VH_HOST_SHA  host/nexium" | sha256sum --check -
+          python3 tools/verify_map02_instrumented_nexium_host_artifact.py \
+            --artifact-dir host --output evidence/host-identity.json
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          r=json.loads(Path("evidence/host-identity.json").read_text())
+          assert r["result"]=="EXACT_SOURCE_INSTRUMENTED_HOST_ELF_ARTIFACT_VERIFIED"
+          assert r["observed_elf_sha256"]==os.environ["VH_HOST_SHA"]
+          assert not r["guest_emulator_boot_or_cpal_execution_proven"]
+          PY
+      - name: Install actual isolated virtual PulseAudio and software Vulkan GUI libs
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            xvfb xauth xdotool imagemagick \
+            libgtk-3-0t64 libasound2t64 libudev1 \
+            libxkbcommon0 libxkbcommon-x11-0 libx11-xcb1 \
+            libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers libgl1-mesa-dri \
+            pulseaudio pulseaudio-utils libasound2-plugins
+          ldd host/nexium > evidence/host-linked-libraries.txt
+          ! grep -F 'not found' evidence/host-linked-libraries.txt
+      - name: Run exact NeXium ELF with ZERO NRO arguments and 21 or 22ms Pulse hint
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          export HOST_ELF="$PWD/host/nexium"
+          export EVIDENCE="$PWD/evidence"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/vh-map02-stage286"
+          mkdir -p "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          export HOME="$RUNNER_TEMP/vh-map02-host-only-home"
+          mkdir -p "$HOME"
+          pulseaudio --daemonize=yes --exit-idle-time=-1 \
+            --log-target=file:"$EVIDENCE/pulseaudio.log"
+          export PULSE_SERVER="unix:$XDG_RUNTIME_DIR/pulse/native"
+          pactl load-module module-null-sink sink_name=vh_map02_stage286 \
+            rate=48000 channels=2 >"$EVIDENCE/pulse-module-id.txt"
+          pactl set-default-sink vh_map02_stage286
+          pactl list short sinks >"$EVIDENCE/pulse-sinks.txt"
+          grep -F vh_map02_stage286 "$EVIDENCE/pulse-sinks.txt"
+          printf 'pcm.!default { type pulse }\nctl.!default { type pulse }\n' \
+            >"$RUNNER_TEMP/stage286-alsa.conf"
+          export ALSA_CONFIG_PATH="$RUNNER_TEMP/stage286-alsa.conf"
+          export SDL_AUDIODRIVER=pulse
+          export NEXIUM_X11=1
+          export NEXIUM_CPU_BACKEND=rustarmic
+          export NEXIUM_LOG_LEVEL=info
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export WGPU_BACKEND=vulkan
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          export PULSE_LATENCY_MSEC="$VH_HINT"
+          export VH_MAP02_CPAL_TRACE_PATH="$EVIDENCE/host-cpal-audioout-timeline.csv"
+          timeout --kill-after=5s 95s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+            set -euo pipefail
+            # Intentionally invoke NeXium with NO positional NRO/ROM arguments.
+            "$HOST_ELF" >"$EVIDENCE/nexium-no-rom-stdout.log" 2>&1 &
+            proc=$!
+            trap "kill -KILL $proc 2>/dev/null || true" EXIT
+            win=""
+            for n in $(seq 1 35); do
+              sleep 1
+              win="$(xdotool search --onlyvisible --name NeXium 2>/dev/null | tail -n1 || true)"
+              if [ -n "$win" ]; then break; fi
+              kill -0 "$proc" 2>/dev/null || exit 1
+            done
+            test -n "$win"
+            kill -0 "$proc"
+            xdotool getwindowname "$win" >"$EVIDENCE/no-rom-window-title.txt"
+            grep -iF NeXium "$EVIDENCE/no-rom-window-title.txt"
+            sleep 3
+            python3 -c "import time; print(time.monotonic_ns())" \
+              >"$EVIDENCE/host-reference-start-monotonic-ns.txt"
+            sleep 20
+            kill -0 "$proc"
+            python3 -c "import time; print(time.monotonic_ns())" \
+              >"$EVIDENCE/host-reference-final-monotonic-ns.txt"
+            import -window "$win" "$EVIDENCE/nexium-without-nro.png"
+            test -s "$EVIDENCE/nexium-without-nro.png"
+            pactl list sink-inputs >"$EVIDENCE/pulse-sink-inputs.txt" || true
+            kill -TERM "$proc" 2>/dev/null || true
+            sleep 1
+            kill -KILL "$proc" 2>/dev/null || true
+            wait "$proc" 2>/dev/null || true
+          '
+          test -s "$EVIDENCE/host-cpal-audioout-timeline.csv"
+          test -s "$EVIDENCE/nexium-without-nro.png"
+      - name: Validate real host-only CPAL timeline with bounded neutral observation markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_map02_cpal_audioout_timeline.py \
+            --trace evidence/host-cpal-audioout-timeline.csv \
+            --first-input-marker evidence/host-reference-start-monotonic-ns.txt \
+            --final-observation-marker evidence/host-reference-final-monotonic-ns.txt \
+            --output evidence/host-cpal-audioout-audit.json
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path("evidence")
+          cp=json.loads((p/"host-cpal-audioout-audit.json").read_text())
+          assert cp["result"]=="BOUNDED_CPAL_AUDIOOUT_COUNTER_TIMELINE_PARSED"
+          assert cp["guest_input_and_final_markers_verified"] is True
+          hint=int(os.environ["VH_HINT"]);repeat=int(os.environ["VH_REPEAT"])
+          assert hint in (21,22) and repeat in (1,2)
+          r={
+              "schema":"vh-map02-stage286-host-only-identity/v1",
+              "hint_ms":hint,"repeat":repeat,
+              "run_id":int(os.environ["GITHUB_RUN_ID"]),
+              "attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "compiled_host_sha256":os.environ["VH_HOST_SHA"],
+              "launched_without_nro_argument":True,
+              "used_rom_or_licensed_game_audio":False,
+              "virtual_pulse_sample_rate":48000,
+              "runner_os":os.environ["RUNNER_OS"],
+              "host_only_first_observation_not_guest_input":True,
+              "cpal_entries_in_host_observation_window":cp["guest_window_counter_deltas"]["cpal_entries"],
+              "cpal_returns_in_host_observation_window":cp["guest_window_counter_deltas"]["cpal_returns"],
+              "physical_switch_audio_proven":False,
+          }
+          (p/"host-only-identity.json").write_text(
+              json.dumps(r,indent=2,sort_keys=True)+"\n")
+          print(json.dumps(r,indent=2,sort_keys=True))
+          PY
+      - name: Preserve host-only data even if callback or GUI failed
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-stage286-host-only-hint${{ matrix.hint }}-repeat${{ matrix.repeat }}
+          path: evidence/
+          if-no-files-found: warn
+
+  cross-archive-host-only:
+    name: Independent four no-ROM host-only CPAL liveness comparison
+    needs: [host-no-rom]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Run nine generated-only falsification tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_map02_host_only_cpal.py' -v
+      - name: Fetch four real unique host-only CLI evidence archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: map02-stage286-host-only-hint*
+          path: all-four
+          merge-multiple: false
+      - name: Verify all four distinct archive labels, host SHA and actual raw CPAL timestamps
+        shell: bash
+        run: |
+          set -euo pipefail
+          for hint in 21 22; do
+            for repeat in 1 2; do
+              orig="all-four/map02-stage286-host-only-hint$hint-repeat$repeat"
+              target="all-four/hint$hint-repeat$repeat"
+              test -d "$orig"
+              test ! -e "$target"
+              mv "$orig" "$target"
+              test -s "$target/host-cpal-audioout-timeline.csv"
+              test -s "$target/nexium-without-nro.png"
+              test -s "$target/host-reference-start-monotonic-ns.txt"
+            done
+          done
+          mkdir -p stage286-results
+          python3 tools/audit_map02_host_only_cpal.py \
+            --root all-four \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" \
+            --output stage286-results/real-host-only-21-22-cpal.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("stage286-results/real-host-only-21-22-cpal.json").read_text())
+          assert r["result"]!="UNVERIFIED"
+          assert len(r["trials"])==4
+          assert r["no_research_nro_or_original_game_rom_used"] is True
+          assert r["host_gui_and_raw_cpal_timeline_verification_passed"] is True
+          assert r["specific_pulse_alsa_cpal_causal_root_proven"] is False
+          print("No guest NRO loaded. Host-only observation result:",r["result"])
+          PY
+      - name: Report either repeated no-ROM contrast or honestly mixed behavior
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path("stage286-results/real-host-only-21-22-cpal.json")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              print("### Stage286 no-ROM NeXium CPAL host-only requested-hint A/B",file=out)
+              if not p.exists():
+                  print("**UNVERIFIED**: one or more true no-ROM host captures missing.",file=out)
+              else:
+                  r=json.loads(p.read_text())
+                  print("Result: "+r["result"],file=out)
+                  if "trials" in r:
+                      print("| Hint | Repeat | Callbacks entered/returned in 20s host-only window | "
+                            "Guest NRO argument |",file=out)
+                      print("|---:|---:|---:|---|",file=out)
+                      for x in r["trials"]:
+                          print(f'| {x["hint_ms"]} | {x["repeat"]} | '
+                                f'{x["callback_entries_after_host_reference_start"]}/'
+                                f'{x["callback_returns_after_host_reference_start"]} | '
+                                f'None |',file=out)
+                  else:
+                      print("Audit blocker: "+r.get("reason","unknown"),file=out)
+                  print("No guest audio transport, physical Switch speaker test, measured "
+                        "CPAL hardware latency or permanent deadlock proof. "
+                        "A repeated host-only contrast would narrow the likely subsystem, "
+                        "not identify its precise root cause.",file=out)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage286-host-only-cross-run-independent-audit
+          path: stage286-results/
+          if-no-files-found: warn
