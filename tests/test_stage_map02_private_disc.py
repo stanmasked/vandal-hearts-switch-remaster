@@ -169,6 +169,28 @@ class PrivateLocalCopyTests(unittest.TestCase):
         self.assertEqual(list(self.private.iterdir()), [])
         self.assertEqual(self.cue.read_bytes().startswith(b"FILE "), True)
 
+    def test_rejects_staging_inside_original_mounted_folder(self):
+        unsafe = self.mount / "private-not-actually-local"
+        unsafe.mkdir(mode=0o700)
+        with self.assertRaisesRegex(ValueError, "outside mounted source folder"):
+            stage_disc(self.bin, self.cue, unsafe, expected_bytes=len(self.data))
+        self.assertEqual(list(unsafe.iterdir()), [])
+        self.assertEqual(self.bin.read_bytes(), self.data)
+
+    def test_rejects_macos_cloudstorage_destination(self):
+        cloud = self.root / "Library" / "CloudStorage" / "GoogleDrive-example"
+        cloud.mkdir(mode=0o700, parents=True)
+        with patch.object(staging.Path, "home", return_value=self.root):
+            with self.assertRaisesRegex(ValueError, "macOS CloudStorage"):
+                stage_disc(self.bin, self.cue, cloud, expected_bytes=len(self.data))
+        self.assertEqual(list(cloud.iterdir()), [])
+        self.assertEqual(self.bin.read_bytes(), self.data)
+
+    def test_outside_source_and_cloudstorage_still_allowed(self):
+        folder, digest = self.run_stage()
+        self.assertEqual(folder, self.private / STAGE_NAME)
+        self.assertEqual(digest, hashlib.sha256(self.data).hexdigest())
+
     def test_rejects_unsafe_destination_name(self):
         for label in ("..", "../external", ".hidden", "f" * 90):
             with self.subTest(label=label), self.assertRaises(ValueError):
