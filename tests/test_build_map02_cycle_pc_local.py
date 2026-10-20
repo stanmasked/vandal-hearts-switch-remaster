@@ -221,6 +221,56 @@ class PrivateFullPcBuildTests(unittest.TestCase):
         run.assert_not_called()
         self.assertFalse(any(redirected.iterdir()))
 
+    def test_stale_build_folder_blocks_even_make_graph_audit(self):
+        build = self.exe.parent
+        build.mkdir(parents=True, exist_ok=True)
+        build.chmod(0o700)
+        stale = build / "legacy-synthetic-libgpu.o"
+        stale.write_bytes(b"previous build object")
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run") as compiler:
+            with self.assertRaisesRegex(
+                    ValueError, "build directory must be empty"):
+                build_full_pc(self.upstream, self.bundle)
+        self.active[0].assert_not_called()
+        compiler.assert_not_called()
+        self.assertEqual(stale.read_bytes(), b"previous build object")
+
+    def test_make_graph_audit_cannot_leave_files_before_actual_link(self):
+        created = self.exe.parent / "rogue-make-side-effect.o"
+
+        def dirty_make_graph(*args, **kwargs):
+            created.write_bytes(b"synthetic generated during -nB")
+            return self.plan
+
+        self.active[0].side_effect = dirty_make_graph
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run") as compiler:
+            with self.assertRaisesRegex(
+                    ValueError, "Make audit populated clean build directory"):
+                build_full_pc(self.upstream, self.bundle)
+        compiler.assert_not_called()
+        self.assertEqual(
+            created.read_bytes(), b"synthetic generated during -nB")
+        # No cleanup/deletion: source-owned files created by other actors
+        # must not silently be erased during a failed preflight.
+
+    def test_make_graph_audit_cannot_replace_build_directory_inode(self):
+        build = self.exe.parent
+        saved = build.with_name("old-synthetic-build-dir")
+
+        def swap_make_graph(*args, **kwargs):
+            build.rename(saved)
+            build.mkdir(mode=0o700)
+            return self.plan
+
+        self.active[0].side_effect = swap_make_graph
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run") as compiler:
+            with self.assertRaisesRegex(
+                    ValueError, "replaced during Make audit"):
+                build_full_pc(self.upstream, self.bundle)
+        compiler.assert_not_called()
+        self.assertTrue(saved.is_dir())
+        self.assertTrue(build.is_dir())
+
     def test_stale_generic_object_blocks_full_link_before_compiler(self):
         # A prior native object could have a future timestamp and satisfy
         # Make even though it belongs to a different source instrumentation
