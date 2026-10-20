@@ -441,6 +441,38 @@ def check_elf_function_sections(path, *, pass_fds=(), expected_source_sizes=None
     return len(exported)
 
 
+def summarize_partial_elf_undefined_symbols(nm_output):
+    """Aggregate external symbol gaps without publishing symbol names.
+
+    A partial link is NOT a final executable. GNU nm -u may list strong
+    undefined (U) and optional weak undefined (w/v) imports. Capture their
+    exact stable counts and a digest of the strong-name set so later work
+    can tell if the public link dependency boundary moved, but never
+    confuse the count with actual missing libraries or private assets.
+    """
+    strong = set()
+    weak = set()
+    for line in nm_output.splitlines():
+        fields = line.split()
+        if not fields:
+            continue
+        if len(fields) != 2 or fields[0] not in ("U", "w", "v"):
+            raise ValueError("original PC partial ELF has unexpected undefined nm row")
+        kind, symbol = fields
+        if kind == "U":
+            strong.add(symbol)
+        else:
+            weak.add(symbol)
+    serialized = json.dumps(
+        sorted(strong), ensure_ascii=True, separators=(",", ":")).encode("ascii")
+    return {
+        "partial_elf_unresolved_strong_symbol_count": len(strong),
+        "partial_elf_unresolved_weak_symbol_count": len(weak),
+        "partial_elf_unresolved_strong_symbols_sha256":
+            hashlib.sha256(serialized).hexdigest(),
+    }
+
+
 def inspect_relocatable(path, *, pass_fds=(), expected_source_sizes=None):
     header = subprocess.run(
         ["readelf", "-h", str(path)], capture_output=True,
@@ -475,11 +507,13 @@ def inspect_relocatable(path, *, pass_fds=(), expected_source_sizes=None):
     if any(re.search(r"\bU\s+vh_map02_\w+", line)
            for line in undefined.stdout.splitlines()):
         raise ValueError("combined original PC code has unresolved MAP02 observer hooks")
+    unresolved = summarize_partial_elf_undefined_symbols(undefined.stdout)
     function_count = check_elf_function_sections(
         path, pass_fds=pass_fds, expected_source_sizes=expected_source_sizes)
     return {
         "original_cd_gpu_and_vram_exports_verified": function_count,
         "ordinary_game_or_private_asset_symbols_may_be_unresolved": True,
+        **unresolved,
     }
 
 
