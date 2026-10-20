@@ -13,10 +13,12 @@ The original portable model required exactly two allies and two opponents in eve
 
 ## Regression and acceptance gates
 
-`tests/test_map02_variable_rosters.c` checks real gameplay in the 1-vs-1, 1-vs-2 and 2-vs-1 configurations, plus inherited 2-vs-2 maps. Nine deliberate corrupt-count and hidden-unit variants must be rejected with bit-identical game state.
+`tests/test_map02_variable_rosters.c` checks real gameplay in the 1-vs-1, 1-vs-2 and 2-vs-1 configurations, plus inherited 2-vs-2 maps. Additional end-to-end unit tests now defeat both foes through two real player attacks separated by an enemy attack (1-vs-2), and let enemy AI eliminate both allies over multiple turns (2-vs-1). These tests verify that neither win nor loss happens prematurely. Nine deliberate corrupt-count and hidden-unit variants must be rejected with bit-identical game state.
 
 `tests/test_map02_variable_rosters.py` checks the JSON compiler's padding and rejection behavior and byte-for-byte identity of both previously approved generated data headers.
 
 The dedicated GCC/Clang matrix compiles each gameplay test independently and builds the real devkitPro/libnx NRO. Inherited full-battle NeXium on Map 1 and second-scene NeXium on Map 2 still must pass to confirm no controller/graphics regression.
 
 **Limit:** this only removes mandatory 2+2 occupancy within a **maximum of two allies and two opponents**; a future planned stage will enlarge total party capacity and provide multi-actor turn UI. It is not a retail Vandal Hearts mission reconstruction or a physical Switch verification.
+
+The follow-up combat-sequence regression was added in commit [`39dc6397`](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/39dc639742dfcde6cd065a97c6a3116e5f7de200). Its independent CI results must be checked before treating this commit as verified.
