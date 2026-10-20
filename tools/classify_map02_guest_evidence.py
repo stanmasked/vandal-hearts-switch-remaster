@@ -53,9 +53,11 @@ def classify(optical,monitor,raster=None,sink=None,pulse=None):
           and type(optical.get("mismatches")) is int and optical["mismatches"]==0
           and optical.get("actual_audout_call_observed") is True
           and isinstance(optical.get("pages"),list) and len(optical["pages"])==8
-          and all(type(p.get("descriptor_released_returns")) is int
-                  and p["descriptor_released_returns"]==1 for p in optical["pages"]
-                  if isinstance(p,dict)))
+          and all(isinstance(p,dict)
+                  and type(p.get("index")) is int and p["index"]==i
+                  and type(p.get("descriptor_released_returns")) is int
+                  and p["descriptor_released_returns"]==1
+                  for i,p in enumerate(optical["pages"])))
     result["guest_8page_receipt_valid"]=bool(valid_optical)
     mon_ok=(isinstance(monitor,dict) and monitor.get("schema")==MONITOR
          and monitor.get("valid_pcm16le_stereo") is True
