@@ -3,6 +3,10 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 import sys
 import unittest
@@ -44,6 +48,52 @@ class VariableRosterSourceTests(unittest.TestCase):
                 result = gen.render(data)
                 self.assertIn(f"    {allies}, {enemies}\n}};", result)
                 self.assertEqual(result.count("{0, 0, 0, 0}"), 4-allies-enemies)
+
+    def test_generated_rosters_build_and_load_in_native_c(self):
+        """Test the real JSON -> generated header -> portable C engine boundary."""
+        compiler = os.environ.get("CC", "cc")
+        with tempfile.TemporaryDirectory(prefix="vh-map02-rosters-") as tmp:
+            folder = Path(tmp)
+            for filename in ("map02_battle_fixture.h", "map02_encounter_b_data.h"):
+                shutil.copyfile(ROOT / "source" / filename, folder / filename)
+            harness = folder / "check.c"
+            exe = folder / "check"
+            for ally_count, enemy_count in ((1, 1), (1, 2), (2, 1), (2, 2)):
+                with self.subTest(allies=ally_count, enemies=enemy_count):
+                    data = copy.deepcopy(self.source)
+                    data["allies"] = data["allies"][:ally_count]
+                    data["enemies"] = data["enemies"][:enemy_count]
+                    (folder / "map02_encounter_data.h").write_text(
+                        gen.render(data), encoding="utf-8"
+                    )
+                    harness.write_text(
+                        '#include <assert.h>\n'
+                        '#include "map02_battle_fixture.h"\n'
+                        'int main(void) {\n'
+                        '    VhMap02Battle s;\n'
+                        '    int i;\n'
+                        '    assert(vh_binit_index(&s, 0));\n'
+                        f'    assert(s.ally_count == {ally_count});\n'
+                        f'    assert(s.enemy_count == {enemy_count});\n'
+                        '    assert(s.status == VH_BONGOING);\n'
+                        '    for (i = s.ally_count; i < VH_BALLIES; ++i)\n'
+                        '        assert(s.units[i].x == 0 && s.units[i].y == 0 &&\n'
+                        '               s.units[i].hp == 0 && s.units[i].acted == 0);\n'
+                        '    for (i = VH_BALLIES + s.enemy_count; i < VH_BUNITS; ++i)\n'
+                        '        assert(s.units[i].x == 0 && s.units[i].y == 0 &&\n'
+                        '               s.units[i].hp == 0 && s.units[i].acted == 0);\n'
+                        '    assert(vh_bchoose(&s) == VH_BSELECT);\n'
+                        '    return 0;\n'
+                        '}\n',
+                        encoding="utf-8",
+                    )
+                    subprocess.run(
+                        [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                         "-pedantic", "-O2", str(harness), "-o", str(exe)],
+                        check=True, capture_output=True, text=True,
+                    )
+                    subprocess.run([str(exe)], check=True,
+                                   capture_output=True, text=True)
 
     def test_empty_oversized_duplicate_and_wrong_typed_roster_refused(self):
         for side in ("allies", "enemies"):
