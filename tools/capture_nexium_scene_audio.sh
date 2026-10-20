@@ -12,6 +12,13 @@ case "$SCENE_CAPTURE_TAG" in ""|a|b) ;; *)
 case "$SCENE_CAPTURE_EXIT_DWELL_SECONDS" in 6|12) ;; *)
   echo "Invalid exit dwell for reproducibility control" >&2; exit 2;; esac
 export SCENE_CAPTURE_TAG SCENE_CAPTURE_EXIT_DWELL_SECONDS
+# Only the opt-in longer second Stage371 trial gets a larger outer host
+# watchdog; the original legacy capture remains exactly 65 seconds.
+SCENE_GUEST_TIMEOUT_SECONDS=65
+if [[ "$SCENE_CAPTURE_TAG" == b &&
+      "$SCENE_CAPTURE_EXIT_DWELL_SECONDS" == 12 ]]; then
+  SCENE_GUEST_TIMEOUT_SECONDS=85
+fi
 output="${1:-runtime-evidence}"
 mkdir -p "$output"
 export XDG_RUNTIME_DIR="$RUNNER_TEMP/vh-pulse-runtime"
@@ -83,7 +90,7 @@ cleanup() {
 }
 trap cleanup EXIT
 sleep 1
-timeout --kill-after=5s 65s xvfb-run -a -s '-screen 0 1280x720x24' bash -c '
+timeout --kill-after=5s "${SCENE_GUEST_TIMEOUT_SECONDS}s" xvfb-run -a -s '-screen 0 1280x720x24' bash -c '
   set -euo pipefail
   "$NEXIUM_BIN" "$SCENE_NRO" >"$SCENE_LOG" 2>&1 &
   guest=$!
