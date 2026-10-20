@@ -33,7 +33,6 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=Non
     # retail input must never reach that subprocess.
     from tools.check_map02_private_pc_inputs import verify_private_pc_inputs
     original_inputs = verify_private_pc_inputs(upstream, krom_source=krom_source)
-    planned = audit(upstream, bundle, make=make)
     pc = upstream / "platform/pc"
     build_dir = pc / BUILD
     if build_dir.is_symlink():
@@ -68,6 +67,18 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=Non
     # Never delete or overwrite caller-owned files on a reused build attempt.
     if any(build_dir.iterdir()):
         raise ValueError("private MAP02 build directory must be empty before full link")
+    # GNU Make -nB can still execute recursive or '+' recipes. Validate the
+    # owner-only, fresh output folder BEFORE asking Make to expand any graph,
+    # then ensure that its inode, mode and emptiness survived the expansion.
+    planned = audit(upstream, bundle, make=make)
+    if build_dir.is_symlink() or not build_dir.is_dir():
+        raise ValueError("private MAP02 build directory replaced during Make audit")
+    post_audit = build_dir.stat()
+    if ((post_audit.st_dev, post_audit.st_ino, post_audit.st_uid,
+         stat.S_IMODE(post_audit.st_mode)) != folder_identity):
+        raise ValueError("private MAP02 build directory replaced during Make audit")
+    if any(build_dir.iterdir()):
+        raise ValueError("private MAP02 Make audit populated clean build directory")
     command = [
         make, "-j1", "-f", "Makefile", "-f", str(bundle / "map02_cycle.mk"),
         "link", "BUILD_DIR=" + BUILD, "REGION=us",
