@@ -121,6 +121,56 @@ class NativeIncrementalRelinkTests(unittest.TestCase):
         self.assertEqual(ordered["final_strong_import_count"], 1)
         self.assertEqual(reversed_order["final_strong_import_count"], 2)
 
+    def test_grouped_archives_resolve_backward_dependency_in_real_ld(self):
+        """A genuine GNU archive group revisits otherwise skipped libraries."""
+        needed = self.compile(
+            "group-needed", "extern int followup(void);\n"
+            "int needed(void) { return followup(); }\n")
+        followup = self.compile(
+            "group-followup", "int followup(void) { return 17; }\n")
+        first = self.archive("group-needed", needed)
+        second = self.archive("group-followup", followup)
+        backwards = probe_private_incremental_link(
+            self.manifest, self.base, [second, first],
+            self.root / "one-pass-backwards")
+        grouped = probe_private_incremental_link(
+            self.manifest, self.base, [second, first],
+            self.root / "group-backwards", group_archives=True)
+        grouped_forward = probe_private_incremental_link(
+            self.manifest, self.base, [first, second],
+            self.root / "group-forwards", group_archives=True)
+        self.assertEqual(backwards["archive_selection_strategy"],
+                         "single_pass_user_order")
+        self.assertEqual(backwards["final_strong_import_count"], 2)
+        for report in (grouped, grouped_forward):
+            self.assertEqual(report["archive_selection_strategy"],
+                             "repeated_archive_group")
+            self.assertEqual(report["candidate_archive_count"], 2)
+            self.assertEqual(report["original_strong_imports_resolved_by_ld_r"], 1)
+            self.assertEqual(report["original_strong_imports_remaining_after_ld_r"], 1)
+            self.assertEqual(report["new_strong_imports_introduced_by_candidates"], 0)
+            self.assertEqual(report["final_strong_import_count"], 1)
+            self.assertFalse(report["fully_linked_game_executable"])
+            self.assertFalse(report["original_map02_execution_proven"])
+            for name in ("followup", "needed", "missing"):
+                self.assertNotIn(name, json.dumps(report))
+
+    def test_group_strategy_requires_only_multiple_archive_candidates(self):
+        """Disallow mixed .o/.a ordering claims before touching output files."""
+        direct = self.compile("group-direct", "int needed(void) {return 5;}\n")
+        first = self.archive("group-one", direct)
+        cases = [([direct, first], "group-mixed"),
+                 ([first], "group-one-archive"),
+                 ([direct, direct], "group-only-objects")]
+        for candidates, name in cases:
+            target = self.root / name
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, "at least two archive"):
+                    probe_private_incremental_link(
+                        self.manifest, self.base, candidates, target,
+                        group_archives=True)
+                self.assertFalse(target.exists())
+
     def test_direct_object_removes_required_import_without_new_ones(self):
         provider = self.compile("needed-direct", "int needed(void) {return 42;}\n")
         report = probe_private_incremental_link(
