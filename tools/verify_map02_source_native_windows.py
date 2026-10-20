@@ -16,7 +16,7 @@ import subprocess
 from tools.publish_map02_blendg1_witness import _private_directory
 from tools.verify_map02_frame_bundle import (
     fields, number, parse_json, safe_file_max, sha_check, verify_bundle,
-    VRAM_BYTES,
+    VRAM_BYTES, MAP_BYTES,
 )
 from tools.verify_map02_native_gpu_capture import LOG, private_file
 from tools.verify_map02_native_gpu_windows import (
@@ -65,6 +65,14 @@ def verify_window_source_join(source_dir, window_dir, *, compiler="gcc"):
     sha_check(index_raw, claim["native_window_index_sha256"],
               "same-run native GPU window receipt")
 
+    # Source assets must be one immutable byte-backed capture throughout
+    # the expensive compiled-GTE and native-window checks. This also
+    # catches inode swaps that recreate byte-identical game inputs.
+    decoded_before, decoded_identity = private_file(
+        source, "map02.decoded.bin", expected=MAP_BYTES, _with_identity=True)
+    source_vram, source_vram_identity = private_file(
+        source, "gpu-vram-le.bin", expected=VRAM_BYTES, _with_identity=True)
+
     # The expensive independently captured decoded MAP02, compiled PC GTE
     # and source texture VRAM verification is mandatory, never mocked here.
     checked_source = verify_bundle(source, compiler=compiler)
@@ -108,7 +116,6 @@ def verify_window_source_join(source_dir, window_dir, *, compiler="gcc"):
     # polygon originated from a given submitted source face.
     candidates = [_native_signature(item[0]) for item in native_ft4]
     positions = []
-    source_vram = private_file(source, "gpu-vram-le.bin", expected=VRAM_BYTES)
     material_words = 0
     for event in source_events:
         signature = _source_signature(event)
@@ -143,6 +150,15 @@ def verify_window_source_join(source_dir, window_dir, *, compiler="gcc"):
     final_native = verify_native_windows(native, target_frame=gpu_frame)
     if final_native != checked_native:
         raise ValueError("GPU window evidence changed during source join")
+
+    for name, expected_bytes, initial_identity, length in (
+        ("map02.decoded.bin", decoded_before, decoded_identity, MAP_BYTES),
+        ("gpu-vram-le.bin", source_vram, source_vram_identity, VRAM_BYTES),
+    ):
+        final_bytes, final_identity = private_file(
+            source, name, expected=length, _with_identity=True)
+        if final_identity != initial_identity or final_bytes != expected_bytes:
+            raise ValueError("source MAP02 asset changed during GPU window join")
     return {
         "source_claim_sha256": sha(raw_claim),
         "verified_source_bundle_sha256": sha(bundle_raw),
@@ -159,6 +175,7 @@ def verify_window_source_join(source_dir, window_dir, *, compiler="gcc"):
         "source_texture_palette_words_checked": material_words,
         "original_gte_compiled_and_checked": True,
         "source_ft4_relative_ot_order_checked": True,
+        "source_map_vram_inode_and_bytes_reverified": True,
         "source_addprim_chronology_authenticated": False,
         "full_original_scene_authenticated": False,
         "physical_ps1_equivalence_proven": False,
