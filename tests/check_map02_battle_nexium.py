@@ -14,6 +14,7 @@ from PIL import Image, ImageChops
 
 WIDTH, HEIGHT = 1280, 720
 HERO = (86, 190, 244)
+ACTED_HERO = (105, 126, 151)
 ENEMY = (235, 89, 98)
 GRID_X, GRID_Y, CELL = 352, 100, 72
 
@@ -36,6 +37,11 @@ def count_pixels(image: Image.Image, color: tuple[int, int, int],
 
 def hero_pixels(image: Image.Image, x: int, y: int) -> int:
     return count_pixels(image, HERO, GRID_X + CELL * x + 17,
+                        GRID_Y + CELL * y + 17)
+
+
+def acted_hero_pixels(image: Image.Image, x: int, y: int) -> int:
+    return count_pixels(image, ACTED_HERO, GRID_X + CELL * x + 17,
                         GRID_Y + CELL * y + 17)
 
 
@@ -73,14 +79,21 @@ def audit(evidence: Path) -> dict[str, int]:
         )
     first_hero = hero_pixels(battle, 1, 2)
     moved_old = hero_pixels(moved, 1, 2)
-    moved_new = hero_pixels(moved, 2, 2)
+    # After A/Right/A, the ally has consumed its action and is rendered in
+    # muted grey. X ends the turn and restores its ordinary cyan highlight.
+    moved_new = acted_hero_pixels(moved, 2, 2)
+    after_enemy_hero = hero_pixels(enemy_turn, 2, 2)
     after_reset_hero = hero_pixels(reset, 1, 2)
+    print(f"Ally original={first_hero}, old={moved_old}, "
+          f"acted_muted={moved_new}, next_turn_cyan={after_enemy_hero}, "
+          f"reset={after_reset_hero}")
     if not (first_hero > 500 and moved_old < 200 and moved_new > 500
-            and after_reset_hero > 500):
+            and after_enemy_hero > 500 and after_reset_hero > 500):
         raise ValueError(
             f"NeXium A/Right/A or Y reset did not move/restore hero "
             f"(initial={first_hero}, old={moved_old}, "
-            f"new={moved_new}, reset={after_reset_hero})"
+            f"new_acted={moved_new}, next_turn={after_enemy_hero}, "
+            f"reset={after_reset_hero})"
         )
     first_enemy = enemy_pixels(battle, 5, 2)
     after_end_enemy = enemy_pixels(enemy_turn, 5, 2)
