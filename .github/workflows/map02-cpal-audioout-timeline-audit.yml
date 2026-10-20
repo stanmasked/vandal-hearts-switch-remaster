@@ -1,0 +1,117 @@
+name: MAP02 Stage277 offline CPAL and AudioOut timeline integrity tests
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-cpal-audioout-timeline-audit.yml'
+      - 'tools/audit_map02_cpal_audioout_timeline.py'
+      - 'tests/test_audit_map02_cpal_audioout_timeline.py'
+      - 'docs/MAP02_CPAL_AUDIOOUT_TIMELINE_AUDIT.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VH_EXACT_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_FROZEN_STAGE276: '6d24825f45f286dc3ec109d25c0abbc9f864e59d'
+
+jobs:
+  validate-timeline-parser:
+    name: Validate 16 generated host CPAL/AudioOut counter scenarios
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE }}
+          fetch-depth: 0
+      - name: Reject non-research game or unexpected inherited changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE"
+          python3 - <<'PY'
+          import os,subprocess
+          files=set(subprocess.check_output(
+              ["git","diff","--name-only",os.environ["VH_FROZEN_STAGE276"],"HEAD"],
+              text=True).splitlines())
+          allowed={
+              ".github/workflows/map02-cpal-audioout-timeline-audit.yml",
+              "tools/audit_map02_cpal_audioout_timeline.py",
+              "tests/test_audit_map02_cpal_audioout_timeline.py",
+              "docs/MAP02_CPAL_AUDIOOUT_TIMELINE_AUDIT.md",
+          }
+          assert files and files<=allowed,sorted(files-allowed)
+          print("Exactly isolated generated-only host timeline parser changes:",sorted(files))
+          PY
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reject fake successful CPAL callbacks, forged AudioOut and missing samples
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_map02_cpal_audioout_timeline.py' -v
+      - name: Produce a real CLI receipt from generated, never licensed audio data
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stage277-generated
+          python3 - <<'PY'
+          from pathlib import Path
+          d=Path("stage277-generated")
+          trace=[]
+          for i in range(16):
+              ns=1_000_000_000+200_000_000*i
+              trace.append(f"T,{ns},{3*i},{3*i},{512*i},{384*i},{2*i},{256*i},{i}\n")
+          (d/"generated-cpal-timeline.csv").write_text("".join(trace),encoding="ascii")
+          (d/"first-guest-input-monotonic-ns.txt").write_text("2000000000\n")
+          (d/"final-guest-observation-monotonic-ns.txt").write_text("3800000000\n")
+          PY
+          python3 tools/audit_map02_cpal_audioout_timeline.py \
+            --trace stage277-generated/generated-cpal-timeline.csv \
+            --first-input-marker stage277-generated/first-guest-input-monotonic-ns.txt \
+            --final-observation-marker stage277-generated/final-guest-observation-monotonic-ns.txt \
+            --output stage277-generated/timeline-audit-receipt.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("stage277-generated/timeline-audit-receipt.json")
+          d=json.loads(p.read_text())
+          assert d["result"]=="BOUNDED_CPAL_AUDIOOUT_COUNTER_TIMELINE_PARSED"
+          assert d["guest_input_and_final_markers_verified"] is True
+          assert d["guest_window_counter_deltas"]["cpal_entries"]==27
+          assert d["guest_audioout_deadlock_proven"] is False
+          assert d["trace_bound_to_source_binary_sha256_by_this_parser"] is False
+          print("16 generated scenarios and CLI receipt validated")
+          PY
+      - name: Publish strict evidence boundaries
+        shell: bash
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path("stage277-generated/timeline-audit-receipt.json")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              print("### Stage277 offline NeXium CPAL/AudioOut timeline",file=out)
+              if not p.is_file():
+                  print("**UNVERIFIED:** synthetic timeline CLI validation did not pass.",file=out)
+              else:
+                  d=json.loads(p.read_text())
+                  print("Result: "+d["result"],file=out)
+                  print("Generated synthetic sample count: "+
+                        str(d["sample_count"]),file=out)
+                  print("**Offline parser only**, not actual NeXium callback "
+                        "execution, same-built host provenance, guest "
+                        "AudioOut service deadlock, original PS1 audio, "
+                        "physical Nintendo Switch audio or 21ms fix.",file=out)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage277-generated-cpal-timeline-validation
+          path: stage277-generated/
+          if-no-files-found: warn
