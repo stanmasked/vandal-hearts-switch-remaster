@@ -13,7 +13,8 @@ import stat
 import subprocess
 
 from tools.check_map02_private_incremental_link import (
-    MAX_BYTES, _private_output_dir, probe_private_incremental_link,
+    MAX_BYTES, _confirm_owned, _open_owned, _private_output_dir,
+    probe_private_incremental_link,
 )
 from tools.check_map02_private_provider_coverage import (
     audit_provider_coverage, read_private_manifest,
@@ -58,6 +59,13 @@ def _copy_system_archive(source_path, target):
                 after.st_dev, after.st_ino, after.st_size, after.st_mode,
                 after.st_mtime_ns, after.st_ctime_ns):
             raise ValueError("MAP02 SDL2 source archive changed while copying")
+        source_name = os.stat(source_path, follow_symlinks=False)
+        if (not stat.S_ISREG(source_name.st_mode)
+                or (before.st_dev, before.st_ino, before.st_size,
+                    before.st_mtime_ns, before.st_ctime_ns) !=
+                   (source_name.st_dev, source_name.st_ino, source_name.st_size,
+                    source_name.st_mtime_ns, source_name.st_ctime_ns)):
+            raise ValueError("MAP02 SDL2 source archive pathname changed")
         copied = os.fstat(destination_fd)
         if (not stat.S_ISREG(copied.st_mode)
                 or copied.st_uid != os.geteuid() or copied.st_nlink != 1
@@ -83,11 +91,19 @@ def probe_public_sdl2_archive(manifest, partial, system_sdl2_archive, output_dir
         raise ValueError("MAP02 original public-code strong baseline mismatch")
     parent, _ = _private_output_dir(output_dir)
     local_archive = parent / "sdl2-system-candidate.a"
-    _copy_system_archive(system_sdl2_archive, local_archive)
-    coverage = audit_provider_coverage(manifest, [local_archive])
-    result = probe_private_incremental_link(
-        manifest, partial, [local_archive], parent / "linked",
-        expected_initial_strong_imports=expected_initial_strong_imports)
+    copied_digest = _copy_system_archive(system_sdl2_archive, local_archive)
+    copied_entry = _open_owned(local_archive, require_private=True)
+    try:
+        if copied_entry[3] != copied_digest:
+            raise ValueError("MAP02 SDL2 local copy SHA-256 mismatch")
+        coverage = audit_provider_coverage(manifest, [local_archive])
+        _confirm_owned(copied_entry)
+        result = probe_private_incremental_link(
+            manifest, partial, [local_archive], parent / "linked",
+            expected_initial_strong_imports=expected_initial_strong_imports)
+        _confirm_owned(copied_entry)
+    finally:
+        os.close(copied_entry[0])
     if (coverage["original_strong_unresolved_count"] !=
             expected_initial_strong_imports
             or result["original_strong_import_count"] !=
