@@ -156,7 +156,10 @@ def main() -> None:
             pad.press("c")
             pad.press("x")
             pad.snapshot("armed_before_exit")
-            pad.toggle_eight()  # Back to original authored MAP02
+            pad.toggle_eight()  # Back to original authored 2v2 mode
+            # L+R's initial L keydown can change original scenario while
+            # the chord is being formed, as in proven 4v4 NeXium routes.
+            pad.press("q")  # Explicitly restore original MAP 1
             pad.cursor = (0, 0)
             pad.snapshot("legacy_after_exit")
             pad.toggle_eight()  # Reenter expanded first arena
