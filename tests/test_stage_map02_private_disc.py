@@ -1,10 +1,12 @@
 """Asset-free regressions for staging user-owned Drive files on macOS."""
 import hashlib
+import os
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
+from tools import stage_map02_private_disc as staging
 from tools.stage_map02_private_disc import (
     BIN_NAME, CUE_NAME, STAGE_NAME, SECTOR_BYTES, stage_disc,
 )
@@ -107,6 +109,65 @@ class PrivateLocalCopyTests(unittest.TestCase):
                 self.run_stage()
         self.assertEqual(list(self.private.iterdir()), [])
         self.assertEqual(self.bin.read_bytes(), self.data)
+
+    def test_rejects_corrupted_staged_bin_before_atomic_rename(self):
+        real_copy = staging._copy_image
+
+        def damage_after_copy(source, stagedfd, **kwargs):
+            original_sha = real_copy(source, stagedfd, **kwargs)
+            fd = os.open(BIN_NAME, os.O_RDWR, dir_fd=stagedfd)
+            try:
+                os.lseek(fd, 30, os.SEEK_SET)
+                os.write(fd, b"!")
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            return original_sha
+
+        with patch("tools.stage_map02_private_disc._copy_image",
+                   side_effect=damage_after_copy):
+            with self.assertRaisesRegex(ValueError, "staged BIN sha256 mismatch"):
+                self.run_stage()
+        self.assertEqual(list(self.private.iterdir()), [])
+        self.assertEqual(self.bin.read_bytes(), self.data)
+
+    def test_rejects_truncated_staged_bin_before_atomic_rename(self):
+        real_copy = staging._copy_image
+
+        def truncate_after_copy(source, stagedfd, **kwargs):
+            original_sha = real_copy(source, stagedfd, **kwargs)
+            fd = os.open(BIN_NAME, os.O_RDWR, dir_fd=stagedfd)
+            try:
+                os.ftruncate(fd, len(self.data) - 1)
+            finally:
+                os.close(fd)
+            return original_sha
+
+        with patch("tools.stage_map02_private_disc._copy_image",
+                   side_effect=truncate_after_copy):
+            with self.assertRaisesRegex(ValueError, "staged file metadata mismatch"):
+                self.run_stage()
+        self.assertEqual(list(self.private.iterdir()), [])
+        self.assertEqual(self.bin.read_bytes(), self.data)
+
+    def test_rejects_modified_staged_cue_before_atomic_rename(self):
+        real_verify = staging._verify_staged_copy
+
+        def tamper_cue(stagedfd, expected_sha, expected_bytes, cue_bytes):
+            fd = os.open(CUE_NAME, os.O_RDWR, dir_fd=stagedfd)
+            try:
+                os.lseek(fd, 0, os.SEEK_SET)
+                os.write(fd, b"X")
+            finally:
+                os.close(fd)
+            return real_verify(stagedfd, expected_sha, expected_bytes, cue_bytes)
+
+        with patch("tools.stage_map02_private_disc._verify_staged_copy",
+                   side_effect=tamper_cue):
+            with self.assertRaisesRegex(ValueError, "staged CUE byte mismatch"):
+                self.run_stage()
+        self.assertEqual(list(self.private.iterdir()), [])
+        self.assertEqual(self.cue.read_bytes().startswith(b"FILE "), True)
 
     def test_rejects_unsafe_destination_name(self):
         for label in ("..", "../external", ".hidden", "f" * 90):

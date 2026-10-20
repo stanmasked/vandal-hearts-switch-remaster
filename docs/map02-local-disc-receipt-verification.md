@@ -14,6 +14,10 @@ cannot or should not be `chmod 0600`, first make a private **local copy**
 without touching the cloud files. The optional stage tool checks the pinned
 filenames, source CUE, 664,849,248-byte layout, source stability and local
 `0700` destination; then streams both files to owner-only `0600` copies.
+It re-opens and independently SHA-256 hashes the copied BIN from its
+private destination, and byte-compares the staged CUE with the source CUE,
+**before** publishing the folder. A mismatch, truncation or changed inode
+causes cleanup; the observed source and staged-image hashes must match.
 It publishes the complete copy folder only after copying and syncing the
 files, refuses to overwrite existing folders and removes an incomplete
 temporary folder if copying fails. Allow at least 1 GiB free locally.

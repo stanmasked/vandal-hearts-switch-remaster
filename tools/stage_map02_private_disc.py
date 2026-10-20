@@ -107,6 +107,51 @@ def _copy_image(source, stagedfd, *, expected_bytes=RAW_BYTES):
         os.close(fd)
 
 
+def _verify_staged_copy(stagedfd, expected_sha256, expected_bytes, cue_bytes):
+    """Read back the private on-disk image and CUE before publishing directory.
+
+    This deliberately hashes written bytes independently of the source stream;
+    the hash computed during copy alone cannot detect a bad destination write.
+    """
+    staged = os.fstat(stagedfd)
+    if (not stat.S_ISDIR(staged.st_mode)
+            or staged.st_uid != os.geteuid()
+            or stat.S_IMODE(staged.st_mode) != 0o700):
+        raise ValueError("staged directory must remain private 0700")
+
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    for name, expected_size in ((BIN_NAME, expected_bytes),
+                                (CUE_NAME, len(cue_bytes))):
+        fd = os.open(name, flags, dir_fd=stagedfd)
+        try:
+            old = os.fstat(fd)
+            if (not stat.S_ISREG(old.st_mode) or old.st_uid != os.geteuid()
+                    or stat.S_IMODE(old.st_mode) != 0o600
+                    or old.st_nlink != 1 or old.st_size != expected_size):
+                raise ValueError("staged file metadata mismatch: " + name)
+            if name == BIN_NAME:
+                sha = hashlib.sha256()
+                total = 0
+                while True:
+                    block = os.read(fd, CHUNK)
+                    if not block:
+                        break
+                    sha.update(block)
+                    total += len(block)
+                if total != expected_size or sha.hexdigest() != expected_sha256:
+                    raise ValueError("staged BIN sha256 mismatch")
+            else:
+                readback = os.read(fd, MAX_CUE + 1)
+                if readback != cue_bytes:
+                    raise ValueError("staged CUE byte mismatch")
+            now = os.fstat(fd)
+            named = os.stat(name, dir_fd=stagedfd, follow_symlinks=False)
+            if _stamp(old) != _stamp(now) or _stamp(old) != _stamp(named):
+                raise ValueError("staged file changed during readback: " + name)
+        finally:
+            os.close(fd)
+
+
 def stage_disc(bin_path, cue_path, destination_parent, *,
                stage_name=STAGE_NAME, expected_bytes=RAW_BYTES):
     """Return (private_dir, image_sha256) after complete, atomic directory handoff.
@@ -157,6 +202,9 @@ def stage_disc(bin_path, cue_path, destination_parent, *,
             finally:
                 os.close(cuefd)
             os.mkdir("receipt", 0o700, dir_fd=stagedfd)
+            # A successful source stream hash is not sufficient. Re-read the
+            # actual copied bytes under their anchored private directory FDs.
+            _verify_staged_copy(stagedfd, copied_sha, expected_bytes, cue_bytes)
             os.fsync(stagedfd)
             now = parent.lstat()
             stable = lambda info: (info.st_dev, info.st_ino,
