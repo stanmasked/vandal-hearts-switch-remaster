@@ -10,6 +10,8 @@ on:
       - 'tools/check_map02_local_disc_receipt.py'
       - 'tests/test_emit_map02_local_disc_receipt.py'
       - 'tests/test_check_map02_local_disc_receipt.py'
+      - 'tools/stage_map02_private_disc.py'
+      - 'tests/test_stage_map02_private_disc.py'
   pull_request:
     paths:
       - '.github/workflows/map02-macos-private-receipt.yml'
@@ -17,6 +19,8 @@ on:
       - 'tools/check_map02_local_disc_receipt.py'
       - 'tests/test_emit_map02_local_disc_receipt.py'
       - 'tests/test_check_map02_local_disc_receipt.py'
+      - 'tools/stage_map02_private_disc.py'
+      - 'tests/test_stage_map02_private_disc.py'
 
 permissions:
   contents: read
@@ -59,4 +63,5 @@ jobs:
         run: |
           python3 -m unittest -v \
             tests.test_check_map02_local_disc_receipt \
-            tests.test_emit_map02_local_disc_receipt
+            tests.test_emit_map02_local_disc_receipt \
+            tests.test_stage_map02_private_disc

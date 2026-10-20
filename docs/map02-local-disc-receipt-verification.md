@@ -7,6 +7,45 @@ their owned, private `Vandal_Hearts_(RU)_v1.6.bin` and matching single-track
 only**, never sectors, pixels, private paths, PS-X executable bytes or game
 textures. Do not upload the BIN/CUE or private captures to public GitHub.
 
+## Safe Mac staging from a mounted Google Drive (no changes to Drive originals)
+
+If the original BIN/CUE are available through a mounted Drive volume and
+cannot or should not be `chmod 0600`, first make a private **local copy**
+without touching the cloud files. The optional stage tool checks the pinned
+filenames, source CUE, 664,849,248-byte layout, source stability and local
+`0700` destination; then streams both files to owner-only `0600` copies.
+It publishes the complete copy folder only after copying and syncing the
+files, refuses to overwrite existing folders and removes an incomplete
+temporary folder if copying fails. Allow at least 1 GiB free locally.
+
+The following is for **when the Drive files are mounted on your Mac**;
+replace the two source placeholders with actual, existing filesystem paths.
+
+```sh
+# A new, local-only destination (not inside the synced Google Drive):
+mkdir -m 700 "$HOME/vh-private"
+BIN="/path/to/mounted/GoogleDrive/Vandal_Hearts_(RU)_v1.6.bin"
+CUE="/path/to/mounted/GoogleDrive/Vandal_Hearts_(RU)_v1.6.cue"
+
+python3 -m tools.stage_map02_private_disc "$BIN" \
+  --cue "$CUE" \
+  --private-parent "$HOME/vh-private"
+
+# Now run the original-sector verification on the private local copies:
+LOCAL="$HOME/vh-private/vh-map02-private"
+python3 -m tools.emit_map02_local_disc_receipt \
+  "$LOCAL/Vandal_Hearts_(RU)_v1.6.bin" \
+  --cue "$LOCAL/Vandal_Hearts_(RU)_v1.6.cue" \
+  --output-private-dir "$LOCAL/receipt"
+```
+
+The stage command does **not** emit game bytes, upload files, make the original
+Drive files public or change their permissions. Only `$LOCAL/receipt`
+contains the generated digest-only JSON; keep both it and the 665-MB local
+staged copy off public GitHub. This is a source-copy and checksum readiness
+step, not a gameplay/VRAM capture or a claim that the RU executable equals
+the exact required US retail build.
+
 The repository now also provides a self-contained **private producer**
 (`tools/emit_map02_local_disc_receipt.py`) which can replace the original
 standalone Toolkit v2 receipt generator. On the computer that already holds
