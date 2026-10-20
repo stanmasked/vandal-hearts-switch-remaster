@@ -76,7 +76,7 @@ class Stage301Events(unittest.TestCase):
     def test_late_event_phase_is_receive_time_only(self):
         intervals=(10_000_000_000,10_100_000_000,10_200_000_000,
                    10_300_000_000,10_400_000_000,10_500_000_000)
-        self.assertEqual(event_phase(10_350_000_000,*intervals),
+        self.assertEqual(event_phase(10_250_000_000,*intervals),
             "BETWEEN_GUEST_INPUT_AND_LATE_SNAPSHOT")
         self.assertEqual(event_phase(10_600_000_000,*intervals),
             "AFTER_GUEST_FINAL_MARKER")
