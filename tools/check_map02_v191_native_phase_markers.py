@@ -48,7 +48,7 @@ def verify_phase_log(data: str, mode: int) -> int:
             if match is None:
                 raise ValueError(f"mode {mode}: malformed VBlank marker")
             timeline.append(("V", int(match.group(1))))
-        elif "VH187_NATIVE_RAM_SNAPSHOT" in line:
+        elif re.search(r"\bVH187_NATIVE_RAM_SNAPSHOT\b", line):
             if not line.startswith("VH187_NATIVE_RAM_SNAPSHOT phase="):
                 raise ValueError(f"mode {mode}: obfuscated RAM readback marker")
             match = re.match(r"VH187_NATIVE_RAM_SNAPSHOT phase=([1-3]) vblanks=", line)
