@@ -95,8 +95,11 @@ def execute_real_recorder(upstream, *, cc="cc"):
                        VH_ACCURATE="1", VH_INTERNAL_SCALE="1")
             if label == "windowed":
                 env["VH_MAP02_GPU_CAPTURE_WINDOW_COUNT"] = "2"
+            # Explicitly exercise a permissive 022 umask: the windowed
+            # recorder must create owner-only evidence independently.
             executed = subprocess.run([str(executable)], env=env,
-                                      text=True, capture_output=True, timeout=90)
+                                      text=True, capture_output=True, timeout=90,
+                                      umask=0o022 if label == "windowed" else -1)
             if executed.returncode:
                 raise ValueError("original GPU recorder runtime: "
                                  + executed.stderr[-3500:])
