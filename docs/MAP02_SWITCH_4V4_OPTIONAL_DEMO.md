@@ -21,6 +21,8 @@ The new NeXium route uses actual controller-key input, not direct host-state inj
 - first foe defeated while three remain;
 - four legitimate player attacks ending in victory;
 - Y reset restoring the same 4v4 board;
+- two real X-triggered enemy phases, with all four allies surviving the first at reduced HP and being defeated on the second;
+- visibly announced defeat, followed by another Y reset that restores all four allies;
 - L+R return restoring the original legacy map pixels.
 
 All screenshots and the NeXium process log are attached to GitHub Actions artifacts. Existing NeXium L/R second-map, five-turn first-map and other regressions triggered by changing `source/main.c` must continue to succeed.
