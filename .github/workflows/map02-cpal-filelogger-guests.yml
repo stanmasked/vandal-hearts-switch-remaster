@@ -55,6 +55,11 @@ jobs:
           }
           assert paths and paths<=allowed,sorted(paths-allowed)
           PY
+          # Auditor imports Pillow during unittest discovery; install it BEFORE tests.
+          # This changes the CI environment only, not the pinned guest or host.
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends python3-pil
+          python3 -c 'from PIL import Image; print("Pillow preflight OK")'
           python3 -m unittest discover -s tests \
             -p 'test_audit_map02_cpal_lifecycle_snapshots.py' -v
           # The newly compiled ELF contains *only* backend-rustarmic.
