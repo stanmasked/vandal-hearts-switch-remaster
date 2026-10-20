@@ -95,6 +95,8 @@ class Map02HostAlsaProbeTests(unittest.TestCase):
         self.assertEqual(r["period_frames_values"],[512])
         self.assertEqual(r["buffer_frames_values"],[2048])
         self.assertEqual(r["transfer_kinds"],["MMAP_COMMIT","WRITEI"])
+        self.assertEqual(r["other_successful_alsa_hw_params_count"],0)
+        self.assertFalse(r["transfer_calls_directly_attributed_to_48k_pcm"])
         self.assertFalse(r["rust_cpal_callback_period_proven"])
         self.assertFalse(r["guest_audout_service_deadlock_proven"])
         self.assertFalse(r["physical_switch_audio_proven"])
@@ -136,7 +138,7 @@ class Map02HostAlsaProbeTests(unittest.TestCase):
         self.file.write_text(
             "HW_PARAMS,10,11,123,0,0,48000,2,2048,512\n"
             "WRITEI,12,13,123,512,512,0,0,0,0\n")
-        with self.assertRaisesRegex(ValueError,"ALSA hw_params present"):
+        with self.assertRaisesRegex(ValueError,"Target 48k stereo"):
             parse(self.file)
 
     def test_overreturned_transfer_rejected(self):
@@ -145,6 +147,24 @@ class Map02HostAlsaProbeTests(unittest.TestCase):
             "WRITEI,12,13,123,512,513,0,0,0,0\n")
         with self.assertRaisesRegex(ValueError,"more frames"):
             parse(self.file)
+
+    def test_secondary_768k_32ch_alsa_config_not_mislabeled_as_guest_output(self):
+        # Found in live NeXium, with *different* ALSA PCM parameters.
+        self.file.write_text(
+            "HW_PARAMS,10,11,123,0,0,48000,2,512,1536\n"
+            "HW_PARAMS,12,13,124,0,0,768000,32,32,32768\n"
+            "HW_PARAMS,14,15,124,0,0,768000,32,32,96\n"
+            "WRITEI,16,17,125,512,512,0,0,0,0\n")
+        report=parse(self.file)
+        self.assertEqual(report["period_frames_values"],[512])
+        self.assertEqual(report["buffer_frames_values"],[1536])
+        self.assertEqual(report["other_successful_alsa_hw_params_count"],2)
+        self.assertEqual(report["other_alsa_hw_configurations"],[
+            {"rate_hz":768000,"channels":32,"period_frames":32,
+             "buffer_frames":96},
+            {"rate_hz":768000,"channels":32,"period_frames":32,
+             "buffer_frames":32768}])
+        self.assertFalse(report["transfer_calls_directly_attributed_to_48k_pcm"])
 
     def test_hard_upper_bound_event_records(self):
         self.file.write_text(
