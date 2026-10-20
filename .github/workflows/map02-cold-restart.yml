@@ -101,7 +101,7 @@ jobs:
         run: |
           set -euo pipefail
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y git ca-certificates curl
+          DEBIAN_FRONTEND=noninteractive apt-get install -y git ca-certificates curl python3
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -115,12 +115,12 @@ jobs:
           EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          test "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)" = "$EXPECTED_SOURCE"
           python3 tools/map02_candidate_receipt.py verify \
             --nro nros/vandal-hearts-prototype.nro \
             --receipt nros/map02-candidate-receipt.json \
             --source-commit "$EXPECTED_SOURCE" \
-            --source-tree "$(git rev-parse HEAD^{tree})"
+            --source-tree "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD^{tree})"
           mkdir -p map02-cold-restart-evidence
           cp nros/map02-candidate-receipt.json map02-cold-restart-evidence/build-receipt.json
       - name: Install Vulkan and screenshot dependencies
