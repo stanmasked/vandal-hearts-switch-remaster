@@ -43,6 +43,14 @@ python3 -m tools.emit_map02_local_disc_receipt \
   --output-private-dir "$LOCAL/receipt"
 ```
 
+**Guardrail:** The staging tool refuses a destination inside the mounted
+source BIN/CUE directory and inside the standard macOS
+`~/Library/CloudStorage` File Provider sync tree (including Google Drive).
+Choose a truly local private directory such as `$HOME/vh-private`, **not**
+another folder synced to Google Drive, iCloud or Dropbox. The guard does not
+discover every third-party sync configuration; verify the output location is
+not being backed up or synchronized before running the tool.
+
 The stage command does **not** emit game bytes, upload files, make the original
 Drive files public or change their permissions. Only `$LOCAL/receipt`
 contains the generated digest-only JSON; keep both it and the 665-MB local
