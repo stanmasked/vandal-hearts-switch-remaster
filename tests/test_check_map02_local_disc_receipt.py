@@ -89,6 +89,23 @@ class LocalDiscReceiptTests(unittest.TestCase):
                 validate_receipt(self.raw())
             self.data[key] = old
 
+    def test_rejects_public_or_linked_parent_directory(self):
+        self.path.write_bytes(self.raw())
+        self.path.chmod(0o600)
+        parent = self.path.parent
+        parent.chmod(0o755)
+        try:
+            with self.assertRaisesRegex(ValueError, "directory must be owner-private"):
+                verify_receipt_file(self.path)
+        finally:
+            parent.chmod(0o700)
+        linked_parent = parent.parent / (parent.name + "-alias")
+        linked_parent.symlink_to(parent, target_is_directory=True)
+        self.addCleanup(linked_parent.unlink)
+        with self.assertRaises((ValueError, OSError)):
+            verify_receipt_file(linked_parent / self.path.name)
+        self.assertTrue(verify_receipt_file(self.path)["receipt_schema_verified"])
+
     def test_rejects_insecure_file_symlink_and_wrong_framing(self):
         self.path.write_bytes(self.raw())
         self.path.chmod(0o644)
