@@ -115,7 +115,7 @@ class PublicRelocatableELFTests(unittest.TestCase):
             f'\n__asm__(".globl {missing}\\n.type {missing}, @function'
             f'\\n{missing}:\\n.size {missing}, .-{missing}\\n");\n',
             name="empty-function-impostor")
-        with self.assertRaisesRegex(ValueError, "ELF FUNC export"):
+        with self.assertRaisesRegex(ValueError, "ELF FUNC bounds"):
             inspect_relocatable(obj)
 
     def test_nonzero_elf_func_extending_past_text_section_rejected(self):
