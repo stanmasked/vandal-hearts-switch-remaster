@@ -10,7 +10,9 @@ or independent PlayStation hardware capture.
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
+import stat
 
 from tools.publish_map02_blendg1_witness import _private_directory
 from tools.verify_map02_frame_bundle import fields, number, parse_json
@@ -24,12 +26,30 @@ SCHEMA = "vh.map02.native-windows.v1"
 MAX_WINDOWS = 2
 
 
+def private_window_file(directory, name, **limits):
+    """Require owner-only native capture evidence before interpreting bytes.
+
+    Directory permissions alone do not preserve the confidentiality of an
+    exported snapshot if its enclosing directory is later copied or opened.
+    This is a metadata gate, not a kernel-authenticated writer identity.
+    """
+    if type(name) is not str or not name or name in (".", "..") or "/" in name:
+        raise ValueError("invalid native GPU capture filename")
+    path = directory / name
+    meta = path.lstat()
+    if (not stat.S_ISREG(meta.st_mode) or
+            stat.S_IMODE(meta.st_mode) != 0o600 or
+            meta.st_nlink != 1 or meta.st_uid != os.getuid()):
+        raise ValueError("native GPU capture files require owner-only 0600 mode and one link")
+    return private_file(directory, name, **limits)
+
+
 def verify_native_windows(directory, *, target_frame):
     root = _private_directory(directory)
     number(target_frame, "GPU DrawOTag frame", 1, 2**32 - 1)
     if (root / STATUS).exists() or (root / STATUS).is_symlink():
         raise ValueError("legacy native GPU receipt cannot be mixed with windowed capture")
-    raw = private_file(root, INDEX, max_bytes=4096)
+    raw = private_window_file(root, INDEX, max_bytes=4096)
     status = parse_json(raw, INDEX)
     fields(status, (
         "schema", "gpu_draw_frame", "window_capacity_events",
@@ -95,7 +115,7 @@ def verify_native_windows(directory, *, target_frame):
         window = _private_directory(root / f"window-{idx:03d}")
         if (window / STATUS).exists() or (window / STATUS).is_symlink():
             raise ValueError("legacy per-window receipt incorrectly asserts complete frame")
-        log = private_file(window, LOG, max_bytes=128 * 1024)
+        log = private_window_file(window, LOG, max_bytes=128 * 1024)
         if (not log.endswith(b"\n") or b"\r" in log or
                 any(not entry for entry in log.split(b"\n")[:-1])):
             raise ValueError("noncanonical native window JSONL")
@@ -104,6 +124,9 @@ def verify_native_windows(directory, *, target_frame):
         count = min(MAX_RECORDS, written - idx * MAX_RECORDS)
         if len(events) != count or count % 2:
             raise ValueError("missing, duplicated or reordered native GPU window events")
+        if any(type(e.get("snapshot")) is not str or
+               type(e.get("upload")) is not str for e in events):
+            raise ValueError("native GPU window event has nonstring file metadata")
         expected_files = {LOG} | {e.get("snapshot") for e in events}
         expected_files |= {e.get("upload") for e in events if e.get("upload")}
         if {item.name for item in window.iterdir()} != expected_files:
@@ -111,7 +134,7 @@ def verify_native_windows(directory, *, target_frame):
         # Hash ALL published capture bytes, not only JSONL: unreferenced or
         # replaced snapshots must never inherit the same source binding.
         for name in sorted(expected_files):
-            data = private_file(window, name, max_bytes=VRAM_BYTES + 128 * 1024)
+            data = private_window_file(window, name, max_bytes=VRAM_BYTES + 128 * 1024)
             file_tree_hash.update(f"window-{idx:03d}/{name}\0".encode("ascii"))
             file_tree_hash.update(hashlib.sha256(data).digest())
         # The existing full 1-MiB VRAM auditor is reused, but its
@@ -127,9 +150,9 @@ def verify_native_windows(directory, *, target_frame):
         )
         for offset in range(0, count, 2):
             first, second = events[offset:offset + 2]
-            before_vram = private_file(
+            before_vram = private_window_file(
                 window, first["snapshot"], expected=VRAM_BYTES)
-            after_vram = private_file(
+            after_vram = private_window_file(
                 window, second["snapshot"], expected=VRAM_BYTES)
             if idx and offset == 0 and last_operation == "draw":
                 # Every transfer for target frame N happens while the
