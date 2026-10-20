@@ -122,6 +122,16 @@ another folder synced to Google Drive, iCloud or Dropbox. The guard does not
 discover every third-party sync configuration; verify the output location is
 not being backed up or synchronized before running the tool.
 
+**Interrupted copy protection:** If the Mac shuts down or a process is killed
+mid-copy, a hidden `.vh-map02-private.*.pending` folder can remain under
+the local 0700 parent and may contain a partially written private BIN.
+The staging command now **refuses another copy immediately** if such a
+folder already exists; it does not open, report, or delete that folder.
+Inspect it **locally in Finder or Terminal** and free/recover the space
+only after confirming that no earlier copy process is running. Avoid
+uploading a pending folder or its contents to any cloud service.
+Other projects' unrelated `.pending` files are left alone.
+
 The stage command does **not** emit game bytes, upload files, make the original
 Drive files public or change their permissions. Only `$LOCAL/receipt`
 contains the generated digest-only JSON; keep both it and the 665-MB local

@@ -260,6 +260,18 @@ def stage_disc(bin_path, cue_path, destination_parent, *,
         else:
             raise FileExistsError("private destination already exists")
 
+        # A killed or interrupted earlier invocation may leave a partial
+        # owner-private image in a hidden .pending folder. Never silently
+        # start another ~665-MB copy beside it. No pending folder is opened,
+        # deleted or printed; require deliberate, private owner inspection.
+        prefix = "." + stage_name + "."
+        if any(name.startswith(prefix) and name.endswith(".pending")
+               for name in os.listdir(parentfd)):
+            raise ValueError(
+                "unfinished private disc staging directory exists; "
+                "inspect it locally before retrying (no automatic deletion)"
+            )
+
         # Evaluate filesystem capacity through the already pinned private
         # directory descriptor. No original disc blocks have been read yet.
         _require_private_disk_capacity(parentfd, expected_bytes)
