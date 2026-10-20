@@ -470,7 +470,24 @@ jobs:
             upstream-pc "${RUNNER_TEMP}/map02-cycle-private-build"
           python3 -m tools.check_map02_public_reloc_link \
             upstream-pc "${RUNNER_TEMP}/map02-cycle-private-build" \
-            "${RUNNER_TEMP}/map02-public-code-reloc"
+            "${RUNNER_TEMP}/map02-public-code-reloc" \
+            | tee "${RUNNER_TEMP}/map02-public-reloc-report.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          report = json.loads((Path(os.environ["RUNNER_TEMP"]) /
+                               "map02-public-reloc-report.json").read_text())
+          observed = (report["public_game_object_count"],
+                      report["backend_and_observer_object_count"],
+                      report["total_compiled_elf_objects"])
+          assert observed == (85, 33, 118), ("source-pinned object inventory drift", observed)
+          assert len(report["ordered_object_input_manifest_sha256"]) == 64
+          assert not report["fully_linked_game_executable"]
+          assert not report["actual_gameplay_executed"]
+          assert not report["original_map02_rendering_proven"]
+          print("Verified 85 + 33 = 118 source-pinned sealed original PC ELF inputs.")
+          PY
           echo "Asset-free original game/backend objects joined in one relocatable ELF."
           echo "NOT a retail executable or authentic MAP02 gameplay."
       - name: Fail closed on upstream rasterizer source drift
