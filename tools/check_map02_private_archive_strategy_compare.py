@@ -142,12 +142,70 @@ def compare_private_archive_strategies(manifest, partial, archives, out_dir):
             os.close(entry[0])
 
 
+def write_private_archive_receipt(report, destination):
+    """Create a private report once; never overwrite or follow symlinks."""
+    destination = Path(destination).absolute()
+    payload = (json.dumps(report, sort_keys=True, indent=2) + "\n").encode(
+        "utf-8")
+    if (report.get("schema") != SCHEMA or not 0 < len(payload) <= 16384):
+        raise ValueError("private MAP02 paired report invalid")
+    directory_fd = None
+    report_fd = None
+    try:
+        directory_fd = os.open(
+            destination.parent,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        directory = os.fstat(directory_fd)
+        named = destination.parent.lstat()
+        if (not stat.S_ISDIR(directory.st_mode)
+                or directory.st_uid != os.geteuid()
+                or stat.S_IMODE(directory.st_mode) != 0o700
+                or (directory.st_dev, directory.st_ino) !=
+                   (named.st_dev, named.st_ino)):
+            raise ValueError("private MAP02 receipt directory unsafe")
+        report_fd = os.open(
+            destination.name,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            0o600, dir_fd=directory_fd)
+        os.fchmod(report_fd, 0o600)
+        for offset in range(0, len(payload), 4096):
+            block = memoryview(payload)[offset:offset + 4096]
+            while block:
+                n = os.write(report_fd, block)
+                if n <= 0:
+                    raise ValueError("private MAP02 receipt write incomplete")
+                block = block[n:]
+        os.fsync(report_fd)
+        written = os.fstat(report_fd)
+        named_output = os.stat(
+            destination.name, dir_fd=directory_fd, follow_symlinks=False)
+        if (not stat.S_ISREG(written.st_mode)
+                or written.st_uid != os.geteuid()
+                or stat.S_IMODE(written.st_mode) != 0o600
+                or written.st_nlink != 1 or written.st_size != len(payload)
+                or (written.st_dev, written.st_ino, written.st_mode) !=
+                   (named_output.st_dev, named_output.st_ino,
+                    named_output.st_mode)):
+            raise ValueError("private MAP02 receipt metadata unsafe")
+        os.fsync(directory_fd)
+    except OSError:
+        raise ValueError("private MAP02 receipt write unavailable") from None
+    finally:
+        if report_fd is not None:
+            os.close(report_fd)
+        if directory_fd is not None:
+            os.close(directory_fd)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("private_undefined_manifest", type=Path)
     parser.add_argument("private_original_partial_elf", type=Path)
     parser.add_argument("new_private_comparison_dir", type=Path)
     parser.add_argument("native_candidate_archive", type=Path, nargs="+")
+    parser.add_argument(
+        "--report-file", type=Path,
+        help="create a new private 0600 JSON file within an existing 0700 directory")
     args = parser.parse_args()
     try:
         result = compare_private_archive_strategies(
@@ -155,9 +213,14 @@ def main():
             args.private_original_partial_elf,
             args.native_candidate_archive,
             args.new_private_comparison_dir)
+        if args.report_file is not None:
+            write_private_archive_receipt(result, args.report_file)
     except (OSError, ValueError, subprocess.TimeoutExpired):
         parser.error("private MAP02 paired archive comparison failed")
-    print(json.dumps(result, sort_keys=True, indent=2))
+    if args.report_file is None:
+        print(json.dumps(result, sort_keys=True, indent=2))
+    else:
+        print("Private MAP02 paired audit report securely saved")
 
 
 if __name__ == "__main__":
