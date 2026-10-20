@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "id": "map02_original_fixture_a",
+  "board": {
+    "width": 8,
+    "height": 6,
+    "blocked": [
+      [
+        3,
+        1
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        3,
+        3
+      ],
+      [
+        4,
+        4
+      ]
+    ]
+  },
+  "allies": [
+    {
+      "x": 1,
+      "y": 2,
+      "hp": 5
+    },
+    {
+      "x": 1,
+      "y": 4,
+      "hp": 5
+    }
+  ],
+  "enemies": [
+    {
+      "x": 5,
+      "y": 2,
+      "hp": 2
+    },
+    {
+      "x": 6,
+      "y": 4,
+      "hp": 2
+    }
+  ],
+  "cursor": [
+    1,
+    2
+  ],
+  "rules": {
+    "move_range": 2,
+    "attack_damage": 1
+  },
+  "events": [
+    {
+      "when": "all_enemies_defeated",
+      "result": "victory"
+    },
+    {
+      "when": "all_allies_defeated",
+      "result": "defeat"
+    }
+  ]
+}
