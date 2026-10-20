@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from tools.check_map02_private_incremental_link import (
     OUTPUT, _open_owned, _unresolved, probe_private_incremental_link,
@@ -141,6 +142,42 @@ class X11ImportOriginPartitionTests(unittest.TestCase):
         self.sdl_manifest.write_text(json.dumps(doc), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "manifest ELF names differ"):
             self.audit()
+
+    def test_x11_elf_modified_after_nm_rejected_before_positive_report(self):
+        """A late in-place byte mutation cannot survive the final input seal."""
+        from tools import check_map02_public_x11_origin_partition as module
+        actual_unresolved = module._unresolved
+
+        def mutate_after_read(entry):
+            names = actual_unresolved(entry)
+            if entry[1] == self.x11.absolute():
+                with self.x11.open("ab") as target:
+                    target.write(b"late-content-mutation")
+            return names
+
+        with mock.patch.object(
+                module, "_unresolved", side_effect=mutate_after_read):
+            with self.assertRaisesRegex(ValueError, "changed during link"):
+                self.audit()
+
+    def test_x11_elf_identical_bytes_new_inode_rejected(self):
+        """Even byte-identical replacement must fail path/inode confirmation."""
+        from tools import check_map02_public_x11_origin_partition as module
+        actual_unresolved = module._unresolved
+
+        def replace_after_read(entry):
+            names = actual_unresolved(entry)
+            if entry[1] == self.x11.absolute():
+                alternate = self.root / "fresh-inode-x11.o"
+                alternate.write_bytes(self.x11.read_bytes())
+                alternate.chmod(0o600)
+                alternate.replace(self.x11)
+            return names
+
+        with mock.patch.object(
+                module, "_unresolved", side_effect=replace_after_read):
+            with self.assertRaisesRegex(ValueError, "path replaced"):
+                self.audit()
 
     def test_reused_source_inode_rejected(self):
         with self.assertRaisesRegex(ValueError, "inputs alias"):
