@@ -256,6 +256,36 @@ def make_inventory(upstream, bundle, *, make="make"):
     return [line.split() for line in lines]
 
 
+def inspect_sealed_export_origins(names, sealed):
+    """Attribute each required strong code export to exactly one sealed .o.
+
+    This checks the compiler inputs consumed by ld -r, rather than trusting
+    a symbol that appears only after linking. Source names are public
+    Make-inventory paths; no private retail paths enter the witness.
+    """
+    if len(names) != len(sealed):
+        raise ValueError("MAP02 original code source/descriptor count mismatch")
+    owners = {name: [] for name in REQUIRED_SYMBOLS}
+    for source, fd in zip(names, sealed):
+        result = subprocess.run(
+            ["nm", "-g", "--defined-only", f"/proc/self/fd/{fd}"],
+            pass_fds=(fd,), capture_output=True, text=True,
+            timeout=30, check=False)
+        if result.returncode:
+            raise ValueError("cannot examine sealed original input ELF exports")
+        for line in result.stdout.splitlines():
+            cells = line.split()
+            if len(cells) < 2:
+                continue
+            symbol = cells[-1]
+            if symbol in owners:
+                owners[symbol].append((source, cells[-2]))
+    if any(len(values) != 1 or values[0][1] != "T"
+           for values in owners.values()):
+        raise ValueError("original CD/GPU or observer sealed input export absent/duplicated")
+    return {name: owners[name][0][0] for name in REQUIRED_SYMBOLS}
+
+
 def check_elf_function_sections(path, *, pass_fds=()):
     """Require original API entrypoints to be sized global ELF FUNC symbols.
 
@@ -424,6 +454,7 @@ def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
             sealed.append(sealed_input_fd(source, proof, index=index))
         if [stable_object_input(path) for path in sources] != initial:
             raise ValueError("original PC objects changed while sealing inputs")
+        export_origins = inspect_sealed_export_origins(names, sealed)
         combined = subprocess.run(
             [linker, "-r", "-o", str(output),
              *(f"/proc/self/fd/{fd}" for fd in sealed)],
@@ -477,6 +508,7 @@ def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
         "backend_and_observer_object_count": len(objects[1]),
         "total_compiled_elf_objects": len(names),
         "ordered_object_input_manifest_sha256": input_manifest_sha256,
+        "verified_original_export_input_owners": export_origins,
         "relocatable_elf_sha256": output_proof[0],
         **checked,
         "fully_linked_game_executable": False,
