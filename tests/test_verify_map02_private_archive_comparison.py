@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 from tools.check_map02_private_archive_strategy_compare import (
-    compare_private_archive_strategies,
+    compare_private_archive_strategies, write_private_archive_receipt,
 )
 from tools.verify_map02_private_archive_comparison import (
     VERIFY_SCHEMA, verify_private_archive_comparison,
@@ -79,6 +79,62 @@ class IndependentPairedAuditTests(unittest.TestCase):
     def verify(self):
         return verify_private_archive_comparison(
             self.manifest, self.partial, self.report, self.output_root)
+
+    def test_sealed_report_writes_once_and_verifies_against_both_elfs(self):
+        """Create a 0600 report without redirection; prove it can be reread."""
+        destination = self.report_dir / "sealed.private.json"
+        report = json.loads(self.report.read_text(encoding="utf-8"))
+        write_private_archive_receipt(report, destination)
+        self.assertEqual(destination.stat().st_mode & 0o777, 0o600)
+        status = verify_private_archive_comparison(
+            self.manifest, self.partial, destination, self.output_root)
+        self.assertTrue(status["verified_report_arithmetic"])
+        with self.assertRaisesRegex(ValueError, "write unavailable"):
+            write_private_archive_receipt(report, destination)
+        self.assertEqual(json.loads(destination.read_text(encoding="utf-8")), report)
+
+    def test_sealed_report_rejects_unsafe_parent_and_symlink(self):
+        report = json.loads(self.report.read_text(encoding="utf-8"))
+        public = self.root / "public"
+        public.mkdir(mode=0o755)
+        with self.assertRaisesRegex(ValueError, "directory unsafe"):
+            write_private_archive_receipt(report, public / "not-private.json")
+        self.assertFalse((public / "not-private.json").exists())
+        outside = self.root / "do-not-overwrite"
+        outside.write_text("sentinel", encoding="utf-8")
+        fake = self.report_dir / "linked.private.json"
+        fake.symlink_to(outside)
+        with self.assertRaisesRegex(ValueError, "write unavailable"):
+            write_private_archive_receipt(report, fake)
+        self.assertEqual(outside.read_text(encoding="utf-8"), "sentinel")
+        alias = self.root / "symlink-parent"
+        alias.symlink_to(self.report_dir, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "write unavailable"):
+            write_private_archive_receipt(report, alias / "not-created.json")
+        self.assertFalse((self.report_dir / "not-created.json").exists())
+
+    def test_sealed_report_cli_hides_private_symbol_names(self):
+        """The --report-file mode prints only a generic success marker."""
+        import sys
+
+        target = self.report_dir / "cli.private.json"
+        comparison = self.root / "cli-output"
+        done = subprocess.run(
+            [sys.executable, "-m",
+             "tools.check_map02_private_archive_strategy_compare",
+             str(self.manifest), str(self.partial), str(comparison),
+             str(self.second), str(self.first),
+             "--report-file", str(target)],
+            check=True, capture_output=True, text=True, timeout=120)
+        self.assertEqual(
+            done.stdout.strip(), "Private MAP02 paired audit report securely saved")
+        self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+        self.assertTrue(
+            verify_private_archive_comparison(
+                self.manifest, self.partial, target,
+                comparison)["verified_both_output_elf_files"])
+        for name in ("needed", "missing", "followup"):
+            self.assertNotIn(name, done.stdout + done.stderr)
 
     def test_valid_saved_report_rechecked_against_both_actual_elf_files(self):
         status = self.verify()
