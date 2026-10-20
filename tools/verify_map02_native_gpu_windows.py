@@ -26,22 +26,81 @@ SCHEMA = "vh.map02.native-windows.v1"
 MAX_WINDOWS = 2
 
 
-def private_window_file(directory, name, **limits):
-    """Require owner-only native capture evidence before interpreting bytes.
+def private_window_file(directory, name, *, expected=None, max_bytes=None):
+    """Read the same open inode whose private metadata is verified.
 
-    Directory permissions alone do not preserve the confidentiality of an
-    exported snapshot if its enclosing directory is later copied or opened.
-    This is a metadata gate, not a kernel-authenticated writer identity.
+    A pathname lstat followed by read_bytes permits an inode exchange
+    between checks. Hold a private directory FD, open the evidence with
+    NOFOLLOW and verify metadata before/after bounded reads, including
+    that the directory entry still resolves to the opened inode.
+    These checks do not authenticate the original GPU process.
     """
-    if type(name) is not str or not name or name in (".", "..") or "/" in name:
+    if (type(name) is not str or not name or name in (".", "..") or
+            "/" in name or "\x00" in name):
         raise ValueError("invalid native GPU capture filename")
-    path = directory / name
-    meta = path.lstat()
-    if (not stat.S_ISREG(meta.st_mode) or
-            stat.S_IMODE(meta.st_mode) != 0o600 or
-            meta.st_nlink != 1 or meta.st_uid != os.getuid()):
-        raise ValueError("native GPU capture files require owner-only 0600 mode and one link")
-    return private_file(directory, name, **limits)
+    directory = Path(directory)
+    flags = os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
+    dirfd = os.open(directory, flags | os.O_DIRECTORY)
+    try:
+        d = os.fstat(dirfd)
+        if (not stat.S_ISDIR(d.st_mode) or
+                stat.S_IMODE(d.st_mode) != 0o700 or
+                d.st_uid != os.geteuid()):
+            raise ValueError("native GPU window directory is not owner-private")
+        try:
+            fd = os.open(name, flags, dir_fd=dirfd)
+        except OSError as exc:
+            # A symlink with O_NOFOLLOW raises ELOOP rather than the
+            # ValueError expected by the public strict-verifier contract.
+            raise ValueError("native GPU capture file missing or symlinked") from exc
+        try:
+            before = os.fstat(fd)
+            if (not stat.S_ISREG(before.st_mode) or
+                    stat.S_IMODE(before.st_mode) != 0o600 or
+                    before.st_nlink != 1 or
+                    before.st_uid != os.geteuid()):
+                raise ValueError(
+                    "native GPU capture files require owner-only 0600 mode and one link")
+            size = before.st_size
+            if expected is not None and size != expected:
+                raise ValueError("native GPU capture file has wrong size")
+            if max_bytes is not None and not 0 < size <= max_bytes:
+                raise ValueError("native GPU capture file empty or above limit")
+            if expected is None and max_bytes is None:
+                raise ValueError("native GPU read requires an explicit byte bound")
+            chunks, total = [], 0
+            while total <= size:
+                chunk = os.read(fd, min(65536, size + 1 - total))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total += len(chunk)
+            after = os.fstat(fd)
+            entry = os.stat(name, dir_fd=dirfd, follow_symlinks=False)
+            identity = lambda st: (
+                st.st_dev, st.st_ino, st.st_mode, st.st_uid, st.st_nlink,
+                st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+            if (total != size or identity(before) != identity(after) or
+                    identity(after) != identity(entry)):
+                raise ValueError("native GPU capture file changed during secure read")
+            # Keep the directory pathname pinned as well as the file's
+            # directory-relative name. Without this, an attacker could
+            # rename the entire capture directory and replace it with
+            # another owner-private directory while the held dirfd still
+            # points to the original inode.
+            try:
+                named_directory = os.stat(directory, follow_symlinks=False)
+            except OSError as exc:
+                raise ValueError(
+                    "native GPU capture directory moved during secure read") from exc
+            if (identity(d) != identity(os.fstat(dirfd)) or
+                    identity(d) != identity(named_directory)):
+                raise ValueError("native GPU capture directory changed during secure read")
+            return b"".join(chunks)
+        finally:
+            os.close(fd)
+    finally:
+        os.close(dirfd)
 
 
 def verify_native_windows(directory, *, target_frame):
