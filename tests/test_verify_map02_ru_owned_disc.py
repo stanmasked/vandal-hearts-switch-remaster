@@ -1,7 +1,8 @@
 """Asset-free tests for owned RU disc verification: no original 665MB disc required."""
 import copy
-from contextlib import ExitStack
+from contextlib import ExitStack, nullcontext
 import json
+import hashlib
 import os
 from pathlib import Path
 import tempfile
@@ -12,7 +13,7 @@ from test_check_map02_ru_receipt import fixture as receipt_fixture
 from tools.check_map02_ru_receipt import EXPECTED_HASHES
 from tools.verify_map02_ru_owned_disc import (
     PRS_BYTES, SECTOR_COUNT, DAT_SECTOR_COUNT, EXPECTED_DISC_BYTES,
-    _readonly_disc_digest, _validate_audit, verify_owned_ru_disc,
+    _readonly_disc_digest, _open_verified_disc, _validate_audit, verify_owned_ru_disc,
 )
 
 
@@ -88,7 +89,7 @@ class OriginalDiscMap02Tests(unittest.TestCase):
         data = receipt_fixture()
         data["comparison"]["difference_count"] = 3
         self.receipt.write_text(json.dumps(data), encoding="utf-8")
-        with patch("tools.verify_map02_ru_owned_disc._readonly_disc_digest") as digest:
+        with patch("tools.verify_map02_ru_owned_disc._open_verified_disc") as digest:
             with self.assertRaises(ValueError):
                 verify_owned_ru_disc(self.disc, self.receipt)
             digest.assert_not_called()
@@ -96,25 +97,25 @@ class OriginalDiscMap02Tests(unittest.TestCase):
     def test_original_decoder_is_reused_without_exporting_assets(self):
         prs = b"a" * PRS_BYTES
         dat = b"b" * 238336
+        descriptor = object()
         with ExitStack() as stack:
             digest = stack.enter_context(patch(
-                "tools.verify_map02_ru_owned_disc._readonly_disc_digest",
-                return_value=os.stat(self.disc)))
+                "tools.verify_map02_ru_owned_disc._open_verified_disc",
+                side_effect=lambda path: nullcontext((descriptor, os.stat(self.disc)))))
             reader = stack.enter_context(patch(
-                "tools.verify_map02_ru_owned_disc.read_sectors",
+                "tools.verify_map02_ru_owned_disc.read_sectors_from_stream",
                 side_effect=[prs, dat]))
             auditor = stack.enter_context(patch(
                 "tools.verify_map02_ru_owned_disc.audit_prs",
                 return_value=audit_fixture()))
-            unchanged = stack.enter_context(patch(
-                "tools.verify_map02_ru_owned_disc._unchanged"))
             outcome = verify_owned_ru_disc(self.disc, self.receipt)
-        digest.assert_called_once()
+        digest.assert_called_once_with(self.disc)
         self.assertEqual(reader.call_count, 2)
+        self.assertIs(reader.call_args_list[0].args[0], descriptor)
+        self.assertIs(reader.call_args_list[1].args[0], descriptor)
         self.assertEqual(reader.call_args_list[0].kwargs["start_sector"], 7116)
         self.assertEqual(reader.call_args_list[1].kwargs["start_sector"], 6999)
         auditor.assert_called_once_with(prs, dat=dat)
-        unchanged.assert_called_once()
         self.assertEqual(outcome["mode2_form1_edc_verified_sectors"],
                          SECTOR_COUNT + DAT_SECTOR_COUNT)
         self.assertTrue(outcome["pinned_ru_disc_sha256_verified"])
@@ -126,10 +127,10 @@ class OriginalDiscMap02Tests(unittest.TestCase):
     def test_bad_sector_read_is_not_reported_as_success(self):
         with ExitStack() as stack:
             stack.enter_context(patch(
-                "tools.verify_map02_ru_owned_disc._readonly_disc_digest",
-                return_value=os.stat(self.disc)))
+                "tools.verify_map02_ru_owned_disc._open_verified_disc",
+                side_effect=lambda path: nullcontext((object(), os.stat(self.disc)))))
             stack.enter_context(patch(
-                "tools.verify_map02_ru_owned_disc.read_sectors",
+                "tools.verify_map02_ru_owned_disc.read_sectors_from_stream",
                 side_effect=ValueError("MODE2 sector EDC mismatch")))
             with self.assertRaisesRegex(ValueError, "EDC mismatch"):
                 verify_owned_ru_disc(self.disc, self.receipt)
@@ -137,16 +138,14 @@ class OriginalDiscMap02Tests(unittest.TestCase):
     def test_optional_trace_remains_unattested(self):
         with ExitStack() as stack:
             stack.enter_context(patch(
-                "tools.verify_map02_ru_owned_disc._readonly_disc_digest",
-                return_value=os.stat(self.disc)))
+                "tools.verify_map02_ru_owned_disc._open_verified_disc",
+                side_effect=lambda path: nullcontext((object(), os.stat(self.disc)))))
             stack.enter_context(patch(
-                "tools.verify_map02_ru_owned_disc.read_sectors",
+                "tools.verify_map02_ru_owned_disc.read_sectors_from_stream",
                 side_effect=[b"x" * PRS_BYTES, b"y" * 238336]))
             stack.enter_context(patch(
                 "tools.verify_map02_ru_owned_disc.audit_prs",
                 return_value=audit_fixture()))
-            stack.enter_context(patch(
-                "tools.verify_map02_ru_owned_disc._unchanged"))
             stack.enter_context(patch(
                 "tools.verify_map02_ru_owned_disc.reconcile",
                 return_value={
@@ -161,6 +160,36 @@ class OriginalDiscMap02Tests(unittest.TestCase):
         self.assertTrue(result["pc_capture_present"])
         self.assertEqual(result["pc_trace_consistent_variant"], "PRS")
         self.assertFalse(result["same_owned_disc_used_by_executable_proven"])
+
+    def test_single_descriptor_detects_filename_swap_during_sector_read(self):
+        fake = b"sample-owned-disc"
+        self.disc.write_bytes(fake)
+        with ExitStack() as stack:
+            stack.enter_context(patch("tools.verify_map02_ru_owned_disc.EXPECTED_DISC_BYTES", len(fake)))
+            stack.enter_context(patch(
+                "tools.verify_map02_ru_owned_disc.EXPECTED_DISC_SHA256",
+                hashlib.sha256(fake).hexdigest()))
+            original = self.disc.with_name("first.bin")
+            with self.assertRaisesRegex(ValueError, "changed"):
+                with _open_verified_disc(self.disc) as (handle, _):
+                    self.assertEqual(handle.read(2), fake[:2])
+                    self.disc.rename(original)
+                    self.disc.write_bytes(b"another-file-byte")
+            original.unlink()
+
+    def test_single_descriptor_detects_in_place_mutation(self):
+        fake = b"original-owned-file"
+        self.disc.write_bytes(fake)
+        with ExitStack() as stack:
+            stack.enter_context(patch("tools.verify_map02_ru_owned_disc.EXPECTED_DISC_BYTES", len(fake)))
+            stack.enter_context(patch(
+                "tools.verify_map02_ru_owned_disc.EXPECTED_DISC_SHA256",
+                hashlib.sha256(fake).hexdigest()))
+            with self.assertRaisesRegex(ValueError, "changed"):
+                with _open_verified_disc(self.disc) as (handle, _):
+                    with self.disc.open("r+b") as writer:
+                        writer.seek(0)
+                        writer.write(b"modified")
 
     def test_changed_disc_metadata_rejected(self):
         first = os.stat(self.disc)
