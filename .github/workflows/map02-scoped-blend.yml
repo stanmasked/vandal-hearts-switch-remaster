@@ -84,6 +84,7 @@ on:
       - 'tests/test_check_map02_private_provider_coverage.py'
       - 'tests/test_check_map02_private_incremental_link.py'
       - 'tools/check_map02_public_sdl2_archive_witness.py'
+      - 'tools/verify_map02_public_sdl2_archive_recount.py'
       - 'tests/test_check_map02_public_sdl2_archive_witness.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
@@ -231,6 +232,7 @@ on:
       - 'tests/test_check_map02_private_provider_coverage.py'
       - 'tests/test_check_map02_private_incremental_link.py'
       - 'tools/check_map02_public_sdl2_archive_witness.py'
+      - 'tools/verify_map02_public_sdl2_archive_recount.py'
       - 'tests/test_check_map02_public_sdl2_archive_witness.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
@@ -577,6 +579,35 @@ jobs:
           assert result["original_map02_execution_proven"] is False
           print("Asset-free original PC 520-import ELF tested against genuine Ubuntu SDL2 static archive.")
           print("No owned disc/game data, executable retail ELF, or MAP02 gameplay involved.")
+          PY
+      - name: Independently reread saved SDL2 source and linked ELF import counts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m tools.verify_map02_public_sdl2_archive_recount \
+            "${RUNNER_TEMP}/map02-public-code-reloc/map02-unresolved-symbols.private.json" \
+            "${RUNNER_TEMP}/map02-public-code-reloc/map02-public-original-cd-gpu-reloc.o" \
+            "${RUNNER_TEMP}/map02-real-sdl2-native-provider/sdl2-system-candidate.a" \
+            "${RUNNER_TEMP}/map02-real-sdl2-native-provider/linked/map02-private-candidate-linked.o" \
+            "${RUNNER_TEMP}/map02-real-sdl2-provider-aggregate.json" \
+            | tee "${RUNNER_TEMP}/map02-real-sdl2-independent-recount.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          initial = json.loads((root / "map02-real-sdl2-provider-aggregate.json").read_text())
+          verified = json.loads((root / "map02-real-sdl2-independent-recount.json").read_text())
+          assert verified["baseline_strong_imports"] == 520
+          assert verified["original_imports_resolved"] == initial["original_imports_resolved_by_actual_ld_r"]
+          assert verified["new_imports"] == initial["new_undefined_imports_introduced_by_sdl2"]
+          assert verified["final_strong_imports"] == initial["final_undefined_strong_count"]
+          assert verified["saved_report_recount_verified"] is True
+          assert verified["copied_candidate_archive_identity_verified"] is True
+          assert verified["source_and_linked_elf_identity_verified"] is True
+          assert verified["full_game_executable_proven"] is False
+          assert verified["authentic_map02_execution_proven"] is False
+          print("SDL2 real-public ELF aggregate counters independently reread from both ELF files.")
           PY
       - name: Fail closed on upstream rasterizer source drift
         run: |

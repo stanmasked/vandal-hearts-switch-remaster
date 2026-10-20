@@ -123,6 +123,7 @@ def probe_public_sdl2_archive(manifest, partial, system_sdl2_archive, output_dir
     return {
         "schema": SCHEMA,
         "public_source_elf_sha256": result["source_partial_elf_sha256"],
+        "sdl2_candidate_archive_sha256": copied_digest,
         "initial_strong_undefined": result["original_strong_import_count"],
         "sdl2_candidate_strong_exports_matching_initial":
             coverage["strong_symbols_with_candidate_provider"],
