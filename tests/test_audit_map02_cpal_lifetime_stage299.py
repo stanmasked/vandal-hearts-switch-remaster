@@ -66,7 +66,13 @@ class RealLifetimeParserSyntheticTests(unittest.TestCase):
         self.assertFalse(r["backend_alsa_pause_or_drop_event_proven"])
 
     def test_l_p_same_tick_counter_mismatch_rejected(self):
-        self.p.write_text(self.p.read_text().replace("P,1000000000,","P,1000000000,",1).replace(",0\n",",99\n",1))
+        # Keep cumulative P counters monotonic while making one equal-clock
+        # sample DIFFER from the original immutable L counter.
+        rows=self.p.read_text().splitlines()
+        values=rows[1].split(",")
+        values[-1]="0"
+        rows[1]=",".join(values)
+        self.p.write_text("\n".join(rows)+"\n")
         with self.assertRaisesRegex(ValueError,"match exact same-tick"):
             analyze(self.p,self.l,FIRST,LAST)
 
@@ -93,6 +99,14 @@ class RealLifetimeParserSyntheticTests(unittest.TestCase):
         self.p.write_text("\n".join(lines)+"\n")
         with self.assertRaisesRegex(ValueError,"Mutually exclusive"):
             analyze(self.p,self.l,FIRST,LAST)
+
+    def test_samples_after_guest_marker_are_kept_but_not_attributed_to_guest(self):
+        r=analyze(self.p,self.l,FIRST,LAST)
+        self.assertEqual(r["p_rows"],17)
+        self.assertEqual(r["p_rows_through_last_guest_marker"],15)
+        self.assertEqual(r["p_rows_after_last_guest_marker_excluded"],2)
+        self.assertEqual(r["final_p_cpal_entry_counter"],14)
+        self.assertEqual(r["p_final_sample_clock_ns"],START+14*STEP)
 
     def test_p_reporter_bad_shape_rejected(self):
         self.p.write_text(self.p.read_text().replace(",0,0\n",",0\n",1))
