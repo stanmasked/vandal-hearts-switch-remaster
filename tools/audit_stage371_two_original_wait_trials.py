@@ -13,6 +13,7 @@ import hashlib
 import json
 import shutil
 import struct
+import zlib
 from pathlib import Path
 
 from audit_nexium_stage368_wait_descriptor import NAMES, audit_directory
@@ -67,14 +68,40 @@ def load(path:Path)->dict:
 
 def png_original(path:Path)->str:
     demand(regular(path,5_000_000),"missing optical frame from original NeXium")
-    with path.open("rb") as f:
-        header=f.read(24)
-    demand(len(header)==24 and
-           header[:8]==b"\x89PNG\r\n\x1a\n" and
-           header[12:16]==b"IHDR" and
-           struct.unpack(">II",header[16:24])==(1280,720),
-           "not an original-size 1280x720 NeXium screenshot")
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    original=path.read_bytes()
+    demand(len(original)>=45 and original.startswith(b"\x89PNG\r\n\x1a\n"),
+           "missing original PNG signature")
+    offset=8
+    has_ihdr=False
+    has_idat=False
+    has_iend=False
+    # Bound the whole input to 5 MB, then validate every PNG chunk and CRC.
+    # This is only structural integrity: no optical pixel/scene interpretation.
+    while offset+12<=len(original):
+        size=struct.unpack_from(">I",original,offset)[0]
+        end=offset+12+size
+        demand(end<=len(original),"truncated original PNG chunk")
+        kind=original[offset+4:offset+8]
+        chunk=original[offset+4:offset+8+size]
+        crc=struct.unpack_from(">I",original,offset+8+size)[0]
+        demand(zlib.crc32(chunk)==crc,"original PNG chunk CRC mismatch")
+        if not has_ihdr:
+            demand(kind==b"IHDR" and size==13 and
+                   struct.unpack_from(">II",original,offset+8)==(1280,720),
+                   "not an original-size 1280x720 NeXium screenshot")
+            has_ihdr=True
+        elif kind==b"IHDR":
+            raise ValueError("duplicate original PNG header")
+        elif kind==b"IDAT":
+            has_idat=True
+        elif kind==b"IEND":
+            demand(size==0 and has_idat and end==len(original),
+                   "original PNG missing image data or has trailing bytes")
+            has_iend=True
+            break
+        offset=end
+    demand(has_iend,"missing terminal original PNG chunk")
+    return hashlib.sha256(original).hexdigest()
 
 def trial(root:Path,run_id:int,tag:str,dwell:int,runner_temp:Path)->dict:
     expected_sd_root=runner_temp/f"vh-nexium-stage266-{run_id}-{tag}"
