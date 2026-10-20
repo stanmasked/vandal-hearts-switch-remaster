@@ -16,7 +16,7 @@ from run_map02_nexium_4v4 import (
     cmd, diff, read, tile, count,
 )
 
-WHITE = (255, 255, 255)
+WHITE = (224, 234, 246)
 STATUS = (65, 83, 790, 107)
 
 
