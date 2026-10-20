@@ -190,3 +190,20 @@ that image. The output always marks
 The CI test mocks the original disc read and PRS data. Its success means
 the failure gates and dataflow are exercised, **not** that a retail CD
 was present on the CI runner.
+
+ 
+### Single-open image identity guard
+
+The direct-check tool hashes and sector-reads through a **single read-only
+file descriptor**, opened with `O_NOFOLLOW` when supported. It never reopens
+the original pathname for either MAP02 file after computing the digest.
+It checks the original inode, device, size and nanosecond modification
+timestamp against both the open descriptor and the pathname before accepting
+the result. Replacing or modifying the named BIN during the check causes
+failure; tests exercise both cases. This addresses the earlier two-reopen
+race, but it is not a malicious-kernel attestation and cannot prove the
+runtime PC executable used this specific disc.
+
+The public `read_sectors(path, ...)` API is unchanged. The new
+`read_sectors_from_stream(handle, ...)` implementation lets trusted callers
+reuse their open handle while retaining the established Form1 EDC checks.
