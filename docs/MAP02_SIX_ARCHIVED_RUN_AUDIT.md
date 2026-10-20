@@ -19,3 +19,9 @@ This child changes the existing fail-closed auditor only to separate the four fo
 No guest processes are restarted; this is a small diagnostic audit on real existing archives, minimizing resource use. A previous failed auditor output is preserved; the new audit must establish its own green CI and source manifest provenance before a repeatability claim is made.
 
 **Limits:** a repeatable requested Pulse latency hint does not identify the measured CPAL device callback period, prove an infinite `audoutPlayBuffer` deadlock, demonstrate a fix, validate copyrighted original music, or establish physical Nintendo Switch DAC output. Keep this and ancestor PRs Draft, without merging.
+
+## Root cause of the first audit-only failure
+
+The original six **matrix-identity.json receipts all contained the same complete 64-hex NeXium ELF SHA-256**. The first [Stage284 offline audit run #39480918142](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39480918142) confirmed the six original manifest fields and pinpointed the actual discrepancy: the independent Python auditor had inadvertently hard-coded a **46-character truncated host SHA-256 literal**. It therefore rejected legitimate full SHA-256 values. The fail-closed refusal was correct; the source test constant was wrong.
+
+The auditor now carries the **full 64-character ELF SHA** `dd4ed55b6ce8477f19b77465f4ce6a0606b7a7315b3a0e2b8137b7d7ab5effd0`, plus an import-time requirement that both host and NRO source digests contain exactly 64 lowercase hexadecimal characters. The underlying game code, emulator binary, NRO, controller scripts, guest results and six immutable evidence archives are completely unchanged. Only a new successful independent replay of those six raw archives may establish repeatability.
