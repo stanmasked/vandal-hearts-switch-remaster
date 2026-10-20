@@ -4,6 +4,7 @@ Source fixtures are tiny, independent synthetic C snippets. These tests do
 NOT link actual game resources or claim to run original MAP02.
 """
 from contextlib import redirect_stderr
+import fcntl
 import hashlib
 import io
 import os
@@ -15,7 +16,8 @@ from unittest.mock import patch
 
 from tools.check_map02_public_reloc_link import (
     REQUIRED_SYMBOLS, inspect_relocatable, make_inventory, main,
-    stable_relocatable_output, stable_object_input,
+    stable_relocatable_output, stable_object_input, sealed_input_fd,
+    audit_public_link, BUILD,
 )
 
 
@@ -161,6 +163,140 @@ class PublicRelocatableELFTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "identity changed"):
                 stable_object_input(obj)
         self.assertTrue(swapped)
+
+    def test_sealed_memory_input_cannot_change_after_source_copy(self):
+        original = self.compile(self.all_exports(), name="seal-source")
+        original.chmod(0o644)
+        proof = stable_object_input(original)
+        fd = sealed_input_fd(original, proof, index=0)
+        try:
+            required = (fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW |
+                        fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL)
+            self.assertEqual(fcntl.fcntl(fd, fcntl.F_GET_SEALS) & required,
+                             required)
+            with self.assertRaises(OSError):
+                os.write(fd, b"modified")
+            os.lseek(fd, 0, os.SEEK_SET)
+            self.assertEqual(hashlib.sha256(os.read(fd, original.stat().st_size)
+                                            ).hexdigest(), proof[0])
+        finally:
+            os.close(fd)
+
+    def test_sealed_copy_rejects_midread_inode_replacement(self):
+        original = self.compile(self.all_exports(), name="seal-race")
+        original.chmod(0o644)
+        proof = stable_object_input(original)
+        replacement = self.root / "foreign-same-bytes.o"
+        replacement.write_bytes(original.read_bytes())
+        replacement.chmod(0o644)
+        real_read = os.read
+        switched = False
+
+        def read_then_replace(fd, length):
+            nonlocal switched
+            data = real_read(fd, length)
+            if data and not switched:
+                switched = True
+                os.replace(replacement, original)
+            return data
+
+        with patch("tools.check_map02_public_reloc_link.os.read",
+                   side_effect=read_then_replace):
+            with self.assertRaisesRegex(ValueError, "changed during sealed copy"):
+                sealed_input_fd(original, proof, index=1)
+        self.assertTrue(switched)
+
+    def prepare_synthetic_original_objects(self):
+        root = self.root / "pinned-upstream"
+        pc = root / "platform" / "pc"
+        built = pc / BUILD
+        built.mkdir(parents=True)
+        first = self.compile(
+            "\n".join(f"void {name}(void) {{}}"
+                      for name in REQUIRED_SYMBOLS[:5]), "original-cd")
+        second = self.compile(
+            "\n".join(f"void {name}(void) {{}}"
+                      for name in REQUIRED_SYMBOLS[5:]), "original-gpu")
+        game = built / "original-cd.o"
+        gpu = built / "original-gpu.o"
+        first.replace(game)
+        second.replace(gpu)
+        game.chmod(0o644)
+        gpu.chmod(0o644)
+        return root, game, gpu
+
+    def test_full_partial_link_uses_sealed_fds_not_mutable_upstream_paths(self):
+        root, game, gpu = self.prepare_synthetic_original_objects()
+        files = [[f"{BUILD}/original-cd.o"], [f"{BUILD}/original-gpu.o"]]
+        audited = {
+            "original_game_translation_units_compiled": 1,
+            "native_backend_and_observer_objects_compiled": 1,
+        }
+        real_run = subprocess.run
+        observed = []
+
+        def record_link(command, *args, **kwargs):
+            if command[0] == "ld" and "-r" in command:
+                fds = kwargs.get("pass_fds", ())
+                self.assertEqual(len(fds), 2)
+                self.assertTrue(all(part.startswith("/proc/self/fd/")
+                                    for part in command[4:]))
+                self.assertEqual(command[4:],
+                                 [f"/proc/self/fd/{fd}" for fd in fds])
+                for fd in fds:
+                    self.assertTrue(fcntl.fcntl(fd, fcntl.F_GET_SEALS)
+                                    & fcntl.F_SEAL_WRITE)
+                    with self.assertRaises(OSError):
+                        os.write(fd, b"invalid")
+                observed.append(True)
+            return real_run(command, *args, **kwargs)
+
+        with patch("tools.check_map02_public_reloc_link.preflight"), patch(
+                "tools.check_map02_public_reloc_link.audit_objects",
+                return_value=audited), patch(
+                "tools.check_map02_public_reloc_link.make_inventory",
+                return_value=files), patch(
+                "tools.check_map02_public_reloc_link.subprocess.run",
+                side_effect=record_link):
+            report = audit_public_link(root, self.root / "bundle-unused",
+                                       self.root / "sealed-link-result")
+        self.assertEqual(observed, [True])
+        self.assertEqual(report["public_game_object_count"], 1)
+        self.assertEqual(report["backend_and_observer_object_count"], 1)
+        self.assertFalse(report["fully_linked_game_executable"])
+        self.assertFalse(report["actual_gameplay_executed"])
+
+    def test_original_source_replaced_during_sealed_link_fails_closed(self):
+        root, game, gpu = self.prepare_synthetic_original_objects()
+        files = [[f"{BUILD}/original-cd.o"], [f"{BUILD}/original-gpu.o"]]
+        audited = {
+            "original_game_translation_units_compiled": 1,
+            "native_backend_and_observer_objects_compiled": 1,
+        }
+        real_run = subprocess.run
+        changed = []
+
+        def replace_during_ld(command, *args, **kwargs):
+            if command[0] == "ld" and "-r" in command:
+                self.assertEqual(len(kwargs.get("pass_fds", ())), 2)
+                replacement = game.with_name("foreign-same-bytes.o")
+                replacement.write_bytes(game.read_bytes())
+                replacement.chmod(0o644)
+                os.replace(replacement, game)
+                changed.append(True)
+            return real_run(command, *args, **kwargs)
+
+        with patch("tools.check_map02_public_reloc_link.preflight"), patch(
+                "tools.check_map02_public_reloc_link.audit_objects",
+                return_value=audited), patch(
+                "tools.check_map02_public_reloc_link.make_inventory",
+                return_value=files), patch(
+                "tools.check_map02_public_reloc_link.subprocess.run",
+                side_effect=replace_during_ld):
+            with self.assertRaisesRegex(ValueError, "changed or swapped"):
+                audit_public_link(root, self.root / "bundle-unused",
+                                  self.root / "sealed-raced-link")
+        self.assertEqual(changed, [True])
 
     def test_partial_elf_double_read_proof_is_stable(self):
         obj = self.compile(self.all_exports(), name="stable")
