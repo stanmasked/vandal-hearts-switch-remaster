@@ -42,7 +42,7 @@ def supplemental_sources(sd:Path)->dict:
         if not regular(p,2048):
             raise ValueError("invalid optional original guest telemetry: "+name)
         original=p.read_bytes()
-        if not original.startswith(b"scope,value\\n") or not original.endswith(b"\\n"):
+        if not original.startswith(b"scope,value\n") or not original.endswith(b"\n"):
             raise ValueError("invalid optional telemetry canonical header: "+name)
         values[name]={"present":True,"sha256":hashlib.sha256(original).hexdigest(),
                       "parsed":False}
