@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from verify_map02_nexium_one_binary import verify_host_links
+from verify_map02_nexium_one_binary import verify_host_links, verify_evidence_attempts
 
 SOURCE = "a" * 40
 RUN = 123456789
@@ -49,6 +49,16 @@ class OneNeXiumBinaryTests(unittest.TestCase):
                     "same_run_host_binary_sha256_verified": True,
                     "host_binary_sha256": BINARY,
                 })
+
+    def make_guest_attempt_manifests(self):
+        data = {"schema": "vh-map02-presubmit-guest-nro/v1",
+                "source_sha": SOURCE, "run_id": RUN, "attempt": 1}
+        nro = self.root / "map02-audout-presubmit-research-nro"
+        nro.mkdir()
+        write_json(nro / "manifest.json", data)
+        for ms in (21, 22):
+            for repeat in (1, 2, 3):
+                write_json(self.trial(ms, repeat) / "manifest.json", data)
 
     def trial(self, ms=21, repeat=1):
         return self.root / f"map02-presubmit-nexium-guest-proof-{ms}-r{repeat}"
@@ -102,6 +112,24 @@ class OneNeXiumBinaryTests(unittest.TestCase):
         self.change_json(path, "upstream_source_commit_verified", True)
         with self.assertRaisesRegex(ValueError, "upstream"):
             verify_host_links(self.root, SOURCE, RUN)
+
+    def test_all_seven_same_attempt_manifests_accepted(self):
+        self.make_guest_attempt_manifests()
+        self.assertEqual(verify_evidence_attempts(self.root, SOURCE, RUN), 1)
+
+    def test_reused_old_attempt_guest_archive_rejected(self):
+        self.make_guest_attempt_manifests()
+        self.change_json(self.trial(21, 3) / "manifest.json", "attempt", 2)
+        with self.assertRaisesRegex(ValueError, "Cross-attempt"):
+            verify_evidence_attempts(self.root, SOURCE, RUN)
+
+    def test_reused_old_attempt_nro_archive_rejected(self):
+        self.make_guest_attempt_manifests()
+        self.change_json(self.root /
+                         "map02-audout-presubmit-research-nro" /
+                         "manifest.json", "attempt", 2)
+        with self.assertRaisesRegex(ValueError, "Cross-attempt"):
+            verify_evidence_attempts(self.root, SOURCE, RUN)
 
     def test_missing_source_identity_rejected(self):
         self.change_json(self.trial(21, 2) / "pulse-client-trial.json",
