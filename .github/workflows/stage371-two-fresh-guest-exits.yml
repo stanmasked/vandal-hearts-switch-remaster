@@ -91,7 +91,10 @@ jobs:
           if-no-files-found: error
   two-original-exits:
     name: Run two separate NeXium guest exits and audit original CSV files
-    runs-on: ubuntu-26.04
+    # Independent runner-compatibility diagnostic: same guest NRO/capture logic.
+    # This PR tests whether ubuntu-24.04 can run NeXium while the original
+    # ubuntu-26.04 guest job remains queued. It does not alter game/PCM code.
+    runs-on: ubuntu-24.04
     needs: build-current-nro
     timeout-minutes: 18
     steps:
