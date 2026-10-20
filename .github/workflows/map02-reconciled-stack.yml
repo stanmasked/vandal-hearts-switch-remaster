@@ -151,17 +151,17 @@ jobs:
           EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          test "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)" = "$EXPECTED_SOURCE"
           python3 tools/map02_candidate_receipt.py create \
             --nro build/vandal-hearts-prototype.nro \
             --receipt build/map02-candidate-receipt.json \
             --source-commit "$EXPECTED_SOURCE" \
-            --source-tree "$(git rev-parse HEAD^{tree})"
+            --source-tree "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD^{tree})"
           python3 tools/map02_candidate_receipt.py verify \
             --nro build/vandal-hearts-prototype.nro \
             --receipt build/map02-candidate-receipt.json \
             --source-commit "$EXPECTED_SOURCE" \
-            --source-tree "$(git rev-parse HEAD^{tree})"
+            --source-tree "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD^{tree})"
       - uses: actions/upload-artifact@v4
         with:
           name: map02-reconciled-stack-switch-nro
