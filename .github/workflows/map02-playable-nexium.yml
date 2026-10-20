@@ -7,6 +7,7 @@ on:
       - 'source/map02_battle_fixture.h'
       - 'source/main.c'
       - 'tests/check_map02_battle_nexium.py'
+      - 'tests/test_check_map02_battle_nexium.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -67,6 +68,11 @@ jobs:
           emu_bin="$(find /tmp/nexium -type f -executable \( -name nexium -o -name nexium-gui \) -print -quit)"
           test -n "$emu_bin"
           echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
+      - name: Self-test battle screenshot oracle on deliberately altered images
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_check_map02_battle_nexium.py' -v
       - name: Capture real MAP02 mode, allied move, enemy turn and reset
         shell: bash
         run: |
