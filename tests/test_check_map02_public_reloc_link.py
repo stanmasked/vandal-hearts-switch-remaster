@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 from tools.check_map02_public_reloc_link import (
     REQUIRED_SYMBOLS, inspect_relocatable, make_inventory, main,
-    stable_relocatable_output,
+    stable_relocatable_output, stable_object_input,
 )
 
 
@@ -106,6 +106,61 @@ class PublicRelocatableELFTests(unittest.TestCase):
         invalid.write_bytes(b"invalid-original-code")
         with self.assertRaisesRegex(ValueError, "relocatable ELF"):
             inspect_relocatable(invalid)
+
+    def test_input_objects_allow_normal_read_only_build_permissions(self):
+        obj = self.compile(self.all_exports(), name="input-good")
+        obj.chmod(0o644)
+        initial = stable_object_input(obj)
+        self.assertEqual(initial[0], hashlib.sha256(obj.read_bytes()).hexdigest())
+        self.assertEqual(initial, stable_object_input(obj))
+
+    def test_input_objects_detect_identical_byte_inode_replacement(self):
+        obj = self.compile(self.all_exports(), name="input-swapped")
+        obj.chmod(0o644)
+        original = stable_object_input(obj)
+        replacement = self.root / "identical-object.o"
+        replacement.write_bytes(obj.read_bytes())
+        replacement.chmod(0o644)
+        os.replace(replacement, obj)
+        self.assertNotEqual(original, stable_object_input(obj))
+
+    def test_input_objects_reject_unsafe_permissions_and_hardlinks(self):
+        obj = self.compile(self.all_exports(), name="input-unsafe")
+        obj.chmod(0o666)
+        with self.assertRaisesRegex(ValueError, "untrusted"):
+            stable_object_input(obj)
+        obj.chmod(0o644)
+        linked = self.root / "input-hardlink.o"
+        os.link(obj, linked)
+        with self.assertRaisesRegex(ValueError, "untrusted"):
+            stable_object_input(obj)
+
+    def test_input_objects_reject_symlink_and_midread_inode_swap(self):
+        obj = self.compile(self.all_exports(), name="input-race")
+        obj.chmod(0o644)
+        symlink = self.root / "input-symlink.o"
+        symlink.symlink_to(obj)
+        with self.assertRaises((ValueError, OSError)):
+            stable_object_input(symlink)
+        replacement = self.root / "input-replacement.o"
+        replacement.write_bytes(obj.read_bytes())
+        replacement.chmod(0o644)
+        real_read = os.read
+        swapped = False
+
+        def read_swap(fd, count):
+            nonlocal swapped
+            data = real_read(fd, count)
+            if data and not swapped:
+                os.replace(replacement, obj)
+                swapped = True
+            return data
+
+        with patch("tools.check_map02_public_reloc_link.os.read",
+                   side_effect=read_swap):
+            with self.assertRaisesRegex(ValueError, "identity changed"):
+                stable_object_input(obj)
+        self.assertTrue(swapped)
 
     def test_partial_elf_double_read_proof_is_stable(self):
         obj = self.compile(self.all_exports(), name="stable")
