@@ -1,0 +1,54 @@
+name: MAP02 full-size synthetic disc staging
+
+on:
+  push:
+    branches:
+      - 'work/map02-fullsize-synthetic-disc-staging'
+    paths:
+      - '.github/workflows/map02-fullsize-synthetic-disc-staging.yml'
+      - 'tests/test_stage_map02_fullsize_synthetic.py'
+      - 'tools/stage_map02_private_disc.py'
+  pull_request:
+    paths:
+      - '.github/workflows/map02-fullsize-synthetic-disc-staging.yml'
+      - 'tests/test_stage_map02_fullsize_synthetic.py'
+      - 'tools/stage_map02_private_disc.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  full-size-private-staging:
+    name: Full-length synthetic BIN / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15-intel]
+    steps:
+      - name: Checkout source only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify test scope and available disk
+        run: |
+          python3 - <<'PY'
+          from tools.check_map02_local_disc_receipt import RAW_BYTES
+          assert RAW_BYTES == 664849248
+          assert RAW_BYTES % 2352 == 0
+          print("synthetic bytes:", RAW_BYTES)
+          print("no original BIN or game data needed")
+          PY
+          df -h .
+      - name: Independently compare full-sized synthetic source and staged SHA-256
+        run: |
+          python3 -m unittest -v tests.test_stage_map02_fullsize_synthetic
