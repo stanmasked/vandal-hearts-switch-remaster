@@ -256,6 +256,66 @@ def make_inventory(upstream, bundle, *, make="make"):
     return [line.split() for line in lines]
 
 
+def function_code_sha256(path, symbols, *, pass_fds=()):
+    """Hash exact original ELF FUNC machine bytes in executable sections.
+
+    The ELF symbol points to an in-section offset (ET_REL); GNU readelf's
+    section file offset identifies the actual bytes. The caller passes
+    kernel-sealed input/output paths, not mutable original source paths.
+    """
+    section_result = subprocess.run(
+        ["readelf", "-W", "-S", str(path)], capture_output=True,
+        text=True, timeout=30, check=False, pass_fds=pass_fds)
+    symbol_result = subprocess.run(
+        ["readelf", "-W", "-s", str(path)], capture_output=True,
+        text=True, timeout=30, check=False, pass_fds=pass_fds)
+    if section_result.returncode or symbol_result.returncode:
+        raise ValueError("original PC ELF code fingerprint metadata unavailable")
+    sections = {}
+    for line in section_result.stdout.splitlines():
+        matched = re.match(r"^\\s*\\[\\s*(\\d+)\\]\\s+(.+)$", line)
+        if not matched:
+            continue
+        cells = matched.group(2).split()
+        if (len(cells) >= 7 and cells[1] == "PROGBITS"
+                and "A" in cells[6] and "X" in cells[6]
+                and "W" not in cells[6]):
+            try:
+                sections[matched.group(1)] = (
+                    int(cells[2], 16), int(cells[3], 16),
+                    int(cells[4], 16))
+            except ValueError:
+                raise ValueError("original PC ELF code fingerprint section invalid") from None
+
+    definitions = {name: [] for name in symbols}
+    for line in symbol_result.stdout.splitlines():
+        cells = line.split()
+        if (len(cells) >= 8 and cells[0].endswith(":")
+                and cells[0][:-1].isdigit() and cells[7] in definitions):
+            definitions[cells[7]].append(cells)
+    with open(path, "rb") as stream:
+        raw = stream.read()
+    fingerprints = {}
+    for name, entries in definitions.items():
+        if (len(entries) != 1
+                or entries[0][3:5] != ["FUNC", "GLOBAL"]
+                or entries[0][6] not in sections):
+            raise ValueError("original PC ELF code fingerprint FUNC invalid")
+        sym = entries[0]
+        section_address, file_offset, section_size = sections[sym[6]]
+        try:
+            start = int(sym[1], 16) - section_address
+            size = int(sym[2], 16) if sym[2].startswith("0x") else int(sym[2], 10)
+        except ValueError:
+            raise ValueError("original PC ELF code fingerprint range invalid") from None
+        if (start < 0 or size < 1 or start + size > section_size
+                or file_offset + section_size > len(raw)):
+            raise ValueError("original PC ELF code fingerprint range invalid")
+        code = raw[file_offset + start:file_offset + start + size]
+        fingerprints[name] = hashlib.sha256(code).hexdigest()
+    return fingerprints
+
+
 def inspect_sealed_export_origins(names, sealed, *, with_sizes=False):
     """Attribute each required strong code export to exactly one sealed .o.
 
@@ -473,6 +533,15 @@ def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
             raise ValueError("original PC objects changed while sealing inputs")
         export_origins, export_source_sizes = inspect_sealed_export_origins(
             names, sealed, with_sizes=True)
+        source_code_hashes = {}
+        for source, fd in zip(names, sealed):
+            owned = [name for name, owner in export_origins.items()
+                     if owner == source]
+            if owned:
+                source_code_hashes.update(function_code_sha256(
+                    f"/proc/self/fd/{fd}", owned, pass_fds=(fd,)))
+        if set(source_code_hashes) != set(REQUIRED_SYMBOLS):
+            raise ValueError("original CD/GPU sealed machine-code fingerprints incomplete")
         combined = subprocess.run(
             [linker, "-r", "-o", str(output),
              *(f"/proc/self/fd/{fd}" for fd in sealed)],
@@ -512,6 +581,11 @@ def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
         checked = inspect_relocatable(
             f"/proc/self/fd/{witness_fd}", pass_fds=(witness_fd,),
             expected_source_sizes=export_source_sizes)
+        linked_code_hashes = function_code_sha256(
+            f"/proc/self/fd/{witness_fd}", REQUIRED_SYMBOLS,
+            pass_fds=(witness_fd,))
+        if linked_code_hashes != source_code_hashes:
+            raise ValueError("original CD/GPU linked ELF code bytes differ from sealed inputs")
     finally:
         os.close(witness_fd)
     stable_relocatable_output(output, expected=output_proof)
@@ -529,6 +603,10 @@ def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
         "ordered_object_input_manifest_sha256": input_manifest_sha256,
         "verified_original_export_input_owners": export_origins,
         "original_cd_gpu_source_function_sizes_matched": True,
+        "original_cd_gpu_machine_code_bytes_matched": True,
+        "ordered_original_function_code_sha256": hashlib.sha256(json.dumps(
+            source_code_hashes, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")).hexdigest(),
         "relocatable_elf_sha256": output_proof[0],
         **checked,
         "fully_linked_game_executable": False,
