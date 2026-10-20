@@ -63,6 +63,39 @@ proves the original capture's source/run identity.
 
 The related negative-control tests execute in the Stage368 workflow.
 
+### Integrated original NeXium capture path
+
+The existing [emulator-smoke workflow](../.github/workflows/emulator-smoke.yml)
+now executes a separate Stage368 audit **after** the established Stage351
+and Stage357 original guest source verifications. The wrapper
+`tools/audit_nexium_stage368_attested_guest.py` requires:
+
+- A single isolated NeXium SD root tied to this **same** GitHub run;
+- The current NRO preflight's exact Git SHA, run ID, attempt and NRO SHA;
+- Previously independently verified and byte-preserved original
+  Stage351 and Stage357 CSV receipts;
+- Exact SHA-256 identity of the original Stage351/357 files in the
+  same directory as the newly added Stage368 descriptor source;
+- Strict Stage368 canonical row ordering, software release-count
+  consistency, and raw Result agreement with Stage357.
+
+Only a verified current-run source emits
+`STAGE368_SAME_RUN_ORIGINAL_GUEST_WAIT_DESCRIPTOR_BOUND_TO_351_357_NRO`.
+The new original CSV is copied byte-for-byte to
+`runtime-evidence/audio-exit-wait-descriptor-000.csv`, and the
+source-bound JSON receipt contains all three SHA-256 digests. Both
+are preserved by the pre-existing runtime evidence artifact upload.
+The wrapper's six adversarial tests reject forged prior receipt
+digests, swapped original bytes, wrong NRO source/run/attempt and
+false kernel-timeout causal claims.
+
+The [integrated runtime run #39388027581](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39388027581)
+was queued at the time this capture path was added. This is therefore
+**an implemented verification path, not yet a proven genuine new
+NeXium observation**. If its earlier mandatory host recorder or guest
+source auditors fail, Stage368 must not be promoted to verified.
+
+
 The new schema is **not proof of a real captured `0xEA01` run**.
 Independent NeXium evidence from a newly built NRO must still establish
 whether a real timed-out tail returns zero or nonzero descriptors and
