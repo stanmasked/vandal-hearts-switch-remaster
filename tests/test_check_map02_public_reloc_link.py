@@ -18,7 +18,7 @@ from unittest.mock import patch
 from tools.check_map02_public_reloc_link import (
     REQUIRED_SYMBOLS, inspect_relocatable, make_inventory, main,
     stable_relocatable_output, stable_object_input, sealed_input_fd,
-    audit_public_link, BUILD,
+    audit_public_link, BUILD, OUTPUT,
 )
 
 
@@ -235,6 +235,8 @@ class PublicRelocatableELFTests(unittest.TestCase):
         }
         real_run = subprocess.run
         observed = []
+        inspectors = []
+        witness_fds = []
 
         def record_link(command, *args, **kwargs):
             if command[0] == "ld" and "-r" in command:
@@ -250,6 +252,14 @@ class PublicRelocatableELFTests(unittest.TestCase):
                     with self.assertRaises(OSError):
                         os.write(fd, b"invalid")
                 observed.append(True)
+            if command[0] in ("readelf", "nm"):
+                fds = kwargs.get("pass_fds", ())
+                self.assertEqual(len(fds), 1)
+                self.assertEqual(command[-1], f"/proc/self/fd/{fds[0]}")
+                self.assertTrue(fcntl.fcntl(fds[0], fcntl.F_GET_SEALS)
+                                & fcntl.F_SEAL_WRITE)
+                witness_fds.append(fds[0])
+                inspectors.append(command[0])
             return real_run(command, *args, **kwargs)
 
         with patch("tools.check_map02_public_reloc_link.preflight"), patch(
@@ -262,6 +272,8 @@ class PublicRelocatableELFTests(unittest.TestCase):
             report = audit_public_link(root, self.root / "bundle-unused",
                                        self.root / "sealed-link-result")
         self.assertEqual(observed, [True])
+        self.assertEqual(inspectors, ["readelf", "nm", "nm"])
+        self.assertEqual(len(set(witness_fds)), 1)
         self.assertEqual(report["public_game_object_count"], 1)
         self.assertEqual(report["backend_and_observer_object_count"], 1)
         self.assertEqual(report["total_compiled_elf_objects"], 2)
@@ -311,6 +323,61 @@ class PublicRelocatableELFTests(unittest.TestCase):
                 audit_public_link(root, self.root / "bundle-unused",
                                   self.root / "sealed-raced-link")
         self.assertEqual(changed, [True])
+
+    def test_sealed_symbol_inspection_uses_one_immutable_deleted_file(self):
+        obj = self.compile(self.all_exports(), name="symbol-snapshot")
+        obj.chmod(0o600)
+        proof = stable_relocatable_output(obj)
+        fd = sealed_input_fd(obj, proof, index=2)
+        try:
+            obj.unlink()
+            result = inspect_relocatable(
+                f"/proc/self/fd/{fd}", pass_fds=(fd,))
+            self.assertEqual(result["original_cd_gpu_and_vram_exports_verified"],
+                             len(REQUIRED_SYMBOLS))
+        finally:
+            os.close(fd)
+
+    def test_output_replaced_after_readelf_before_nm_fails_closed(self):
+        root, game, gpu = self.prepare_synthetic_original_objects()
+        files = [[f"{BUILD}/original-cd.o"], [f"{BUILD}/original-gpu.o"]]
+        audited = {
+            "original_game_translation_units_compiled": 1,
+            "native_backend_and_observer_objects_compiled": 1,
+        }
+        output_dir = self.root / "replacement-during-symbol-audit"
+        real_run = subprocess.run
+        readers = []
+        swapped = False
+
+        def swap_after_header(command, *args, **kwargs):
+            nonlocal swapped
+            if command[0] in ("readelf", "nm"):
+                fds = kwargs.get("pass_fds", ())
+                self.assertEqual(len(fds), 1)
+                self.assertEqual(command[-1], f"/proc/self/fd/{fds[0]}")
+                readers.append(command[0])
+            result = real_run(command, *args, **kwargs)
+            if command[0] == "readelf" and not swapped:
+                linked = output_dir / OUTPUT
+                foreign = output_dir / "same-byte-foreign-inode.o"
+                foreign.write_bytes(linked.read_bytes())
+                foreign.chmod(0o600)
+                os.replace(foreign, linked)
+                swapped = True
+            return result
+
+        with patch("tools.check_map02_public_reloc_link.preflight"), patch(
+                "tools.check_map02_public_reloc_link.audit_objects",
+                return_value=audited), patch(
+                "tools.check_map02_public_reloc_link.make_inventory",
+                return_value=files), patch(
+                "tools.check_map02_public_reloc_link.subprocess.run",
+                side_effect=swap_after_header):
+            with self.assertRaisesRegex(ValueError, "differs from linked proof"):
+                audit_public_link(root, self.root / "bundle-unused", output_dir)
+        self.assertTrue(swapped)
+        self.assertEqual(readers, ["readelf", "nm", "nm"])
 
     def test_partial_elf_double_read_proof_is_stable(self):
         obj = self.compile(self.all_exports(), name="stable")
