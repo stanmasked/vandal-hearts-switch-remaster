@@ -427,9 +427,9 @@ class PrivateLocalCopyTests(unittest.TestCase):
     def test_mounted_cue_inplace_same_length_edit_during_readback_refuses_publication(self):
         real_verify = staging._verify_staged_copy
         original = self.cue.read_bytes()
-        self.assertTrue(original.endswith(b"\\r\\n"))
+        self.assertTrue(original.endswith(b"\r\n"))
         # A second trailing newline preserves a valid CUE grammar and size.
-        changed = original[:-2] + b"\\n\\n"
+        changed = original[:-2] + b"\n\n"
         self.assertEqual(len(changed), len(original))
 
         def edit_after_readback(*args, **kwargs):
