@@ -629,6 +629,23 @@ class PublicRelocatableELFTests(unittest.TestCase):
                         {"CdRead": (b"\x55\xc3", bad_mask)},
                         {"CdRead": (b"\x55\xc3", bad_mask)})
 
+    def test_normalized_digest_binds_exact_relocation_byte_mask(self):
+        # Both normalized images are identical: the newly excluded byte
+        # is already zero. A code-only digest would silently collide.
+        payload = bytes((0x90, 0x00, 0xc3))
+        no_reloc = {"CdRead": (payload, frozenset())}
+        zero_reloc = {"CdRead": (payload, frozenset({1}))}
+        plain = compare_function_images(no_reloc, no_reloc)
+        masked = compare_function_images(zero_reloc, zero_reloc)
+        self.assertNotEqual(
+            plain["source_link_nonrelocated_function_code_sha256"],
+            masked["source_link_nonrelocated_function_code_sha256"])
+        self.assertEqual(plain["source_link_function_code_bytes_checked"], 3)
+        self.assertEqual(masked["source_link_function_code_bytes_checked"], 3)
+        self.assertEqual(plain["source_link_relocation_bytes_excluded"], 0)
+        self.assertEqual(masked["source_link_relocation_bytes_excluded"], 1)
+        self.assertEqual(masked, compare_function_images(zero_reloc, zero_reloc))
+
     def test_relocation_mask_cannot_cover_entire_function(self):
         with self.assertRaisesRegex(ValueError, "no unrelocated function code"):
             compare_function_images(
