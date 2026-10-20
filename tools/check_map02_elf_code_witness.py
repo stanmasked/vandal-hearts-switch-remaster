@@ -114,6 +114,11 @@ def function_images(fd, names):
         if section[9] != relfmt.size or section[5] % relfmt.size:
             raise ValueError("original PC ELF witness malformed relocation table")
         target = section[7]  # sh_info: section affected by relocations
+        # Validate sh_info before filtering to required functions. A forged
+        # out-of-range target previously made a genuine .rela.text disappear
+        # from the witness, silently clearing its relocation byte mask.
+        if target >= shnum:
+            raise ValueError("original PC ELF witness relocation target section invalid")
         relevant = {name: row for name, row in found.items() if row[1] == target}
         if not relevant:
             continue
