@@ -1,0 +1,31 @@
+name: MAP02 v192 native PCSX process exit status bound to SHA-256 private logs
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v192-native-exit-log-receipts.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/check_map02_v192_native_process_exits.py'
+      - 'tests/test_map02_v192_native_process_exits.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  process-exit-model:
+    name: Native process exit and log SHA identity model (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject altered private log digests and wrong native exit status
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/check_map02_v192_native_process_exits.py tests/test_map02_v192_native_process_exits.py
+          python3 -m unittest discover -s tests -p 'test_map02_v192_native_process_exits.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v191_native_phase_markers.py' -v
+          echo 'VH192_INDEPENDENT_EXIT_RECEIPT_PASS modes=10 exits=10 hashes=10 original_retail_executed=0'
