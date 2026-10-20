@@ -34,11 +34,9 @@ def verify(folder: Path):
     for y in range(3):
         if tile(three, HERO, 0, y) < 500 or tile(three, ENEMY, 1, y) < 500:
             raise ValueError("3v3 scene has missing active row")
-        if tile(one, HERO, 0, y) < 500 and y > 0:
-            raise ValueError("1v4 has a forged hidden allied actor")
     if tile(three, HERO, 0, 3) > 100 or tile(three, ENEMY, 1, 3) > 100:
         raise ValueError("3v3 still renders padded fourth slots")
-    if any(tile(one, HERO, 0, y) > 100 for y in range(1, 4)):
+    if tile(one, HERO, 0, 0) < 500 or any(\n            tile(one, HERO, 0, y) > 100 for y in range(1, 4)):
         raise ValueError("1v4 still renders padded allied slots")
     if not (tile(damaged, ENEMY, 1, 0) < 100 and
             tile(damaged, ACTED, 0, 0) > 500 and
