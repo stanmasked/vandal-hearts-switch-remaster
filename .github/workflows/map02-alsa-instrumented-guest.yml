@@ -515,14 +515,6 @@ jobs:
           trap - EXIT
           test -s "$ROOT/presubmit-virtual-sink-s16le-48k.pcm"
           pactl list sinks > "$ROOT/pulse-sinks-after.txt" || true
-      - name: Independently decode ALSA hw params and bounded write durations
-        shell: bash
-        if: always()
-        run: |
-          set -euo pipefail
-          python3 tools/audit_map02_alsa_host_trace.py \
-            --trace runtime-evidence/host-alsa-events.csv \
-            --output runtime-evidence/host-alsa-trace-report.json
       - name: Report raw monitor signal independently of guest optical state
         shell: bash
         if: always()
@@ -645,6 +637,14 @@ jobs:
               print('Guest multi-evidence classification: '+verdict,file=stream)
               print('(observational; does not override the strict optical test)',file=stream)
           PY
+      - name: Independently decode ALSA hw params and bounded write durations
+        shell: bash
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 tools/audit_map02_alsa_host_trace.py \
+            --trace runtime-evidence/host-alsa-events.csv \
+            --output runtime-evidence/host-alsa-trace-report.json
       - name: Archive actual guest evidence even if decode fails
         if: always()
         uses: actions/upload-artifact@v4
