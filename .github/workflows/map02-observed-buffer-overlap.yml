@@ -1,0 +1,125 @@
+name: MAP02 measured Pulse buffers against same-NeXium guest outcome
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-observed-buffer-overlap.yml'
+      - 'tools/audit_map02_observed_buffer_ordering.py'
+      - 'tests/test_audit_map02_observed_buffer_ordering.py'
+      - 'docs/MAP02_OBSERVED_BUFFER_OVERLAP.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  VH_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_ORIGINAL_RUN: '39411672432'
+  VH_ORIGINAL_SOURCE: 'b6f93340a95506e783303311881ea1c6f58ec24a'
+
+jobs:
+  host-buffer-ordering-audit:
+    name: Reparse six raw Pulse sink-input samples without new NeXium workload
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_SOURCE_HEAD }}
+          fetch-depth: 0
+      - name: Verify fixed source ancestor and host-only changed files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_SOURCE_HEAD"
+          python3 - <<'PY'
+          import subprocess
+          allowed={
+              ".github/workflows/map02-observed-buffer-overlap.yml",
+              "tools/audit_map02_observed_buffer_ordering.py",
+              "tests/test_audit_map02_observed_buffer_ordering.py",
+              "docs/MAP02_OBSERVED_BUFFER_OVERLAP.md"}
+          base="b6f93340a95506e783303311881ea1c6f58ec24a"
+          changed=set(subprocess.check_output(
+              ["git","diff","--name-only",base,"HEAD"],text=True).splitlines())
+          assert changed and changed<=allowed, sorted(changed-allowed)
+          print("Confirmed host-only research child:", sorted(changed))
+          PY
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install optical PNG dependency
+        run: python3 -m pip install --disable-pip-version-check pillow
+      - name: Reject forged Pulse samples and fake 21/22ms cutoff claims
+        run: python3 -m unittest discover -s tests -p 'test_audit_map02_observed_buffer_ordering.py' -v
+      - name: Download frozen exact-NeXium same-run evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'stanmasked/vandal-hearts-switch-remaster'
+          gh run download "$VH_ORIGINAL_RUN" \
+            --repo "$GITHUB_REPOSITORY" --dir frozen-stage265
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path("frozen-stage265")
+          required={"map02-audout-presubmit-research-nro",
+                    "map02-nexium-once-binary",
+                    "map02-stage265-six-host-identity"}
+          required|={
+              f"map02-presubmit-nexium-guest-proof-{hint}-r{rep}"
+              for hint in (21,22) for rep in (1,2,3)
+          }
+          names={p.name for p in root.iterdir() if p.is_dir()}
+          assert names==required,(sorted(required-names),sorted(names-required))
+          print("Nine original same-run artifacts available and uniquely named")
+          PY
+      - name: Re-parse original raw ALSA sink-input snapshots against original CRC/PCM
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_map02_observed_buffer_ordering.py \
+            --root frozen-stage265 \
+            --run-id "$VH_ORIGINAL_RUN" \
+            --source-sha "$VH_ORIGINAL_SOURCE" \
+            --output stage269-observed-buffer-overlap.json
+      - name: Publish actual samples and observational limits
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          file=Path("stage269-observed-buffer-overlap.json")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as summary:
+              print("### MAP02 Stage269 — observed host buffer ordering",file=summary)
+              if not file.is_file():
+                  print("**UNVERIFIED:** parser never executed.",file=summary)
+              else:
+                  r=json.loads(file.read_text())
+                  print("Result: "+r["result"],file=summary)
+                  if r["result"]=="SIX_TRIAL_HOST_BUFFER_OBSERVATIONS_INDEPENDENTLY_REDECODED":
+                      print("Same NeXium executable SHA-256: "+r["nexium_host_executable_sha256"],file=summary)
+                      print("| Requested hint | Repeat | Raw observed Pulse buffer µs | audout entries/returns | PCM16 nonzero |",file=summary)
+                      print("|---|---:|---:|---:|---:|",file=summary)
+                      for x in r["trials"]:
+                          print(f'| {x["hint_ms"]} ms | {x["repeat"]} | '
+                                f'{x["pulse_buffer_during_us"]} | '
+                                f'{x["audout_call_entries"]}/{x["audout_call_returns"]} | '
+                                f'{x["virtual_monitor_pcm_nonzero_samples"]} |',file=summary)
+                      print("\nAn exact monotonic cutoff in the six **sampled** "
+                            "Pulse buffer values cannot separate observed guest success "
+                            "from failure. This is **not** proof of CPAL period, "
+                            "driver error, infinite audout deadlock, or "
+                            "physical Switch audio.",file=summary)
+                  else:
+                      print("**No successful conclusion:** "+r.get("reason",""),file=summary)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage269-observed-pulse-buffer-ordering
+          path: stage269-observed-buffer-overlap.json
+          if-no-files-found: warn
