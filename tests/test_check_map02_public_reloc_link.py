@@ -366,13 +366,13 @@ class PublicRelocatableELFTests(unittest.TestCase):
 
     def test_real_relocatable_link_matches_nonrelocated_code(self):
         first = self.compile(
-            "extern int ext(int);\\n"
-            "int LoadCdFile(void) { return ext(3); }\\n"
-            "int CdRead(void) { return ext(7); }\\n",
+            "extern int ext(int);\n"
+            "int LoadCdFile(void) { return ext(3); }\n"
+            "int CdRead(void) { return ext(7); }\n",
             name="reloc-code-source")
         second = self.compile(
-            "int ext(int v) { return v + 2; }\\n"
-            "void DrawOTag(void) { (void)ext(4); }\\n",
+            "int ext(int v) { return v + 2; }\n"
+            "void DrawOTag(void) { (void)ext(4); }\n",
             name="reloc-code-backend")
         combined = self.root / "reloc-code-combined.o"
         subprocess.run(["ld", "-r", "-o", str(combined),
