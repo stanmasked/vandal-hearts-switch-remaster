@@ -64,14 +64,14 @@ def require_macos_deployment_target(target):
 
 def macho_minos_is_target(otool_output: str, target: str) -> bool:
     """Parse only executable Mach-O deployment load commands, not text elsewhere."""
-    for section in re.split(r"(?m)^Load command [0-9]+\\s*$", otool_output):
-        if re.search(r"(?m)^\\s*cmd LC_BUILD_VERSION\\s*$", section):
-            if re.search(r"(?m)^\\s*minos " + re.escape(target) +
-                         r"(?:\\.0)?\\s*$", section):
+    for section in re.split(r"(?m)^Load command [0-9]+\s*$", otool_output):
+        if re.search(r"(?m)^\s*cmd LC_BUILD_VERSION\s*$", section):
+            if re.search(r"(?m)^\s*minos " + re.escape(target) +
+                         r"(?:\.0)?\s*$", section):
                 return True
-        if re.search(r"(?m)^\\s*cmd LC_VERSION_MIN_MACOSX\\s*$", section):
-            if re.search(r"(?m)^\\s*version " + re.escape(target) +
-                         r"(?:\\.0)?\\s*$", section):
+        if re.search(r"(?m)^\s*cmd LC_VERSION_MIN_MACOSX\s*$", section):
+            if re.search(r"(?m)^\s*version " + re.escape(target) +
+                         r"(?:\.0)?\s*$", section):
                 return True
     return False
 
