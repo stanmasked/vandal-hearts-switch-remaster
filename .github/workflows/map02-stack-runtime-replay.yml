@@ -1,0 +1,134 @@
+name: MAP02 integrated NRO dual NeXium gameplay proof
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-stack-runtime-replay.yml'
+      - 'tests/test_map02_stacked_integration.c'
+      - 'tools/audit_map02_stack.py'
+      - 'tests/run_map02_nexium_guard_boundary.py'
+      - 'tests/test_map02_nexium_guard_boundary_oracle.py'
+      - 'tests/run_map02_nexium_guard_hud.py'
+      - 'tests/run_map02_nexium_4v4.py'
+      - 'source/main.c'
+      - 'source/map02_guard_hud.h'
+      - 'source/map02_guard8.h'
+      - 'source/map02_battle8.h'
+      - 'source/map02_roster8.h'
+      - 'Makefile'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  real-switch-nro:
+    name: Build single audited-stack tactical NRO
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Compile tactical prototype and verify NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/opt/devkitpro/devkitA64/bin:/opt/devkitpro/tools/bin:$PATH"
+          python3 -m py_compile tests/run_map02_nexium_guard_boundary.py tests/test_map02_nexium_guard_boundary_oracle.py tests/run_map02_nexium_guard_hud.py
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -pedantic tests/test_map02_stacked_integration.c -o /tmp/map02-integrated-check
+          /tmp/map02-integrated-check | tee /tmp/map02-integrated-check.log
+          grep -Fx 'VH_MAP02_STACK_NATIVE_PASS rosters=6 bow=1 medic=1 guard=1 original_scene=1 zero_retail=1' /tmp/map02-integrated-check.log
+          make test
+          make test-sanitize
+          make verify-nro
+          test -s build/vandal-hearts-prototype.nro
+      - uses: actions/upload-artifact@v4
+        with:
+          name: map02-stack-dual-neXium-nro
+          path: build/vandal-hearts-prototype.nro
+          if-no-files-found: error
+
+  nexim-transition:
+    name: Same NRO: real guard HUD and roster-boundary replays
+    needs: real-switch-nro
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-guard-boundary-switch-nro
+          path: nros
+      - name: Install X11 Vulkan screenshot and Pillow dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl jq xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 libxkbcommon-x11-0 \
+            libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers
+      - name: Reject three forged screenshot sets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_map02_nexium_guard_boundary_oracle.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_guard_hud_oracle.py' -v
+          echo 'VH_MAP02_STACK_IMAGE_ORACLE_PASS boundary_negative=3 guard_hud_oracle=1 real_neXium_claim=0'
+      - name: Download SHA-pinned NeXium release archive
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="$(curl -fsSL --retry 3 --retry-all-errors -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+          asset_url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.id == 658656899 and .name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          test -n "$asset_url"
+          curl -fL --retry 3 --retry-all-errors "$asset_url" -o /tmp/nexium-linux.tar.gz
+          printf '%s  %s\n' 'c933fbbcf8d1b011de8d4a79c9d8eb55c0678a305947af9388ddb40ce5960a66' /tmp/nexium-linux.tar.gz | sha256sum -c -
+          mkdir -p /tmp/nexium
+          tar -xzf /tmp/nexium-linux.tar.gz -C /tmp/nexium
+          emu_bin="$(find /tmp/nexium -type f -executable \( -name nexium -o -name nexium-gui \) -print -quit)"
+          test -n "$emu_bin"
+          echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
+      - name: Replay guard HUD READY ARMED BLOCKED on the same binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p map02-guard-hud-evidence
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          timeout --kill-after=5s 180s xvfb-run -a -s "-screen 0 1280x720x24" \
+            python3 tests/run_map02_nexium_guard_hud.py \
+              --nro "$PWD/nros/vandal-hearts-prototype.nro" \
+              --evidence-dir map02-guard-hud-evidence \
+            | tee map02-guard-hud-evidence/result.log
+          grep -Fx 'VH_MAP02_NEXIUM_GUARD_HUD_PASS ready=1 armed=1 no_hit_expired=1 actual_hit_blocked=1 reduced_damage=1 reset=1 first_arena_hidden=1 legacy_preserved=1 retail=0' map02-guard-hud-evidence/result.log
+      - name: Drive actual guard, arena, roster and enemy-phase transitions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p map02-guard-boundary-evidence
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          timeout --kill-after=5s 180s xvfb-run -a -s "-screen 0 1280x720x24" \
+            python3 tests/run_map02_nexium_guard_boundary.py \
+              --nro "$PWD/nros/vandal-hearts-prototype.nro" \
+              --evidence-dir map02-guard-boundary-evidence \
+            | tee map02-guard-boundary-evidence/result.log
+          grep -Fx 'VH_MAP02_NEXIUM_GUARD_BOUNDARY_PASS arming=1 scene_reset=1 roster_3v3=1 roster_1v4_unavailable=1 roster_4v4_reset=1 legacy_exit=1 reentry=1 enemy_phase_no_leak=1 first_arena_preserved=1 retail=0' map02-guard-boundary-evidence/result.log
+      - name: Preserve emulator screenshots and diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-stack-dual-neXium-actual-frames
+          path: |
+            map02-guard-hud-evidence/
+            map02-guard-boundary-evidence/
+          if-no-files-found: warn
