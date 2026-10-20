@@ -2,8 +2,8 @@
 #define VH_MAP02_GUARD8_H
 
 /*
- * Independent asset-free support action: ally 3 (slot 2) guards itself
- * against the first adjacent enemy hit of the next opponent phase.
+ * Independent asset-free support action: ally 3 (slot 2) issues a team-wide one-hit shield
+ * against the first enemy attack of the next opponent phase.
  * This opt-in rule is wired only for optional expanded arena B.
  * Unarmed battle8, legacy MAP02, and existing archer/medic remain unchanged.
  */
@@ -50,7 +50,7 @@ static inline int vh_b8_guard_action(VhBattle8 *battle, VhGuard8 *guard) {
 
 /*
  * Unmodified deterministic enemy targeting/pathfinding, except one
- * guaranteed point of reduction for a hit against the guarding ally.
+ * guaranteed point of reduction against the first attacked ally.
  * Guard expires after this ONE enemy phase, including a no-hit phase.
  * Without an armed guard, defer exactly to the verified original AI.
  */
@@ -91,7 +91,7 @@ static inline int vh_b8_end_turn_guarded(VhBattle8 *battle, VhGuard8 *guard) {
         if (closest < 0) continue;
         if (shortest == 1) {
             int damage = battle->attack_damage;
-            if (!absorbed && closest == VH_B8_GUARD_SLOT) {
+            if (!absorbed) {
                 damage -= VH_B8_GUARD_REDUCTION;
                 absorbed = VH_B8_GUARD_REDUCTION;
             }
