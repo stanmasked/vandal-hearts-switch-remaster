@@ -17,7 +17,7 @@ import re
 import stat
 import subprocess
 
-from tools.check_map02_cycle_make_plan import BUILD, preflight
+from tools.check_map02_cycle_make_plan import BUILD, preflight, clean_make_environment
 from tools.check_map02_cycle_object_inventory import audit_objects
 
 OUTPUT = "map02-public-original-cd-gpu-reloc.o"
@@ -51,7 +51,8 @@ def make_inventory(upstream, bundle, *, make="make"):
          "--eval", eval_target, "map02-public-reloc-inventory",
          "BUILD_DIR=" + BUILD, "REGION=us", "NO_WEBP=1",
          "NO_HDVIDEO=1"],
-        cwd=pc, capture_output=True, text=True, timeout=60, check=False)
+        cwd=pc, env=clean_make_environment(), capture_output=True,
+        text=True, timeout=60, check=False)
     if result.returncode:
         raise ValueError("original public code Make inventory unavailable")
     lines = result.stdout.splitlines()
@@ -130,8 +131,9 @@ def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
     if combined.returncode:
         # This is an intentionally incomplete original code link; any
         # failure is a genuine issue, not proof of game correctness.
-        raise ValueError("original public CD/GPU combined ld -r link failed: " +
-                         combined.stderr[-1500:])
+        # Linker diagnostics can include private checkout locations and
+        # arguments. Keep stderr out of the public audit/CLI output.
+        raise ValueError("original public CD/GPU combined ld -r link failed")
     if output.is_symlink() or not output.is_file():
         raise ValueError("missing original public relocatable output")
     output.chmod(0o600)
@@ -167,8 +169,9 @@ def main():
         result = audit_public_link(
             args.pinned_original_pc_checkout, args.private_prepared_bundle,
             args.new_private_output_directory)
-    except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
-        parser.error(str(exc))
+    except (ValueError, OSError, subprocess.TimeoutExpired):
+        # Avoid exposing private paths via tool or filesystem exceptions.
+        parser.error("MAP02 public relocatable audit failed")
     print(json.dumps(result, sort_keys=True, indent=2))
 
 
