@@ -76,12 +76,20 @@ def inspect_relocatable(path):
         capture_output=True, text=True, timeout=30, check=False)
     if exports.returncode or undefined.returncode:
         raise ValueError("cannot examine linked original code symbols")
-    defined = [
-        line.split()[-1] for line in exports.stdout.splitlines()
-        if len(line.split()) >= 2
+    # nm -g --defined-only includes weak functions (W) and global data
+    # objects (B/D). Neither is a strong original C function export.
+    # A name match alone cannot prove the CD/GPU callback's code is present.
+    definitions = [
+        (fields[-1], fields[-2])
+        for line in exports.stdout.splitlines()
+        if len(fields := line.split()) >= 2
     ]
-    if any(defined.count(name) != 1 for name in REQUIRED_SYMBOLS):
-        raise ValueError("original CD/GPU or in-process observer export absent/duplicated")
+    if any(
+            sum(name == wanted and kind == "T"
+                for name, kind in definitions) != 1
+            or sum(name == wanted for name, _ in definitions) != 1
+            for wanted in REQUIRED_SYMBOLS):
+        raise ValueError("original CD/GPU or in-process observer strong code export absent/duplicated")
     if any(re.search(r"\bU\s+vh_map02_\w+", line)
            for line in undefined.stdout.splitlines()):
         raise ValueError("combined original PC code has unresolved MAP02 observer hooks")
