@@ -73,8 +73,8 @@ class PublicRelocatableELFTests(unittest.TestCase):
         # This is a real compiler-generated ET_REL; only names and
         # aggregate SHA-256 leave the test, not any retail image data.
         code = (self.all_exports() +
-                "\\nextern void private_runtime_stub(void);"
-                "\\nvoid caller(void) { private_runtime_stub(); }")
+                "\nextern void private_runtime_stub(void);"
+                "\nvoid caller(void) { private_runtime_stub(); }")
         obj = self.compile(code, "unresolved-real-elf")
         summary = inspect_relocatable(obj)
         self.assertEqual(
@@ -84,29 +84,29 @@ class PublicRelocatableELFTests(unittest.TestCase):
         self.assertEqual(
             summary["partial_elf_unresolved_strong_symbols_sha256"],
             summarize_partial_elf_undefined_symbols(
-                "                 U private_runtime_stub\\n")[
+                "                 U private_runtime_stub\n")[
                     "partial_elf_unresolved_strong_symbols_sha256"])
         self.assertNotIn("private_runtime_stub", json.dumps(summary))
 
     def test_undefined_symbol_summary_is_stable_and_excludes_weak(self):
-        lines = " U source_loader\\n w optional_foo\\n U alpha\\n U source_loader\\n"
+        lines = " U source_loader\n w optional_foo\n U alpha\n U source_loader\n"
         report = summarize_partial_elf_undefined_symbols(lines)
         reordered = summarize_partial_elf_undefined_symbols(
-            "U alpha\\n U source_loader\\n v optional_foo\\n")
+            "U alpha\n U source_loader\n v optional_foo\n")
         self.assertEqual(report, reordered)
         self.assertEqual(report["partial_elf_unresolved_strong_symbol_count"], 2)
         self.assertEqual(report["partial_elf_unresolved_weak_symbol_count"], 1)
         self.assertEqual(len(report["partial_elf_unresolved_strong_symbols_sha256"]), 64)
         self.assertNotIn("source_loader", json.dumps(report))
         changed = summarize_partial_elf_undefined_symbols(
-            "U alpha\\n U source_loader_new\\n w optional_foo\\n")
+            "U alpha\n U source_loader_new\n w optional_foo\n")
         self.assertNotEqual(
             report["partial_elf_unresolved_strong_symbols_sha256"],
             changed["partial_elf_unresolved_strong_symbols_sha256"])
 
     def test_undefined_symbol_summary_rejects_unexpected_nm_records(self):
         for invalid in ("U", "C forged_common", "U symbol trailing",
-                        "untrusted.o:\\n U symbol"):
+                        "untrusted.o:\n U symbol"):
             with self.subTest(invalid=invalid):
                 with self.assertRaisesRegex(ValueError, "unexpected undefined nm row"):
                     summarize_partial_elf_undefined_symbols(invalid)
