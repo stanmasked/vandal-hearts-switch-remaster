@@ -18,10 +18,12 @@ from tools.map02_local_capture_handoff import (
     SOURCE_BLOBS, _sha_file, verify_pinned_upstream,
 )
 from tools.prepare_map02_pcport import git_blob_sha1
+from tools.audit_map02_disc_prs import xa_edc
 
 SECTOR_RAW = 2352
 USER_DATA_START = 24
 USER_DATA_BYTES = 2048
+XA_EDC_OFFSET = 0x818
 PREGAP = 150
 BOOT_LBA_US = 23
 RESOURCE = "CDF_M_MAP02_PRS"
@@ -52,6 +54,20 @@ def _raw_sector(fd, lba):
         raise ValueError("MAP02 raw CD sector incomplete")
     if data[:12] != b"\x00" + b"\xff" * 10 + b"\x00":
         raise ValueError("MAP02 raw CD sector synchronization mismatch")
+    # A sync/MSF-valid sector may still be wrong-mode, truncated, or
+    # corrupted. The original CD source expects Mode 2 Form 1 user data.
+    # Check its duplicate XA subheader and recorded 32-bit EDC before
+    # interpreting either the boot marker or any MAP02 resource bytes.
+    if data[15] != 2:
+        raise ValueError("MAP02 raw CD sector is not Mode 2")
+    if data[16:20] != data[20:24]:
+        raise ValueError("MAP02 raw CD sector XA subheaders disagree")
+    if data[18] & 0x20:
+        raise ValueError("MAP02 raw CD sector uses unsupported Form 2")
+    stored_edc = int.from_bytes(data[XA_EDC_OFFSET:XA_EDC_OFFSET + 4], "little")
+    actual_edc = xa_edc(data[0x10:XA_EDC_OFFSET])
+    if stored_edc != actual_edc:
+        raise ValueError("MAP02 raw CD sector Mode 2 Form 1 EDC mismatch")
     frames = lba + PREGAP
     if data[12:15] != bytes((
         _bcd(frames // (75 * 60)),
