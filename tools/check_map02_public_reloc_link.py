@@ -9,6 +9,7 @@ vh_map02_ observer symbols, missing original API exports, source drift or a
 linked executable fail closed. No original image or private journal is used.
 """
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -88,6 +89,92 @@ def stable_object_input(path):
         return (hashes[0], anchor)
     finally:
         os.close(fd)
+
+
+def sealed_input_fd(path, expected, *, index):
+    """Read a verified original object into Linux kernel-sealed anonymous RAM.
+
+    GNU ld receives a /proc/self/fd handle, never the mutable upstream path.
+    An unsupported memfd/sealing environment must fail closed, not silently
+    fall back to unprotected filesystem inputs.
+    """
+    if not (hasattr(os, "memfd_create") and hasattr(os, "MFD_ALLOW_SEALING")
+            and all(hasattr(fcntl, name) for name in
+                    ("F_ADD_SEALS", "F_GET_SEALS", "F_SEAL_SEAL",
+                     "F_SEAL_GROW", "F_SEAL_SHRINK", "F_SEAL_WRITE"))):
+        raise ValueError("Linux sealed memory input required for original PC link")
+
+    source_fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    sealed_fd = None
+    try:
+        original = os.fstat(source_fd)
+        identity = (
+            original.st_dev, original.st_ino, original.st_uid,
+            stat.S_IMODE(original.st_mode), original.st_nlink,
+            original.st_size, original.st_mtime_ns, original.st_ctime_ns)
+        if identity != expected[1]:
+            raise ValueError("original PC object changed before sealed copy")
+        if (os.stat(path, follow_symlinks=False).st_ino != original.st_ino
+                or os.stat(path, follow_symlinks=False).st_dev != original.st_dev):
+            raise ValueError("original PC object pathname replaced before copy")
+
+        sealed_fd = os.memfd_create(
+            "vh-map02-verified-object-%03d" % index,
+            flags=os.MFD_ALLOW_SEALING | getattr(os, "MFD_CLOEXEC", 0))
+        hashed = hashlib.sha256()
+        count = 0
+        while True:
+            block = os.read(source_fd, 1024 * 1024)
+            if not block:
+                break
+            count += len(block)
+            hashed.update(block)
+            data = memoryview(block)
+            while data:
+                written = os.write(sealed_fd, data)
+                if written <= 0:
+                    raise ValueError("short sealed original PC object write")
+                data = data[written:]
+        if (count != original.st_size or hashed.hexdigest() != expected[0]
+                or (original.st_dev, original.st_ino, original.st_uid,
+                    stat.S_IMODE(original.st_mode), original.st_nlink,
+                    original.st_size, original.st_mtime_ns,
+                    original.st_ctime_ns) != expected[1]):
+            raise ValueError("original PC object bytes changed while sealing")
+        after = os.fstat(source_fd)
+        end_identity = (
+            after.st_dev, after.st_ino, after.st_uid,
+            stat.S_IMODE(after.st_mode), after.st_nlink,
+            after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+        named = os.stat(path, follow_symlinks=False)
+        if (end_identity != expected[1]
+                or (named.st_dev, named.st_ino, named.st_uid,
+                    stat.S_IMODE(named.st_mode), named.st_nlink,
+                    named.st_size, named.st_mtime_ns,
+                    named.st_ctime_ns) != expected[1]):
+            raise ValueError("original PC object changed during sealed copy")
+
+        required = (fcntl.F_SEAL_SEAL | fcntl.F_SEAL_WRITE |
+                    fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK)
+        fcntl.fcntl(sealed_fd, fcntl.F_ADD_SEALS, required)
+        if fcntl.fcntl(sealed_fd, fcntl.F_GET_SEALS) & required != required:
+            raise ValueError("original PC input ELF memory seals unavailable")
+        os.lseek(sealed_fd, 0, os.SEEK_SET)
+        check = hashlib.sha256()
+        while True:
+            block = os.read(sealed_fd, 1024 * 1024)
+            if not block:
+                break
+            check.update(block)
+        if check.hexdigest() != expected[0]:
+            raise ValueError("sealed original PC input differs from source")
+        return sealed_fd
+    except BaseException:
+        if sealed_fd is not None:
+            os.close(sealed_fd)
+        raise
+    finally:
+        os.close(source_fd)
 
 
 def stable_relocatable_output(path, *, expected=None):
@@ -240,10 +327,23 @@ def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
             or stat.S_IMODE(out_dir.stat().st_mode) != 0o700):
         raise ValueError("relocatable output directory not owner-only 0700")
     output = out_dir / OUTPUT
-    combined = subprocess.run(
-        [linker, "-r", "-o", str(output), *map(str, sources)],
-        cwd=root, capture_output=True, text=True, timeout=150,
-        check=False)
+    # Bind each input to an immutable kernel-sealed anonymous memory file.
+    # The child inherits ONLY the sealed read-only descriptors, so a changed
+    # original pathname cannot redirect ld's inputs while it is running.
+    sealed = []
+    try:
+        for index, (source, proof) in enumerate(zip(sources, initial)):
+            sealed.append(sealed_input_fd(source, proof, index=index))
+        if [stable_object_input(path) for path in sources] != initial:
+            raise ValueError("original PC objects changed while sealing inputs")
+        combined = subprocess.run(
+            [linker, "-r", "-o", str(output),
+             *(f"/proc/self/fd/{fd}" for fd in sealed)],
+            cwd=root, pass_fds=tuple(sealed), capture_output=True, text=True,
+            timeout=150, check=False)
+    finally:
+        for fd in sealed:
+            os.close(fd)
     if combined.returncode:
         # This is an intentionally incomplete original code link; any
         # failure is a genuine issue, not proof of game correctness.
