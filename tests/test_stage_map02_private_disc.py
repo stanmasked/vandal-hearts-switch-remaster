@@ -289,6 +289,47 @@ class PrivateLocalCopyTests(unittest.TestCase):
         self.assertEqual(list(self.private.iterdir()), [])
         self.assertEqual(self.bin.read_bytes(), self.data)
 
+    def test_existing_interrupted_private_copy_blocks_retry_without_reading_bin(self):
+        pending = self.private / ".vh-map02-private.abcdef001122.pending"
+        pending.mkdir(mode=0o700)
+        sample = pending / "private-partial.bin"
+        sample.write_bytes(b"synthetic-partial-not-a-game-image")
+        sample.chmod(0o600)
+        with patch("tools.stage_map02_private_disc._copy_image") as copy, \
+             patch("tools.stage_map02_private_disc.os.fstatvfs") as capacity:
+            with self.assertRaisesRegex(ValueError, "unfinished private disc staging"):
+                self.run_stage()
+        copy.assert_not_called()
+        capacity.assert_not_called()
+        self.assertEqual(list(self.private.iterdir()), [pending])
+        self.assertEqual(sample.read_bytes(), b"synthetic-partial-not-a-game-image")
+        self.assertEqual(self.bin.read_bytes(), self.data)
+
+    def test_interrupted_symlink_name_blocks_retry_without_following_it(self):
+        destination = self.root / "unrelated-owner-folder"
+        destination.mkdir(mode=0o700)
+        sentinel = destination / "keep.txt"
+        sentinel.write_text("do not access or delete")
+        pending = self.private / ".vh-map02-private.abcdef001122.pending"
+        pending.symlink_to(destination, target_is_directory=True)
+        with patch("tools.stage_map02_private_disc._copy_image") as copy:
+            with self.assertRaisesRegex(ValueError, "unfinished private disc staging"):
+                self.run_stage()
+        copy.assert_not_called()
+        self.assertTrue(pending.is_symlink())
+        self.assertEqual(sentinel.read_text(), "do not access or delete")
+        self.assertEqual(list(self.private.iterdir()), [pending])
+
+    def test_unrelated_pending_filename_does_not_block_copy(self):
+        unrelated = self.private / ".other-project.abcdef.pending"
+        unrelated.write_text("other data", encoding="ascii")
+        folder, digest = self.run_stage()
+        self.assertEqual(folder, self.private / STAGE_NAME)
+        self.assertEqual(digest, hashlib.sha256(self.data).hexdigest())
+        self.assertEqual(unrelated.read_text(encoding="ascii"), "other data")
+        self.assertEqual(sorted(p.name for p in self.private.iterdir()),
+                         sorted((STAGE_NAME, unrelated.name)))
+
     def test_rejects_unsafe_destination_name(self):
         for label in ("..", "../external", ".hidden", "f" * 90):
             with self.subTest(label=label), self.assertRaises(ValueError):
