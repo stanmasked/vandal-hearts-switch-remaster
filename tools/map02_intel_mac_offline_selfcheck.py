@@ -29,6 +29,7 @@ SUITES = (
     ("test_verify_map02_private_timeline_pc_vram4.py", 14),
     ("test_verify_map02_private_pc_native_ft4.py", 25),
     ("test_map02_private_ft4_cli_contract.py", 3),
+    ("test_map02_private_ft4_cli_mutations.py", 7),
 )
 
 
@@ -109,6 +110,7 @@ def run_synthetic_checks(raster: Path) -> dict:
         "private_format_timeline_tests_passed": 14,
         "private_format_native_ft4_tests_passed": 25,
         "private_format_real_cli_tests_passed": 3,
+        "private_format_adversarial_cli_tests_passed": 7,
         "synthetic_regressions_total": cases,
         "synthetic_c11_ft4_frame_passed": True,
         "external_network_used": False,

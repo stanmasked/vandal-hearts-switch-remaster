@@ -6,6 +6,7 @@ on:
       - 'tools/map02_intel_mac_offline_selfcheck.py'
       - 'tests/test_map02_intel_mac_offline_selfcheck.py'
       - 'tests/test_map02_private_ft4_cli_contract.py'
+      - 'tests/test_map02_private_ft4_cli_mutations.py'
       - 'tools/verify_map02_private_pc_native_ft4.py'
       - 'tools/verify_map02_private_timeline_pc_vram4.py'
       - 'source/map02_vram4_page.h'
@@ -63,12 +64,13 @@ jobs:
           assert r["private_format_timeline_tests_passed"] == 14
           assert r["private_format_native_ft4_tests_passed"] == 25
           assert r["private_format_real_cli_tests_passed"] == 3
-          assert r["synthetic_regressions_total"] == 42
+          assert r["private_format_adversarial_cli_tests_passed"] == 7
+          assert r["synthetic_regressions_total"] == 49
           assert r["synthetic_c11_ft4_frame_passed"] is True
           assert r["external_network_used"] is False
           assert r["owner_ps1_disc_or_capture_read"] is False
           assert r["real_retail_map02_authenticated"] is False
-          print("VH_MAP02_INTEL_OFFLINE_SELFCHECK_PASS python=${{ matrix.python }} synthetic=42 cli=3 real_disc=0")
+          print("VH_MAP02_INTEL_OFFLINE_SELFCHECK_PASS python=${{ matrix.python }} synthetic=49 cli=10 real_disc=0")
           PY
 
   negative-host:
@@ -93,3 +95,34 @@ jobs:
           grep -F 'offline synthetic MAP02 checks unavailable' \
             /tmp/vh-map02-invalid-mac.stderr
           echo 'VH_MAP02_FAKE_INTEL_MAC_REJECTED host=linux original_disc=0'
+
+  linux-adversarial-cli:
+    name: Full source/native FT4 CLI adversaries on Linux
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: upstream
+          sparse-checkout: |
+            platform/pc/src/pc_raster.c
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Exercise actual CLI with all corrupted synthetic GPU packets
+        shell: bash
+        env:
+          MAP02_PINNED_RASTER: upstream/platform/pc/src/pc_raster.c
+          CC: clang
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_map02_private_ft4_cli_mutations.py' -v \
+            2>&1 | tee /tmp/vh-map02-actual-cli-mutants.log
+          grep -F 'Ran 7 tests' /tmp/vh-map02-actual-cli-mutants.log
+          if grep -E 'FAILED|ERROR:' /tmp/vh-map02-actual-cli-mutants.log; then exit 1; fi
+          echo 'VH_MAP02_FULL_CLI_MUTATIONS_PASS methods=7 adversaries=11 original_disc=0'
