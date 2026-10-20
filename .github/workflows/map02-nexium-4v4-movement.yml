@@ -9,12 +9,34 @@ on:
       - 'source/map02_roster8_smoke_data.h'
       - 'tests/run_map02_nexium_4v4_movement.py'
       - 'tests/test_map02_nexium_4v4_movement_oracle.py'
+      - 'tests/test_map02_4v4_movement_model.c'
       - 'data/map02_roster8_4v4.json'
       - 'tools/generate_map02_roster8.py'
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
+  portable-route:
+    name: Portable model agrees with NeXium movement route (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Replay illegal wall, real move, AI chase and reset in C
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -O2 -Wall -Wextra -Werror -pedantic tests/test_map02_4v4_movement_model.c -o /tmp/vh-map02-4v4-path
+          /tmp/vh-map02-4v4-path | tee /tmp/vh-map02-4v4-path-proof
+          grep -Fx 'VH_MAP02_4V4_PATH_MODEL_PASS illegal_wall=1 one_tile_move=1 ai_hp_loss=1 enemy_pursuit=1 reset=1 actual_nexium=0' /tmp/vh-map02-4v4-path-proof
+          "$CC" -std=c11 -O0 -g -Wall -Wextra -Werror -pedantic -fsanitize=undefined -fno-sanitize-recover=all tests/test_map02_4v4_movement_model.c -o /tmp/vh-map02-4v4-path-ubsan
+          /tmp/vh-map02-4v4-path-ubsan
   oracle-negative-tests:
     name: Reject faked 4v4 wall movement, enemy pursuit and resets
     runs-on: ubuntu-22.04
