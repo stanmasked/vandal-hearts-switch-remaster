@@ -87,6 +87,8 @@ on:
       - 'tests/test_check_map02_public_sdl2_archive_witness.py'
       - 'tools/check_map02_public_x11_after_sdl2.py'
       - 'tests/test_check_map02_public_x11_after_sdl2.py'
+      - 'tools/check_map02_public_x11_origin_partition.py'
+      - 'tests/test_check_map02_public_x11_origin_partition.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -236,6 +238,8 @@ on:
       - 'tests/test_check_map02_public_sdl2_archive_witness.py'
       - 'tools/check_map02_public_x11_after_sdl2.py'
       - 'tests/test_check_map02_public_x11_after_sdl2.py'
+      - 'tools/check_map02_public_x11_origin_partition.py'
+      - 'tests/test_check_map02_public_x11_origin_partition.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -328,6 +332,7 @@ jobs:
             tests.test_check_map02_private_incremental_link \
             tests.test_check_map02_public_sdl2_archive_witness \
             tests.test_check_map02_public_x11_after_sdl2 \
+            tests.test_check_map02_public_x11_origin_partition \
             tests.test_check_map02_private_archive_strategy_compare \
             tests.test_verify_map02_private_archive_comparison \
             tests.test_run_map02_private_link_gap_audit
@@ -621,6 +626,46 @@ jobs:
           assert x11["authentic_map02_execution_proven"] is False
           print("Original public PC ELF: genuine SDL2.a followed by genuine X11.a GNU ld-r.")
           print("Second-stage unresolved counts independently checked without retail data.")
+          PY
+      - name: Attribute X11-resolved imports to original PC code or SDL2-added references
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m tools.check_map02_public_x11_origin_partition \
+            "${RUNNER_TEMP}/map02-public-code-reloc/map02-unresolved-symbols.private.json" \
+            "${RUNNER_TEMP}/map02-public-code-reloc/map02-public-original-cd-gpu-reloc.o" \
+            "${RUNNER_TEMP}/map02-real-x11-native-provider/after-sdl2-unresolved.private.json" \
+            "${RUNNER_TEMP}/map02-real-sdl2-native-provider/linked/map02-private-candidate-linked.o" \
+            "${RUNNER_TEMP}/map02-real-x11-native-provider/linked/map02-private-candidate-linked.o" \
+            | tee "${RUNNER_TEMP}/map02-x11-origin-counts.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          first = json.loads((root / "map02-real-sdl2-provider-aggregate.json").read_text())
+          second = json.loads((root / "map02-real-x11-aggregate.json").read_text())
+          origin = json.loads((root / "map02-x11-origin-counts.json").read_text())
+          assert origin["original_initial_imports"] == first["initial_strong_undefined"] == 520
+          assert origin["original_remaining_after_sdl2"] == first["original_imports_still_unresolved"] == 493
+          assert origin["sdl2_new_imports"] == first["new_undefined_imports_introduced_by_sdl2"] == 592
+          assert origin["public_original_partial_sha256"] == first["public_source_elf_sha256"]
+          assert origin["public_sdl2_partial_sha256"] == first["linked_partial_elf_sha256"]
+          assert origin["public_x11_partial_sha256"] == second["output_x11_partial_sha256"]
+          assert (origin["original_remaining_after_x11"] +
+                  origin["original_imports_newly_resolved_by_x11"] == 493)
+          assert (origin["sdl2_new_imports_remaining_after_x11"] +
+                  origin["sdl2_new_imports_resolved_by_x11"] == 592)
+          assert (origin["original_imports_newly_resolved_by_x11"] +
+                  origin["sdl2_new_imports_resolved_by_x11"] ==
+                  second["original_after_sdl2_imports_resolved"])
+          assert origin["x11_new_imports_after_link"] == second["new_imports_introduced_by_x11"]
+          assert origin["final_strong_undefined_after_x11"] == second["final_strong_undefined_after_x11"]
+          assert origin["all_undefined_imports_partitioned"] is True
+          assert origin["retail_assets_linked"] is False
+          assert origin["fully_linked_game_executable"] is False
+          assert origin["authentic_map02_execution_proven"] is False
+          print("Original-PC, SDL2-added, X11-added unresolved counts independently partitioned.")
           PY
       - name: Fail closed on upstream rasterizer source drift
         run: |
