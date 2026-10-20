@@ -36,9 +36,13 @@ The dedicated NeXium workflow now captures:
 2. `presubmit-guest.png` nine seconds later, after the panel's eight-second lifetime, when a successful worker join has displayed the original full 924-byte `VHPRE001` optical receipt.
 3. `presubmit-guest-late.png` five seconds after that, for the original raster observation.
 
-`tools/decode_map02_prejoin_stage.py` checks exact 1280×720 PNG dimensions, the magenta border, ten white/black byte rows, the two-byte panel identity, XOR checksum, stage range and non-inverted call counters. It writes `presubmit-guest-prejoin-stage.json` **even when absent**, with the explicit result `PREJOIN_STAGE_UNVERIFIED`. This diagnostic step uses `if: always()`; **the final existing `VHPRE001` eight-page CRC and independent real virtual PCM digest checks remain fail-closed**. Six generated-only PNG fixtures test valid return/entry, cleanup, absent border, corrupted checksum, impossible counters and geometry.
+`tools/decode_map02_prejoin_stage.py` checks exact 1280×720 PNG dimensions, calibrates the ten-row panel relative to its magenta border if NeXium scales/letterboxes the gameplay view, and validates ten white/black byte rows, the two-byte panel identity, XOR checksum, stage range and non-inverted call counters. It writes `presubmit-guest-prejoin-stage.json` **even when absent**, with the explicit result `PREJOIN_STAGE_UNVERIFIED`. This diagnostic step uses `if: always()`; **the final existing `VHPRE001` eight-page CRC and independent real virtual PCM digest checks remain fail-closed**. Six generated-only PNG fixtures test valid return/entry, cleanup, absent border, corrupted checksum, impossible counters and geometry.
 
 `.github/workflows/main-map02-audio-staging.yml` has child-only updated exact Git blob pins for precisely **three** reviewed opt-in files: `source/main.c`, `source/vh_switch_game_audio.c`, `source/vh_switch_game_audio.h`. All remaining source fingerprints stay pinned.
+
+## Combined optical/PCM/raster evidence
+
+The child also updates the existing host-only `tools/classify_map02_guest_evidence.py` to read an optional `presubmit-guest-prejoin-stage.json` from the **same run**. It reports the observed stage, entry count, return count and a conservative `prejoin_call_inflight_at_snapshot` Boolean only if the optical checksum and counters are internally valid. It **never** infers `audout_playbuffer_stall_proven` or `guest_join_deadlock_proven` from that single snapshot. Two additional generated-only tests reject impossible return counts and preserve the distinction between an observed in-flight call and proven deadlock.
 
 ## Interpretation and acceptance
 
