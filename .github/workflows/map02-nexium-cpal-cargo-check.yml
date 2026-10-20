@@ -130,10 +130,12 @@ jobs:
         run: |
           set -euo pipefail
           # Runner depends on kernel; this checks both altered Rust files.
-          # --no-default-features avoids the unrelated Dynarmic/Rustarmic
-          # native CPU backends, without removing runner's CPAL dependency.
+          # NeXium's CPU enums REQUIRE at least one concrete backend.
+          # Select only pinned Rustarmic; do not pull the Dynarmic C++ backend.
+          # The runner's CPAL Linux output is independent of CPU backend.
           cargo check --manifest-path upstream/Cargo.toml \
             --locked --package nexium-runner --no-default-features \
+            --features backend-rustarmic \
             2>&1 | tee stage275-cpal-runner-typecheck.log
           python3 - <<'PY'
           import hashlib,json,os,subprocess
@@ -155,6 +157,8 @@ jobs:
             "rustc_version":subprocess.check_output(["rustc","--version"],text=True).strip(),
             "cargo_version":subprocess.check_output(["cargo","--version"],text=True).strip(),
             "linux_cpal_dependency_checked":True,
+            "runner_cpu_feature":"backend-rustarmic",
+            "dynarmic_cpp_backend_selected":False,
             "instrumented_nexium_binary_built":False,
             "original_nightly_binary_equivalence_verified":False,
             "guest_runtime_test_performed":False,
