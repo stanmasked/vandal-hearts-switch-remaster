@@ -80,3 +80,32 @@ reused. Keep captured gameplay and source bytes private; only sanitized
 diagnostic evidence may be shared.
 
 Reference: `docs/MAP02_PRS_DAT_RECONCILIATION.md`.
+
+
+## Metadata-only gate before a future runtime capture
+
+The private v10.1 audit produced a **receipt** and no game byte content. A
+bounded, fail-closed validator is now available as
+`tools/check_map02_ru_receipt.py`:
+
+```sh
+python3 -m tools.check_map02_ru_receipt \
+  "/private/map02_ru_source_reconciliation.json"
+```
+
+It checks the declared source version, LBA and file sizes, exact source
+fingerprints, decompressed size, and both face differences. It refuses
+mutations and reports `source_receipt_consistent=true`, but **always**
+returns `runtime_gfx_selection_verified=false`,
+`disc_independently_rehashed_by_this_gate=false`, and
+`original_gameplay_authenticated=false`. A JSON report is not a
+signature: it can be fabricated and cannot prove the original program read
+that disc during the observed frame.
+
+For real runtime evidence, separately run the existing
+`tools.verify_map02_capture`, source/GTE join, and native GPU/VRAM
+witness checks on a **private capture**. Only independently bound same-run
+observations may resolve the PRS/DAT selection. Never infer a GPU event,
+CLUT, UV or screenshot from this source-data receipt.
+
+No new private game file needs to be uploaded to GitHub to use this gate.
