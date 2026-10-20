@@ -6,7 +6,9 @@ gameplay, retail US executable identity, or any MAP02 original GPU frame.
 Only the private Mac user's destination receives copied image bytes.
 """
 import argparse
+import ctypes
 import hashlib
+import sys
 import os
 from pathlib import Path
 import re
@@ -171,6 +173,36 @@ def _assert_local_only_destination(parent, image, cue):
                 raise ValueError("private destination must be outside mounted source folder")
 
 
+def _rename_no_replace(dirfd, pending, final):
+    """Atomically publish a directory without replacing an existing name.
+
+    os.rename() is NOT sufficient: after an existence preflight, a second
+    process can create an empty destination which plain rename then replaces.
+    Fail closed when the local OS/filesystem lacks the exclusive primitive.
+    """
+    if sys.platform == "darwin":
+        symbol, exclusive_flag = "renameatx_np", 0x00000004  # RENAME_EXCL
+    elif sys.platform.startswith("linux"):
+        symbol, exclusive_flag = "renameat2", 0x00000001  # RENAME_NOREPLACE
+    else:
+        raise OSError("atomic no-replace directory rename unsupported on this OS")
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    try:
+        rename_fn = getattr(libc, symbol)
+    except AttributeError as exc:
+        raise OSError("atomic no-replace rename is unavailable") from exc
+    rename_fn.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int,
+                          ctypes.c_char_p, ctypes.c_uint)
+    rename_fn.restype = ctypes.c_int
+    ctypes.set_errno(0)
+    result = rename_fn(dirfd, os.fsencode(pending), dirfd,
+                       os.fsencode(final), exclusive_flag)
+    if result != 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code), final)
+
+
 def stage_disc(bin_path, cue_path, destination_parent, *,
                stage_name=STAGE_NAME, expected_bytes=RAW_BYTES):
     """Return (private_dir, image_sha256) after complete, atomic directory handoff.
@@ -241,8 +273,9 @@ def stage_disc(bin_path, cue_path, destination_parent, *,
                 pass
             else:
                 raise FileExistsError("private destination created during staging")
-            os.rename(pending, stage_name, src_dir_fd=parentfd,
-                      dst_dir_fd=parentfd)
+            # The preflight above is advisory only; this syscall MUST enforce
+            # exclusivity against a destination created during the race.
+            _rename_no_replace(parentfd, pending, stage_name)
             moved = True
             os.fsync(parentfd)
             return parent / stage_name, copied_sha
