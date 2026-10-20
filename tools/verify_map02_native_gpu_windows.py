@@ -36,7 +36,7 @@ def private_window_file(directory, name, *, expected=None, max_bytes=None):
     These checks do not authenticate the original GPU process.
     """
     if (type(name) is not str or not name or name in (".", "..") or
-            "/" in name or "\\x00" in name):
+            "/" in name or "\x00" in name):
         raise ValueError("invalid native GPU capture filename")
     directory = Path(directory)
     flags = os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
