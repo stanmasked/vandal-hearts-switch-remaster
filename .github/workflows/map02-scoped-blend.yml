@@ -590,6 +590,7 @@ jobs:
             "${RUNNER_TEMP}/map02-real-sdl2-native-provider/sdl2-system-candidate.a" \
             "${RUNNER_TEMP}/map02-real-sdl2-native-provider/linked/map02-private-candidate-linked.o" \
             "${RUNNER_TEMP}/map02-real-sdl2-provider-aggregate.json" \
+            --relink-private-output-dir "${RUNNER_TEMP}/map02-real-sdl2-native-replay" \
             | tee "${RUNNER_TEMP}/map02-real-sdl2-independent-recount.json"
           python3 - <<'PY'
           import json
@@ -603,6 +604,8 @@ jobs:
           assert verified["new_imports"] == initial["new_undefined_imports_introduced_by_sdl2"]
           assert verified["final_strong_imports"] == initial["final_undefined_strong_count"]
           assert verified["saved_report_recount_verified"] is True
+          assert verified["independent_native_relink_executed"] is True
+          assert verified["byte_identical_native_relink_verified"] is True
           assert verified["copied_candidate_archive_identity_verified"] is True
           assert verified["source_and_linked_elf_identity_verified"] is True
           assert verified["full_game_executable_proven"] is False
