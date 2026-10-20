@@ -1,0 +1,145 @@
+name: MAP02 asset-free Catalina offline evidence kit
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-intel-mac-offline-kit.yml'
+      - 'tools/build_map02_intel_mac_offline_kit.py'
+      - 'tests/test_build_map02_intel_mac_offline_kit.py'
+      - 'tools/map02_intel_mac_offline_selfcheck.py'
+      - 'tools/map02_catalina_helper_macho_audit.py'
+      - 'tests/test_map02_private_ft4_cli_contract.py'
+      - 'tests/test_map02_private_ft4_cli_mutations.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  determinism-and-provenance:
+    name: Public-only reproducible ZIP, no licensed assets
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: upstream
+          sparse-checkout: |
+            platform/pc/src/pc_raster.c
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Deterministic source-closure, trust boundary, zip manifest tests
+        env:
+          MAP02_PINNED_RASTER: upstream/platform/pc/src/pc_raster.c
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_build_map02_intel_mac_offline_kit.py' -v \
+            2>&1 | tee /tmp/vh-map02-offline-kit-tests.log
+          grep -F 'Ran 5 tests' /tmp/vh-map02-offline-kit-tests.log
+          python3 -m tools.build_map02_intel_mac_offline_kit \
+            upstream/platform/pc/src/pc_raster.c \
+            /tmp/vh-map02-intel-catalina-offline-kit.zip \
+            > /tmp/vh-map02-offline-kit-report.json
+          python3 - <<'PY'
+          import json, hashlib, zipfile
+          from pathlib import Path
+          report = json.loads(Path('/tmp/vh-map02-offline-kit-report.json').read_text())
+          path = Path('/tmp/vh-map02-intel-catalina-offline-kit.zip')
+          assert report['schema'] == 'vh.map02.intel-mac.offline-evidence-kit.v1'
+          assert report['hashed_source_files'] >= 15
+          assert report['zip_sha256'] == hashlib.sha256(path.read_bytes()).hexdigest()
+          assert report['private_data_included'] is False
+          assert report['original_ps1_assets_included'] is False
+          with zipfile.ZipFile(path) as z:
+              names=z.namelist()
+              assert all(
+                  n.endswith(('.py','.h','.c'))
+                  or n in ('files.json', 'README.md', 'run-selfcheck.sh')
+                  for n in names
+              )
+              assert not any(x.startswith('assets/') for x in names)
+          print('VH_MAP02_OFFLINE_KIT_PROVENANCE_PASS public_only=1 private=0')
+          PY
+      - name: Extract and run seven true CLI adversaries in the packaged tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/map02-clean-room
+          cd /tmp/map02-clean-room
+          unzip -q /tmp/vh-map02-intel-catalina-offline-kit.zip
+          test -f upstream/platform/pc/src/pc_raster.c
+          MAP02_PINNED_RASTER=upstream/platform/pc/src/pc_raster.c CC=clang \
+            python3 -m unittest discover -s tests \
+            -p 'test_map02_private_ft4_cli_mutations.py' -v \
+            2>&1 | tee /tmp/vh-map02-zip-isolated-cli.log
+          grep -F 'Ran 7 tests' /tmp/vh-map02-zip-isolated-cli.log
+          echo 'VH_MAP02_OFFLINE_KIT_ISOLATED_CLI_PASS cases=7 private=0'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vh-map02-intel-catalina-asset-free-kit
+          path: /tmp/vh-map02-intel-catalina-offline-kit.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  intel-mac-extracted-selfcheck:
+    name: Mac Intel clean-kit shell entrypoint (Python ${{ matrix.python }})
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.11']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: upstream
+          sparse-checkout: |
+            platform/pc/src/pc_raster.c
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Build safe kit, extract away from checkout and launch offline entrypoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          python -m tools.build_map02_intel_mac_offline_kit \
+            upstream/platform/pc/src/pc_raster.c \
+            /tmp/vh-map02-isolated-mac.zip \
+            > /tmp/vh-map02-isolated-mac-bundle.json
+          mkdir -p /tmp/vh-map02-isolated-mac-tree
+          cd /tmp/vh-map02-isolated-mac-tree
+          unzip -q /tmp/vh-map02-isolated-mac.zip
+          test ! -d .git
+          sh run-selfcheck.sh \
+            > /tmp/vh-map02-extracted-report.txt
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          text=Path('/tmp/vh-map02-extracted-report.txt').read_text()
+          decoder=json.JSONDecoder()
+          first,pos=decoder.raw_decode(text.lstrip())
+          second,other=decoder.raw_decode(text.lstrip()[pos:].lstrip())
+          assert first['synthetic_regressions_total']==49
+          assert first['c11_macho_macos_minimum']=='10.15'
+          assert first['catalina_10_15_runtime_executed'] is False
+          assert second['compiled_helpers_audited']==3
+          assert second['synthetic_helpers_executed']==2
+          assert second['only_system_dynamic_libraries'] is True
+          assert second['retail_gameplay_authenticated'] is False
+          print('VH_MAP02_MAC_OFFLINE_KIT_EXTRACTED_PASS python=${{ matrix.python }} synthetic=49 helpers=3 retail=0')
+          PY
