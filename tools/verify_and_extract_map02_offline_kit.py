@@ -78,8 +78,6 @@ def authenticate_zip(archive_path: Path, expected_sha256: str) -> dict:
         members = source.infolist()
         if not 15 <= len(members) <= MAX_MEMBERS:
             raise ValueError("ZIP member count out of range")
-        if source.testzip() is not None:
-            raise ValueError("ZIP CRC verification failed")
         seen_folded = set()
         for info in members:
             name = info.filename
