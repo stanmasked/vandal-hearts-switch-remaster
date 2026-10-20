@@ -193,7 +193,12 @@ def compare_function_images(source, linked):
             raise ValueError("original PC ELF witness unrelocated instruction bytes changed")
         total += len(a)
         skipped += len(ignored)
-        records.append((name, hashlib.sha256(normalized).hexdigest()))
+        # The report's digest must also bind exactly which instruction
+        # bytes were excluded. Otherwise an extra relocation over an
+        # already-zero byte could leave the digest unchanged even though
+        # the integrity policy for this function had changed.
+        records.append((name, len(a), sorted(ignored),
+                        hashlib.sha256(normalized).hexdigest()))
     digest = hashlib.sha256(json.dumps(records, separators=(",", ":")).encode()).hexdigest()
     return {"source_link_function_code_bytes_checked": total,
             "source_link_relocation_bytes_excluded": skipped,
