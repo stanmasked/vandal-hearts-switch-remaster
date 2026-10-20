@@ -483,6 +483,10 @@ jobs:
                       report["total_compiled_elf_objects"])
           assert observed == (85, 33, 118), ("source-pinned object inventory drift", observed)
           assert len(report["ordered_object_input_manifest_sha256"]) == 64
+          owners = report["verified_original_export_input_owners"]
+          assert len(owners) == report["original_cd_gpu_and_vram_exports_verified"] == 11
+          assert all(value.startswith("build-map02-cycle/") and value.endswith(".o")
+                     for value in owners.values())
           assert not report["fully_linked_game_executable"]
           assert not report["actual_gameplay_executed"]
           assert not report["original_map02_rendering_proven"]
