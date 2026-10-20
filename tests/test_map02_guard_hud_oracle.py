@@ -94,7 +94,7 @@ class GuardHUDImageOracle(unittest.TestCase):
             im = hud.read(root, "primary_return")
             draw_state(im, READY)
             im.save(root / "primary_return.png")
-        self.case(mutate, "first arena")
+        self.case(mutate, "guard label leaked")
 
     def test_reject_changed_original_map(self):
         self.case(lambda r: self.replace(r, "legacy_return", "blocked"),
