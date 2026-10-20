@@ -58,15 +58,19 @@ def function_images(fd, names):
     data = os.pread(fd, size, 0)
     if len(data) != size:
         raise ValueError("original PC ELF witness short read")
-    (ident, etype, machine, elf_version, _, _, shoff, _, _, _, _, shentsize,
-     shnum, _) = EHDR.unpack(_require_slice(data, 0, EHDR.size))
+    (ident, etype, machine, elf_version, _, _, shoff, _, ehsize, _, _, shentsize,
+     shnum, shstrndx) = EHDR.unpack(_require_slice(data, 0, EHDR.size))
     if (ident[:4] != b"\x7fELF" or ident[4] != 2 or ident[5] != 1
-            or ident[6] != 1 or elf_version != 1
+            or ident[6] != 1 or elf_version != 1 or ehsize != EHDR.size
             or etype != 1 or machine != 62 or shentsize != SHDR.size
-            or not 0 < shnum < 4096):
+            or not 0 < shnum < 4096 or shstrndx >= shnum):
         raise ValueError("original PC ELF witness requires x86-64 little-endian ET_REL")
     sections = [SHDR.unpack(_require_slice(data, shoff + i * shentsize, SHDR.size))
                 for i in range(shnum)]
+    # ELF permits shstrndx=0 when section names are absent. Otherwise the
+    # header must designate a real section-name string table, not .text.
+    if shstrndx and sections[shstrndx][1] != 3:
+        raise ValueError("original PC ELF witness invalid section name string table")
     # fields: name,type,flags,addr,offset,size,link,info,align,entsize
     found = {}
     for section in sections:
