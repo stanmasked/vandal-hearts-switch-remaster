@@ -13,8 +13,10 @@ The actual upstream has two host sink setup paths (ordinary CPAL output and `Pul
 The independent `map02-nexium-cpal-cargo-check.yml` workflow:
 1. Checks out the exact research branch head and the fixed, immutable upstream NeXium Git SHA into **separate** workspaces. Rejects all changes except the new Stage275 workflow and this documentation.
 2. Installs ordinary Linux ALSA/Clang/Opus dependencies, runs all eight ROM-free source overlay regression tests, and applies the exact Stage274 overlay. Verifies only the two Rust files and one runner Cargo manifest changed; verifies the source SHA/receipts.
-3. Resolves Cargo dependencies, **records the new generated Cargo.lock SHA-256** (upstream has no committed lockfile at this revision), and runs `cargo check --locked -p nexium-runner --no-default-features`. This checks **real Rust types in the CPAL callbacks and the dependent kernel AudioOut handlers**, without invoking unrelated optional Dynarmic/Rustarmic CPU backends. It does not link or execute NeXium.
+3. Resolves Cargo dependencies, **records the new generated Cargo.lock SHA-256** (upstream has no committed lockfile at this revision), and runs `cargo check --locked -p nexium-runner --no-default-features --features backend-rustarmic`. This checks **real Rust types in the CPAL callbacks and dependent kernel AudioOut handlers**, with the **one CPU backend required by NeXium's type definitions** while avoiding the separate Dynarmic C++ backend. It does not link or execute NeXium.
 4. Publishes a positive type-check receipt **only after** the real Cargo command succeeds. CI uploads the source receipt, dependency lock digest and compiler log, including on failure. Missing data fails closed rather than making an unproven success claim.
+
+The initial backend-less type check failed with `E0004` exhaustiveness errors in upstream `nexium-cpu` (unrelated to the CPAL patch): NeXium requires a concrete CPU variant, even when only checking the audio runner. The refined build therefore selects the pinned `backend-rustarmic` feature. This is a type-check configuration, not an audio workaround.
 
 The resolved dependency lock is a separate reproducibility variable; a successful compiler pass is valid for the recorded dependency snapshot, not an assertion of historic nightly binary equivalence.
 
