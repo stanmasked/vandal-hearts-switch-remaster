@@ -162,6 +162,29 @@ class PairedArchiveComparisonTests(unittest.TestCase):
                     self.manifest, self.base,
                     [self.second, self.first], destination)
 
+    def test_paired_real_mixed_object_and_archive_provider_set(self):
+        """The saved comparison must count archives, not all native inputs."""
+        leaf = self.compile("paired-mixed-leaf", "int leaf(void) {return 9;}\n")
+        direct = self.compile(
+            "paired-mixed-direct", "extern int followup(void);\n"
+            "int needed(void) {return followup();}\n")
+        provider = self.compile(
+            "paired-mixed-provider", "extern int leaf(void);\n"
+            "int followup(void) {return leaf();}\n")
+        leaf_lib = self.archive("paired-mixed-leaf-lib", leaf)
+        provider_lib = self.archive("paired-mixed-provider-lib", provider)
+        report = comparison.compare_private_archive_strategies(
+            self.manifest, self.base, [leaf_lib, direct, provider_lib],
+            self.root / "mixed-paired")
+        self.assertEqual(report["candidate_archive_count"], 2)
+        self.assertEqual(report["single_pass_final_strong_import_count"], 2)
+        self.assertEqual(report["grouped_final_strong_import_count"], 1)
+        self.assertEqual(report["single_pass_new_imports"], 1)
+        self.assertEqual(report["grouped_new_imports"], 0)
+        self.assertTrue(report["inputs_verified_unchanged_after_both_links"])
+        self.assertTrue(report["outputs_verified_unchanged_after_both_links"])
+        self.assertFalse(report["original_map02_execution_proven"])
+
     def test_invalid_candidates_and_existing_parent_rejected(self):
         for label, candidates in [
                 ("mixed", [self.first, self.provider]),
@@ -169,7 +192,7 @@ class PairedArchiveComparisonTests(unittest.TestCase):
                 ("no-archives", [self.provider, self.followup])]:
             target = self.root / label
             with self.subTest(label=label):
-                with self.assertRaisesRegex(ValueError, "2..64 native archive"):
+                with self.assertRaisesRegex(ValueError, "2..64 native candidates"):
                     comparison.compare_private_archive_strategies(
                         self.manifest, self.base, candidates, target)
                 self.assertFalse(target.exists())

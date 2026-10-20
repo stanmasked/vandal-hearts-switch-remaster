@@ -78,6 +78,8 @@ class OneShotPrivateMap02LinkGapTests(unittest.TestCase):
         self.assertEqual(actual["schema"], SCHEMA)
         self.assertEqual(actual["initial_strong_import_count"], 2)
         self.assertEqual(actual["candidate_archive_count"], 2)
+        self.assertEqual(actual["candidate_direct_object_count"], 0)
+        self.assertFalse(actual["group_strategy_reorders_direct_objects_before_archives"])
         self.assertEqual(actual["single_pass_original_imports_resolved"], 1)
         self.assertEqual(actual["grouped_original_imports_resolved"], 1)
         self.assertEqual(actual["single_pass_final_strong_import_count"], 2)
@@ -112,12 +114,39 @@ class OneShotPrivateMap02LinkGapTests(unittest.TestCase):
         for private_name in ("needed", "missing", "followup"):
             self.assertNotIn(private_name, json.dumps(actual))
 
+    def test_one_shot_mixed_direct_object_and_grouped_archives(self):
+        """A non-archive provider must be included, counted and auditable."""
+        direct = self.compile(
+            "one-shot-direct", "extern int followup(void);\n"
+            "int needed(void) { return followup(); }\n")
+        followup = self.compile(
+            "one-shot-provider", "extern int leaf(void);\n"
+            "int followup(void) { return leaf(); }\n")
+        leaf = self.compile("one-shot-leaf", "int leaf(void) {return 11;}\n")
+        first = self.archive("one-shot-leaf-lib", leaf)
+        second = self.archive("one-shot-provider-lib", followup)
+        output = self.root / "mixed-one-shot"
+        result = run_private_link_gap_audit(
+            self.manifest, self.partial, [first, direct, second], output,
+            expected_initial_strong_imports=2)
+        self.assertEqual(result["candidate_archive_count"], 2)
+        self.assertEqual(result["candidate_direct_object_count"], 1)
+        self.assertTrue(
+            result["group_strategy_reorders_direct_objects_before_archives"])
+        self.assertEqual(result["single_pass_final_strong_import_count"], 2)
+        self.assertEqual(result["grouped_final_strong_import_count"], 1)
+        self.assertEqual(result["single_pass_new_strong_imports"], 1)
+        self.assertEqual(result["grouped_new_strong_imports"], 0)
+        self.assertTrue(result["independent_elf_and_count_audit_passed"])
+        self.assertFalse(result["fully_linked_game_executable"])
+        self.assertFalse(result["original_map02_execution_proven"])
+
     def test_bad_archive_set_rejected_before_creating_root(self):
         cases = [[self.needs], [self.needs, self.partial]]
         for idx, candidates in enumerate(cases):
             target = self.root / ("bad-" + str(idx))
             with self.subTest(idx=idx):
-                with self.assertRaisesRegex(ValueError, "2..64 archives"):
+                with self.assertRaisesRegex(ValueError, "2..64 inputs and two archives"):
                     run_private_link_gap_audit(
                         self.manifest, self.partial, candidates, target)
                 self.assertFalse(target.exists())

@@ -137,8 +137,12 @@ def probe_private_incremental_link(manifest, partial, candidates, out_dir,
     doc = read_private_manifest(manifest)
     if not 1 <= len(candidates) <= 64:
         raise ValueError("private MAP02 candidate count must be 1..64")
-    if group_archives and (len(candidates) < 2 or any(
-            Path(candidate).suffix != ".a" for candidate in candidates)):
+    archive_count = sum(Path(candidate).suffix == ".a"
+                        for candidate in candidates)
+    if group_archives and (
+            archive_count < 2 or any(
+                Path(candidate).suffix not in (".a", ".o")
+                for candidate in candidates)):
         raise ValueError(
             "private MAP02 grouped link requires at least two archive candidates")
     inputs = []
@@ -169,9 +173,16 @@ def probe_private_incremental_link(manifest, partial, candidates, out_dir,
         output = output_dir / OUTPUT
         fds = [item[0] for item in inputs]
         if group_archives:
-            linker_inputs = [f"/proc/self/fd/{fds[0]}", "--start-group",
-                             *(f"/proc/self/fd/{fd}" for fd in fds[1:]),
-                             "--end-group"]
+            # Direct .o files are unconditional linker inputs. Passing them
+            # inside an archive group can repeat their definitions on rescans.
+            # Preserve .o order and .a order separately, with all .o first.
+            direct = [f"/proc/self/fd/{entry[0]}"
+                      for entry in inputs[1:] if entry[1].suffix == ".o"]
+            archived = [f"/proc/self/fd/{entry[0]}"
+                        for entry in inputs[1:] if entry[1].suffix == ".a"]
+            linker_inputs = [
+                f"/proc/self/fd/{fds[0]}", *direct,
+                "--start-group", *archived, "--end-group"]
         else:
             linker_inputs = [f"/proc/self/fd/{fd}" for fd in fds]
         _run_native_tool(
@@ -199,11 +210,12 @@ def probe_private_incremental_link(manifest, partial, candidates, out_dir,
                 "schema": SCHEMA,
                 "source_partial_elf_sha256": inputs[0][3],
                 "candidate_count": len(candidates),
-                "candidate_archive_count":
-                    sum(Path(candidate).suffix == ".a" for candidate in candidates),
+                "candidate_archive_count": archive_count,
                 "archive_selection_strategy": (
-                    "repeated_archive_group" if group_archives
-                    else "single_pass_user_order"),
+                    ("direct_objects_before_archive_group"
+                     if archive_count < len(candidates)
+                     else "repeated_archive_group")
+                    if group_archives else "single_pass_user_order"),
                 "original_strong_import_count": len(original),
                 "original_strong_imports_resolved_by_ld_r":
                     len(original - updated),
@@ -232,7 +244,7 @@ def main():
     parser.add_argument("native_candidate", type=Path, nargs="+")
     parser.add_argument(
         "--group-archives", action="store_true",
-        help="repeat resolution over two or more .a inputs; no direct .o candidates")
+        help="repeat resolution over two or more .a inputs; direct .o inputs precede the archive group")
     args = parser.parse_args()
     try:
         result = probe_private_incremental_link(
