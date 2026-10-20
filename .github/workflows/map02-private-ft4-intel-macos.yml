@@ -1,0 +1,71 @@
+name: MAP02 Intel macOS private FT4 local verifier readiness
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-private-ft4-intel-macos.yml'
+      - 'tools/verify_map02_private_pc_native_ft4.py'
+      - 'tools/verify_map02_private_timeline_pc_vram4.py'
+      - 'tests/test_verify_map02_private_pc_native_ft4.py'
+      - 'tests/test_verify_map02_private_timeline_pc_vram4.py'
+      - 'source/map02_vram4_page.h'
+      - 'tests/test_map02_vram4_frame.c'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  intel-macos-compat:
+    name: Intel macOS Python ${{ matrix.python }}
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.11']
+    steps:
+      - name: Checkout asset-free source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout pinned public PC raster only
+        uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: upstream
+          sparse-checkout: |
+            platform/pc/src/pc_raster.c
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Use specified Python 3 version
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Prove native Intel clang, owner permissions and strict local verifier
+        shell: bash
+        env:
+          CC: clang
+          MAP02_PINNED_RASTER: upstream/platform/pc/src/pc_raster.c
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          python -c 'import sys; assert sys.version_info[:2] == tuple(map(int, "${{ matrix.python }}".split(".")))'
+          clang --version
+          python -m py_compile tools/verify_map02_private_pc_native_ft4.py \
+            tools/verify_map02_private_timeline_pc_vram4.py
+          python -m unittest discover -s tests \
+            -p 'test_verify_map02_private_timeline_pc_vram4.py' -v \
+            2>&1 | tee /tmp/vh-map02-mac-timeline.log
+          grep -F 'Ran 14 tests' /tmp/vh-map02-mac-timeline.log
+          grep -Fx 'VH_MAP02_PRIVATE_TIMELINE_SOURCE_TEST_PASS tests=6 original_vram=0' \
+            /dev/null && exit 41 || true
+          python -m unittest discover -s tests \
+            -p 'test_verify_map02_private_pc_native_ft4.py' -v \
+            2>&1 | tee /tmp/vh-map02-mac-native.log
+          grep -F 'Ran 25 tests' /tmp/vh-map02-mac-native.log
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            tests/test_map02_vram4_frame.c -o /tmp/vh-map02-mac-ft4-frame -lm
+          /tmp/vh-map02-mac-ft4-frame
+          echo 'VH_MAP02_INTEL_MACOS_PRIVATE_FT4_PASS python=${{ matrix.python }} source_faces=2 owned_disc=0'
