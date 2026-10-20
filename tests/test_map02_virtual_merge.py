@@ -56,6 +56,22 @@ class RehearsalTests(unittest.TestCase):
             self.assertEqual(git(root, "symbolic-ref", "HEAD"), prev_ref)
             self.assertEqual(git(root, "status", "--porcelain"), "")
 
+    def test_github_actions_detached_head_unchanged(self):
+        with tempfile.TemporaryDirectory(prefix="map02-detached-") as tmp:
+            root = Path(tmp)
+            original = self.start(root)
+            newer = self.commit_file(root, "map.txt", "updated\\n", "newer")
+            git(root, "checkout", "--detach", "-q", newer)
+            self.assertNotEqual(
+                subprocess.run(["git", "-C", str(root), "symbolic-ref",
+                                "--quiet", "HEAD"], capture_output=True).returncode, 0)
+            report = rehearse(root, original, [
+                {"number": 241, "sha": newer},
+            ], newer)
+            self.assertEqual(report["unchanged_trees"], 1)
+            self.assertEqual(git(root, "rev-parse", "HEAD"), newer)
+            self.assertEqual(git(root, "status", "--porcelain"), "")
+
     def test_copied_history_same_tree_is_accepted(self):
         with tempfile.TemporaryDirectory(prefix="map02-virtual-") as tmp:
             root = Path(tmp)
