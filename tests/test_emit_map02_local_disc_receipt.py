@@ -131,6 +131,62 @@ class OwnedDiscProducerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "size/2352"):
             self.inspect()
 
+    def test_atomic_final_name_never_contains_partial_json(self):
+        report = self.inspect()
+        real_link = __import__("os").link
+        calls = []
+
+        def check_before_final_link(src, dst, **options):
+            self.assertEqual(dst, RECEIPT)
+            self.assertFalse((self.out / RECEIPT).exists())
+            pending = tuple(self.out.iterdir())
+            self.assertEqual(len(pending), 1)
+            self.assertTrue(pending[0].name.endswith(".pending"))
+            contents = pending[0].read_bytes()
+            self.assertEqual(json.loads(contents), report)
+            calls.append(True)
+            return real_link(src, dst, **options)
+
+        with patch("tools.emit_map02_local_disc_receipt.os.link",
+                   side_effect=check_before_final_link):
+            result = publish(report, self.out)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(result.stat().st_nlink, 1)
+        self.assertEqual(list(self.out.iterdir()), [result])
+
+    def test_atomic_link_error_does_not_leave_partial_receipt(self):
+        with patch("tools.emit_map02_local_disc_receipt.os.link",
+                   side_effect=OSError("injected atomic-link failure")):
+            with self.assertRaisesRegex(OSError, "atomic-link failure"):
+                publish(self.inspect(), self.out)
+        self.assertEqual(list(self.out.iterdir()), [])
+
+    def test_atomic_publish_rejects_reuse_without_overwriting(self):
+        report = self.inspect()
+        original = publish(report, self.out)
+        raw = original.read_bytes()
+        with self.assertRaisesRegex(ValueError, "initially empty"):
+            publish(report, self.out)
+        self.assertEqual(original.read_bytes(), raw)
+        self.assertEqual(list(self.out.iterdir()), [original])
+
+    def test_atomic_publish_detects_directory_swap(self):
+        report = self.inspect()
+        original_link = __import__("os").link
+        archived = self.root / "receipt-moved"
+
+        def swap_directory(src, dst, **options):
+            self.out.rename(archived)
+            self.out.mkdir(mode=0o700)
+            return original_link(src, dst, **options)
+
+        with patch("tools.emit_map02_local_disc_receipt.os.link",
+                   side_effect=swap_directory):
+            with self.assertRaisesRegex(ValueError, "directory or temporary|directory changed|receipt changed"):
+                publish(report, self.out)
+        self.assertEqual(list(self.out.iterdir()), [])
+        self.assertEqual(list(archived.iterdir()), [])
+
     def test_reject_public_or_symlinked_receipt_directory(self):
         report = self.inspect()
         self.out.chmod(0o755)
