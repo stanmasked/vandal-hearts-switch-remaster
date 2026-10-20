@@ -13,7 +13,7 @@ import csv
 import json
 from pathlib import Path
 
-SCHEMA="vh-map02-neixum-cpal-audioout-timeline/v1"
+SCHEMA="vh-map02-nexium-cpal-audioout-timeline/v1"
 KEYS=("cpal_entries","cpal_returns","cpal_output_frames",
       "sink_consumed_frames","audioout_appends",
       "audioout_accepted_frames","audioout_releases")
@@ -125,8 +125,8 @@ def parse(path, first_input_ns=None, final_observation_ns=None):
         "nominal_reporter_interval_ms":200,
         "reporter_max_samples":MAX_ROWS,
         "samples_are_snapshots_not_real_time_callback_duration":True,
-        "host_reporter_changes_neixum_scheduling":True,
-        "original_neixum_nightly_binary_equivalence_proven":False,
+        "host_reporter_changes_nexium_scheduling":True,
+        "original_nexium_nightly_binary_equivalence_proven":False,
         "trace_bound_to_source_binary_sha256_by_this_parser":False,
         "guest_audioout_deadlock_proven":False,
         "physical_switch_dac_output_proven":False,
