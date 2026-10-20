@@ -203,12 +203,23 @@ def bundle(root: Path, public_raster: Path, destination: Path) -> dict:
     payload["README.md"] = README.encode("utf-8")
     payload["run-selfcheck.sh"] = RUNNER.encode("utf-8")
     destination = Path(destination).absolute()
+    raw_parent = destination.parent
+    if not raw_parent.is_dir():
+        raise ValueError("output directory missing")
+    if raw_parent.is_symlink():
+        # macOS /tmp is a stable system alias for /private/tmp. Reject
+        # arbitrary symlinks rather than breaking normal macOS temporary
+        # output, and normalize the system alias before all safety checks.
+        if not (
+            raw_parent == Path("/tmp")
+            and raw_parent.resolve(strict=True) == Path("/private/tmp")
+        ):
+            raise ValueError("output directory symlink refused")
+    destination = raw_parent.resolve(strict=True) / destination.name
     if destination.exists():
         raise ValueError("refusing to overwrite existing offline kit")
     if root == destination or root in destination.parents:
         raise ValueError("offline ZIP cannot be created inside source checkout")
-    if not destination.parent.is_dir() or destination.parent.is_symlink():
-        raise ValueError("output directory missing or symlinked")
     with zipfile.ZipFile(destination, "x", compression=zipfile.ZIP_DEFLATED,
                          compresslevel=9) as archive:
         for name, data in sorted(payload.items()):
