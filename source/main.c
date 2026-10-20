@@ -3,6 +3,7 @@
 
 #include "game_rules.h"
 #include "game_state.h"
+#include "map02_battle_fixture.h"
 #include "game_renderer.h"
 #include "platform_input.h"
 #include "software_renderer.h"
@@ -314,6 +315,87 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
               hero_selected ? COLOR_CURSOR : COLOR_HERO);
 }
 
+
+/*
+ * Separate asset-free MAP02 tactical battle fixture.
+ * No proprietary map layout, names, sprites or retail PS1 battle data.
+ * Minus switches between the original input/texture smoke prototype and
+ * this deterministic two-ally/two-enemy playable battle demonstration.
+ */
+static void draw_map02_battle(u32 *pixels, u32 stride,
+                              const VhMap02Battle *battle, u32 frame_tick) {
+    VhCanvas canvas = {(uint32_t *)pixels, (size_t)stride, FB_WIDTH, FB_HEIGHT};
+    char count_label[] = "TURN 000";
+    int x, y, unit;
+    fill_rect(pixels, stride, 0, 0, FB_WIDTH, FB_HEIGHT, COLOR_BG);
+    draw_text(pixels, stride, 70, 24, "MAP02 BATTLE DEMO", COLOR_WHITE, 3);
+    draw_text(pixels, stride, 70, 61, "ORIGINAL ASSET-FREE TACTICAL FIXTURE", COLOR_MUTED, 1);
+    draw_text(pixels, stride, 70, 85,
+              battle->status == VH_BWIN ? "VICTORY - Y RESET" :
+              battle->status == VH_BLOSS ? "DEFEAT - Y RESET" :
+              battle->selected >= 0 ? "CHOOSE MOVE OR ADJACENT ENEMY" :
+                                      "SELECT AN AVAILABLE ALLY",
+              battle->status == VH_BONGOING ? COLOR_HERO : COLOR_CURSOR, 1);
+    count_label[5] = (char)('0' + (battle->turns_completed / 100) % 10);
+    count_label[6] = (char)('0' + (battle->turns_completed / 10) % 10);
+    count_label[7] = (char)('0' + battle->turns_completed % 10);
+    draw_text(pixels, stride, 985, 145, count_label, COLOR_WHITE, 2);
+    for (y = 0; y < VH_BH; ++y) {
+        for (x = 0; x < VH_BW; ++x) {
+            const int px = GRID_X + x * CELL_SIZE, py = GRID_Y + y * CELL_SIZE;
+            u32 tile = ((x + y) & 1) ? COLOR_TILE_ALT : COLOR_TILE;
+            if (vh_bwall(x, y))
+                tile = COLOR_PANEL;
+            else if (battle->selected >= 0 &&
+                     vh_boccupant(battle, x, y, -1) < 0) {
+                int d = vh_bpath(battle, battle->selected, x, y, -1, NULL, NULL);
+                if (d >= 1 && d <= 2) tile = COLOR_RANGE;
+            }
+            vh_render_grid_tile(&canvas, px, py, CELL_SIZE,
+                                (VhTilePalette){tile, COLOR_GRID});
+            if (vh_bwall(x, y)) {
+                fill_rect(pixels, stride, px + 7, py + 7,
+                          CELL_SIZE - 14, CELL_SIZE - 14, COLOR_GRID);
+                fill_rect(pixels, stride, px + 14, py + 14,
+                          CELL_SIZE - 28, CELL_SIZE - 28, COLOR_PANEL);
+            }
+            if (x == battle->cursor_x && y == battle->cursor_y) {
+                vh_canvas_draw_rect_outline(&canvas, px + 3, py + 3,
+                                            CELL_SIZE - 6, CELL_SIZE - 6,
+                                            COLOR_CURSOR);
+                vh_canvas_draw_rect_outline(&canvas, px + 7, py + 7,
+                                            CELL_SIZE - 14, CELL_SIZE - 14,
+                                            COLOR_CURSOR);
+            }
+        }
+    }
+    for (unit = 0; unit < VH_BUNITS; ++unit) {
+        const VhBattleUnit *actor = &battle->units[unit];
+        u32 color = unit < VH_BALLIES ? COLOR_HERO : COLOR_ENEMY;
+        int px, py, hp, w;
+        if (!vh_balive(actor)) continue;
+        px = GRID_X + actor->x * CELL_SIZE;
+        py = GRID_Y + actor->y * CELL_SIZE;
+        if (unit < VH_BALLIES && actor->acted) color = COLOR_MUTED;
+        fill_rect(pixels, stride, px + 17, py + 17, 38, 38, color);
+        if (unit == battle->selected)
+            vh_canvas_draw_rect_outline(&canvas, px + 11, py + 11, 50, 50, COLOR_WHITE);
+        hp = actor->hp > 5 ? 5 : actor->hp;
+        w = 8 * hp;
+        fill_rect(pixels, stride, px + 16, py + 59, 40, 4, COLOR_PANEL);
+        fill_rect(pixels, stride, px + 16, py + 59, w, 4, COLOR_CURSOR);
+    }
+    draw_text(pixels, stride, 985, 220, "ALLIES", COLOR_HERO, 2);
+    draw_text(pixels, stride, 985, 262, "ENEMIES", COLOR_ENEMY, 2);
+    draw_text(pixels, stride, 985, 322, "A SELECT", COLOR_WHITE, 1);
+    draw_text(pixels, stride, 985, 346, "B CANCEL", COLOR_WHITE, 1);
+    draw_text(pixels, stride, 985, 370, "X END TURN", COLOR_WHITE, 1);
+    draw_text(pixels, stride, 985, 394, "Y RESTART", COLOR_WHITE, 1);
+    draw_text(pixels, stride, 70, 622, "MINUS SWITCH DEMO  PLUS EXIT", COLOR_MUTED, 2);
+    draw_text(pixels, stride, 70, 661, "D-PAD CURSOR  A MOVE OR ATTACK  X ENEMY TURN", COLOR_MUTED, 1);
+    fill_rect(pixels, stride, 1000, 610, 8 + (int)(frame_tick % 89), 6, COLOR_HERO);
+}
+
 int main(int argc, char **argv) {
     (void)argc;
     (void)argv;
@@ -335,6 +417,9 @@ int main(int argc, char **argv) {
 
     init_ft4_probe_texture();
     VhGameState state = {1, 2, 1, 2, 6, 3, 0};
+    VhMap02Battle battle;
+    int battle_mode = 0;
+    vh_binit(&battle);
     u32 frame_tick = 0;
 
     while (appletMainLoop()) {
@@ -350,16 +435,35 @@ int main(int argc, char **argv) {
         if (buttons_down & HidNpadButton_B)     actions |= VH_INPUT_CANCEL;
         if (buttons_down & HidNpadButton_Plus)  actions |= VH_INPUT_QUIT;
 
-        if (vh_process_input(&state, actions, GRID_WIDTH, GRID_HEIGHT, MOVE_RANGE))
+        if (buttons_down & HidNpadButton_Minus) {
+            battle_mode = !battle_mode;
+            if (battle_mode) vh_binit(&battle);
+        }
+        if (battle_mode) {
+            if (actions & VH_INPUT_QUIT) break;
+            if (buttons_down & HidNpadButton_Y) vh_binit(&battle);
+            if (actions & VH_INPUT_LEFT)  vh_bcursor(&battle, -1, 0);
+            if (actions & VH_INPUT_RIGHT) vh_bcursor(&battle, 1, 0);
+            if (actions & VH_INPUT_UP)    vh_bcursor(&battle, 0, -1);
+            if (actions & VH_INPUT_DOWN)  vh_bcursor(&battle, 0, 1);
+            if (actions & VH_INPUT_CONFIRM) (void)vh_bchoose(&battle);
+            if (actions & VH_INPUT_CANCEL) (void)vh_bcancel(&battle);
+            if (buttons_down & HidNpadButton_X) (void)vh_bend_turn(&battle);
+        } else if (vh_process_input(&state, actions, GRID_WIDTH, GRID_HEIGHT,
+                                    MOVE_RANGE)) {
             break;
+        }
 
         u32 stride_bytes = 0;
         u32 *pixels = (u32 *)framebufferBegin(&fb, &stride_bytes);
         if (pixels) {
             const u32 stride_pixels = stride_bytes / sizeof(u32);
-            draw_frame(pixels, stride_pixels, state.cursor_x, state.cursor_y,
-                       state.hero_x, state.hero_y, state.enemy_x, state.enemy_y,
-                       state.hero_selected, frame_tick++);
+            if (battle_mode)
+                draw_map02_battle(pixels, stride_pixels, &battle, frame_tick++);
+            else
+                draw_frame(pixels, stride_pixels, state.cursor_x, state.cursor_y,
+                           state.hero_x, state.hero_y, state.enemy_x, state.enemy_y,
+                           state.hero_selected, frame_tick++);
         }
         framebufferEnd(&fb);
     }
