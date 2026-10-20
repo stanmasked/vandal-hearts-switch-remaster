@@ -175,6 +175,24 @@ class NativeIncrementalRelinkTests(unittest.TestCase):
                                  os.environ.get("PATH"))
                 self.assertEqual(execute.call_args.kwargs["umask"], 0o077)
 
+    def test_repeated_input_inode_rejected_before_link(self):
+        """Repeated archives must not inflate candidate counts in reports."""
+        provider = self.compile("one-archive-member", "int needed(void) {return 5;}\\n")
+        archive = self.archive("one-provider", provider)
+        out = self.root / "reject-repeated"
+        with self.assertRaisesRegex(ValueError, "input repeated"):
+            probe_private_incremental_link(
+                self.manifest, self.base, [archive, archive], out)
+        self.assertFalse(out.exists())
+
+    def test_original_partial_cannot_be_reused_as_candidate(self):
+        """Do not quietly link the same base ELF twice."""
+        out = self.root / "reject-base"
+        with self.assertRaisesRegex(ValueError, "input repeated"):
+            probe_private_incremental_link(
+                self.manifest, self.base, [self.base], out)
+        self.assertFalse(out.exists())
+
     def test_mutated_candidate_during_real_ld_r_is_rejected(self):
         """The final rehash must catch same-inode provider tampering."""
         from tools import check_map02_private_incremental_link as module
