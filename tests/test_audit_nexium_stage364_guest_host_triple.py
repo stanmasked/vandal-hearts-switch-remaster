@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"tools"))
 from audit_nexium_stage364_guest_host_triple import (
-    RUN_ID,TRIPLE_PINS,EXTRA,FILENAMES,VERIFIED,
+    RUN_ID,TRIPLE_PINS,EXTRA,FILENAMES,STAGE363_PINS,VERIFIED,
     bind_independent_reports,exact_guest_paths,
 )
 from audit_nexium_stage352_three_original_tail_sources import VERIFIED as THREE
@@ -32,7 +32,14 @@ def fixture():
     }
     newer={
         "result":"STAGE363_AUTHENTIC_DUAL_CLOCK_AND_GUEST_EXIT_SOURCE_REAUDITED",
-        "original_neXium_run_id":RUN_ID,"guest_tail_reason_code":7,
+        "original_neXium_run_id":RUN_ID,
+        "exact_original_sha256":dict(STAGE363_PINS),
+        "original_stage303_pcm_bytes":8804896,
+        "original_stage362_host_pcm_size_delta_bytes":0,
+        "software_tail_elapsed_ns":11735468,
+        "old_probe_age_at_tail_begin_ns":369284375,
+        "old_probe_age_at_tail_end_ns_derived":381019843,
+        "guest_tail_reason_code":7,
         "guest_audout_wait_raw_result":0,
         "guest_lease_pages_acquired":1438,
         "guest_lease_pages_released":1438,
@@ -82,6 +89,32 @@ class Stage364Tests(unittest.TestCase):
         with self.assertRaises(ValueError):bind_independent_reports(t,n)
     def test_reject_forged_monotonic_clock(self):
         t,n=fixture();n["original_stage362_host_recorder_monotonic_ns"]=-1
+        with self.assertRaises(ValueError):bind_independent_reports(t,n)
+    def test_reject_stage363_source_sha_replacement(self):
+        t,n=fixture()
+        n["exact_original_sha256"]["pcm"]="0"*64
+        with self.assertRaises(ValueError):bind_independent_reports(t,n)
+    def test_reject_stage363_missing_source_pin(self):
+        t,n=fixture()
+        del n["exact_original_sha256"]["stage303"]
+        with self.assertRaises(ValueError):bind_independent_reports(t,n)
+    def test_reject_fake_stage303_pcm_recording_size(self):
+        t,n=fixture();n["original_stage303_pcm_bytes"]=8804892
+        with self.assertRaises(ValueError):bind_independent_reports(t,n)
+    def test_reject_stage363_recorder_size_change(self):
+        t,n=fixture();n["original_stage362_host_pcm_size_delta_bytes"]=4
+        with self.assertRaises(ValueError):bind_independent_reports(t,n)
+    def test_reject_guest_tail_elapsed_for_other_capture(self):
+        t,n=fixture();n["software_tail_elapsed_ns"]=5283385
+        with self.assertRaises(ValueError):bind_independent_reports(t,n)
+    def test_reject_old_probe_age_from_other_run(self):
+        t,n=fixture();n["old_probe_age_at_tail_begin_ns"]=125833907
+        with self.assertRaises(ValueError):bind_independent_reports(t,n)
+    def test_reject_forged_probe_age_at_tail_end(self):
+        t,n=fixture();n["old_probe_age_at_tail_end_ns_derived"]=381019842
+        with self.assertRaises(ValueError):bind_independent_reports(t,n)
+    def test_reject_python_bool_as_zero_pcm_size_delta(self):
+        t,n=fixture();n["original_stage362_host_pcm_size_delta_bytes"]=False
         with self.assertRaises(ValueError):bind_independent_reports(t,n)
     def test_reject_guest_to_hardware_claim(self):
         t,n=fixture();t["DAC_or_speaker_audio_verified"]=True
