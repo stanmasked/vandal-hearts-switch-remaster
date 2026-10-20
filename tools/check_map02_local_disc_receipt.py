@@ -95,27 +95,46 @@ def validate_receipt(raw):
 
 
 def verify_receipt_file(path):
-    """Require a stable owner-private, no-follow JSON file only."""
+    """Pin a private directory and read one owner-only JSON via its FD."""
     path = Path(path).absolute()
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
-    fd = os.open(path, flags)
+    directory_flags = (os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                       | getattr(os, "O_NOFOLLOW", 0)
+                       | getattr(os, "O_CLOEXEC", 0))
+    directory_fd = os.open(path.parent, directory_flags)
     try:
-        first = os.fstat(fd)
-        if (not stat.S_ISREG(first.st_mode) or first.st_uid != os.geteuid()
-                or stat.S_IMODE(first.st_mode) != 0o600
-                or first.st_nlink != 1 or not 0 < first.st_size <= MAX_BYTES):
-            raise ValueError("receipt must be an owner-private regular file")
-        contents = os.read(fd, MAX_BYTES + 1)
-        second = os.fstat(fd)
-        current = path.lstat()
-        fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
-        if (any(getattr(first, key) != getattr(second, key) or
-                getattr(first, key) != getattr(current, key) for key in fields)
-                or not stat.S_ISREG(current.st_mode)):
-            raise ValueError("receipt changed during read")
-        return validate_receipt(contents)
+        root = os.fstat(directory_fd)
+        if (not stat.S_ISDIR(root.st_mode) or root.st_uid != os.geteuid()
+                or stat.S_IMODE(root.st_mode) != 0o700):
+            raise ValueError("receipt directory must be owner-private 0700")
+        file_flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                      | getattr(os, "O_CLOEXEC", 0))
+        fd = os.open(path.name, file_flags, dir_fd=directory_fd)
+        try:
+            first = os.fstat(fd)
+            if (not stat.S_ISREG(first.st_mode) or first.st_uid != os.geteuid()
+                    or stat.S_IMODE(first.st_mode) != 0o600
+                    or first.st_nlink != 1 or not 0 < first.st_size <= MAX_BYTES):
+                raise ValueError("receipt must be an owner-private regular file")
+            contents = os.read(fd, MAX_BYTES + 1)
+            second = os.fstat(fd)
+            current = os.stat(path.name, dir_fd=directory_fd,
+                              follow_symlinks=False)
+            fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+            if (any(getattr(first, key) != getattr(second, key) or
+                    getattr(first, key) != getattr(current, key) for key in fields)
+                    or not stat.S_ISREG(current.st_mode)):
+                raise ValueError("receipt changed during read")
+            live_root = path.parent.lstat()
+            if (not stat.S_ISDIR(live_root.st_mode)
+                    or (root.st_dev, root.st_ino, root.st_uid, root.st_mode) !=
+                    (live_root.st_dev, live_root.st_ino,
+                     live_root.st_uid, live_root.st_mode)):
+                raise ValueError("receipt directory changed during read")
+            return validate_receipt(contents)
+        finally:
+            os.close(fd)
     finally:
-        os.close(fd)
+        os.close(directory_fd)
 
 
 def main():
