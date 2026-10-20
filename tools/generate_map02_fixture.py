@@ -136,7 +136,7 @@ def render(data: object) -> str:
         f"    {scene['move']}, {scene['damage']},\n"
         f"    {{{events}}},\n"
         "    2,\n"
-        f"    {{scene['ally_count']}}, {{scene['enemy_count']}}\n"
+        f"    {scene['ally_count']}, {scene['enemy_count']}\n"
         "};\n"
         f"#endif /* {guard} */\n"
     )
