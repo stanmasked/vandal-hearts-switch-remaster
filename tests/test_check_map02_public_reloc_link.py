@@ -19,6 +19,7 @@ from tools.check_map02_public_reloc_link import (
     REQUIRED_SYMBOLS, inspect_relocatable, make_inventory, main,
     stable_relocatable_output, stable_object_input, sealed_input_fd,
     audit_public_link, BUILD, OUTPUT, inspect_sealed_export_origins,
+    function_code_sha256,
 )
 
 
@@ -359,6 +360,41 @@ class PublicRelocatableELFTests(unittest.TestCase):
         finally:
             os.close(fd)
 
+    def test_machine_code_sha256_equal_before_and_after_real_ld_r(self):
+        names = list(REQUIRED_SYMBOLS)
+        first = self.compile(
+            "\n".join(f"void {name}(void) {{}}"
+                      for name in names[:5]), name="real-code-cd")
+        second = self.compile(
+            "extern void LoadCdFile(void);\n" +
+            "\n".join(f"void {name}(void) {{ LoadCdFile(); }}"
+                      for name in names[5:]), name="real-code-gpu")
+        joined = self.root / "real-code-linked.o"
+        subprocess.run(
+            ["ld", "-r", "-o", str(joined), str(first), str(second)],
+            check=True, capture_output=True, text=True, timeout=30)
+        originals = {
+            **function_code_sha256(first, names[:5]),
+            **function_code_sha256(second, names[5:]),
+        }
+        self.assertEqual(function_code_sha256(joined, names), originals)
+
+    def test_same_sized_machine_code_change_has_different_fingerprint(self):
+        a = self.compile(
+            "int LoadCdFile(void) { return 1; }\n", name="bytes-first")
+        b = self.compile(
+            "int LoadCdFile(void) { return 2; }\n", name="bytes-second")
+        one = function_code_sha256(a, ["LoadCdFile"])
+        two = function_code_sha256(b, ["LoadCdFile"])
+        size_one = subprocess.run(
+            ["nm", "-g", "-S", str(a)], capture_output=True,
+            text=True, check=True).stdout.split()
+        size_two = subprocess.run(
+            ["nm", "-g", "-S", str(b)], capture_output=True,
+            text=True, check=True).stdout.split()
+        self.assertEqual(size_one[1], size_two[1])
+        self.assertNotEqual(one, two)
+
     def test_each_required_export_is_owned_by_one_sealed_source_object(self):
         root, first, second = self.prepare_synthetic_original_objects()
         names = [f"{BUILD}/original-cd.o", f"{BUILD}/original-gpu.o"]
@@ -462,12 +498,14 @@ class PublicRelocatableELFTests(unittest.TestCase):
             report = audit_public_link(root, self.root / "bundle-unused",
                                        self.root / "sealed-link-result")
         self.assertEqual(observed, [True])
-        self.assertEqual(inspectors, ["readelf", "nm", "nm", "readelf", "readelf"])
+        self.assertEqual(inspectors, ["readelf", "nm", "nm", "readelf", "readelf", "readelf", "readelf"])
         self.assertEqual(len(set(witness_fds)), 1)
         self.assertEqual(report["public_game_object_count"], 1)
         self.assertEqual(report["backend_and_observer_object_count"], 1)
         self.assertEqual(report["total_compiled_elf_objects"], 2)
         self.assertTrue(report["original_cd_gpu_source_function_sizes_matched"])
+        self.assertTrue(report["original_cd_gpu_machine_code_bytes_matched"])
+        self.assertEqual(len(report["ordered_original_function_code_sha256"]), 64)
         self.assertEqual(report["verified_original_export_input_owners"], {
             name: f"{BUILD}/original-cd.o" if i < 5 else f"{BUILD}/original-gpu.o"
             for i, name in enumerate(REQUIRED_SYMBOLS)
@@ -575,7 +613,7 @@ class PublicRelocatableELFTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "differs from linked proof"):
                 audit_public_link(root, self.root / "bundle-unused", output_dir)
         self.assertTrue(swapped)
-        self.assertEqual(readers, ["readelf", "nm", "nm", "readelf", "readelf"])
+        self.assertEqual(readers, ["readelf", "nm", "nm", "readelf", "readelf", "readelf", "readelf"])
 
     def test_partial_elf_double_read_proof_is_stable(self):
         obj = self.compile(self.all_exports(), name="stable")
