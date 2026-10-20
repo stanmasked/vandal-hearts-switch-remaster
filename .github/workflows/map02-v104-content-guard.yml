@@ -278,6 +278,9 @@ on:
       - 'tools/check_map02_v195_independent_mips_opcodes.py'
       - 'tests/test_map02_v195_independent_mips_opcodes.py'
       - '.github/workflows/map02-v195-independent-mips-opcodes.yml'
+      - 'tools/check_map02_v196_independent_mips_ram_semantics.py'
+      - 'tests/test_map02_v196_independent_mips_ram_semantics.py'
+      - '.github/workflows/map02-v196-independent-mips-ram.yml'
       - 'tests/test_map02_v172_mips_real_vblank_vram.py'
       - '.github/workflows/map02-v172-mips-real-vblank-vram.yml'
       - 'tests/test_map02_v171_mips_multiphase_vram.py'
@@ -496,6 +499,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v193_guest_exe_identity.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v194_source_bound_exe.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v195_independent_mips_opcodes.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v196_independent_mips_ram_semantics.py' -v
           python3 -m remaster.tools.check_map02_v147_native_bounded_c --cc "${{ matrix.cc }}" \
             | grep -Fx 'VH147_COMPILED_BOUNDED_NATIVE_PASS capacity=1024 generic=1 repeated_pc=1 overflow_refused=1 atomic_mode0600=1 no_overwrite=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v144_native_challenge_c --cc "${{ matrix.cc }}" \
@@ -2612,6 +2616,11 @@ jobs:
           # even if the source rebuild and twenty EXE hashes still agree.
           python3 -m remaster.tools.check_map02_v195_independent_mips_opcodes --verify-dir proof/private \
             | grep -Fx 'VH195_INDEPENDENT_MIPS_OPCODES_PASS modes=10 words=9 signed_sequence_unique=1 missing_sw_refused=1 missing_lw_refused=1 canonical_source=1 original_retail=0'
+          # v196: independently execute the exact signed PS1 MIPS window
+          # using proper register, scratch RAM and LW load-delay semantics.
+          # Reject any false positive from MISSING_SW or MISSING_LW variants.
+          python3 -m remaster.tools.check_map02_v196_independent_mips_ram_semantics --verify-dir proof/private \
+            | grep -Fx 'VH196_INDEPENDENT_GUEST_MIPS_RAM_PASS modes=10 words=9 guest_sw=2 guest_lw=1 load_delay=1 negative_paths=2 unchanged_neighbor=1 original_retail=0'
           # Retain valid signed synthetic EXE / CPU stage markers, but
           # mutate one actual interpreted ORI instruction so the first
           # GP0(60) red command carries a wrong color. The native GPU
