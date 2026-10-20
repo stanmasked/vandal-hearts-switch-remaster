@@ -16,6 +16,13 @@ on:
       - 'source/vh_audio_exit_worker_stop_witness.h'
       - 'source/vh_audio_last_playbuffer_call.h'
       - 'source/vh_audio_playbuffer_history.h'
+      - 'source/vh_audio_exit_wait_descriptor_stage368.h'
+      - 'tools/audit_nexium_stage368_wait_descriptor.py'
+      - 'tests/test_audit_nexium_stage368_wait_descriptor.py'
+      - 'tools/audit_nexium_stage368_attested_guest.py'
+      - 'tests/test_audit_nexium_stage368_attested_guest.py'
+      - 'tests/test_stage368_guest_wiring.py'
+      - 'tests/test_vh_audio_exit_wait_descriptor_stage368.c'
       - 'tools/audit_nexium_guest_lease_reconciliation_stage348.py'
       - 'tests/test_audit_nexium_guest_lease_reconciliation_stage348.py'
       - 'source/vh_audio_lease_reconciliation.h'
@@ -1215,6 +1222,43 @@ jobs:
                 "Stage351 reason:",doc["stage351_reason_code"])
           PY
           echo "Stage357: independently preserved true guest raw Result from existing bounded tail wait, not physical audio." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage368 bind one original returned-descriptor tuple to same-run NeXium NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_stage368_attested_guest.py \
+            --guest-root-file runtime-evidence/guest-sd-root.txt \
+            --runner-temp "$RUNNER_TEMP" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --git-sha "$GITHUB_SHA" \
+            --nro-preflight integrated-nro-preflight.json \
+            --stage351 runtime-evidence/guest-exit-tail-reason-stage351.json \
+            --stage357 runtime-evidence/guest-exit-tail-wait-result-stage357.json \
+            --stage351-original runtime-evidence/audio-exit-tail-reason-000.csv \
+            --stage357-original runtime-evidence/audio-exit-tail-wait-result-000.csv \
+            --output runtime-evidence/guest-exit-wait-descriptor-stage368.json \
+            --stage368-original runtime-evidence/audio-exit-wait-descriptor-000.csv
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          f=Path("runtime-evidence/guest-exit-wait-descriptor-stage368.json")
+          doc=json.loads(f.read_text(encoding="utf-8"))
+          raw=Path("runtime-evidence/audio-exit-wait-descriptor-000.csv").read_bytes()
+          if (doc["result"]!="STAGE368_SAME_RUN_ORIGINAL_GUEST_WAIT_DESCRIPTOR_BOUND_TO_351_357_NRO"
+              or doc["neXium_original_guest_run_id"]!=int(__import__("os").environ["GITHUB_RUN_ID"])
+              or doc["stage368_guest_original_source_bound_to_verified_prior_originals"] is not True
+              or hashlib.sha256(raw).hexdigest()!=doc["source_sha256"]["descriptor"]
+              or doc["old_0xEA01_cause_proven"] is not False
+              or doc["actual_queue_depth_measured"] is not False
+              or doc["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage368 original guest wait descriptor not attested")
+          print("Stage368 real source-bound raw Result:",doc["raw_wait_result"],
+                "release count:",doc["reported_released_count"],
+                "pointer matched:",doc["returned_pointer_matches_submitted"])
+          PY
+          echo 'Stage368 independently bound original guest wait descriptor tuple to prior Stage351/357 CSV and same-run NRO. No physical audio or kernel root-cause inference.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Stage360 independently audit last retained pre-submit queue probe age at exit
         shell: bash
