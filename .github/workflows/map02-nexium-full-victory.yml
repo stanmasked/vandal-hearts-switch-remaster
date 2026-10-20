@@ -1,0 +1,91 @@
+name: MAP02 NeXium full five-turn playable victory
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-nexium-full-victory.yml'
+      - '.github/workflows/map02-playable-fixture.yml'
+      - 'source/map02_battle_fixture.h'
+      - 'source/main.c'
+      - 'tests/run_map02_nexium_full_victory.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-battle-nro:
+    name: Build verified libnx MAP02 battle mode
+    runs-on: ubuntu-22.04
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile/test NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/opt/devkitpro/devkitA64/bin:/opt/devkitpro/tools/bin:$PATH"
+          make build/test_map02_battle_fixture
+          ./build/test_map02_battle_fixture
+          make verify-nro
+      - uses: actions/upload-artifact@v4
+        with:
+          name: full-victory-map02-nro
+          path: build/vandal-hearts-prototype.nro
+          if-no-files-found: error
+  nexium-battle:
+    name: Play entire five-turn MAP02 battle in NeXium with real D-pad buttons
+    needs: build-battle-nro
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: full-victory-map02-nro
+          path: nros
+      - name: Install Vulkan and headless screenshot dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl jq xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 libxkbcommon-x11-0 \
+            libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers
+      - name: Retrieve current NeXium Linux nightly
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="$(curl -fsSL --retry 3 --retry-all-errors -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+          asset_url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          test -n "$asset_url"
+          curl -fL --retry 3 --retry-all-errors "$asset_url" -o /tmp/nexium-linux.tar.gz
+          mkdir -p /tmp/nexium
+          tar -xzf /tmp/nexium-linux.tar.gz -C /tmp/nexium
+          emu_bin="$(find /tmp/nexium -type f -executable \( -name nexium -o -name nexium-gui \) -print -quit)"
+          test -n "$emu_bin"
+          echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
+      - name: Play all five MAP02 turns through actual NeXium controller inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p full-victory-evidence
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          timeout --kill-after=5s 200s xvfb-run -a -s "-screen 0 1280x720x24" \
+            python3 tests/run_map02_nexium_full_victory.py \
+              --nro "$PWD/nros/vandal-hearts-prototype.nro" \
+              --evidence-dir full-victory-evidence \
+            | tee full-victory-evidence/result.log
+          grep -Fx 'VH_MAP02_NEXIUM_FULL_VICTORY_PASS turns=5 ally_moves=4 melee=4 enemy_phases=4 victory=1 reset=1 original_retail=0' \
+            full-victory-evidence/result.log
+      - name: Upload original NeXium battle screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-map02-full-victory-runtime
+          path: full-victory-evidence/
+          if-no-files-found: warn
