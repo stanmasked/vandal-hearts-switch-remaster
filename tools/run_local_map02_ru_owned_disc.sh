@@ -34,7 +34,7 @@ if [[ -L "$output_dir" ]]; then
 fi
 
 tmp="$(mktemp "$output_dir/.map02_ru_owned_disc.XXXXXXXX")"
-trap 'rm -f -- "$tmp"' EXIT
+trap 'rm -f "$tmp"' EXIT
 PYTHONPATH="$repo_root${PYTHONPATH:+:$PYTHONPATH}" python3 -m tools.verify_map02_ru_owned_disc \
   --disc-image "$image" --receipt "$receipt" > "$tmp"
 # POSIX hard-link creation fails rather than replacing a concurrent output.
