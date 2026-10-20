@@ -59,6 +59,8 @@ jobs:
               "export PULSE_LATENCY_MSEC=22","export PULSE_LATENCY_MSEC=21")
           assert new==expected, "Other launcher changes would confound 21/22 A/B"
           print("Only requested Pulse hint and output paths differ from verified 22ms control")
+          # Written experiment context must agree with the actual 21ms script.
+          grep -F '"pulse_hint_ms":21,' .github/workflows/map02-cpal-real-guest-21ms.yml
           PY
       - uses: actions/download-artifact@v4
         with:
@@ -104,7 +106,7 @@ jobs:
               "old_guest_artifact_run_id":m["run_id"],
               "actual_new_trial_run_id":int(os.environ["GITHUB_RUN_ID"]),
               "trial_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
-              "pulse_hint_ms":22,
+              "pulse_hint_ms":21,
               "rom_or_licensed_audio_used":False,
               "physical_switch_audio_proven":False,
           }
