@@ -5,6 +5,8 @@ Matches the pinned PC-port's 4-byte compressed-byte-count header and LZ
 decoder. Reports metadata and hashes only, never writes proprietary bytes.
 A matching SHA-256 proves local byte identity, not visible GPU pixels.
 """
+from __future__ import annotations
+
 import argparse
 import hashlib
 import json
@@ -48,10 +50,14 @@ def xa_edc(data: bytes) -> int:
     return crc
 
 
-def read_sectors(path: Path, layout: str, bias: int = 0, *,
-                 start_sector: int = START_SECTOR,
-                 sector_count: int = SECTOR_COUNT) -> bytes:
-    """Extract only selected sectors; verify Mode2 Form1 headers and EDC."""
+def read_sectors_from_stream(handle, layout: str, bias: int = 0, *,
+                             start_sector: int = START_SECTOR,
+                             sector_count: int = SECTOR_COUNT) -> bytes:
+    """Read bounded sectors from an already opened, caller-owned file descriptor.
+
+    The caller may hash and sector-check the SAME open inode: do not silently
+    reopen an untrusted filesystem path between those two operations.
+    """
     sector_size = {"mode2-2352": RAW_BYTES, "iso-2048": USER_BYTES}.get(layout)
     if sector_size is None:
         raise ValueError("layout must be mode2-2352 or iso-2048")
@@ -64,32 +70,42 @@ def read_sectors(path: Path, layout: str, bias: int = 0, *,
     if first < 0:
         raise ValueError("selected sector before beginning of image")
     data = bytearray()
-    with path.open("rb") as handle:
-        if handle.seek(0, 2) < (first + sector_count) * sector_size:
-            raise ValueError("disc image is too short for requested MAP02 sectors")
-        for relative in range(sector_count):
-            handle.seek((first + relative) * sector_size)
-            sector = handle.read(sector_size)
-            if len(sector) != sector_size:
-                raise ValueError(f"short sector {relative}")
-            if layout == "mode2-2352":
-                if sector[:12] != SYNC or sector[15] != 2:
-                    raise ValueError(f"sector {relative}: not Mode2/2352")
-                if sector[16:20] != sector[20:24]:
-                    raise ValueError(f"sector {relative}: inconsistent XA subheader")
-                if sector[18] & 0x20:
-                    raise ValueError(f"sector {relative}: Mode2 Form2 not supported")
-                expected_edc = int.from_bytes(sector[XA_EDC_OFFSET:XA_EDC_OFFSET + 4], "little")
-                actual_edc = xa_edc(sector[0x10:XA_EDC_OFFSET])
-                if actual_edc != expected_edc:
-                    raise ValueError(
-                        f"sector {relative}: Mode2 Form1 EDC mismatch"
-                        f" (stored 0x{expected_edc:08x}, computed 0x{actual_edc:08x})"
-                    )
-                data.extend(sector[24:24 + USER_BYTES])
-            else:
-                data.extend(sector)
+    if handle.seek(0, 2) < (first + sector_count) * sector_size:
+        raise ValueError("disc image is too short for requested MAP02 sectors")
+    for relative in range(sector_count):
+        handle.seek((first + relative) * sector_size)
+        sector = handle.read(sector_size)
+        if len(sector) != sector_size:
+            raise ValueError(f"short sector {relative}")
+        if layout == "mode2-2352":
+            if sector[:12] != SYNC or sector[15] != 2:
+                raise ValueError(f"sector {relative}: not Mode2/2352")
+            if sector[16:20] != sector[20:24]:
+                raise ValueError(f"sector {relative}: inconsistent XA subheader")
+            if sector[18] & 0x20:
+                raise ValueError(f"sector {relative}: Mode2 Form2 not supported")
+            expected_edc = int.from_bytes(sector[XA_EDC_OFFSET:XA_EDC_OFFSET + 4], "little")
+            actual_edc = xa_edc(sector[0x10:XA_EDC_OFFSET])
+            if actual_edc != expected_edc:
+                raise ValueError(
+                    f"sector {relative}: Mode2 Form1 EDC mismatch"
+                    f" (stored 0x{expected_edc:08x}, computed 0x{actual_edc:08x})"
+                )
+            data.extend(sector[24:24 + USER_BYTES])
+        else:
+            data.extend(sector)
     return bytes(data)
+
+
+def read_sectors(path: Path, layout: str, bias: int = 0, *,
+                 start_sector: int = START_SECTOR,
+                 sector_count: int = SECTOR_COUNT) -> bytes:
+    """Existing public API: open the source read-only and delegate to the stream."""
+    with path.open("rb") as handle:
+        return read_sectors_from_stream(
+            handle, layout, bias, start_sector=start_sector,
+            sector_count=sector_count,
+        )
 
 
 def unpack_prs(source: bytes, *, max_output: int = EXPECTED_LENGTH) -> bytes:

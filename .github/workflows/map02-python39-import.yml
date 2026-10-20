@@ -1,0 +1,49 @@
+name: Map02 Python 3.9 audit import compatibility
+
+on:
+  push:
+    paths:
+      - 'tools/audit_map02_disc_prs.py'
+      - 'tools/compare_map02_variants.py'
+      - 'tests/test_map02_audit_python39_import.py'
+      - 'tests/test_check_map02_ru_receipt.py'
+      - 'tools/check_map02_ru_receipt.py'
+      - 'tools/reconcile_map02_ru_runtime_trace.py'
+      - 'tests/test_reconcile_map02_ru_runtime_trace.py'
+      - 'tools/verify_map02_ru_owned_disc.py'
+      - 'tests/test_verify_map02_ru_owned_disc.py'
+      - 'tools/run_local_map02_ru_owned_disc.sh'
+      - '.github/workflows/map02-python39-import.yml'
+  pull_request:
+    paths:
+      - 'tools/audit_map02_disc_prs.py'
+      - 'tools/compare_map02_variants.py'
+      - 'tests/test_map02_audit_python39_import.py'
+      - 'tests/test_check_map02_ru_receipt.py'
+      - 'tools/check_map02_ru_receipt.py'
+      - 'tools/reconcile_map02_ru_runtime_trace.py'
+      - 'tests/test_reconcile_map02_ru_runtime_trace.py'
+      - 'tools/verify_map02_ru_owned_disc.py'
+      - 'tests/test_verify_map02_ru_owned_disc.py'
+      - 'tools/run_local_map02_ru_owned_disc.sh'
+      - '.github/workflows/map02-python39-import.yml'
+
+jobs:
+  import-smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.9', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Import read-only MAP02 auditor without original game files
+        run: |
+          python -m unittest discover -s tests -p 'test_map02_audit_python39_import.py' -v
+          python -m unittest discover -s tests -p 'test_check_map02_ru_receipt.py' -v
+          python -m unittest discover -s tests -p 'test_reconcile_map02_ru_runtime_trace.py' -v
+          python -m unittest discover -s tests -p 'test_verify_map02_ru_owned_disc.py' -v
+          bash -n tools/run_local_map02_ru_owned_disc.sh
