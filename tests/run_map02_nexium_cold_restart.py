@@ -162,6 +162,26 @@ def replay(pad: NeXiumPad, label: str) -> None:
     shot("legacy_return")
 
 
+def find_window_for_process(pid: int) -> str:
+    """Bind controller input and captures to this boot's NeXium process."""
+    windows = cmd("xdotool", "search", "--onlyvisible",
+                  "--name", "NeXium").splitlines()
+    owned = []
+    for window in windows:
+        try:
+            owner_pid = int(cmd("xdotool", "getwindowpid", window, timeout=3))
+        except (ValueError, subprocess.CalledProcessError,
+                subprocess.TimeoutExpired):
+            continue
+        if owner_pid == pid:
+            owned.append(window)
+    if len(owned) != 1:
+        raise RuntimeError(
+            f"expected exactly one NeXium window owned by boot PID {pid}; "
+            f"found {len(owned)} (visible candidate windows={len(windows)})")
+    return owned[0]
+
+
 def run_once(executable: Path, folder: Path, boot: int) -> int:
     with (folder / f"boot{boot}_nexium.log").open("wb") as logfile:
         proc = subprocess.Popen(
@@ -171,11 +191,7 @@ def run_once(executable: Path, folder: Path, boot: int) -> int:
             time.sleep(30)
             if proc.poll() is not None:
                 raise RuntimeError(f"boot {boot}: NeXium exited early {proc.returncode}")
-            windows = cmd("xdotool", "search", "--onlyvisible",
-                          "--name", "NeXium").splitlines()
-            if not windows:
-                raise RuntimeError(f"boot {boot}: no NeXium window")
-            window = windows[-1]
+            window = find_window_for_process(proc.pid)
             try:
                 cmd("xdotool", "windowfocus", "--sync", window, timeout=3)
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
