@@ -19,7 +19,7 @@ from decode_map02_guest_scene_trace import decode_packet_image
 from decode_map02_audout_presubmit import decode as decode_guest
 
 SCHEMA="vh-map02-stage283-six-run-source-pinned-cpal-optical-audit/v1"
-HOST="dd4ed55b6ce8477f19b77465f4ce6a0606b7d7ab5effd0"
+HOST="dd4ed55b6ce8477f19b77465f4ce6a0606b7a7315b3a0e2b8137b7d7ab5effd0"
 NRO="371c9fd9f1f41ad87cbb5f7f96a3e5e9d56878f8cfff2bf7fea2c17120c2611b"
 NRO_SOURCE="04b20024a50327091cff430eb5c28e4722d4ec76"
 NRO_BUILD_RUN=39460035568
