@@ -72,3 +72,9 @@ samples are not included in the published Stage371 artifact, physical
 Switch DAC/speaker sound is not tested, direct service queue depth at
 exit is not read, and neither the 12-ms bounded tail wait nor the
 release/lease policy is changed.
+
+## First CI attempt and fail-closed fix
+
+The first [Stage371 workflow #39393984810](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39393984810) **built the original NRO successfully**, but its emulator job **failed before launching NeXium**, at the host-only anti-fabrication test. The test deliberately injected an extra `audio-exit-wait-descriptor-001.csv` beside the canonical `000`, and the Stage368 general-purpose parser selected the exact canonical filename without rejecting this second numbered copy. This was a missing Stage371 fresh-source uniqueness guard, **not** evidence of a guest audio failure.
+
+Stage371 now explicitly requires exactly one `-000.csv` file in each newly generated Stage351/357/368 family before invoking the unchanged Stage368 canonical parser. The negative tests separately inject `-001.csv` duplicates for all three families. The first failed workflow remains red; **no NeXium captures were obtained in that attempt**. A new CI run must pass these tests and capture genuine guest CSVs before Stage371 can be considered verified.
