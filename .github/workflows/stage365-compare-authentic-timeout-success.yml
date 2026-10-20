@@ -53,6 +53,9 @@ jobs:
               or r["timeout_original_run_id"]!=39325440778
               or r["success_original_run_id"]!=39340120727
               or r["two_distinct_original_archives_reaudited"] is not True
+              or sorted(r["timeout_original_guest_receipt_sha256"])!=[
+                  "stage313","stage314","stage348","stage351","stage357"]
+              or any(len(sha)!=64 for sha in r["timeout_original_guest_receipt_sha256"].values())
               or r["timeout_software_wait_raw_result"]!=59905
               or r["timeout_software_wait_raw_hex"]!="0xEA01"
               or r["timeout_kernel_result_module"]!=1
