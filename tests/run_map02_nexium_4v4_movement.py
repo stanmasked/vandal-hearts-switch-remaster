@@ -14,7 +14,7 @@ import time
 
 from run_map02_nexium_4v4 import (
     NeXiumPad, BOARD, HERO, ENEMY, ACTED, GX, GY, CELL, cmd,
-    count, diff, read, tile,
+    count, diff, read, tile, health_bar_pixels,
 )
 
 HP_COLOR = (255, 219, 102)
@@ -56,9 +56,10 @@ def verify(evidence: Path):
     for y in range(3):
         if tile(enemy, HERO, 0, y) < 500:
             raise ValueError(f"ally {y} died before second enemy turn")
-    bar = (GX + 16, GY + 59, GX + 56, GY + 63)
-    hp_initial = count(initial, HP_COLOR, bar)
-    hp_after = count(enemy, HP_COLOR, bar)
+    # Align to the observed unit sprite, not fixed coordinates:
+    # NeXium's letterboxed game viewport shifts the HP-bar Y position.
+    hp_initial = health_bar_pixels(initial, 0, 0)
+    hp_after = health_bar_pixels(enemy, 0, 0)
     if not (hp_initial >= 80 and 20 <= hp_after <= hp_initial - 40):
         raise ValueError(f"enemy attacks did not visibly lower HP "
                          f"({hp_initial} -> {hp_after})")
