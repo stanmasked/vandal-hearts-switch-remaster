@@ -126,7 +126,10 @@ jobs:
         # 20-ms trial failed twice and both 40/80-ms trials passed twice.
         # The actual 48-kHz sink-input buffer latency is observed below,
         # not assumed to equal the requested client hint.
-        latency_ms: [24, 32]
+        # Previous 20ms all-zero failures (3 trials) versus 24ms success
+        # (2 trials) leave a 21..23ms guest-host boundary to investigate.
+        # This hint is on NeXium only, never the parec monitor recorder.
+        latency_ms: [21, 22, 23]
         repeat: [1, 2]
     steps:
       - uses: actions/checkout@v4
