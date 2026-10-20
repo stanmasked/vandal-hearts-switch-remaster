@@ -103,9 +103,60 @@ class PrivateLocalCopyTests(unittest.TestCase):
         self.assertEqual(self.bin.read_bytes(), self.data)
 
     def test_rename_failure_removes_pending_and_preserves_source(self):
-        with patch("tools.stage_map02_private_disc.os.rename",
-                   side_effect=OSError("injected rename failure")):
-            with self.assertRaisesRegex(OSError, "rename failure"):
+        with patch("tools.stage_map02_private_disc._rename_no_replace",
+                   side_effect=OSError("injected exclusive rename failure")):
+            with self.assertRaisesRegex(OSError, "exclusive rename failure"):
+                self.run_stage()
+        self.assertEqual(list(self.private.iterdir()), [])
+        self.assertEqual(self.bin.read_bytes(), self.data)
+
+    def test_race_existing_empty_directory_is_not_overwritten(self):
+        real_rename = staging._rename_no_replace
+        final = self.private / STAGE_NAME
+
+        def create_competing_directory(parentfd, pending, name):
+            self.assertEqual(name, STAGE_NAME)
+            self.assertFalse(final.exists())
+            # Simulate another owner process creating an empty directory after
+            # the first preflight and directly before exclusive rename.
+            os.mkdir(name, 0o700, dir_fd=parentfd)
+            return real_rename(parentfd, pending, name)
+
+        with patch("tools.stage_map02_private_disc._rename_no_replace",
+                   side_effect=create_competing_directory):
+            with self.assertRaises(FileExistsError):
+                self.run_stage()
+        self.assertTrue(final.is_dir())
+        self.assertEqual(list(self.private.iterdir()), [final])
+        self.assertEqual(list(final.iterdir()), [])
+        self.assertEqual(self.bin.read_bytes(), self.data)
+
+    def test_race_symlink_destination_is_not_replaced(self):
+        real_rename = staging._rename_no_replace
+        target = self.root / "unrelated-real-directory"
+        target.mkdir()
+        sentinel = target / "untouched.txt"
+        sentinel.write_text("untouched")
+        final = self.private / STAGE_NAME
+
+        def create_competing_symlink(parentfd, pending, name):
+            os.symlink(target, name, dir_fd=parentfd)
+            return real_rename(parentfd, pending, name)
+
+        with patch("tools.stage_map02_private_disc._rename_no_replace",
+                   side_effect=create_competing_symlink):
+            with self.assertRaises(FileExistsError):
+                self.run_stage()
+        self.assertTrue(final.is_symlink())
+        # Darwin canonically maps /var to /private/var in resolved paths.
+        self.assertEqual(final.resolve(), target.resolve())
+        self.assertEqual(sentinel.read_text(), "untouched")
+        self.assertEqual(list(self.private.iterdir()), [final])
+
+    def test_atomic_no_replace_does_not_fall_back_to_plain_rename(self):
+        with patch("tools.stage_map02_private_disc._rename_no_replace",
+                   side_effect=OSError("exclusive operation unavailable")):
+            with self.assertRaisesRegex(OSError, "exclusive operation unavailable"):
                 self.run_stage()
         self.assertEqual(list(self.private.iterdir()), [])
         self.assertEqual(self.bin.read_bytes(), self.data)
