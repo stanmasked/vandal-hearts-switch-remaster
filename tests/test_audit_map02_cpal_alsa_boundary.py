@@ -80,6 +80,7 @@ def make_fixture(root):
             observed = raw_monitor(audio)
             monitor = {
                 "schema": "vh-map02-latency-monitor-health/v1",
+                "valid_pcm16le_stereo": True,
                 "raw_pcm_sha256": observed["sha256"],
                 "raw_bytes": observed["bytes"],
                 "stereo_frames": observed["frames"],
@@ -147,6 +148,11 @@ class BoundaryAuditTests(unittest.TestCase):
         self.assertEqual(len(data["trials"]), 6)
         self.assertEqual(data["by_hint"]["21"]["zero_monitor_pcm_trials"], 3)
         self.assertEqual(data["by_hint"]["22"]["completed_cleanup_trials"], 3)
+        self.assertTrue(all(
+            row["classification"] ==
+            ("EIGHT_INDIVIDUAL_PAGES_IN_NONZERO_VIRTUAL_SINK"
+             if row["hint_ms"] == 22 else "OPTICAL_MISSING_ZERO_VIRTUAL_SINK")
+            for row in data["trials"]))
         self.assertFalse(data["audout_service_deadlock_proven"])
         self.assertFalse(data["buffer_hint_causality_proven"])
         self.assertTrue(data["same_guest_nro_sha256_all_six_verified"])
@@ -155,6 +161,26 @@ class BoundaryAuditTests(unittest.TestCase):
         self.assertFalse(data["nexium_host_binary_sha256_available_in_original_artifacts"])
         self.assertTrue(all(r["nexium_host_binary_sha256"] is None
                             for r in data["trials"]))
+
+    def test_forged_boolean_pcm_success_in_stored_receipt_rejected(self):
+        self.initialize_fast()
+        path = self.case(22, 1) / "presubmit-guest-evidence-conjunction.json"
+        obj = json.loads(path.read_text())
+        self.assertTrue(obj["guest_8page_receipt_valid"])
+        obj["guest_8page_receipt_valid"] = False
+        save_json(path, obj)
+        with self.assertRaisesRegex(ValueError, "contradicts"):
+            audit(self.root, decode=self.fast_decode)
+
+    def test_forged_virtual_pcm_presence_rejected(self):
+        self.initialize_fast()
+        path = self.case(21, 2) / "presubmit-guest-evidence-conjunction.json"
+        obj = json.loads(path.read_text())
+        self.assertFalse(obj["virtual_48k_pcm_nonzero"])
+        obj["virtual_48k_pcm_nonzero"] = True
+        save_json(path, obj)
+        with self.assertRaisesRegex(ValueError, "contradicts"):
+            audit(self.root, decode=self.fast_decode)
 
     def test_wrong_source_manifest_is_rejected(self):
         self.initialize_fast()
