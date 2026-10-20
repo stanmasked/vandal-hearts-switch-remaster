@@ -149,6 +149,12 @@ class BoundaryAuditTests(unittest.TestCase):
         self.assertEqual(data["by_hint"]["22"]["completed_cleanup_trials"], 3)
         self.assertFalse(data["audout_service_deadlock_proven"])
         self.assertFalse(data["buffer_hint_causality_proven"])
+        self.assertTrue(data["same_guest_nro_sha256_all_six_verified"])
+        self.assertFalse(data["nexium_release_asset_digest_pinned_in_original_workflow"])
+        self.assertFalse(data["same_nexium_host_binary_all_six_verified"])
+        self.assertFalse(data["nexium_host_binary_sha256_available_in_original_artifacts"])
+        self.assertTrue(all(r["nexium_host_binary_sha256"] is None
+                            for r in data["trials"]))
 
     def test_wrong_source_manifest_is_rejected(self):
         self.initialize_fast()
