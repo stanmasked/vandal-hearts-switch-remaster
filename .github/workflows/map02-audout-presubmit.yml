@@ -120,7 +120,11 @@ jobs:
         # The parent A/B already repeated default and 20 twice each.
         # This child tests the next longer requested host latency points
         # without changing the guest NRO, null sink or capture pipeline.
-        latency_ms: [40, 80]
+        # Narrow the observed virtual-backend latency boundary after the
+        # 20-ms trial failed twice and both 40/80-ms trials passed twice.
+        # The actual 48-kHz sink-input buffer latency is observed below,
+        # not assumed to equal the requested client hint.
+        latency_ms: [24, 32]
         repeat: [1, 2]
     steps:
       - uses: actions/checkout@v4
