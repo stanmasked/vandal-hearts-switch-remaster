@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import copy
 import json
+import subprocess
+import tempfile
 from pathlib import Path
 import sys
 import unittest
@@ -25,6 +27,47 @@ class FullStackSnapshotTests(unittest.TestCase):
         self.assertEqual(entries[0]["number"], 241)
         self.assertEqual(entries[-1]["number"], 352)
         self.assertEqual(entries[-1]["head_sha"], "HEAD")
+
+    def test_divergence_requires_identical_40_digit_git_trees(self):
+        good = "a" * 40
+        self.assertIsNone(audit.verify_divergent_tree(good, good))
+        with self.assertRaisesRegex(audit.AuditError, "manual reconciliation"):
+            audit.verify_divergent_tree("a" * 40, "b" * 40)
+        with self.assertRaisesRegex(audit.AuditError, "malformed"):
+            audit.verify_divergent_tree("not-a-tree", good)
+
+    def test_nonconflicting_dry_run_can_still_change_downstream_tree(self):
+        def git(root, *args):
+            p = subprocess.run(["git", "-C", str(root), *args],
+                               text=True, capture_output=True, check=True)
+            return p.stdout.strip()
+
+        with tempfile.TemporaryDirectory(prefix="map02-divergence-") as tmp:
+            root = Path(tmp)
+            git(root, "init", "-q")
+            git(root, "config", "user.name", "MAP02 Audit")
+            git(root, "config", "user.email", "audit@example.invalid")
+            (root / "shared.txt").write_text("base\n", encoding="utf-8")
+            git(root, "add", "shared.txt")
+            git(root, "commit", "-qm", "common")
+            common = git(root, "rev-parse", "HEAD")
+            (root / "older-only.txt").write_text("important\n", encoding="utf-8")
+            git(root, "add", "older-only.txt")
+            git(root, "commit", "-qm", "older-only change")
+            older = git(root, "rev-parse", "HEAD")
+            git(root, "checkout", "-qb", "child", common)
+            (root / "child-only.txt").write_text("new\n", encoding="utf-8")
+            git(root, "add", "child-only.txt")
+            git(root, "commit", "-qm", "child-only change")
+            newer = git(root, "rev-parse", "HEAD")
+            before_status = git(root, "status", "--porcelain")
+            merged_tree = audit.core_preflight.__globals__["simulate_merge"](
+                root, older, newer)
+            child_tree = git(root, "rev-parse", f"{newer}^{{tree}}")
+            with self.assertRaisesRegex(audit.AuditError, "manual reconciliation"):
+                audit.verify_divergent_tree(merged_tree, child_tree)
+            self.assertEqual(git(root, "rev-parse", "HEAD"), newer)
+            self.assertEqual(git(root, "status", "--porcelain"), before_status)
 
     def test_reject_pr_reordering(self):
         bad = copy.deepcopy(self.spec)
