@@ -4,6 +4,8 @@
 #include "game_rules.h"
 #include "game_state.h"
 #include "map02_battle_fixture.h"
+#include "map02_battle8.h"
+#include "map02_roster8_smoke_data.h"
 #include "game_renderer.h"
 #include "platform_input.h"
 #include "software_renderer.h"
@@ -401,6 +403,93 @@ static void draw_map02_battle(u32 *pixels, u32 stride,
     fill_rect(pixels, stride, 1000, 610, 8 + (int)(frame_tick % 89), 6, COLOR_HERO);
 }
 
+
+/* Separate 4v4 capacity scene with independent original placeholder units.
+ * Trigger ZR while in MAP02 battle mode; ZR again returns to old maps.
+ * The default 2v2 renderer and its NeXium cursor paths are untouched. */
+static void draw_map02_battle8(u32 *pixels, u32 stride,
+                               const VhBattle8 *battle, u32 frame_tick) {
+    const VhRoster8 *r = &battle->roster;
+    VhCanvas canvas = {(uint32_t *)pixels, (size_t)stride, FB_WIDTH, FB_HEIGHT};
+    char count_label[] = "TURN 000";
+    int x, y, unit;
+    fill_rect(pixels, stride, 0, 0, FB_WIDTH, FB_HEIGHT, COLOR_BG);
+    draw_text(pixels, stride, 70, 24, "MAP02 CAPACITY DEMO 4V4", COLOR_WHITE, 3);
+    draw_text(pixels, stride, 70, 61,
+              "ORIGINAL ASSET-FREE EIGHT-SLOT TEST", COLOR_MUTED, 1);
+    draw_text(pixels, stride, 70, 85,
+              battle->status == VH_BWIN ? "VICTORY - Y RESET" :
+              battle->status == VH_BLOSS ? "DEFEAT - Y RESET" :
+              battle->selected >= 0 ? "CHOOSE MOVE OR ADJACENT ENEMY" :
+                                      "SELECT AN AVAILABLE ALLY",
+              battle->status == VH_BONGOING ? COLOR_HERO : COLOR_CURSOR, 1);
+    count_label[5] = (char)('0' + (battle->turns_completed / 100) % 10);
+    count_label[6] = (char)('0' + (battle->turns_completed / 10) % 10);
+    count_label[7] = (char)('0' + battle->turns_completed % 10);
+    draw_text(pixels, stride, 985, 145, count_label, COLOR_WHITE, 2);
+    draw_text(pixels, stride, 985, 183, "ROSTER 4 VS 4", COLOR_CURSOR, 1);
+    for (y = 0; y < VH_BH; ++y) {
+        for (x = 0; x < VH_BW; ++x) {
+            const int px = GRID_X + x * CELL_SIZE, py = GRID_Y + y * CELL_SIZE;
+            const int wall = !!(r->walls[y] & (1u << x));
+            u32 tile = ((x + y) & 1) ? COLOR_TILE_ALT : COLOR_TILE;
+            if (wall) tile = COLOR_PANEL;
+            else if (battle->selected >= 0 &&
+                     vh_r8_occupant(r, x, y) < 0) {
+                const int d = vh_b8_path(battle, battle->selected,
+                                         x, y, -1, NULL, NULL);
+                if (d >= 1 && d <= battle->move_range)
+                    tile = COLOR_RANGE;
+            }
+            vh_render_grid_tile(&canvas, px, py, CELL_SIZE,
+                                (VhTilePalette){tile, COLOR_GRID});
+            if (wall) {
+                fill_rect(pixels, stride, px + 7, py + 7,
+                          CELL_SIZE - 14, CELL_SIZE - 14, COLOR_GRID);
+                fill_rect(pixels, stride, px + 14, py + 14,
+                          CELL_SIZE - 28, CELL_SIZE - 28, COLOR_PANEL);
+            }
+            if (x == r->cursor_x && y == r->cursor_y) {
+                vh_canvas_draw_rect_outline(&canvas, px + 3, py + 3,
+                                            CELL_SIZE - 6, CELL_SIZE - 6,
+                                            COLOR_CURSOR);
+                vh_canvas_draw_rect_outline(&canvas, px + 7, py + 7,
+                                            CELL_SIZE - 14, CELL_SIZE - 14,
+                                            COLOR_CURSOR);
+            }
+        }
+    }
+    for (unit = 0; unit < VH_R8_CAPACITY; ++unit) {
+        const VhBattleUnit *actor = &r->units[unit];
+        u32 color = unit < VH_R8_SIDE_CAP ? COLOR_HERO : COLOR_ENEMY;
+        int px, py, hp;
+        if (!vh_r8_active(r, unit) || !vh_balive(actor)) continue;
+        px = GRID_X + actor->x * CELL_SIZE;
+        py = GRID_Y + actor->y * CELL_SIZE;
+        if (unit < VH_R8_SIDE_CAP && actor->acted) color = COLOR_MUTED;
+        fill_rect(pixels, stride, px + 17, py + 17, 38, 38, color);
+        if (unit == battle->selected)
+            vh_canvas_draw_rect_outline(&canvas, px + 11, py + 11,
+                                        50, 50, COLOR_WHITE);
+        hp = actor->hp > 5 ? 5 : actor->hp;
+        fill_rect(pixels, stride, px + 16, py + 59, 40, 4, COLOR_PANEL);
+        fill_rect(pixels, stride, px + 16, py + 59, 8 * hp, 4, COLOR_CURSOR);
+    }
+    draw_text(pixels, stride, 985, 220, "ALLIES", COLOR_HERO, 2);
+    draw_text(pixels, stride, 985, 262, "ENEMIES", COLOR_ENEMY, 2);
+    draw_text(pixels, stride, 985, 322, "A SELECT", COLOR_WHITE, 1);
+    draw_text(pixels, stride, 985, 346, "B CANCEL", COLOR_WHITE, 1);
+    draw_text(pixels, stride, 985, 370, "X END TURN", COLOR_WHITE, 1);
+    draw_text(pixels, stride, 985, 394, "Y RESTART", COLOR_WHITE, 1);
+    draw_text(pixels, stride, 985, 418, "ZR OR L+R RETURN", COLOR_WHITE, 1);
+    draw_text(pixels, stride, 70, 622,
+              "ZR OR L+R RETURN  MINUS DEMO  PLUS EXIT", COLOR_MUTED, 2);
+    draw_text(pixels, stride, 70, 661,
+              "D-PAD CURSOR  A MOVE OR ATTACK  X ENEMY TURN", COLOR_MUTED, 1);
+    fill_rect(pixels, stride, 1000, 610,
+              8 + (int)(frame_tick % 89), 6, COLOR_HERO);
+}
+
 int main(int argc, char **argv) {
     (void)argc;
     (void)argv;
@@ -423,6 +512,8 @@ int main(int argc, char **argv) {
     init_ft4_probe_texture();
     VhGameState state = {1, 2, 1, 2, 6, 3, 0};
     VhMap02Battle battle;
+    VhBattle8 battle8;
+    int battle8_mode = 0;
     int battle_mode = 0;
     int scenario_id = 0;
     vh_binit(&battle);
@@ -431,6 +522,7 @@ int main(int argc, char **argv) {
     while (appletMainLoop()) {
         padUpdate(&pad);
         const u64 buttons_down = padGetButtonsDown(&pad);
+        const u64 buttons_held = padGetButtons(&pad);
 
         unsigned int actions = 0;
         if (buttons_down & HidNpadButton_Left)  actions |= VH_INPUT_LEFT;
@@ -443,6 +535,7 @@ int main(int argc, char **argv) {
 
         if (buttons_down & HidNpadButton_Minus) {
             battle_mode = !battle_mode;
+            battle8_mode = 0;
             if (battle_mode) {
                 scenario_id = 0;  /* preserves existing NeXium default path */
                 (void)vh_binit_index(&battle, scenario_id);
@@ -450,19 +543,48 @@ int main(int argc, char **argv) {
         }
         if (battle_mode) {
             if (actions & VH_INPUT_QUIT) break;
-            if (buttons_down & (HidNpadButton_L | HidNpadButton_R)) {
-                int next = (scenario_id + 1) % VH_BSCENARIOS;
-                if (vh_binit_index(&battle, next)) scenario_id = next;
+            /* ZR on hardware; held L+R chord for keyboard-driven NeXium.
+             * Plain L or R still selects original authored maps. */
+            const int toggle_8 =
+                !!(buttons_down & HidNpadButton_ZR) ||
+                (!!(buttons_down & (HidNpadButton_L | HidNpadButton_R)) &&
+                 (buttons_held & (HidNpadButton_L | HidNpadButton_R)) ==
+                     (HidNpadButton_L | HidNpadButton_R));
+            if (toggle_8) {
+                if (battle8_mode) {
+                    battle8_mode = 0;
+                    (void)vh_binit_index(&battle, scenario_id);
+                } else if (vh_b8_init(&battle8, &VH_MAP02_ROSTER8_SMOKE, 2, 2)) {
+                    battle8_mode = 1;
+                }
             }
-            if (buttons_down & HidNpadButton_Y)
-                (void)vh_binit_index(&battle, scenario_id);
-            if (actions & VH_INPUT_LEFT)  vh_bcursor(&battle, -1, 0);
-            if (actions & VH_INPUT_RIGHT) vh_bcursor(&battle, 1, 0);
-            if (actions & VH_INPUT_UP)    vh_bcursor(&battle, 0, -1);
-            if (actions & VH_INPUT_DOWN)  vh_bcursor(&battle, 0, 1);
-            if (actions & VH_INPUT_CONFIRM) (void)vh_bchoose(&battle);
-            if (actions & VH_INPUT_CANCEL) (void)vh_bcancel(&battle);
-            if (buttons_down & HidNpadButton_X) (void)vh_bend_turn(&battle);
+            if (battle8_mode) {
+                if (buttons_down & HidNpadButton_Y)
+                    (void)vh_b8_init(&battle8, &VH_MAP02_ROSTER8_SMOKE, 2, 2);
+                if (actions & VH_INPUT_LEFT)  vh_b8_cursor(&battle8, -1, 0);
+                if (actions & VH_INPUT_RIGHT) vh_b8_cursor(&battle8, 1, 0);
+                if (actions & VH_INPUT_UP)    vh_b8_cursor(&battle8, 0, -1);
+                if (actions & VH_INPUT_DOWN)  vh_b8_cursor(&battle8, 0, 1);
+                if (actions & VH_INPUT_CONFIRM) (void)vh_b8_choose(&battle8);
+                if (actions & VH_INPUT_CANCEL) (void)vh_b8_cancel(&battle8);
+                if (buttons_down & HidNpadButton_X)
+                    (void)vh_b8_end_turn(&battle8);
+            } else if (!toggle_8) {
+                if (buttons_down & (HidNpadButton_L | HidNpadButton_R)) {
+                    int next = (scenario_id + 1) % VH_BSCENARIOS;
+                    if (vh_binit_index(&battle, next)) scenario_id = next;
+                }
+                if (buttons_down & HidNpadButton_Y)
+                    (void)vh_binit_index(&battle, scenario_id);
+                if (actions & VH_INPUT_LEFT)  vh_bcursor(&battle, -1, 0);
+                if (actions & VH_INPUT_RIGHT) vh_bcursor(&battle, 1, 0);
+                if (actions & VH_INPUT_UP)    vh_bcursor(&battle, 0, -1);
+                if (actions & VH_INPUT_DOWN)  vh_bcursor(&battle, 0, 1);
+                if (actions & VH_INPUT_CONFIRM) (void)vh_bchoose(&battle);
+                if (actions & VH_INPUT_CANCEL) (void)vh_bcancel(&battle);
+                if (buttons_down & HidNpadButton_X)
+                    (void)vh_bend_turn(&battle);
+            }
         } else if (vh_process_input(&state, actions, GRID_WIDTH, GRID_HEIGHT,
                                     MOVE_RANGE)) {
             break;
@@ -472,7 +594,9 @@ int main(int argc, char **argv) {
         u32 *pixels = (u32 *)framebufferBegin(&fb, &stride_bytes);
         if (pixels) {
             const u32 stride_pixels = stride_bytes / sizeof(u32);
-            if (battle_mode)
+            if (battle_mode && battle8_mode)
+                draw_map02_battle8(pixels, stride_pixels, &battle8, frame_tick++);
+            else if (battle_mode)
                 draw_map02_battle(pixels, stride_pixels, &battle,
                                   scenario_id, frame_tick++);
             else
