@@ -53,7 +53,10 @@ def demand(condition,reason):
         raise ValueError(reason)
 
 def regular(path:Path,max_bytes:int)->bool:
+    # A hardlinked source can alias another trial's inode despite different
+    # apparent SD-root paths; refuse to count it as an isolated original.
     return (path.is_file() and not any(p.is_symlink() for p in (path,*path.parents))
+            and path.stat().st_nlink==1
             and 0<path.stat().st_size<=max_bytes)
 
 def load(path:Path)->dict:
