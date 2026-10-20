@@ -55,7 +55,29 @@ def pinned_public_raster(path: Path) -> Path:
     return path
 
 
-def run_synthetic_checks(raster: Path) -> dict:
+def require_macos_deployment_target(target):
+    """This experimental policy currently only attests 10.15 build metadata."""
+    if target is not None and target != "10.15":
+        raise ValueError("unsupported minimum macOS deployment target")
+    return target
+
+
+def macho_minos_is_target(otool_output: str, target: str) -> bool:
+    """Parse only executable Mach-O deployment load commands, not text elsewhere."""
+    for section in re.split(r"(?m)^Load command [0-9]+\\s*$", otool_output):
+        if re.search(r"(?m)^\\s*cmd LC_BUILD_VERSION\\s*$", section):
+            if re.search(r"(?m)^\\s*minos " + re.escape(target) +
+                         r"(?:\\.0)?\\s*$", section):
+                return True
+        if re.search(r"(?m)^\\s*cmd LC_VERSION_MIN_MACOSX\\s*$", section):
+            if re.search(r"(?m)^\\s*version " + re.escape(target) +
+                         r"(?:\\.0)?\\s*$", section):
+                return True
+    return False
+
+
+def run_synthetic_checks(raster: Path, *, deployment_target=None) -> dict:
+    deployment_target = require_macos_deployment_target(deployment_target)
     repo = Path(__file__).resolve().parent.parent
     compiler = shutil.which("clang")
     if not compiler:
@@ -66,6 +88,8 @@ def run_synthetic_checks(raster: Path) -> dict:
     # C11 build below; a full path is not a valid argparse choice.
     env["CC"] = "clang"
     env["MAP02_PINNED_RASTER"] = str(raster)
+    if deployment_target is not None:
+        env["MACOSX_DEPLOYMENT_TARGET"] = deployment_target
     cases = 0
     for suite, expected in SUITES:
         command = [
@@ -85,10 +109,18 @@ def run_synthetic_checks(raster: Path) -> dict:
     with tempfile.TemporaryDirectory(prefix="vh-map02-intel-mac-") as name:
         binary = Path(name) / "map02-ft4-check"
         source = repo / "tests/test_map02_vram4_frame.c"
+        compile_command = [compiler]
+        if deployment_target is not None:
+            compile_command.extend(
+                ["-arch", "x86_64", "-mmacosx-version-min=" + deployment_target]
+            )
+        compile_command.extend([
+            "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+            str(source), "-o", str(binary), "-lm",
+        ])
         build = subprocess.run(
-            [compiler, "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
-             str(source), "-o", str(binary), "-lm"],
-            cwd=str(repo), text=True, capture_output=True, timeout=60,
+            compile_command, cwd=str(repo), env=env,
+            text=True, capture_output=True, timeout=60,
         )
         if build.returncode or not binary.is_file():
             raise ValueError("local synthetic MAP02 C11 frame build failed")
@@ -99,6 +131,25 @@ def run_synthetic_checks(raster: Path) -> dict:
         if (run.returncode or
                 "frame-keyed VRAM4+GTE/FT4 original OT build" not in run.stdout):
             raise ValueError("local synthetic MAP02 C11 frame regression failed")
+        if deployment_target is not None:
+            # This checks the recorded minimum OS version, not whether the
+            # binary has actually been run on the older operating system.
+            otool = shutil.which("otool")
+            lipo = shutil.which("lipo")
+            if not otool or not lipo:
+                raise ValueError("Mach-O deployment verification tools unavailable")
+            load = subprocess.run(
+                [otool, "-l", str(binary)], cwd=str(repo),
+                capture_output=True, text=True, timeout=30,
+            )
+            arch = subprocess.run(
+                [lipo, "-archs", str(binary)], cwd=str(repo),
+                capture_output=True, text=True, timeout=30,
+            )
+            if (load.returncode or arch.returncode or
+                    arch.stdout.strip() != "x86_64" or
+                    not macho_minos_is_target(load.stdout, deployment_target)):
+                raise ValueError("Mach-O x86_64 minimum OS load command mismatch")
 
     if raster.is_symlink() or git_blob_sha1(raster.read_bytes()) != PINNED_RASTER_BLOB:
         raise ValueError("pinned public source changed during local tests")
@@ -113,6 +164,12 @@ def run_synthetic_checks(raster: Path) -> dict:
         "private_format_adversarial_cli_tests_passed": 7,
         "synthetic_regressions_total": cases,
         "synthetic_c11_ft4_frame_passed": True,
+        "c11_macho_macos_minimum": deployment_target,
+        "c11_macho_minimum_verified": deployment_target is not None,
+        "catalina_10_15_runtime_executed": (
+            deployment_target is not None and
+            platform.mac_ver()[0].startswith("10.15")
+        ),
         "external_network_used": False,
         "owner_ps1_disc_or_capture_read": False,
         "real_retail_map02_authenticated": False,
@@ -126,11 +183,17 @@ def main() -> int:
         "pinned_public_pc_raster", type=Path,
         help="existing public pinned pc_raster.c; never pass game files",
     )
+    parser.add_argument(
+        "--deployment-target", choices=("10.15",), default=None,
+        help="also verify a C11 x86_64 Mach-O minimum-macOS-10.15 load command",
+    )
     args = parser.parse_args()
     try:
         require_intel_mac()
         raster = pinned_public_raster(args.pinned_public_pc_raster)
-        report = run_synthetic_checks(raster)
+        report = run_synthetic_checks(
+            raster, deployment_target=args.deployment_target
+        )
     except (OSError, ValueError, subprocess.TimeoutExpired):
         parser.error("Intel Mac offline synthetic MAP02 checks unavailable")
     print(json.dumps(report, sort_keys=True, indent=2))
