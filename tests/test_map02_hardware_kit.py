@@ -63,7 +63,10 @@ class HardwareKitTests(unittest.TestCase):
         alias.symlink_to(self.file)
         with self.assertRaisesRegex(kit.KitError, "symlink"):
             kit.prepare(alias, self.out)
-        self.out.symlink_to(self.root, target_is_directory=True)
+        destination = self.root / "linked-output"
+        destination.symlink_to(self.root, target_is_directory=True)
+        with self.assertRaisesRegex(kit.KitError, "symlink"):
+            kit.prepare(self.file, destination)
 
     def test_refuse_modified_checksum_file(self):
         kit.prepare(self.file, self.out)
