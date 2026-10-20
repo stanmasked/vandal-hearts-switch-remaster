@@ -12,6 +12,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import audit_map02_full_stack as audit
+from audit_map02_stack import simulate_merge
 
 
 class FullStackSnapshotTests(unittest.TestCase):
@@ -61,7 +62,7 @@ class FullStackSnapshotTests(unittest.TestCase):
             git(root, "commit", "-qm", "child-only change")
             newer = git(root, "rev-parse", "HEAD")
             before_status = git(root, "status", "--porcelain")
-            merged_tree = audit.core_preflight.__globals__["simulate_merge"](
+            merged_tree = simulate_merge(
                 root, older, newer)
             child_tree = git(root, "rev-parse", f"{newer}^{{tree}}")
             with self.assertRaisesRegex(audit.AuditError, "manual reconciliation"):
