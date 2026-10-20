@@ -38,6 +38,58 @@ def digest(path):
     return h.hexdigest()
 
 
+def stable_object_input(path):
+    """Double-read one original ELF object and bind its pathname/inode.
+
+    Objects are produced by the pinned public GNU Make step. They need not
+    be private 0600 outputs, but must never be symlinked, hardlinked, or
+    writable by another owner. Repeated checks cover identity swaps.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags)
+    try:
+        info = os.fstat(fd)
+
+        def identity(item):
+            return (item.st_dev, item.st_ino, item.st_uid,
+                    stat.S_IMODE(item.st_mode), item.st_nlink,
+                    item.st_size, item.st_mtime_ns, item.st_ctime_ns)
+
+        anchor = identity(info)
+        if (not stat.S_ISREG(info.st_mode)
+                or info.st_uid != os.geteuid() or info.st_nlink != 1
+                or stat.S_IMODE(info.st_mode) & 0o022
+                or info.st_size < 256):
+            raise ValueError("untrusted public original PC input ELF object")
+
+        def check_identity():
+            if (identity(os.fstat(fd)) != anchor
+                    or identity(os.stat(path, follow_symlinks=False)) != anchor):
+                raise ValueError("original PC input ELF object identity changed")
+
+        check_identity()
+        hashes = []
+        for _ in range(2):
+            os.lseek(fd, 0, os.SEEK_SET)
+            hashed = hashlib.sha256()
+            read_total = 0
+            while True:
+                block = os.read(fd, 1024 * 1024)
+                if not block:
+                    break
+                read_total += len(block)
+                hashed.update(block)
+            if read_total != info.st_size:
+                raise ValueError("original PC input ELF object short read")
+            check_identity()
+            hashes.append(hashed.hexdigest())
+        if hashes[0] != hashes[1]:
+            raise ValueError("original PC input ELF object bytes changed")
+        return (hashes[0], anchor)
+    finally:
+        os.close(fd)
+
+
 def stable_relocatable_output(path, *, expected=None):
     """Bind the partial ELF's bytes and inode to two reads of one descriptor.
 
@@ -179,7 +231,7 @@ def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
                 or root_build not in candidate.parents):
             raise ValueError("invalid original object passed to partial linker")
         sources.append(candidate)
-    initial = [digest(path) for path in sources]
+    initial = [stable_object_input(path) for path in sources]
     if (out_dir == upstream or upstream in out_dir.parents
             or out_dir.exists() or out_dir.is_symlink()):
         raise ValueError("original partial link requires a NEW private external directory")
@@ -217,8 +269,8 @@ def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
     output_proof = stable_relocatable_output(output)
     checked = inspect_relocatable(output)
     stable_relocatable_output(output, expected=output_proof)
-    if [digest(path) for path in sources] != initial:
-        raise ValueError("original PC objects changed during public partial link")
+    if [stable_object_input(path) for path in sources] != initial:
+        raise ValueError("original PC objects changed or swapped during public partial link")
     if audit_objects(upstream, bundle, make=make) != before:
         raise ValueError("pinned original public source/code inventory changed")
     preflight(upstream, bundle)
