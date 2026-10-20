@@ -4,6 +4,7 @@ Source fixtures are tiny, independent synthetic C snippets. These tests do
 NOT link actual game resources or claim to run original MAP02.
 """
 from contextlib import redirect_stderr
+import hashlib
 import io
 import os
 from pathlib import Path
@@ -14,6 +15,7 @@ from unittest.mock import patch
 
 from tools.check_map02_public_reloc_link import (
     REQUIRED_SYMBOLS, inspect_relocatable, make_inventory, main,
+    stable_relocatable_output,
 )
 
 
@@ -104,6 +106,61 @@ class PublicRelocatableELFTests(unittest.TestCase):
         invalid.write_bytes(b"invalid-original-code")
         with self.assertRaisesRegex(ValueError, "relocatable ELF"):
             inspect_relocatable(invalid)
+
+    def test_partial_elf_double_read_proof_is_stable(self):
+        obj = self.compile(self.all_exports(), name="stable")
+        obj.chmod(0o600)
+        proof = stable_relocatable_output(obj)
+        self.assertEqual(proof[0], hashlib.sha256(obj.read_bytes()).hexdigest())
+        self.assertEqual(stable_relocatable_output(obj, expected=proof), proof)
+
+    def test_partial_elf_rejects_world_readable_symlink_and_hardlink(self):
+        obj = self.compile(self.all_exports(), name="untrusted")
+        with self.assertRaisesRegex(ValueError, "metadata"):
+            stable_relocatable_output(obj)
+        obj.chmod(0o600)
+        symlink = self.root / "partial-symlink.o"
+        symlink.symlink_to(obj)
+        with self.assertRaises((ValueError, OSError)):
+            stable_relocatable_output(symlink)
+        hardlink = self.root / "partial-hardlink.o"
+        os.link(obj, hardlink)
+        with self.assertRaisesRegex(ValueError, "metadata"):
+            stable_relocatable_output(obj)
+
+    def test_partial_elf_rejects_identical_bytes_different_inode(self):
+        obj = self.compile(self.all_exports(), name="original")
+        obj.chmod(0o600)
+        proof = stable_relocatable_output(obj)
+        replacement = self.root / "same-bytes-different-inode.o"
+        replacement.write_bytes(obj.read_bytes())
+        replacement.chmod(0o600)
+        os.replace(replacement, obj)
+        with self.assertRaisesRegex(ValueError, "differs from linked proof"):
+            stable_relocatable_output(obj, expected=proof)
+
+    def test_partial_elf_rejects_path_swap_during_descriptor_read(self):
+        obj = self.compile(self.all_exports(), name="during-read")
+        obj.chmod(0o600)
+        replacement = self.root / "swapped.o"
+        replacement.write_bytes(obj.read_bytes())
+        replacement.chmod(0o600)
+        original_read = os.read
+        swapped = False
+
+        def read_and_swap(fd, count):
+            nonlocal swapped
+            data = original_read(fd, count)
+            if data and not swapped:
+                swapped = True
+                os.replace(replacement, obj)
+            return data
+
+        with patch("tools.check_map02_public_reloc_link.os.read",
+                   side_effect=read_and_swap):
+            with self.assertRaisesRegex(ValueError, "inode or metadata changed"):
+                stable_relocatable_output(obj)
+        self.assertTrue(swapped)
 
     def test_make_inventory_ignores_inherited_untrusted_makefile(self):
         # Only tiny synthetic inventories are evaluated. A caller-supplied
