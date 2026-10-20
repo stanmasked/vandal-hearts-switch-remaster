@@ -14,7 +14,7 @@ from pathlib import Path
 import stat
 import subprocess
 
-from tools.check_map02_cycle_make_plan import BUILD, preflight
+from tools.check_map02_cycle_make_plan import BUILD, preflight, clean_make_environment
 from tools.prepare_map02_cycle_build import SUPPORT_FILES
 
 MIN_GAME = 80
@@ -57,7 +57,8 @@ def audit_objects(upstream, bundle, *, make="make"):
          str(bundle / "map02_cycle.mk"), "--eval", listing_target,
          "map02-private-object-inventory", "BUILD_DIR=" + BUILD,
          "REGION=us", "NO_WEBP=1", "NO_HDVIDEO=1"],
-        cwd=pc, capture_output=True, text=True, timeout=60, check=False)
+        cwd=pc, env=clean_make_environment(), capture_output=True,
+        text=True, timeout=60, check=False)
     if result.returncode:
         raise ValueError("MAP02 original full-code object inventory failed")
     lines = result.stdout.splitlines()
@@ -163,8 +164,10 @@ def main():
     try:
         report = audit_objects(args.pinned_pc_checkout,
                                args.private_overlay_bundle)
-    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
-        parser.error(str(exc))
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        # GNU Make/ELF and filesystem failures can embed user-owned checkout
+        # paths or arbitrary inherited Make recipe text. CLI must withhold it.
+        parser.error("MAP02 source-pinned public code object audit failed")
     print(json.dumps(report, indent=2, sort_keys=True))
 
 
