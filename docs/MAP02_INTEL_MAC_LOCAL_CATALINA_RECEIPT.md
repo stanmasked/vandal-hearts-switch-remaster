@@ -4,6 +4,27 @@ This stage follows the verified [Draft PR #369](https://github.com/stanmasked/va
 
 The owner has an Intel Mac target; an actual macOS Catalina 10.15.7 runtime has **not yet been accessed or tested**. The aim of this script is to make that eventual check unambiguous, without retrieving or publishing game content.
 
+## Public-kit provenance and post-execution recheck
+
+A successful local report is now bound to the **exact public-only
+`files.json` manifest** used by the extracted offline diagnostics. The
+receipt contains its 64-character SHA-256 and the count of public kit
+files verified before and after the tests. The instrument runs the
+independent `verify-kit.py` a **second time** after the full FT4/GTE/VRAM
+suite; mismatched manifest hashes, changed file counts, injected files,
+changed source modules or failed integrity verification prevent an
+acceptance receipt. This detects a package changing *during* testing,
+not merely before it starts.
+
+The kit manifest fingerprint represents **public/source diagnostic
+provenance only**, not an OS-signed machine attestation or the owner's
+PS1 game data. The manifest is not a digital signature. Users should
+still check the downloaded **inner ZIP SHA-256** against the independent
+GitHub Actions build record before extraction. The report can be saved
+**outside** the extracted kit (not in its folder, where it would be an
+unexpected unlisted file). No username, serial, hostname, full kernel
+build, owner path or game asset is included.
+
 ## Run on the extracted, already authenticated kit
 
 From the extracted kit directory, with Python 3.9+ and Xcode/Clang tools installed:
@@ -47,6 +68,6 @@ could be modified, and all measurements are local self-report.
 
 ## Continuous integration verification
 
-GitHub's available `macos-15-intel` runners (Python 3.9 and 3.11) exercise the real new command from the authenticated extracted kit; they must produce a general compatibility receipt and **strictly reject** the Catalina-only switch. The Linux job tests fifteen mocked contracts and denies Linux or Apple Silicon pretending to be Intel macOS. Mocked Catalina fixture acceptance is merely a test of the rule, **not evidence that Catalina ran**.
+GitHub's available `macos-15-intel` runners (Python 3.9 and 3.11) exercise the real new command from the authenticated extracted kit; they must produce a general compatibility receipt and **strictly reject** the Catalina-only switch. The Linux job tests twenty mocked contracts and denies Linux or Apple Silicon pretending to be Intel macOS. Mocked Catalina fixture acceptance is merely a test of the rule, **not evidence that Catalina ran**.
 
 No owner's external drive, original PS1 BIN/CUE, decoded MAP02 sectors, game textures, true GPU captures, private user paths or screenshots are required or uploaded. `main` is unchanged; keep this child PR Draft and unmerged until a real local test can be reviewed.

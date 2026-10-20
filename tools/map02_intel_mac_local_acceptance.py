@@ -11,6 +11,7 @@ PS1 retail-frame provenance, or proof of original Vandal Hearts game parity.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -76,6 +77,37 @@ def inspect_host_identity() -> dict:
         "host_os_sources_agree": True,
         "host_os_sources": 3,
     }
+
+
+def checked_manifest_fingerprint(root: Path) -> str:
+    """Hash the bounded public-only kit manifest, never emit a local path."""
+    path = root / "files.json"
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("public kit manifest absent")
+    length = path.stat().st_size
+    if not 0 < length <= 2 * 1024 * 1024:
+        raise ValueError("public kit manifest outside safe bounds")
+    data = path.read_bytes()
+    if len(data) != length or b"\0" in data:
+        raise ValueError("public kit manifest malformed or changed")
+    return hashlib.sha256(data).hexdigest()
+
+
+def verify_kit_integrity(root: Path, env: dict) -> dict:
+    """Invoke independent packaged verifier, emitting no failure output."""
+    completed = subprocess.run(
+        [sys.executable, "verify-kit.py", "--root", "."],
+        cwd=str(root), env=env, capture_output=True, text=True, timeout=25,
+    )
+    if completed.returncode or completed.stderr or len(completed.stdout) > MAX_VERIFY_OUTPUT:
+        raise ValueError("local kit integrity check failed")
+    receipt = json.loads(completed.stdout)
+    if (
+        not isinstance(receipt, dict)
+        or receipt.get("schema") != VERIFY_SCHEMA
+    ):
+        raise ValueError("local kit integrity receipt missing")
+    return receipt
 
 
 def validate_json_stream(value: str) -> tuple:
@@ -169,15 +201,8 @@ def local_acceptance(*, require_catalina: bool = False) -> dict:
 
     env = dict(os.environ)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
-    prior = subprocess.run(
-        [sys.executable, "verify-kit.py", "--root", "."],
-        cwd=str(root), env=env, capture_output=True, text=True, timeout=25,
-    )
-    if prior.returncode or prior.stderr or len(prior.stdout) > MAX_VERIFY_OUTPUT:
-        raise ValueError("local kit integrity check failed")
-    integrity = json.loads(prior.stdout)
-    if integrity.get("schema") != VERIFY_SCHEMA:
-        raise ValueError("kit verifier receipt missing")
+    integrity = verify_kit_integrity(root, env)
+    manifest_before = checked_manifest_fingerprint(root)
     suite = subprocess.run(
         ["sh", "run-selfcheck.sh"], cwd=str(root), env=env,
         capture_output=True, text=True, timeout=900,
@@ -186,6 +211,13 @@ def local_acceptance(*, require_catalina: bool = False) -> dict:
         raise ValueError("local offline FT4 checker failed")
     selfcheck, helpers = validate_json_stream(suite.stdout)
     aggregate = validated_results(integrity, selfcheck, helpers)
+    # The original kit verifier runs again after the executable probes,
+    # so no changed module, injected file or overwritten manifest can
+    # silently become an accepted local compatibility receipt.
+    after = verify_kit_integrity(root, env)
+    manifest_after = checked_manifest_fingerprint(root)
+    if after != integrity or manifest_after != manifest_before:
+        raise ValueError("local kit changed after diagnostic execution")
     if selfcheck.get("catalina_10_15_runtime_executed") is not actual_catalina:
         raise ValueError("native host evidence and C11 selfcheck disagree")
     return {
@@ -197,6 +229,10 @@ def local_acceptance(*, require_catalina: bool = False) -> dict:
         "host_os_sources_agree": True,
         "host_os_sources": host["host_os_sources"],
         "python_version": "{}.{}".format(*sys.version_info[:2]),
+        "public_kit_manifest_sha256": manifest_before,
+        "public_kit_files_reverified": integrity["file_digests_verified"],
+        "pre_and_post_kit_integrity_verified": True,
+        "public_kit_signature_verified": False,
         "actual_catalina_10_15_7_selfcheck_passed": actual_catalina,
         "c11_macho_minimum": "10.15",
         "source_to_native_ft4_synthetic_verified": True,

@@ -1,12 +1,14 @@
 """Asset-free local compatibility receipt contracts; never real user assets."""
+import hashlib
 import json
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from tools.map02_intel_mac_local_acceptance import (
-    CATALINA, SCHEMA, bounded_version, inspect_host_identity, local_acceptance,
+    CATALINA, SCHEMA, bounded_version, checked_manifest_fingerprint, inspect_host_identity, local_acceptance,
     validate_json_stream, validated_results,
 )
 
@@ -109,7 +111,8 @@ class Map02LocalCatalinaReceiptContracts(unittest.TestCase):
                 local_acceptance()
             launch.assert_not_called()
 
-    def fake_macos(self, version, *, strict=False):
+    def fake_macos(self, version, *, strict=False, after_receipt=None,
+                   after_sha=None, post_error=False, reject=False):
         responses = [
             SimpleNamespace(
                 returncode=0, stdout=json.dumps(INTEGRITY), stderr=""
@@ -118,6 +121,11 @@ class Map02LocalCatalinaReceiptContracts(unittest.TestCase):
                     json.dumps(dict(SELFCHECK, catalina_10_15_runtime_executed=(version == CATALINA)))
                     + "\n" + json.dumps(HELPERS) + "\n"
                 ), stderr=""),
+            SimpleNamespace(
+                returncode=1 if post_error else 0,
+                stdout=json.dumps(INTEGRITY if after_receipt is None else after_receipt),
+                stderr="",
+            ),
         ]
         with patch("platform.system", return_value="Darwin"), patch(
             "platform.machine", return_value="x86_64"
@@ -131,15 +139,26 @@ class Map02LocalCatalinaReceiptContracts(unittest.TestCase):
                 "host_os_sources_agree": True,
                 "host_os_sources": 3,
             }
+        ), patch(
+            "tools.map02_intel_mac_local_acceptance.checked_manifest_fingerprint",
+            side_effect=["a" * 64, "a" * 64 if after_sha is None else after_sha],
         ), patch("subprocess.run", side_effect=responses) as run:
+            if reject:
+                with self.assertRaises(ValueError):
+                    local_acceptance(require_catalina=strict)
+                return None, run.call_count
             report = local_acceptance(require_catalina=strict)
             return report, run.call_count
 
     def test_macos15_synthetic_ok_never_claim_catalina(self):
         report, calls = self.fake_macos("15.7.1")
         self.assertEqual(report["schema"], SCHEMA)
-        self.assertEqual(calls, 2)
+        self.assertEqual(calls, 3)
         self.assertEqual(report["synthetic_tests_verified"], 49)
+        self.assertEqual(report["public_kit_manifest_sha256"], "a" * 64)
+        self.assertEqual(report["public_kit_files_reverified"], 31)
+        self.assertTrue(report["pre_and_post_kit_integrity_verified"])
+        self.assertFalse(report["public_kit_signature_verified"])
         self.assertFalse(report["actual_catalina_10_15_7_selfcheck_passed"])
         self.assertFalse(report["independent_trusted_machine_attestation"])
         serialized = json.dumps(report)
@@ -165,9 +184,58 @@ class Map02LocalCatalinaReceiptContracts(unittest.TestCase):
     def test_catalina_receipt_label_requires_exact_patch_and_success(self):
         report, calls = self.fake_macos(CATALINA, strict=True)
         self.assertTrue(report["actual_catalina_10_15_7_selfcheck_passed"])
-        self.assertEqual(calls, 2)
+        self.assertEqual(calls, 3)
         self.assertFalse(report["owner_ps1_disc_authenticated"])
         self.assertFalse(report["original_playstation_gpu_pixels_verified"])
+
+
+    def test_manifest_fingerprint_hashes_exact_public_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = b'{"files":{}, "public_only": true}\n'
+            (root / "files.json").write_bytes(data)
+            self.assertEqual(
+                checked_manifest_fingerprint(root),
+                hashlib.sha256(data).hexdigest(),
+            )
+
+    def test_missing_symlinked_or_binary_manifest_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaises(ValueError):
+                checked_manifest_fingerprint(root)
+            raw = root / "outside.json"
+            raw.write_text("safe", encoding="utf-8")
+            (root / "files.json").symlink_to(raw)
+            with self.assertRaises(ValueError):
+                checked_manifest_fingerprint(root)
+            (root / "files.json").unlink()
+            (root / "files.json").write_bytes(b"embedded\x00binary")
+            with self.assertRaises(ValueError):
+                checked_manifest_fingerprint(root)
+
+    def test_manifest_changed_after_successful_diagnostics_is_rejected(self):
+        report, calls = self.fake_macos(
+            "15.7.1", after_sha="b" * 64, reject=True,
+        )
+        self.assertIsNone(report)
+        self.assertEqual(calls, 3)
+
+    def test_postrun_reverification_detects_different_file_receipt(self):
+        after = dict(INTEGRITY, file_digests_verified=30)
+        report, calls = self.fake_macos(
+            "15.7.1", after_receipt=after, reject=True,
+        )
+        self.assertIsNone(report)
+        self.assertEqual(calls, 3)
+
+    def test_postrun_reverification_failure_refuses_acceptance(self):
+        report, calls = self.fake_macos(
+            "15.7.1", post_error=True, reject=True,
+        )
+        self.assertIsNone(report)
+        self.assertEqual(calls, 3)
+
 
 
 class IntelMacThreeSourceIdentityContracts(unittest.TestCase):
