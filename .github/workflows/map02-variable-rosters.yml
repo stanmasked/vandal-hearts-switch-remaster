@@ -26,6 +26,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Refuse forged troop counts and stale authored headers
         shell: bash
+        env:
+          CC: ${{ matrix.cc }}
         run: |
           set -euo pipefail
           python3 tools/generate_map02_fixture.py --all --check
