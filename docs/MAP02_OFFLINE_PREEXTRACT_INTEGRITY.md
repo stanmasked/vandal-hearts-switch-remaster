@@ -92,3 +92,19 @@ tests on Catalina. Nintendo Switch hardware execution is not
 demonstrated.
 
 Keep this work in Draft; no merges and no original assets uploaded.
+
+
+## Local host acceptance receipt (optional)
+
+After verifying and extracting the public-only kit, use the included
+`python3 -B -m tools.map02_intel_mac_local_acceptance` to run the actual
+49-test synthetic suite and the three C helpers again, producing a
+sanitized operating-system compatibility receipt. The stricter
+`--require-catalina-10-15-7` option refuses any host other than actual
+Intel macOS 10.15.7 *before running the suite*. In particular, GitHub's
+macOS 15 Intel runners may verify the general receipt but must **reject**
+a Catalina-specific acceptance claim. Do not interpret mocked unit tests
+that simulate a Catalina environment as a real runtime demonstration.
+No private game material is used and the receipt is not a remotely
+trusted hardware attestation. Do not place the receipt inside the extracted
+kit, where it would be an unexpected extra file for `verify-kit.py`.
