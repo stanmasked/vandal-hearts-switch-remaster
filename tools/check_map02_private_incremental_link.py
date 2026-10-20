@@ -131,11 +131,16 @@ def _private_output_dir(path):
                   stat.S_IMODE(metadata.st_mode))
 
 
-def probe_private_incremental_link(manifest, partial, candidates, out_dir):
-    """Return only aggregate symbol counts from an actual non-executing link."""
+def probe_private_incremental_link(manifest, partial, candidates, out_dir,
+                                   *, group_archives=False):
+    """Return aggregate counts from an actual non-executing GNU partial link."""
     doc = read_private_manifest(manifest)
     if not 1 <= len(candidates) <= 64:
         raise ValueError("private MAP02 candidate count must be 1..64")
+    if group_archives and (len(candidates) < 2 or any(
+            Path(candidate).suffix != ".a" for candidate in candidates)):
+        raise ValueError(
+            "private MAP02 grouped link requires at least two archive candidates")
     inputs = []
     seen_inodes = set()
     try:
@@ -163,9 +168,14 @@ def probe_private_incremental_link(manifest, partial, candidates, out_dir):
         output_dir, dir_ident = _private_output_dir(out_dir)
         output = output_dir / OUTPUT
         fds = [item[0] for item in inputs]
+        if group_archives:
+            linker_inputs = [f"/proc/self/fd/{fds[0]}", "--start-group",
+                             *(f"/proc/self/fd/{fd}" for fd in fds[1:]),
+                             "--end-group"]
+        else:
+            linker_inputs = [f"/proc/self/fd/{fd}" for fd in fds]
         _run_native_tool(
-            ["ld", "-r", "-o", str(output),
-             *(f"/proc/self/fd/{fd}" for fd in fds)],
+            ["ld", "-r", "-o", str(output), *linker_inputs],
             fds, timeout=120)
         info = output.lstat()
         if (not stat.S_ISREG(info.st_mode)
@@ -191,7 +201,9 @@ def probe_private_incremental_link(manifest, partial, candidates, out_dir):
                 "candidate_count": len(candidates),
                 "candidate_archive_count":
                     sum(Path(candidate).suffix == ".a" for candidate in candidates),
-                "archive_selection_strategy": "single_pass_user_order",
+                "archive_selection_strategy": (
+                    "repeated_archive_group" if group_archives
+                    else "single_pass_user_order"),
                 "original_strong_import_count": len(original),
                 "original_strong_imports_resolved_by_ld_r":
                     len(original - updated),
@@ -218,11 +230,15 @@ def main():
     parser.add_argument("private_original_partial_elf", type=Path)
     parser.add_argument("new_private_output_dir", type=Path)
     parser.add_argument("native_candidate", type=Path, nargs="+")
+    parser.add_argument(
+        "--group-archives", action="store_true",
+        help="repeat resolution over two or more .a inputs; no direct .o candidates")
     args = parser.parse_args()
     try:
         result = probe_private_incremental_link(
             args.private_undefined_manifest, args.private_original_partial_elf,
-            args.native_candidate, args.new_private_output_dir)
+            args.native_candidate, args.new_private_output_dir,
+            group_archives=args.group_archives)
     except (OSError, ValueError, subprocess.TimeoutExpired):
         parser.error("private MAP02 incremental link probe failed")
     print(json.dumps(result, sort_keys=True, indent=2))
