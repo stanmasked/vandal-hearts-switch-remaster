@@ -256,6 +256,54 @@ def make_inventory(upstream, bundle, *, make="make"):
     return [line.split() for line in lines]
 
 
+def check_elf_function_sections(path, *, pass_fds=()):
+    """Require original API entrypoints to be sized global ELF FUNC symbols.
+
+    A global NOTYPE label inside .text is reported as 'T' by nm but must
+    not impersonate an original C function. Use the same sealed descriptor
+    as readelf -h and nm during partial-ELF inspection.
+    """
+    section_result = subprocess.run(
+        ["readelf", "-W", "-S", str(path)], capture_output=True,
+        text=True, timeout=30, check=False, pass_fds=pass_fds)
+    symbol_result = subprocess.run(
+        ["readelf", "-W", "-s", str(path)], capture_output=True,
+        text=True, timeout=30, check=False, pass_fds=pass_fds)
+    if section_result.returncode or symbol_result.returncode:
+        raise ValueError("original PC ELF section/function symbols unavailable")
+    code_sections = set()
+    for line in section_result.stdout.splitlines():
+        match = re.match(r"^\s*\[\s*(\d+)\]\s+(.+)$", line)
+        if not match:
+            continue
+        cells = match.group(2).split()
+        # GNU readelf -W -S: name type addr off size ES flags link info align
+        if (len(cells) >= 7 and cells[1] == "PROGBITS"
+                and "A" in cells[6] and "X" in cells[6]
+                and "W" not in cells[6]):
+            code_sections.add(match.group(1))
+    if not code_sections:
+        raise ValueError("original PC ELF executable code sections unavailable")
+    exported = {name: [] for name in REQUIRED_SYMBOLS}
+    for line in symbol_result.stdout.splitlines():
+        cells = line.split()
+        # GNU readelf -W -s: num value size type bind vis ndx name
+        if (len(cells) < 8 or not cells[0].endswith(":")
+                or not cells[0][:-1].isdigit()):
+            continue
+        name = cells[7]
+        if name in exported:
+            exported[name].append(cells)
+    for name, candidates in exported.items():
+        if (len(candidates) != 1
+                or candidates[0][3:5] != ["FUNC", "GLOBAL"]
+                or candidates[0][6] not in code_sections
+                or not candidates[0][2].isdigit()
+                or int(candidates[0][2]) < 1):
+            raise ValueError("original CD/GPU or observer ELF FUNC export invalid")
+    return len(exported)
+
+
 def inspect_relocatable(path, *, pass_fds=()):
     header = subprocess.run(
         ["readelf", "-h", str(path)], capture_output=True,
@@ -290,8 +338,9 @@ def inspect_relocatable(path, *, pass_fds=()):
     if any(re.search(r"\bU\s+vh_map02_\w+", line)
            for line in undefined.stdout.splitlines()):
         raise ValueError("combined original PC code has unresolved MAP02 observer hooks")
+    function_count = check_elf_function_sections(path, pass_fds=pass_fds)
     return {
-        "original_cd_gpu_and_vram_exports_verified": len(REQUIRED_SYMBOLS),
+        "original_cd_gpu_and_vram_exports_verified": function_count,
         "ordinary_game_or_private_asset_symbols_may_be_unresolved": True,
     }
 
