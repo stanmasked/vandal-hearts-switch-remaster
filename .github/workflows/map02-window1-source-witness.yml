@@ -1,0 +1,57 @@
+name: MAP02 window1 source-FT4 and private witness bridge
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-window1-source-witness.yml'
+      - 'tools/verify_map02_source_native_windows.py'
+      - 'tools/publish_map02_native_window_source_witness.py'
+      - 'tests/test_map02_source_native_windows.py'
+      - 'tests/test_verify_map02_native_gpu_windows.py'
+      - 'tools/instrument_map02_gpu_native_events.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  native-window-source-witness:
+    name: Synthetic 66-event source FT4 -> window1 LoadImage witness + CLI redaction
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify 15 source-pinned native window recorder scenarios
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_verify_map02_native_gpu_windows.py' -v \
+            2>&1 | tee /tmp/vh-map02-window1-native-tests.log
+          grep -F 'Ran 15 tests' /tmp/vh-map02-window1-native-tests.log
+          grep -F 'test_second_window_loadimage_uses_local_upload_index' \
+            /tmp/vh-map02-window1-native-tests.log
+      - name: Exercise complete source-FT4/window1-LD and published SHA witness with private error redaction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_map02_source_native_windows.py' -v \
+            2>&1 | tee /tmp/vh-map02-window1-source-tests.log
+          grep -F 'Ran 11 tests' /tmp/vh-map02-window1-source-tests.log
+          grep -F 'test_source_ft4_and_witness_survive_window1_loadimage_transfer' \
+            /tmp/vh-map02-window1-source-tests.log
+          grep -F 'test_source_join_cli_never_logs_private_capture_paths' \
+            /tmp/vh-map02-window1-source-tests.log
+          grep -F 'test_window_witness_publish_and_verify_cli_redact_private_paths' \
+            /tmp/vh-map02-window1-source-tests.log
+          echo 'VH_MAP02_WINDOW1_SOURCE_WITNESS_PASS source_subsequence=1 events=66 windows=2 private_paths_redacted=1 real_disc=0'
+      - name: Confirm unchanged pinned GPU recorder instrumenter contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_instrument_map02_gpu_native_events.py' -v \
+            2>&1 | tee /tmp/vh-map02-window1-pinned-instrument.log
+          grep -F 'Ran 3 tests' /tmp/vh-map02-window1-pinned-instrument.log
+          echo 'VH_MAP02_WINDOW1_SOURCE_INSTRUMENTER_PASS local_upload=1 original_disc=0'
