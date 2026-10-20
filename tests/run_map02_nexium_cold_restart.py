@@ -14,6 +14,8 @@ from pathlib import Path
 import subprocess
 import time
 
+from PIL import ImageChops
+
 from run_map02_nexium_4v4 import (
     NeXiumPad, HERO, ENEMY, ACTED, BOARD,
     cmd, diff, health_bar_pixels, read, tile,
@@ -25,6 +27,11 @@ STAGES = (
     "medic_healed", "reset", "bow_ready", "bow_hit", "bow_reset",
     "legacy_return",
 )
+
+
+def identical_pixels(a, b, rect) -> bool:
+    """Require exact RGB equality; the semantic diff() permits channel noise <=30."""
+    return ImageChops.difference(a.crop(rect), b.crop(rect)).getbbox() is None
 
 
 def verify(folder: Path) -> None:
@@ -84,11 +91,11 @@ def verify(folder: Path) -> None:
     # Stronger than two green replays: require identical visible game states
     # at EVERY shared checkpoint, not just expected hit/heal classifications.
     for stage in STAGES:
-        if diff(frames[1][stage], frames[2][stage], BOARD) != 0:
+        if not identical_pixels(frames[1][stage], frames[2][stage], BOARD):
             raise ValueError(f"cold boot image non-deterministic on BOARD: {stage}")
     for stage in ("second", "pre_hit", "guard_armed", "guard_hit",
                   "medic_healed", "reset", "bow_ready", "bow_hit", "bow_reset"):
-        if diff(frames[1][stage], frames[2][stage], GUARD_HUD) != 0:
+        if not identical_pixels(frames[1][stage], frames[2][stage], GUARD_HUD):
             raise ValueError(f"cold boot image non-deterministic on guard HUD: {stage}")
 
     print(
