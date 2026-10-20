@@ -128,7 +128,10 @@ class PublicX11NativeReplayTests(unittest.TestCase):
     def test_wrong_expected_baseline_fails_without_output(self):
         output = self.root / "wrong-count"
         with self.assertRaisesRegex(ValueError, "expected import totals invalid"):
-            self.check(output, expected_sdl2_strong=True)
+            verify_x11_native_replay(
+                self.manifest, self.sdl2, self.candidate, self.linked,
+                self.json_file, output,
+                expected_sdl2_strong=True, expected_final_strong=2)
         self.assertFalse(output.exists())
 
 
