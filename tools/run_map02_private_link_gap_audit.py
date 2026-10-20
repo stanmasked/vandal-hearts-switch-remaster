@@ -11,7 +11,9 @@ from pathlib import Path
 import stat
 import subprocess
 
-from tools.check_map02_private_provider_coverage import read_private_manifest
+from tools.check_map02_private_provider_coverage import (
+    audit_provider_coverage, read_private_manifest,
+)
 from tools.check_map02_private_incremental_link import _private_output_dir
 from tools.check_map02_private_archive_strategy_compare import (
     compare_private_archive_strategies, write_private_archive_receipt,
@@ -25,7 +27,8 @@ REPORT = "paired.private.json"
 
 
 def run_private_link_gap_audit(manifest, partial, archives, output_root,
-                               *, expected_initial_strong_imports=None):
+                               *, expected_initial_strong_imports=None,
+                               audit_strong_providers=False):
     """Create sealed original-link comparison and recheck saved ELF evidence."""
     # Fail without side effects if there is no actionable provider set.
     candidates = [Path(value) for value in archives]
@@ -41,6 +44,21 @@ def run_private_link_gap_audit(manifest, partial, archives, output_root,
             or expected_initial_strong_imports < 0
             or initial_count != expected_initial_strong_imports):
         raise ValueError("private MAP02 expected original strong import count differs")
+    provider_coverage = None
+    if audit_strong_providers:
+        # Aggregate symbol presence is not equivalent to successful GNU
+        # archive-member extraction. Inspect BEFORE creating outputs.
+        provider_coverage = audit_provider_coverage(manifest, candidates)
+        if (provider_coverage["relocatable_elf_sha256"] !=
+                original["relocatable_elf_sha256"]
+                or provider_coverage["original_strong_unresolved_count"] !=
+                   initial_count
+                or provider_coverage["candidate_provider_file_count"] !=
+                   len(candidates)
+                or provider_coverage["strong_symbols_with_candidate_provider"]
+                   + provider_coverage["strong_symbols_without_candidate_provider"]
+                   != initial_count):
+            raise ValueError("private MAP02 candidate provider coverage inconsistent")
     parent, parent_identity = _private_output_dir(output_root)
     child = parent / "linked"
     receipt_dir = parent / "receipts"
@@ -86,6 +104,18 @@ def run_private_link_gap_audit(manifest, partial, archives, output_root,
         "initial_strong_import_count": initial_count,
         "candidate_archive_count": archive_count,
         "candidate_direct_object_count": len(candidates) - archive_count,
+        "candidate_strong_provider_coverage_checked":
+            provider_coverage is not None,
+        "initial_imports_with_strong_provider_candidate": (
+            provider_coverage["strong_symbols_with_candidate_provider"]
+            if provider_coverage is not None else None),
+        "initial_imports_without_strong_provider_candidate": (
+            provider_coverage["strong_symbols_without_candidate_provider"]
+            if provider_coverage is not None else None),
+        "initial_imports_with_multiple_strong_provider_candidates": (
+            provider_coverage["strong_symbols_with_multiple_candidates"]
+            if provider_coverage is not None else None),
+        "provider_presence_proves_actual_link_resolution": False,
         "group_strategy_reorders_direct_objects_before_archives":
             archive_count != len(candidates),
         "expected_initial_import_count_confirmed":
@@ -122,6 +152,9 @@ def main():
     parser.add_argument("new_private_output_root", type=Path)
     parser.add_argument("native_candidate", type=Path, nargs="+")
     parser.add_argument(
+        "--audit-strong-provider-coverage", action="store_true",
+        help="check aggregate strong provider presence before creating output")
+    parser.add_argument(
         "--expect-initial-strong-imports", type=int, default=None,
         help="fail before creating output if the original strong-import count differs")
     args = parser.parse_args()
@@ -129,7 +162,8 @@ def main():
         summary = run_private_link_gap_audit(
             args.private_undefined_manifest, args.private_original_partial_elf,
             args.native_candidate, args.new_private_output_root,
-            expected_initial_strong_imports=args.expect_initial_strong_imports)
+            expected_initial_strong_imports=args.expect_initial_strong_imports,
+            audit_strong_providers=args.audit_strong_provider_coverage)
     except (OSError, ValueError, subprocess.TimeoutExpired):
         parser.error("private MAP02 one-shot link gap audit failed")
     print(json.dumps(summary, indent=2, sort_keys=True))
