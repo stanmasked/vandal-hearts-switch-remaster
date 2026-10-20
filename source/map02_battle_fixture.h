@@ -32,6 +32,15 @@ typedef struct {
 } VhBattleScenario;
 
 #include "map02_encounter_data.h"
+#include "map02_encounter_b_data.h"
+
+enum { VH_BSCENARIOS = 2 };
+
+static inline const VhBattleScenario *vh_bscenario_by_index(int index) {
+    if (index == 0) return &VH_MAP02_DEFAULT_SCENARIO;
+    if (index == 1) return &VH_MAP02_SECOND_SCENARIO;
+    return 0;  /* untrusted scenario IDs fail closed */
+}
 
 typedef struct {
     VhBattleUnit units[VH_BUNITS]; /* 0-1 allies; 2-3 enemies */
@@ -186,8 +195,13 @@ static inline int vh_binit_scenario(VhMap02Battle *s,
     return 1;
 }
 
+static inline int vh_binit_index(VhMap02Battle *s, int index) {
+    const VhBattleScenario *data = vh_bscenario_by_index(index);
+    return data && vh_binit_scenario(s, data);
+}
+
 static inline void vh_binit(VhMap02Battle *s) {
-    (void)vh_binit_scenario(s, &VH_MAP02_DEFAULT_SCENARIO);
+    (void)vh_binit_index(s, 0);
 }
 
 static inline void vh_bcursor(VhMap02Battle *s, int dx, int dy) {
