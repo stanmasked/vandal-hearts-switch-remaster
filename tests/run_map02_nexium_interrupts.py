@@ -184,8 +184,9 @@ def main():
             pad.snapshot("second_reentry")
 
             pad.press("n")          # MINUS disables battle demo entirely
-            pad.press("n")          # MINUS reopens old MAP02
-            pad.press("q")          # ensure approved first legacy map
+            pad.press("n")          # MINUS reopens old MAP02 at scenario_id=0
+            # Do not press L here: MINUS explicitly initializes Map 1, while
+            # an extra L would accidentally cycle into the other legacy map.
             pad.snapshot("legacy_after_minus")
             pad.toggle_eight()
             pad.cursor = (0, 0)
