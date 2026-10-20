@@ -1,0 +1,95 @@
+name: MAP02 Intel Mac offline no-disc CLI selfcheck
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-intel-mac-offline-selfcheck.yml'
+      - 'tools/map02_intel_mac_offline_selfcheck.py'
+      - 'tests/test_map02_intel_mac_offline_selfcheck.py'
+      - 'tests/test_map02_private_ft4_cli_contract.py'
+      - 'tools/verify_map02_private_pc_native_ft4.py'
+      - 'tools/verify_map02_private_timeline_pc_vram4.py'
+      - 'source/map02_vram4_page.h'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  real-intel-macos:
+    name: Real Intel Mac offline command (Python ${{ matrix.python }})
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.11']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: upstream
+          sparse-checkout: |
+            platform/pc/src/pc_raster.c
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Run actual offline Intel Mac source-pinned command
+        env:
+          MAP02_PINNED_RASTER: upstream/platform/pc/src/pc_raster.c
+          CC: clang
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = x86_64
+          python -m unittest discover -s tests \
+            -p 'test_map02_intel_mac_offline_selfcheck.py' -v \
+            2>&1 | tee /tmp/vh-map02-offline-contract.log
+          grep -F 'Ran 4 tests' /tmp/vh-map02-offline-contract.log
+          python -m tools.map02_intel_mac_offline_selfcheck \
+            upstream/platform/pc/src/pc_raster.c \
+            > /tmp/vh-map02-offline-report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path("/tmp/vh-map02-offline-report.json").read_text())
+          assert r["intel_macos_host_checked"] is True
+          assert r["private_format_timeline_tests_passed"] == 14
+          assert r["private_format_native_ft4_tests_passed"] == 25
+          assert r["private_format_real_cli_tests_passed"] == 3
+          assert r["synthetic_regressions_total"] == 42
+          assert r["synthetic_c11_ft4_frame_passed"] is True
+          assert r["external_network_used"] is False
+          assert r["owner_ps1_disc_or_capture_read"] is False
+          assert r["real_retail_map02_authenticated"] is False
+          print("VH_MAP02_INTEL_OFFLINE_SELFCHECK_PASS python=${{ matrix.python }} synthetic=42 cli=3 real_disc=0")
+          PY
+
+  negative-host:
+    name: Reject Linux host as purported Intel Mac
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Reject macOS claim before opening public or private files
+        shell: bash
+        run: |
+          set -euo pipefail
+          if python3 -m tools.map02_intel_mac_offline_selfcheck /does/not/exist \
+                > /tmp/vh-map02-invalid-mac.stdout \
+                2> /tmp/vh-map02-invalid-mac.stderr; then
+            echo "Linux was incorrectly accepted as Intel Mac"
+            exit 1
+          fi
+          test ! -s /tmp/vh-map02-invalid-mac.stdout
+          grep -F 'offline synthetic MAP02 checks unavailable' \
+            /tmp/vh-map02-invalid-mac.stderr
+          echo 'VH_MAP02_FAKE_INTEL_MAC_REJECTED host=linux original_disc=0'
