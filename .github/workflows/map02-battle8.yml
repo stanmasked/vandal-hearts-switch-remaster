@@ -1,0 +1,59 @@
+name: MAP02 eight-slot portable tactical turns
+on:
+  pull_request:
+    paths:
+      - 'source/map02_battle8.h'
+      - 'tests/test_map02_battle8.c'
+      - 'source/map02_roster8.h'
+      - 'source/map02_battle_fixture.h'
+      - 'source/map02_encounter_data.h'
+      - 'source/map02_encounter_b_data.h'
+      - '.github/workflows/map02-battle8.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  full-turn-model:
+    name: Eight-slot action and enemy AI contract (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and execute portable eight-slot tactical games
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -O2 -Wall -Wextra -Werror -pedantic tests/test_map02_battle8.c -o /tmp/vh-map02-battle8
+          /tmp/vh-map02-battle8 | tee /tmp/vh-map02-battle8-proof
+          grep -Fx 'VH_MAP02_BATTLE8_PASS slots=8 ally_victory=4 enemy_defeat=4 multi_turn=1 pathfinding=1 no_mutation=1 switch_integration=0' /tmp/vh-map02-battle8-proof
+          "$CC" -std=c11 -O0 -g -Wall -Wextra -Werror -pedantic -fsanitize=undefined -fno-sanitize-recover=all tests/test_map02_battle8.c -o /tmp/vh-map02-battle8-ubsan
+          /tmp/vh-map02-battle8-ubsan
+          "$CC" -std=c11 -O2 -Wall -Wextra -Werror -pedantic tests/test_map02_roster8.c -o /tmp/vh-map02-roster8
+          /tmp/vh-map02-roster8
+          "$CC" -std=c11 -O2 -Wall -Wextra -Werror -pedantic tests/test_map02_two_scenarios.c -o /tmp/vh-map02-two-scenarios
+          /tmp/vh-map02-two-scenarios
+          "$CC" -std=c11 -O2 -Wall -Wextra -Werror -pedantic tests/test_map02_variable_rosters.c -o /tmp/vh-map02-old-rosters
+          /tmp/vh-map02-old-rosters
+          python3 tools/generate_map02_fixture.py --all --check
+  unchanged-switch:
+    name: Build existing libnx NRO without eight-slot integration
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate unchanged legacy Switch NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/opt/devkitpro/devkitA64/bin:/opt/devkitpro/tools/bin:$PATH"
+          make verify-nro
+          test -s build/vandal-hearts-prototype.nro
+          echo 'VH_MAP02_BATTLE8_NRO_LEGACY_PASS eight_slots_integrated=0'
