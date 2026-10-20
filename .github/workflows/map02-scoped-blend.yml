@@ -570,7 +570,8 @@ jobs:
           assert (result["original_imports_still_unresolved"] +
                   result["new_undefined_imports_introduced_by_sdl2"] ==
                   result["final_undefined_strong_count"])
-          assert result["real_system_static_archive_used"] is True
+          assert result["ordinary_native_static_archive_tested"] is True
+          assert result["system_archive_package_origin_independently_attested"] is False
           assert result["asset_free_public_pc_code_only"] is True
           assert result["fully_linked_game_executable"] is False
           assert result["original_map02_execution_proven"] is False
