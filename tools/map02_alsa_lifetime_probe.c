@@ -95,7 +95,10 @@ static void write_snapshot(void) {
     char line[256];
     int n=snprintf(line,sizeof(line),
                    "T,%" PRIu64 ",0,0,0,0,0,0,0,0,0\n",now);
-    if(n>0&&(size_t)n<sizeof(line))(void)write(fd,line,(size_t)n);
+    if(n>0&&(size_t)n<sizeof(line)) {
+        ssize_t written=write(fd,line,(size_t)n);
+        if(written!=n) {close(fd);return;} /* incomplete snapshot fails audit */
+    }
     for (unsigned i=0;i<SLOTS;i++) {
         Entry *e=&slots[i];
         unsigned id=atomic_load(&e->id);
@@ -107,7 +110,10 @@ static void write_snapshot(void) {
                    atomic_load(&e->period),atomic_load(&e->buffer),
                    atomic_load(&e->write_calls),atomic_load(&e->mmap_calls),
                    atomic_load(&e->positive_frames),atomic_load(&e->errors));
-        if(n>0&&(size_t)n<sizeof(line))(void)write(fd,line,(size_t)n);
+        if(n>0&&(size_t)n<sizeof(line)) {
+        ssize_t written=write(fd,line,(size_t)n);
+        if(written!=n) {close(fd);return;} /* incomplete snapshot fails audit */
+    }
     }
     close(fd);
 }
