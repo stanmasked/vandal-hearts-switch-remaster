@@ -50,7 +50,9 @@ def check(root, source, run_id):
         require(parsed["instrumentation_affects_host_timing"] is True and
                 parsed["rust_cpal_callback_period_proven"] is False and
                 parsed["guest_audout_service_deadlock_proven"] is False and
-                parsed["physical_switch_audio_proven"] is False,
+                parsed["physical_switch_audio_proven"] is False and
+                parsed["anonymous_pcm_stream_ordinals_available"] is True and
+                parsed["raw_audio_data_collected"] is False,
                 f"{d}: unsupported host liveness or hardware claim")
         rows.append({
             "hint_ms":ms,"repeat":rep,
@@ -64,6 +66,19 @@ def check(root, source, run_id):
             "observed_alsa_buffer_frames":parsed["buffer_frames_values"],
             "alsa_transfer_kinds":parsed["transfer_kinds"],
             "alsa_transfer_calls_sampled":parsed["transfer_call_count"],
+            "48k_stereo_alsa_stream_ids":parsed["48k_stereo_stream_ids"],
+            "other_alsa_stream_ids":parsed["other_hw_stream_ids"],
+            "48k_attributed_transfer_calls":
+                parsed["48k_stereo_attributed_transfer_count"],
+            "other_attributed_transfer_calls":
+                parsed["other_config_attributed_transfer_count"],
+            "unattributed_transfer_calls":
+                parsed["unattributed_transfer_count"],
+            "mixed_config_stream_ids":
+                parsed["mixed_configuration_stream_ids"],
+            "raw_alsa_stream_pointers_exposed":False,
+            "trace_event_limit_reached":
+                parsed["capture_prefix_only_if_event_limit_reached"],
             "alsa_transfer_duration_ns_min":
                 parsed["transfer_duration_ns_min"],
             "alsa_transfer_duration_ns_max":
@@ -79,6 +94,8 @@ def check(root, source, run_id):
         "alsa_probe_sha256":probe["sha256"],
         "same_nexium_host_binary_all_six_verified":True,
         "same_alsa_preload_binary_all_six_verified":True,
+        "anonymous_pcm_stream_ordinals_all_six_present":True,
+        "rust_cpal_callback_identity_directly_proven":False,
         "guest_nro_png_pcm_six_trials_verified":True,
         "instrumentation_is_a_changed_guest_host_workload":True,
         "no_inference_from_prior_uninstrumented_guest_outcomes":True,
