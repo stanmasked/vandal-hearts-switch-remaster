@@ -175,8 +175,10 @@ def main():
     try:
         report = verify_window_source_join(
             args.source_bundle, args.native_windows, compiler=args.compiler)
-    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
-        p.error(str(exc))
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        # Source claims and private GPU inputs may contain owner paths.
+        # Do not reproduce untrusted error text in public CI/terminal logs.
+        p.error("private MAP02 source/native window join unavailable")
     print(json.dumps(report, sort_keys=True, indent=2))
 
 
