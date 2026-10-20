@@ -116,7 +116,8 @@ class LifetimeTests(unittest.TestCase):
 
     def test_generated_heartbeat_and_markers(self):
         sample(self.path)
-        r=parse(self.path,first_input_ns=400000000,
+        # The first input must have at least 500ms pre-input snapshots.
+        r=parse(self.path,first_input_ns=800000000,
                 last_observation_ns=1650000000)
         self.assertTrue(r["guest_input_markers_checked"])
         self.assertEqual(r["per_stream"]["1"]["sampled_first_last_delta_write_calls"],18)
