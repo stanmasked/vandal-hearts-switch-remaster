@@ -17,9 +17,10 @@ The oracle asserts tile colors, health-bar pixel counts and unchanged board scre
 
 ## Self-test and build checks
 
+- `tests/test_map02_4v4_movement_model.c`: deterministic, original-data-free C replay of the **exact same** illegal wall selection, legal step, enemy HP loss, pursuit into (0,3), and Y-equivalent reset. GCC, Clang and UBSan all check the model; this host replay cannot prove actual controller/graphics behavior.
 - `tests/run_map02_nexium_4v4_movement.py`: real X11/NeXium buttons, screenshot capture, and strict runtime image verification.
 - `tests/test_map02_nexium_4v4_movement_oracle.py`: ten independently generated positive/negative screenshots to reject wall teleporting, missing legal move, absent opponent pursuit, missing damage, un-reset acted-state, wrong map, bad reset and wrong size. **These synthetic screenshots are not proof of running the game.**
-- `.github/workflows/map02-nexium-4v4-movement.yml`: independent GCC-independent screenshot-oracle test job, canonical two-map JSON/header checks, actual devkitA64/libnx NRO build, and a real NeXium headless screenshot job.
+- `.github/workflows/map02-nexium-4v4-movement.yml`: independent GCC/Clang/UBSan tactical-state replay plus screenshot-oracle test job, canonical two-map JSON/header checks, actual devkitA64/libnx NRO build, and a real NeXium headless screenshot job.
 
 ## Limits
 
