@@ -39,8 +39,9 @@ jobs:
             -p 'test_map02_source_native_windows.py' -v \
             2>&1 | tee /tmp/vh-map02-window1-source-tests.log
           # unittest discovers the 15 imported byte-backed native fixture
-          # tests again, plus 11 source-witness and privacy tests: 26 total.
-          grep -F 'Ran 26 tests' /tmp/vh-map02-window1-source-tests.log
+          # tests again, plus 14 source-witness, private-path and source-asset
+          # identity tests: 29 total.
+          grep -F 'Ran 29 tests' /tmp/vh-map02-window1-source-tests.log
           grep -F 'test_source_ft4_and_witness_survive_window1_loadimage_transfer' \
             /tmp/vh-map02-window1-source-tests.log
           grep -F 'test_source_join_cli_never_logs_private_capture_paths' \
