@@ -1,0 +1,300 @@
+name: MAP02 Stage294 first real 22ms NRO on instrumented CPAL host
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-cpal-filelogger-guests.yml'
+      - 'tools/run_map02_filelogger_guest_stage294.sh'
+      - 'docs/MAP02_CPAL_FILELOGGER_STAGE294.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  VH_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_FROZEN_STAGE293: '6df078f7dc5d72ff39d2eac43452d5fa75232966'
+  VH_NEW_HOST_SHA: 'c3803abd7a06fd4081d7d49367cfbd2cedc4bb1650996f1e09fca5788c881b65'
+  VH_ORIGINAL_NRO_SHA: '04b20024a50327091cff430eb5c28e4722d4ec76'
+
+jobs:
+  two-real-filelogger-guests:
+    name: Real new-ELF GUI FileLogger at requested ${{ matrix.hint }}ms
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        hint: [21, 22]
+    env:
+      VH_HINT: ${{ matrix.hint }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Enforce ROM-free research-only guest/log analysis source scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_HEAD"
+          python3 - <<'PY'
+          import os,subprocess
+          paths=set(subprocess.check_output(
+              ["git","diff","--name-only",os.environ["VH_FROZEN_STAGE293"],"HEAD"],
+              text=True).splitlines())
+          allowed={
+              ".github/workflows/map02-cpal-filelogger-guests.yml",
+              "tools/run_map02_filelogger_guest_stage294.sh",
+              "docs/MAP02_CPAL_FILELOGGER_STAGE294.md",
+              "tools/audit_map02_filelogger_guest_stage294.py",
+              "tests/test_audit_map02_filelogger_guest_stage294.py",
+          }
+          assert paths and paths<=allowed,sorted(paths-allowed)
+          PY
+          # Auditor imports Pillow during unittest discovery; install it BEFORE tests.
+          # This changes the CI environment only, not the pinned guest or host.
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends python3-pil
+          python3 -c 'from PIL import Image; print("Pillow preflight OK")'
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_map02_cpal_lifecycle_snapshots.py' -v
+          # The newly compiled ELF contains *only* backend-rustarmic.
+          # Prevent silently falling back to the NeXium GUI Dynarmic default.
+          grep -Fx 'export NEXIUM_CPU_BACKEND=rustarmic' tools/run_map02_filelogger_guest_stage294.sh
+          python3 -m unittest discover -s tests -p 'test_audit_map02_filelogger_guest_stage294.py' -v
+          python3 -m unittest discover -s tests -p 'test_audit_map02_cpal_error_messages_stage293.py' -v
+          python3 - <<'PY'
+          from pathlib import Path
+          old=Path("tools/run_map02_lifecycle_guest_22ms.sh").read_text()
+          new=Path("tools/run_map02_filelogger_guest_stage294.sh").read_text()
+          expected=old.replace("stage"+"290","stage"+"294")
+          prefix=expected.split("export PULSE_LATENCY_MSEC=22")[0]
+          assert new.startswith(prefix)
+          assert 'export PULSE_LATENCY_MSEC="$VH_HINT"' in new
+          assert 'export NEXIUM_LOG_LEVEL=info' in new
+          assert 'export NEXIUM_CPU_BACKEND=rustarmic' in new
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-stage287-experimental-nexium-linux-x86_64
+          run-id: 39492859181
+          github-token: ${{ github.token }}
+          path: host
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-audout-presubmit-research-nro
+          run-id: 39460035568
+          github-token: ${{ github.token }}
+          path: guest
+      - name: Verify actual experimental ELF and ROM-free generated research NRO bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          chmod 0755 host/nexium
+          echo "$VH_NEW_HOST_SHA  host/nexium" | sha256sum -c -
+          python3 - <<'PY'
+          import hashlib,json,os,struct
+          from pathlib import Path
+          raw=Path("host/nexium").read_bytes()
+          m=json.loads(Path("host/manifest.json").read_text())
+          assert len(raw)==292009536 and raw[:4]==b"\x7fELF"
+          assert struct.unpack_from("<H",raw,18)[0]==62
+          assert b"VH_MAP02_CPAL_TRACE_PATH" in raw and b"map02-cpal-counts" in raw
+          digest=hashlib.sha256(raw).hexdigest()
+          assert digest==os.environ["VH_NEW_HOST_SHA"]
+          assert m["executable_sha256"]==digest
+          assert m["research_head_sha"]=="0301b4def224a76905fdb2af5007d1ea73e73f92"
+          assert m["pinned_upstream_source_sha"]=="089562567a0a8760dfdd8420e1f57c35159a9219"
+          assert m["cargo_lock_sha256"]=="e6e8fcb90624650afddd1f25327dd4e6b042b094e8336cb5f43d2dc370e28739"
+          assert m["lifecycle_instrumented_audio_source_sha256"]=="27014ef42f80300f62034d46219c5ac82b9fdc647d23a5c5417b6018548ad78b"
+          assert m["stage286_lifecycle_overlay_source_sha"]=="95a89aa0e43f1a28b8d4e25b477f7aa7e4045ee7"
+          assert m["cpu_backend"]=="rustarmic" and m["build_profile"]=="release"
+          assert m["cpal_lifecycle_csv_prefix"]=="L"
+          assert m["cpal_lifecycle_state_reporter_added"] is True
+          assert m["cpal_error_callback_counter_added"] is True
+          assert m["physical_nintendo_switch_audio_proven"] is False
+          receipt={
+            "schema":"vh-map02-stage294-lifecycle-host-identity/v1",
+            "result":"EXACT_STAGE287_LIFECYCLE_HOST_SHA_VERIFIED",
+            "observed_elf_sha256":digest,
+            "pinned_upstream_source_sha":m["pinned_upstream_source_sha"],
+            "guest_boot_proven":False,
+            "physical_switch_speaker_proven":False,
+          }
+          Path("evidence/host-identity.json").write_text(
+              json.dumps(receipt,sort_keys=True,indent=2)+"\n")
+          PY
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          d=Path("guest")
+          m=json.loads((d/"manifest.json").read_text())
+          nro=(d/"vandal-hearts-map02-audio.nro").read_bytes()
+          assert m["schema"]=="vh-map02-presubmit-guest-nro/v1"
+          assert m["source_sha"]==os.environ["VH_ORIGINAL_NRO_SHA"]
+          assert m["run_id"]==39460035568
+          assert nro[16:20]==b"NRO0"
+          assert hashlib.sha256(nro).hexdigest()==m["nro_sha256"]
+          assert (d/"nro.sha256").read_text().split()[0]==m["nro_sha256"]
+          host=json.loads(Path("evidence/host-identity.json").read_text())
+          assert host["result"]=="EXACT_STAGE287_LIFECYCLE_HOST_SHA_VERIFIED"
+          assert host["observed_elf_sha256"]==os.environ["VH_NEW_HOST_SHA"]
+          report={
+              "schema":"vh-map02-stage294-guest-host-pair/v1",
+              "new_host_executable_sha256":host["observed_elf_sha256"],
+              "guest_nro_sha256":m["nro_sha256"],
+              "guest_original_research_source_sha":m["source_sha"],
+              "old_guest_artifact_run_id":m["run_id"],
+              "actual_new_trial_run_id":int(os.environ["GITHUB_RUN_ID"]),
+              "trial_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "pulse_hint_ms":int(os.environ["VH_HINT"]),
+              "rom_or_licensed_audio_used":False,
+              "physical_switch_audio_proven":False,
+          }
+          Path("evidence/pinned-host-and-nro.json").write_text(
+              json.dumps(report,sort_keys=True,indent=2)+"\n")
+          PY
+      - name: Install audio/graphics libraries for genuine guest optical and virtual PCM
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 \
+            libxkbcommon0 libxkbcommon-x11-0 libx11-xcb1 \
+            libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers libgl1-mesa-dri \
+            pulseaudio pulseaudio-utils libasound2-plugins
+          ldd host/nexium >evidence/host-linked-libraries.txt
+          ! grep -F 'not found' evidence/host-linked-libraries.txt
+          python3 -m unittest discover -s tests \
+            -p 'test_decode_map02_prejoin_stage.py' -v
+      - name: Launch genuine opt-in NRO at requested latency hint with GUI FileLogger
+        shell: bash
+        timeout-minutes: 6
+        run: |
+          set -euo pipefail
+          export MAP02_HOST="$PWD/host/nexium"
+          export MAP02_NRO="$PWD/guest/vandal-hearts-map02-audio.nro"
+          export MAP02_EVIDENCE="$PWD/evidence"
+          bash tools/run_map02_filelogger_guest_stage294.sh
+      - name: Independently parse REAL callback entry/return and AudioOut counters
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_map02_cpal_lifecycle_snapshots.py \
+            --trace evidence/host-cpal-audioout-timeline.csv \
+            --first-input-marker evidence/guest-first-input-monotonic-ns.txt \
+            --final-observation-marker evidence/guest-final-observation-monotonic-ns.txt \
+            --output evidence/host-cpal-lifecycle-audit.json
+      - name: Decode optical guest stage from actual prejoin screenshot
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/decode_map02_prejoin_stage.py \
+            --image evidence/guest-prejoin.png \
+            --output evidence/guest-prejoin-stage.json
+      - name: Record real final optical CRC truthfully at both 21 and 22ms hints
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if python3 tools/decode_map02_audout_presubmit.py \
+            --image evidence/guest-final.png \
+            --output evidence/guest-final-receipt.json; then
+            echo "Actual final optical eight-page guest CRC verified" > evidence/optical-status.txt
+          else
+            echo "Final guest optical CRC unverified" > evidence/optical-status.txt
+          fi
+      - name: Preserve and digest raw 48k virtual PCM even on failure
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from array import array
+          import hashlib,json,sys
+          from pathlib import Path
+          root=Path("evidence")
+          path=root/"virtual-pulse-48k-stereo-s16le.pcm"
+          out={"schema":"vh-map02-stage294-virtual-pcm/v1",
+               "physical_switch_dac_proven":False,
+               "new_host_origin_from_stage287":True}
+          if path.is_file():
+              raw=path.read_bytes()
+              out["raw_sha256"]=hashlib.sha256(raw).hexdigest()
+              out["bytes"]=len(raw)
+              out["valid_pcm16le_stereo"]=len(raw)>0 and len(raw)%4==0
+              if out["valid_pcm16le_stereo"]:
+                  samples=array("h");samples.frombytes(raw)
+                  if sys.byteorder!="little":samples.byteswap()
+                  out["nonzero_pcm16_samples"]=sum(v!=0 for v in samples)
+          else:
+              out["capture_missing"]=True
+          (root/"virtual-pcm-health.json").write_text(
+              json.dumps(out,indent=2,sort_keys=True)+"\n")
+          print(json.dumps(out,sort_keys=True))
+          PY
+      - name: Re-decode real guest PNG/PCM/L-CSV and actual GUI FileLogger error text
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "$RUNNER_TEMP/vh-map02-stage294-home/.config/NeXium/logs"
+          python3 tools/audit_map02_filelogger_guest_stage294.py \
+            --evidence evidence \
+            --logdir "$RUNNER_TEMP/vh-map02-stage294-home/.config/NeXium/logs" \
+            --hint "$VH_HINT" --run-id "$GITHUB_RUN_ID" \
+            --output evidence/stage294-filelogger-derived-receipt.json
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          r=json.loads(Path("evidence/stage294-filelogger-derived-receipt.json").read_text())
+          assert r["result"]=="REAL_LIFECYCLE_NEXIUM_FILELOGGER_AND_GUEST_EVIDENCE_VERIFIED"
+          assert r["requested_pulse_hint_ms"]==int(os.environ["VH_HINT"])
+          assert r["one_source_pinned_gui_filelogger_found"] is True
+          assert r["original_gui_filelogger_raw_bytes_uploaded"] is False
+          assert r["physical_switch_audio_proven"] is False
+          print("Real GUI FileLogger analyzed without uploading raw logs.")
+          PY
+      - name: Report only observations actually supported by this guest run
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path("evidence")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as fp:
+              print("### Stage294 first real NRO on CPAL-instrumented NeXium",file=fp)
+              for filename in ("stage294-filelogger-derived-receipt.json",
+                               "host-cpal-lifecycle-audit.json",
+                               "guest-prejoin-stage.json",
+                               "guest-final-receipt.json",
+                               "virtual-pcm-health.json"):
+                  p=root/filename
+                  if not p.is_file():
+                      print(filename+": **UNVERIFIED**",file=fp)
+                  else:
+                      x=json.loads(p.read_text())
+                      print(filename+": "+x.get("result","recorded"),file=fp)
+                      if filename=="host-cpal-lifecycle-audit.json":
+                          print("Host CPAL status: "+
+                                x.get("guest_window_observation","unverified"),file=fp)
+              print("One requested Pulse hint per independent guest; not a verified "
+                    "CPAL/ALSA hardware period, permanent deadlock, production "
+                    "audio repair or physical Switch speaker test.",file=fp)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage294-real-filelogger-hint${{ matrix.hint }}-evidence
+          path: evidence/
+          if-no-files-found: warn
