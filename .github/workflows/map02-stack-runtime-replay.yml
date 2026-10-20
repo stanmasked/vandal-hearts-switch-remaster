@@ -60,7 +60,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
-          name: map02-guard-boundary-switch-nro
+          name: map02-stack-dual-neXium-nro
           path: nros
       - name: Install X11 Vulkan screenshot and Pillow dependencies
         shell: bash
