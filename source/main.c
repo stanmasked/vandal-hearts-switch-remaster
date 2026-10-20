@@ -8,6 +8,7 @@
 #include "map02_roster8_variants.h"
 #include "map02_ranged8.h"
 #include "map02_medic8.h"
+#include "map02_guard8.h"
 #include "game_renderer.h"
 #include "platform_input.h"
 #include "software_renderer.h"
@@ -492,6 +493,7 @@ static void draw_map02_battle8(u32 *pixels, u32 stride,
         draw_text(pixels, stride, 985, 489, "SECOND ARENA", COLOR_CURSOR, 1);
         draw_text(pixels, stride, 985, 513, "ALLY 1 BOW: B", COLOR_HERO, 1);
         draw_text(pixels, stride, 985, 536, "ALLY 2 HEAL: B", COLOR_HERO, 1);
+        draw_text(pixels, stride, 985, 559, "ALLY 3 GUARD: B", COLOR_HERO, 1);
     }
     draw_text(pixels, stride, 70, 622,
               "ZR OR L+R RETURN  MINUS DEMO  PLUS EXIT", COLOR_MUTED, 2);
@@ -524,6 +526,7 @@ int main(int argc, char **argv) {
     VhGameState state = {1, 2, 1, 2, 6, 3, 0};
     VhMap02Battle battle;
     VhBattle8 battle8;
+    VhGuard8 battle8_guard = {0};
     int battle8_mode = 0;
     int battle8_variant = 0;
     int battle8_scene = 0;
@@ -551,6 +554,7 @@ int main(int argc, char **argv) {
             battle8_mode = 0;
             battle8_variant = 0;
             battle8_scene = 0;
+            vh_b8_guard_reset(&battle8_guard);
             if (battle_mode) {
                 scenario_id = 0;  /* preserves existing NeXium default path */
                 (void)vh_binit_index(&battle, scenario_id);
@@ -568,10 +572,12 @@ int main(int argc, char **argv) {
             if (toggle_8) {
                 if (battle8_mode) {
                     battle8_mode = 0;
+                    vh_b8_guard_reset(&battle8_guard);
                     (void)vh_binit_index(&battle, scenario_id);
                 } else if (vh_b8_init_scene_variant(&battle8, 0, 0)) {
                     battle8_scene = 0;
                     battle8_variant = 0;  /* original 4x4 NeXium default */
+                    vh_b8_guard_reset(&battle8_guard);
                     battle8_mode = 1;
                 }
             }
@@ -581,17 +587,23 @@ int main(int argc, char **argv) {
                 if (!toggle_8 && (buttons_down & HidNpadButton_L)) {
                     const int next = (battle8_scene + 1) % VH_R8_SCENES;
                     if (vh_b8_init_scene_variant(&battle8, next,
-                                                 battle8_variant))
+                                                 battle8_variant)) {
                         battle8_scene = next;
+                        vh_b8_guard_reset(&battle8_guard);
+                    }
                 }
                 if (!toggle_8 && (buttons_down & HidNpadButton_R)) {
                     const int next = (battle8_variant + 1) % VH_R8_VARIANTS;
-                    if (vh_b8_init_scene_variant(&battle8, battle8_scene, next))
+                    if (vh_b8_init_scene_variant(&battle8, battle8_scene, next)) {
                         battle8_variant = next;
+                        vh_b8_guard_reset(&battle8_guard);
+                    }
                 }
-                if (buttons_down & HidNpadButton_Y)
-                    (void)vh_b8_init_scene_variant(&battle8, battle8_scene,
-                                                   battle8_variant);
+                if (buttons_down & HidNpadButton_Y) {
+                    if (vh_b8_init_scene_variant(&battle8, battle8_scene,
+                                                 battle8_variant))
+                        vh_b8_guard_reset(&battle8_guard);
+                }
                 if (actions & VH_INPUT_LEFT)  vh_b8_cursor(&battle8, -1, 0);
                 if (actions & VH_INPUT_RIGHT) vh_b8_cursor(&battle8, 1, 0);
                 if (actions & VH_INPUT_UP)    vh_b8_cursor(&battle8, 0, -1);
@@ -618,13 +630,25 @@ int main(int argc, char **argv) {
                         /* A damaged allied target requests a support action.
                          * Out-of-range support cannot spend the medic's turn. */
                         (void)vh_b8_heal(&battle8);
+                    } else if (battle8_scene == 1 &&
+                               battle8.selected == VH_B8_GUARD_SLOT &&
+                               occ == VH_B8_GUARD_SLOT) {
+                        /* B on the third ally itself arms one guarded phase.
+                         * An invalid request never consumes an action. */
+                        (void)vh_b8_guard_action(&battle8, &battle8_guard);
                     } else {
                         /* Existing B cancel unchanged for all other cases. */
                         (void)vh_b8_cancel(&battle8);
                     }
                 }
-                if (buttons_down & HidNpadButton_X)
-                    (void)vh_b8_end_turn(&battle8);
+                if (buttons_down & HidNpadButton_X) {
+                    if (battle8_scene == 1 && battle8_guard.active)
+                        (void)vh_b8_end_turn_guarded(&battle8, &battle8_guard);
+                    else {
+                        (void)vh_b8_end_turn(&battle8);
+                        battle8_guard.absorbed_last_turn = 0;
+                    }
+                }
             } else if (!toggle_8) {
                 if (buttons_down & (HidNpadButton_L | HidNpadButton_R)) {
                     int next = (scenario_id + 1) % VH_BSCENARIOS;
