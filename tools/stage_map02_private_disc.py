@@ -152,6 +152,25 @@ def _verify_staged_copy(stagedfd, expected_sha256, expected_bytes, cue_bytes):
             os.close(fd)
 
 
+def _assert_local_only_destination(parent, image, cue):
+    """Reject output in the source tree or macOS cloud-synchronized storage.
+
+    Google Drive for desktop's File Provider root normally lives beneath
+    ~/Library/CloudStorage. Refusing it prevents an accidental second
+    upload of the full raw BIN. This is conservative path preflight, not
+    proof that every third-party folder is unsynchronized.
+    """
+    checked_parent = parent.resolve(strict=True)
+    user_cloud = (Path.home() / "Library" / "CloudStorage").resolve(strict=False)
+    for candidate in (parent, checked_parent):
+        if candidate.is_relative_to(user_cloud):
+            raise ValueError("private destination must not be in macOS CloudStorage")
+        for input_path in (image, cue):
+            source_dir = input_path.parent.resolve(strict=True)
+            if candidate.is_relative_to(source_dir):
+                raise ValueError("private destination must be outside mounted source folder")
+
+
 def stage_disc(bin_path, cue_path, destination_parent, *,
                stage_name=STAGE_NAME, expected_bytes=RAW_BYTES):
     """Return (private_dir, image_sha256) after complete, atomic directory handoff.
@@ -167,6 +186,7 @@ def stage_disc(bin_path, cue_path, destination_parent, *,
     if (not _SAFE_NAME.fullmatch(stage_name) or stage_name in (".", "..")
             or stage_name.endswith(".pending")):
         raise ValueError("unsafe destination directory name")
+    _assert_local_only_destination(parent, source, cue)
     cue_bytes = _read_cue(cue)
     flags = (os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
              | getattr(os, "O_NOFOLLOW", 0)
