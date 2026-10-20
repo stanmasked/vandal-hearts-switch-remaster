@@ -63,6 +63,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_map02_nexium_4v4_oracle.py' -v
           python3 -m unittest discover -s tests -p 'test_map02_two_arena_sources.py' -v
           python3 -m unittest discover -s tests -p 'test_map02_guard_oracle.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_guard_hud_oracle.py' -v
           echo 'VH_MAP02_GUARD_HUD_ORACLE_PASS synthetic_cases=10 retail=0 real_nexium_claim=0'
   build-4v4-nro:
     name: Build real optional 4v4 devkitPro/libnx NRO
