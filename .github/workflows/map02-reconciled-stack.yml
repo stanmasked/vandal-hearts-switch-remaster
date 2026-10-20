@@ -38,6 +38,11 @@ jobs:
           expected="$(git rev-parse "$PR_HEAD^{tree}")"
           merged="$(git merge-tree --write-tree "$PINNED_PARENT" "$PR_HEAD")"
           test "$merged" = "$expected"
+          # Compare the original copied-fix edge, not the newest version
+          # of main.c: later PRs legitimately extend the Switch entrypoint.
+          git fetch --no-tags origin +refs/pull/265/head:refs/remotes/origin/map02-265
+          test "$(git rev-parse refs/remotes/origin/map02-265)" = \
+               "965229da0ee4e08ea9db1a3a61e79cd585c07f57"
           for file in \
             source/main.c \
             tests/run_map02_nexium_4v4.py \
@@ -45,7 +50,7 @@ jobs:
             .github/workflows/map02-switch-eight-slot.yml
           do
             test "$(git rev-parse "$PINNED_PARENT:$file")" = \
-                 "$(git rev-parse "$PR_HEAD:$file")"
+                 "$(git rev-parse "965229da0ee4e08ea9db1a3a61e79cd585c07f57:$file")"
           done
           if git merge-base --is-ancestor "$PINNED_PARENT" "$PR_HEAD"; then
             echo 'VH_MAP02_RECONCILE_PASS historic_262_ancestor=1 tree_unchanged=1 shared_files=4 main_merge=0'
