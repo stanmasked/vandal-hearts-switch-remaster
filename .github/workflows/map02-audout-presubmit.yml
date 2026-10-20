@@ -129,8 +129,10 @@ jobs:
         # Previous 20ms all-zero failures (3 trials) versus 24ms success
         # (2 trials) leave a 21..23ms guest-host boundary to investigate.
         # This hint is on NeXium only, never the parec monitor recorder.
-        latency_ms: [21, 22, 23]
-        repeat: [1, 2]
+        # Confirm the observed 21ms (zero PCM) / 22ms (PCM present)
+        # distinction with three independent trials per setting.
+        latency_ms: [21, 22]
+        repeat: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
         with:
