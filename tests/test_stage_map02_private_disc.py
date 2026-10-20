@@ -5,6 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 from tools import stage_map02_private_disc as staging
 from tools.stage_map02_private_disc import (
@@ -241,6 +242,52 @@ class PrivateLocalCopyTests(unittest.TestCase):
         folder, digest = self.run_stage()
         self.assertEqual(folder, self.private / STAGE_NAME)
         self.assertEqual(digest, hashlib.sha256(self.data).hexdigest())
+
+    def test_capacity_gate_rejects_low_disk_before_image_copy(self):
+        # Even a tiny four-sector fixture uses the same 128-MiB reserve
+        # policy as the full original image.
+        needed = len(self.data) + staging.PRIVATE_FREE_MARGIN
+        below = needed - 1
+        fs = SimpleNamespace(f_frsize=1, f_bavail=below)
+        with patch("tools.stage_map02_private_disc.os.fstatvfs",
+                   return_value=fs), \
+             patch("tools.stage_map02_private_disc._copy_image") as copy:
+            with self.assertRaisesRegex(ValueError, "insufficient private destination space"):
+                self.run_stage()
+        copy.assert_not_called()
+        self.assertEqual(list(self.private.iterdir()), [])
+        self.assertEqual(self.bin.read_bytes(), self.data)
+
+    def test_capacity_gate_exact_threshold_is_accepted(self):
+        needed = len(self.data) + staging.PRIVATE_FREE_MARGIN
+        fs = SimpleNamespace(f_frsize=1, f_bavail=needed)
+        with patch("tools.stage_map02_private_disc.os.fstatvfs",
+                   return_value=fs):
+            result, digest = self.run_stage()
+        self.assertEqual(result, self.private / STAGE_NAME)
+        self.assertEqual(digest, hashlib.sha256(self.data).hexdigest())
+        self.assertEqual(self.bin.read_bytes(), self.data)
+
+    def test_capacity_gate_untrustworthy_statvfs_fails_closed(self):
+        for count, block in ((-1, 4096), (1, 0), (1, -1)):
+            with self.subTest(f_bavail=count, f_frsize=block), \
+                 patch("tools.stage_map02_private_disc.os.fstatvfs",
+                       return_value=SimpleNamespace(f_frsize=block,
+                                                    f_bavail=count)):
+                with self.assertRaisesRegex(ValueError, "untrustworthy destination"):
+                    self.run_stage()
+            self.assertEqual(list(self.private.iterdir()), [])
+        self.assertEqual(self.bin.read_bytes(), self.data)
+
+    def test_capacity_gate_statvfs_error_does_not_touch_source(self):
+        with patch("tools.stage_map02_private_disc.os.fstatvfs",
+                   side_effect=OSError("injected inaccessible destination")), \
+             patch("tools.stage_map02_private_disc._copy_image") as copy:
+            with self.assertRaisesRegex(OSError, "inaccessible destination"):
+                self.run_stage()
+        copy.assert_not_called()
+        self.assertEqual(list(self.private.iterdir()), [])
+        self.assertEqual(self.bin.read_bytes(), self.data)
 
     def test_rejects_unsafe_destination_name(self):
         for label in ("..", "../external", ".hidden", "f" * 90):
