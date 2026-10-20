@@ -7,6 +7,8 @@ on:
       - 'tools/capture_nexium_scene_audio.sh'
       - 'tools/audit_stage371_two_original_wait_trials.py'
       - 'tests/test_audit_stage371_two_original_wait_trials.py'
+      - 'tools/audit_stage384_nexium_binary_provenance.py'
+      - 'tests/test_audit_stage384_nexium_binary_provenance.py'
       - 'tools/audit_nexium_stage368_wait_descriptor.py'
       - 'source/vh_audio_exit_wait_descriptor_stage368.h'
       - 'source/vh_switch_game_audio.c'
@@ -35,6 +37,9 @@ jobs:
           python3 -m unittest discover -s tests \
             -p 'test_audit_stage371_two_original_wait_trials.py' -v
           python3 -m py_compile tools/audit_stage371_two_original_wait_trials.py
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_stage384_nexium_binary_provenance.py' -v
+          python3 -m py_compile tools/audit_stage384_nexium_binary_provenance.py
           bash -n tools/capture_nexium_scene_audio.sh
           echo 'Stage371 pre-build source invariants passed; real NeXium evidence still required.' >> "$GITHUB_STEP_SUMMARY"
   build-current-nro:
@@ -104,6 +109,9 @@ jobs:
           python3 -m unittest discover -s tests \
             -p 'test_audit_stage371_two_original_wait_trials.py' -v
           python3 -m py_compile tools/audit_stage371_two_original_wait_trials.py
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_stage384_nexium_binary_provenance.py' -v
+          python3 -m py_compile tools/audit_stage384_nexium_binary_provenance.py
           bash -n tools/capture_nexium_scene_audio.sh
       - name: Install virtual audio and headless NeXium requirements
         shell: bash
@@ -129,6 +137,8 @@ jobs:
           url="$(printf '%s' "$release_json" | jq -r \
             '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
           test -n "$url"
+          mkdir -p runtime-evidence
+          printf '%s' "$release_json" > runtime-evidence/nexium-release-metadata.json
           curl -fL --retry 3 --retry-all-errors "$url" -o /tmp/vh-stage371-nexium.tar.gz
           mkdir -p /tmp/vh-stage371-nexium
           tar -xzf /tmp/vh-stage371-nexium.tar.gz -C /tmp/vh-stage371-nexium
@@ -136,6 +146,11 @@ jobs:
             \( -name 'nexium-gui' -o -name 'nexium' \) -print -quit)"
           test -n "$emu_bin"
           echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
+          python3 tools/audit_stage384_nexium_binary_provenance.py create \
+            --release runtime-evidence/nexium-release-metadata.json \
+            --archive /tmp/vh-stage371-nexium.tar.gz --binary "$emu_bin" \
+            --receipt runtime-evidence/nexium-runtime-binary-provenance.json \
+            --run-id "$GITHUB_RUN_ID" --head "$GITHUB_SHA"
       - name: Start isolated PulseAudio null-sink (no speaker)
         shell: bash
         run: |
@@ -166,6 +181,14 @@ jobs:
           SCENE_CAPTURE_TAG=b SCENE_CAPTURE_EXIT_DWELL_SECONDS=12 \
             bash tools/capture_nexium_scene_audio.sh runtime-evidence/b
           test -s runtime-evidence/b/scene-optical-trace.png
+      - name: Verify actual NeXium binary unchanged across both guest sessions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_stage384_nexium_binary_provenance.py verify \
+            --archive /tmp/vh-stage371-nexium.tar.gz --binary "$NEXIUM_BIN" \
+            --receipt runtime-evidence/nexium-runtime-binary-provenance.json \
+            --run-id "$GITHUB_RUN_ID" --head "$GITHUB_SHA"
       - name: Reopen BOTH original guest SD source families and bind to same NRO
         shell: bash
         run: |
@@ -217,6 +240,7 @@ jobs:
             stage371-two-authentic-guest-exits.json
             stage371-originals/
             stage371-unverified-partial/
+            runtime-evidence/nexium-runtime-binary-provenance.json
             runtime-evidence/a/guest-sd-root.txt
             runtime-evidence/b/guest-sd-root.txt
             runtime-evidence/a/scene-optical-trace.png
