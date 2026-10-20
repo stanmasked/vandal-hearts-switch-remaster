@@ -1,0 +1,32 @@
+name: MAP02 complete original asset-free five-turn battle
+on:
+  pull_request:
+    paths:
+      - 'tests/test_map02_full_battle_replay.c'
+      - 'source/map02_battle_fixture.h'
+      - '.github/workflows/map02-full-battle-replay.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  complete-battle:
+    name: Five-turn full battle replay (${{ matrix.cc }}, ${{ matrix.opt }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+        opt: ["-O0", "-O2"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Play a full deterministic five-turn tactical battle
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+          OPT: ${{ matrix.opt }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -Wall -Wextra -Werror -pedantic "$OPT" tests/test_map02_full_battle_replay.c -o /tmp/vh-map02-full-victory
+          /tmp/vh-map02-full-victory | tee /tmp/vh-full-battle-result.txt
+          grep -Fx 'VH_MAP02_FULL_BATTLE_REPLAY_PASS turns=5 controlled_moves=4 melee_attacks=4 enemy_phases=4 victory=1 resets=2 deterministic=1 original_retail=0' /tmp/vh-full-battle-result.txt
