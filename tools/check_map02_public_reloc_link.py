@@ -441,17 +441,9 @@ def check_elf_function_sections(path, *, pass_fds=(), expected_source_sizes=None
     return len(exported)
 
 
-def summarize_partial_elf_undefined_symbols(nm_output):
-    """Aggregate external symbol gaps without publishing symbol names.
-
-    A partial link is NOT a final executable. GNU nm -u may list strong
-    undefined (U) and optional weak undefined (w/v) imports. Capture their
-    exact stable counts and a digest of the strong-name set so later work
-    can tell if the public link dependency boundary moved, but never
-    confuse the count with actual missing libraries or private assets.
-    """
-    strong = set()
-    weak = set()
+def _undefined_symbol_names(nm_output):
+    """Return internal deterministic lists; never include them in public reports."""
+    strong, weak = set(), set()
     for line in nm_output.splitlines():
         fields = line.split()
         if not fields:
@@ -463,14 +455,83 @@ def summarize_partial_elf_undefined_symbols(nm_output):
             strong.add(symbol)
         else:
             weak.add(symbol)
+    return sorted(strong), sorted(weak)
+
+
+def summarize_partial_elf_undefined_symbols(nm_output):
+    """Count unresolved imports without publishing symbol names."""
+    strong, weak = _undefined_symbol_names(nm_output)
     serialized = json.dumps(
-        sorted(strong), ensure_ascii=True, separators=(",", ":")).encode("ascii")
+        strong, ensure_ascii=True, separators=(",", ":")).encode("ascii")
     return {
         "partial_elf_unresolved_strong_symbol_count": len(strong),
         "partial_elf_unresolved_weak_symbol_count": len(weak),
         "partial_elf_unresolved_strong_symbols_sha256":
             hashlib.sha256(serialized).hexdigest(),
     }
+
+
+PRIVATE_UNDEFINED_MANIFEST = "map02-unresolved-symbols.private.json"
+
+
+def save_private_undefined_manifest(directory, sealed_fd, expected, elf_sha256):
+    """Opt-in private, owner-only list; never return or print the symbol names."""
+    result = subprocess.run(
+        ["nm", "-u", f"/proc/self/fd/{sealed_fd}"],
+        capture_output=True, text=True, timeout=30, check=False,
+        pass_fds=(sealed_fd,))
+    if result.returncode:
+        raise ValueError("private MAP02 unresolved import inspection failed")
+    summary = summarize_partial_elf_undefined_symbols(result.stdout)
+    if any(summary[key] != expected.get(key) for key in summary):
+        raise ValueError("private MAP02 unresolved imports differ from sealed audit")
+    strong, weak = _undefined_symbol_names(result.stdout)
+    manifest = json.dumps({
+        "schema": "vh.map02.private-undefined-symbol-manifest.v1",
+        "relocatable_elf_sha256": elf_sha256,
+        **summary,
+        "strong_symbols": strong,
+        "weak_symbols": weak,
+    }, sort_keys=True, indent=2).encode("utf-8") + b"\n"
+
+    directory = Path(directory)
+    try:
+        folder_fd = os.open(
+            directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError:
+        raise ValueError("private MAP02 symbol manifest directory unavailable") from None
+    try:
+        info = os.fstat(folder_fd)
+        current = directory.stat(follow_symlinks=False)
+        if (not stat.S_ISDIR(info.st_mode)
+                or info.st_uid != os.geteuid()
+                or stat.S_IMODE(info.st_mode) != 0o700
+                or (info.st_dev, info.st_ino) !=
+                   (current.st_dev, current.st_ino)):
+            raise ValueError("private MAP02 symbol manifest directory not owner-only")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+        try:
+            file_fd = os.open(
+                PRIVATE_UNDEFINED_MANIFEST, flags, 0o600, dir_fd=folder_fd)
+        except OSError:
+            raise ValueError("private MAP02 symbol manifest already exists or unavailable") from None
+        try:
+            os.fchmod(file_fd, 0o600)
+            with os.fdopen(file_fd, "wb", closefd=False) as stream:
+                stream.write(manifest)
+                stream.flush()
+                os.fsync(file_fd)
+            mode = os.fstat(file_fd)
+            if (not stat.S_ISREG(mode.st_mode)
+                    or mode.st_uid != os.geteuid()
+                    or stat.S_IMODE(mode.st_mode) != 0o600
+                    or mode.st_nlink != 1):
+                raise ValueError("private MAP02 symbol manifest has unsafe metadata")
+        finally:
+            os.close(file_fd)
+        os.fsync(folder_fd)
+    finally:
+        os.close(folder_fd)
 
 
 def inspect_relocatable(path, *, pass_fds=(), expected_source_sizes=None):
@@ -517,7 +578,8 @@ def inspect_relocatable(path, *, pass_fds=(), expected_source_sizes=None):
     }
 
 
-def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
+def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld",
+                      private_undefined_manifest=False):
     upstream = Path(upstream).absolute()
     bundle = Path(bundle).absolute()
     out_dir = Path(out_dir).absolute()
@@ -629,6 +691,15 @@ def audit_public_link(upstream, bundle, out_dir, *, make="make", linker="ld"):
         raise ValueError("pinned original public source/code inventory changed")
     preflight(upstream, bundle)
     stable_relocatable_output(output, expected=output_proof)
+    # An opt-in local-only file is written only AFTER the entire public
+    # source/ELF preflight has passed. CI never requests it or uploads it.
+    if private_undefined_manifest:
+        private_fd = sealed_input_fd(output, output_proof, index=len(sources) + 1)
+        try:
+            save_private_undefined_manifest(
+                out_dir, private_fd, checked, output_proof[0])
+        finally:
+            os.close(private_fd)
     return {
         "schema": "vh.map02.public-source-partial-elf-link.v1",
         "public_game_object_count": len(objects[0]),
@@ -654,11 +725,14 @@ def main():
     parser.add_argument("pinned_original_pc_checkout", type=Path)
     parser.add_argument("private_prepared_bundle", type=Path)
     parser.add_argument("new_private_output_directory", type=Path)
+    parser.add_argument("--write-private-undefined-manifest", action="store_true",
+                        help="opt-in: write unresolved symbol names to 0600 file in private output directory")
     args = parser.parse_args()
     try:
         result = audit_public_link(
             args.pinned_original_pc_checkout, args.private_prepared_bundle,
-            args.new_private_output_directory)
+            args.new_private_output_directory,
+            private_undefined_manifest=args.write_private_undefined_manifest)
     except (ValueError, OSError, subprocess.TimeoutExpired):
         # Avoid exposing private paths via tool or filesystem exceptions.
         parser.error("MAP02 public relocatable audit failed")
