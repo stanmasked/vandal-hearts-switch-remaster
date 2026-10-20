@@ -1,0 +1,44 @@
+name: MAP02 authored data-driven encounter integrity
+on:
+  pull_request:
+    paths:
+      - 'data/map02_fixture.json'
+      - 'source/map02_encounter_data.h'
+      - 'source/map02_battle_fixture.h'
+      - 'source/main.c'
+      - 'tools/generate_map02_fixture.py'
+      - 'tests/test_map02_data_driven.c'
+      - 'tests/test_map02_encounter_data.py'
+      - 'Makefile'
+      - '.github/workflows/map02-data-driven.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  authored-encounter:
+    name: Strict authored encounter and tactical semantics (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate authored JSON and byte-identical generated C header
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/generate_map02_fixture.py --check
+          python3 -m unittest discover -s tests -p 'test_map02_encounter_data.py' -v
+      - name: Compile and exercise original plus alternate battles
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -pedantic -Wall -Wextra -Werror -O2 tests/test_map02_data_driven.c -o /tmp/vh-data-battle
+          /tmp/vh-data-battle | tee /tmp/vh-data-result.log
+          "$CC" -std=c11 -pedantic -Wall -Wextra -Werror -O0 tests/test_map02_battle_fixture.c -o /tmp/vh-existing-battle
+          /tmp/vh-existing-battle
+          grep -Fx 'VH_MAP02_DATA_DRIVEN_BATTLE_PASS default_unchanged=1 alternate_map=1 custom_damage=1 events=2 invalid_refusals=10 original_retail=0' /tmp/vh-data-result.log
