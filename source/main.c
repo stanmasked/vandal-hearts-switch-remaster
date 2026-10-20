@@ -5,7 +5,7 @@
 #include "game_state.h"
 #include "map02_battle_fixture.h"
 #include "map02_battle8.h"
-#include "map02_roster8_smoke_data.h"
+#include "map02_roster8_variants.h"
 #include "game_renderer.h"
 #include "platform_input.h"
 #include "software_renderer.h"
@@ -408,7 +408,8 @@ static void draw_map02_battle(u32 *pixels, u32 stride,
  * Trigger ZR while in MAP02 battle mode; ZR again returns to old maps.
  * The default 2v2 renderer and its NeXium cursor paths are untouched. */
 static void draw_map02_battle8(u32 *pixels, u32 stride,
-                               const VhBattle8 *battle, u32 frame_tick) {
+                               const VhBattle8 *battle, int roster_variant,
+                               u32 frame_tick) {
     const VhRoster8 *r = &battle->roster;
     VhCanvas canvas = {(uint32_t *)pixels, (size_t)stride, FB_WIDTH, FB_HEIGHT};
     char count_label[] = "TURN 000";
@@ -427,7 +428,8 @@ static void draw_map02_battle8(u32 *pixels, u32 stride,
     count_label[6] = (char)('0' + (battle->turns_completed / 10) % 10);
     count_label[7] = (char)('0' + battle->turns_completed % 10);
     draw_text(pixels, stride, 985, 145, count_label, COLOR_WHITE, 2);
-    draw_text(pixels, stride, 985, 183, "ROSTER 4 VS 4", COLOR_CURSOR, 1);
+    draw_text(pixels, stride, 985, 183,
+              vh_r8_variant_label(roster_variant), COLOR_CURSOR, 1);
     for (y = 0; y < VH_BH; ++y) {
         for (x = 0; x < VH_BW; ++x) {
             const int px = GRID_X + x * CELL_SIZE, py = GRID_Y + y * CELL_SIZE;
@@ -482,6 +484,7 @@ static void draw_map02_battle8(u32 *pixels, u32 stride,
     draw_text(pixels, stride, 985, 370, "X END TURN", COLOR_WHITE, 1);
     draw_text(pixels, stride, 985, 394, "Y RESTART", COLOR_WHITE, 1);
     draw_text(pixels, stride, 985, 418, "ZR OR L+R RETURN", COLOR_WHITE, 1);
+    draw_text(pixels, stride, 985, 442, "R NEXT ROSTER", COLOR_WHITE, 1);
     draw_text(pixels, stride, 70, 622,
               "ZR OR L+R RETURN  MINUS DEMO  PLUS EXIT", COLOR_MUTED, 2);
     draw_text(pixels, stride, 70, 661,
@@ -514,6 +517,7 @@ int main(int argc, char **argv) {
     VhMap02Battle battle;
     VhBattle8 battle8;
     int battle8_mode = 0;
+    int battle8_variant = 0;
     int battle_mode = 0;
     int scenario_id = 0;
     vh_binit(&battle);
@@ -536,6 +540,7 @@ int main(int argc, char **argv) {
         if (buttons_down & HidNpadButton_Minus) {
             battle_mode = !battle_mode;
             battle8_mode = 0;
+            battle8_variant = 0;
             if (battle_mode) {
                 scenario_id = 0;  /* preserves existing NeXium default path */
                 (void)vh_binit_index(&battle, scenario_id);
@@ -554,13 +559,21 @@ int main(int argc, char **argv) {
                 if (battle8_mode) {
                     battle8_mode = 0;
                     (void)vh_binit_index(&battle, scenario_id);
-                } else if (vh_b8_init(&battle8, &VH_MAP02_ROSTER8_SMOKE, 2, 2)) {
+                } else if (vh_b8_init_variant(&battle8, 0)) {
+                    battle8_variant = 0;  /* original 4x4 NeXium default */
                     battle8_mode = 1;
                 }
             }
             if (battle8_mode) {
+                /* R cycles capacities without changing the proven entry
+                 * scene. Ignore it when both shoulder buttons toggle modes. */
+                if (!toggle_8 && (buttons_down & HidNpadButton_R)) {
+                    const int next = (battle8_variant + 1) % VH_R8_VARIANTS;
+                    if (vh_b8_init_variant(&battle8, next))
+                        battle8_variant = next;
+                }
                 if (buttons_down & HidNpadButton_Y)
-                    (void)vh_b8_init(&battle8, &VH_MAP02_ROSTER8_SMOKE, 2, 2);
+                    (void)vh_b8_init_variant(&battle8, battle8_variant);
                 if (actions & VH_INPUT_LEFT)  vh_b8_cursor(&battle8, -1, 0);
                 if (actions & VH_INPUT_RIGHT) vh_b8_cursor(&battle8, 1, 0);
                 if (actions & VH_INPUT_UP)    vh_b8_cursor(&battle8, 0, -1);
@@ -595,7 +608,8 @@ int main(int argc, char **argv) {
         if (pixels) {
             const u32 stride_pixels = stride_bytes / sizeof(u32);
             if (battle_mode && battle8_mode)
-                draw_map02_battle8(pixels, stride_pixels, &battle8, frame_tick++);
+                draw_map02_battle8(pixels, stride_pixels, &battle8,
+                                   battle8_variant, frame_tick++);
             else if (battle_mode)
                 draw_map02_battle(pixels, stride_pixels, &battle,
                                   scenario_id, frame_tick++);
