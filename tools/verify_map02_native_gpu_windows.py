@@ -47,7 +47,12 @@ def private_window_file(directory, name, *, expected=None, max_bytes=None):
                 stat.S_IMODE(d.st_mode) != 0o700 or
                 d.st_uid != os.geteuid()):
             raise ValueError("native GPU window directory is not owner-private")
-        fd = os.open(name, flags, dir_fd=dirfd)
+        try:
+            fd = os.open(name, flags, dir_fd=dirfd)
+        except OSError as exc:
+            # A symlink with O_NOFOLLOW raises ELOOP rather than the
+            # ValueError expected by the public strict-verifier contract.
+            raise ValueError("native GPU capture file missing or symlinked") from exc
         try:
             before = os.fstat(fd)
             if (not stat.S_ISREG(before.st_mode) or
