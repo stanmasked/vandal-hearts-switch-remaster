@@ -147,6 +147,40 @@ class PublicRelocatableELFTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "ELF FUNC bounds"):
             inspect_relocatable(obj)
 
+    def test_aliased_required_exports_with_overlapping_text_bytes_rejected(self):
+        original, impostor = REQUIRED_SYMBOLS[:2]
+        # GNU nm reports two strong T exports and readelf reports two sized
+        # GLOBAL FUNC entries. Both are individually inside .text, but the
+        # second must not impersonate an independent CD/GPU code entrypoint.
+        for offset in (0, 1):
+            with self.subTest(offset=offset):
+                definitions = "\n".join(
+                    f"void {name}(void) {{}}"
+                    for name in REQUIRED_SYMBOLS if name != impostor
+                )
+                asm = (f'\n__asm__(".text\\n.globl {impostor}'
+                       f'\\n.type {impostor}, @function'
+                       f'\\n.set {impostor}, {original}+{offset}'
+                       f'\\n.size {impostor}, 1\\n");\n')
+                obj = self.compile(definitions + asm, name=f"alias-{offset}")
+                with self.assertRaisesRegex(ValueError, "ELF FUNC ranges overlap"):
+                    inspect_relocatable(obj)
+
+    def test_equal_offsets_in_distinct_text_sections_are_not_overlaps(self):
+        first, second = REQUIRED_SYMBOLS[:2]
+        source = (
+            f'__attribute__((section(".text.map02_first"))) '
+            f'void {first}(void) {{}}\n'
+            f'__attribute__((section(".text.map02_second"))) '
+            f'void {second}(void) {{}}\n' +
+            "\n".join(f"void {name}(void) {{}}"
+                      for name in REQUIRED_SYMBOLS[2:])
+        )
+        obj = self.compile(source, name="distinct-exec-sections")
+        report = inspect_relocatable(obj)
+        self.assertEqual(report["original_cd_gpu_and_vram_exports_verified"],
+                         len(REQUIRED_SYMBOLS))
+
     def test_unresolved_capture_hook_rejected_even_if_other_exports_present(self):
         obj = self.compile(
             self.all_exports() +
