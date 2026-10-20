@@ -46,6 +46,8 @@ class VirtualPCMTests(unittest.TestCase):
         self.assertTrue(result["unique_page_order_preserved"])
         self.assertEqual(result["inter_page_gap_frames"],[0]*7)
         self.assertTrue(result["all_pages_contiguous_in_order"])
+        self.assertEqual(result["inter_page_gap_nonzero_pcm_bytes"],[0]*7)
+        self.assertTrue(result["all_nonnegative_inter_page_gaps_digital_silence"])
         self.assertFalse(result["switch_speaker_audio_verified"])
         self.assertFalse(result["sample_aligned_music_cue_proven"])
 
@@ -66,9 +68,44 @@ class VirtualPCMTests(unittest.TestCase):
         self.assertEqual(result["unique_page_frame_offsets"][0],59)
         self.assertEqual(result["inter_page_gap_frames"],injected)
         self.assertEqual(result["total_positive_gap_frames"],171)
+        self.assertEqual(result["inter_page_gap_nonzero_pcm_bytes"],[0]*7)
+        self.assertTrue(result["all_nonnegative_inter_page_gaps_digital_silence"])
+        self.assertFalse(result["all_page_start_deltas_multiple_of_512"])
         self.assertFalse(result["all_pages_contiguous_in_order"])
         self.assertEqual(result["verified_stereo_frames"],0)
         self.assertFalse(result["sample_aligned_music_cue_proven"])
+
+    def test_exact_pages_start_at_512_quantum_and_zero_padding(self):
+        receipt,pages=fixture()
+        # Reproduce only the *measured frame positions* of the historical
+        # NeXium virtual sink, never copyrighted/audio source bytes.
+        expected_starts=[44550,45574,47622,48646,
+                         50182,51718,52742,54278]
+        raw=bytearray((expected_starts[-1]+len(pages[-1])//4)*4)
+        for start,pcm in zip(expected_starts,pages):
+            raw[start*4:start*4+len(pcm)]=pcm
+        result=sink.audit(receipt,bytes(raw))
+        self.assertEqual(result["unique_page_frame_offsets"],expected_starts)
+        self.assertEqual(result["inter_page_gap_frames"],
+                         [467,1491,467,978,979,467,979])
+        self.assertEqual(result["page_start_delta_frames"],
+                         [1024,2048,1024,1536,1536,1024,1536])
+        self.assertEqual(result["page_start_modulo_512"],[6]*8)
+        self.assertTrue(result["all_page_starts_same_512_phase"])
+        self.assertTrue(result["all_page_start_deltas_multiple_of_512"])
+        self.assertTrue(result["all_nonnegative_inter_page_gaps_digital_silence"])
+        self.assertEqual(result["inter_page_gap_nonzero_pcm_bytes"],[0]*7)
+        self.assertEqual(result["total_positive_gap_frames"],5828)
+        self.assertEqual(result["result"],"NO_EXACT_EIGHT_PAGE_SINK_MATCH")
+
+    def test_one_nonzero_byte_in_gap_is_detected(self):
+        receipt,pages=fixture()
+        raw=bytearray(pages[0]+b"\0"*4*13+b"".join(pages[1:]))
+        raw[len(pages[0])+4*5]=1
+        result=sink.audit(receipt,bytes(raw))
+        self.assertEqual(result["inter_page_gap_frames"],[13]+[0]*6)
+        self.assertEqual(result["inter_page_gap_nonzero_pcm_bytes"],[1]+[0]*6)
+        self.assertFalse(result["all_nonnegative_inter_page_gaps_digital_silence"])
 
     def test_out_of_order_pages_must_not_imply_order_preserved(self):
         receipt,pages=fixture()
