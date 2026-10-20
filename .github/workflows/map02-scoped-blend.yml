@@ -89,6 +89,8 @@ on:
       - 'tests/test_check_map02_public_x11_after_sdl2.py'
       - 'tools/check_map02_public_xcb_after_x11.py'
       - 'tests/test_check_map02_public_xcb_after_x11.py'
+      - 'tools/verify_map02_public_xcb_native_replay.py'
+      - 'tests/test_verify_map02_public_xcb_native_replay.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -240,6 +242,8 @@ on:
       - 'tests/test_check_map02_public_x11_after_sdl2.py'
       - 'tools/check_map02_public_xcb_after_x11.py'
       - 'tests/test_check_map02_public_xcb_after_x11.py'
+      - 'tools/verify_map02_public_xcb_native_replay.py'
+      - 'tests/test_verify_map02_public_xcb_native_replay.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -333,6 +337,7 @@ jobs:
             tests.test_check_map02_public_sdl2_archive_witness \
             tests.test_check_map02_public_x11_after_sdl2 \
             tests.test_check_map02_public_xcb_after_x11 \
+            tests.test_verify_map02_public_xcb_native_replay \
             tests.test_check_map02_private_archive_strategy_compare \
             tests.test_verify_map02_private_archive_comparison \
             tests.test_run_map02_private_link_gap_audit
@@ -664,6 +669,44 @@ jobs:
           assert xcb["authentic_map02_execution_proven"] is False
           print("Original public PC ELF tested sequentially with real Ubuntu SDL2, X11, and XCB static archives.")
           print("All XCB native partial-link import changes counted without original game media.")
+          PY
+      - name: Independently recount XCB imports and replay genuine GNU ld-r byte identically
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m tools.verify_map02_public_xcb_native_replay \
+            "${RUNNER_TEMP}/map02-real-xcb-native-provider/after-x11-unresolved.private.json" \
+            "${RUNNER_TEMP}/map02-real-x11-native-provider/linked/map02-private-candidate-linked.o" \
+            "${RUNNER_TEMP}/map02-real-xcb-native-provider/xcb-system-candidate.a" \
+            "${RUNNER_TEMP}/map02-real-xcb-native-provider/linked/map02-private-candidate-linked.o" \
+            "${RUNNER_TEMP}/map02-real-xcb-aggregate.json" \
+            "${RUNNER_TEMP}/map02-real-xcb-independent-replay" \
+            | tee "${RUNNER_TEMP}/map02-real-xcb-replay-aggregate.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          x11 = json.loads((root / "map02-real-x11-aggregate.json").read_text())
+          xcb = json.loads((root / "map02-real-xcb-aggregate.json").read_text())
+          replay = json.loads((root / "map02-real-xcb-replay-aggregate.json").read_text())
+          assert x11["final_strong_undefined_after_x11"] == 996
+          assert replay["input_x11_strong_undefined"] == 996
+          assert replay["input_x11_partial_sha256"] == x11["output_x11_partial_sha256"]
+          assert replay["input_x11_partial_sha256"] == xcb["input_x11_partial_sha256"]
+          assert replay["copied_xcb_archive_sha256"] == xcb["copied_xcb_archive_sha256"]
+          assert replay["byte_identical_xcb_elf_sha256"] == xcb["output_xcb_partial_sha256"]
+          assert replay["xcb_original_strong_imports_resolved"] == xcb["original_after_x11_imports_resolved"]
+          assert replay["xcb_new_strong_imports"] == xcb["new_imports_introduced_by_xcb"]
+          assert replay["output_xcb_strong_undefined"] == xcb["final_strong_undefined_after_xcb"]
+          assert replay["saved_xcb_report_recount_verified"] is True
+          assert replay["second_native_xcb_ld_r_executed"] is True
+          assert replay["byte_identical_xcb_ld_r_verified"] is True
+          assert replay["retail_assets_linked"] is False
+          assert replay["fully_linked_game_executable"] is False
+          assert replay["authentic_map02_execution_proven"] is False
+          print("Real Ubuntu libxcb.a GNU ld-r pass on authentic public X11 ELF was replayed byte-identically.")
+          print("Only public PC source and private temporary system archives used; no retail media.")
           PY
       - name: Fail closed on upstream rasterizer source drift
         run: |
