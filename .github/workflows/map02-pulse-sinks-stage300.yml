@@ -1,0 +1,115 @@
+name: MAP02 Stage300 archived REAL PulseAudio sink-input lineage audit
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-pulse-sinks-stage300.yml'
+      - 'tools/audit_map02_pulse_sinks_stage300.py'
+      - 'tests/test_audit_map02_pulse_sinks_stage300.py'
+      - 'docs/MAP02_PULSE_SINK_LINEAGE_STAGE300.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  VH_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_FROZEN_STAGE299: 'fb7f3d9d0b7a25cb4a4cf067abcaf0f2fe92bfc4'
+
+jobs:
+  real-source-pinned-pulse-sink-lineage:
+    name: Stage300 independently reparse original NeXium Pulse snapshots and P/L
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify original Stage299 parent and strict forensic-only changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_HEAD"
+          python3 - <<'PY'
+          import os,subprocess
+          observed=set(subprocess.check_output(
+              ["git","diff","--name-only",os.environ["VH_FROZEN_STAGE299"],"HEAD"],
+              text=True).splitlines())
+          allowlist={
+            ".github/workflows/map02-pulse-sinks-stage300.yml",
+            "tools/audit_map02_pulse_sinks_stage300.py",
+            "tests/test_audit_map02_pulse_sinks_stage300.py",
+            "docs/MAP02_PULSE_SINK_LINEAGE_STAGE300.md"
+          }
+          assert observed and observed<=allowlist,sorted(observed-allowlist)
+          PY
+          python3 -m unittest discover -s tests -p 'test_audit_map02_pulse_sinks_stage300.py' -v
+          python3 -m unittest discover -s tests -p 'test_audit_map02_cpal_lifetime_stage299.py' -v
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-stage299-new-host-P-L-hint21-evidence
+          run-id: 39511807796
+          github-token: ${{ github.token }}
+          path: original-evidence/map02-stage299-new-host-P-L-hint21-evidence
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-stage299-new-host-P-L-hint22-evidence
+          run-id: 39511807796
+          github-token: ${{ github.token }}
+          path: original-evidence/map02-stage299-new-host-P-L-hint22-evidence
+      - name: Reparse two genuinely archived Pulse snapshots per hint, preserving P/L identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          python3 tools/audit_map02_pulse_sinks_stage300.py \
+            --root original-evidence \
+            --output results/stage300-real-pulse-sink-lineage.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("results/stage300-real-pulse-sink-lineage.json").read_text())
+          assert r["result"]=="REAL_STAGE299_PULSE_SINK_INPUT_LINEAGE_REPARSED"
+          assert len(r["trials"])==2
+          assert all(t["same_nexium_process_in_both_snapshots_verified"]
+                     for t in r["trials"])
+          assert all(t["raw_process_pids_and_hostnames_excluded_from_report"]
+                     for t in r["trials"])
+          assert r["backend_root_cause_or_production_audio_fix_proven"] is False
+          PY
+      - name: Summarize observed Pulse snapshots without assigning stream root cause
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,os
+          p=Path("results/stage300-real-pulse-sink-lineage.json")
+          if p.is_file():
+              report=json.loads(p.read_text())
+          else:
+              report={"result":"UNVERIFIED","reason":"Real Stage299 artifact audit never ran"}
+              p.parent.mkdir(exist_ok=True,parents=True)
+              p.write_text(json.dumps(report,sort_keys=True,indent=2)+"\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
+              print("### Stage300 real archived Pulse sink input lineage",file=f)
+              print("Result: **"+report["result"]+"**",file=f)
+              if report["result"]!="REAL_STAGE299_PULSE_SINK_INPUT_LINEAGE_REPARSED":
+                  print("Unverified: "+report.get("reason","unknown"),file=f)
+              else:
+                  print("| Pulse hint | Stream profile | Input during | Input after | Uncorked both | New guest CPAL entries |",file=f)
+                  print("|---:|---|---:|---:|---|---:|",file=f)
+                  for t in report["trials"]:
+                      for x in t["routes"]:
+                          print(f'| {t["hint_ms"]}ms | {x["profile"]} | {x["during"]["sink_input_id"]} | {x["after"]["sink_input_id"]} | {x["both_snapshots_uncorked"]} | {t["guest_window_cpal_callback_entry_delta"]} |',file=f)
+              print("Pulse uncorked != callback alive; sink input ID replacement != backend cause. No hardware period, original music, Switch audio or production fix proven.",file=f)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage300-real-pulse-sink-lineage-audit
+          path: results/
+          if-no-files-found: error
