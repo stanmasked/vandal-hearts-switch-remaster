@@ -40,6 +40,16 @@ Synthetic ROM-free tests intentionally forge a source SHA, PCM bytes, stage JSON
 
 The audit reports exact observed values, **not** a threshold attributed to 21/22 ms. The pulse-buffer figure is a sampled server-reported delay, *not* a CPAL callback quantum, guest buffer size, or evidence of causality. While the guest is apparently in the first real `audoutPlayBuffer` call during the 21-ms single snapshot, the service might later return. The deliberate 1+8-second optical witness also altered guest shutdown timing.
 
+## Exact host-build caveat discovered during Stage264
+
+The original guest workflow labels its download step **"Download pinned NeXium nightly asset"**, but the actual code retrieves the release **by mutable tag** `nightly` via GitHub API and downloads `nexium-linux-x86_64.tar.gz` separately in every job. It does **not** save the downloaded archive's SHA-256, executable SHA-256, or immutable upstream NeXium commit ID alongside each trial.
+
+See [the frozen workflow at original source SHA](https://github.com/stanmasked/vandal-hearts-switch-remaster/blob/64a3e81b53d375fae3cfc93b4384ec8e18e68703/.github/workflows/map02-audout-presubmit.yml#L212-L232).
+
+**Consequences:** this independent archive audit verifies the exact same guest NRO across all six runs, but cannot truthfully certify the same host NeXium executable (even though all six came from one GitHub workflow run). `PULSE_LATENCY_MSEC` is also only a request, never proof the target honored it. The audit therefore includes explicit `same_nexium_host_binary_all_six_verified=false` and `nexium_host_binary_sha256_available_in_original_artifacts=false` fields; they are not inferred from the NRO digest.
+
+Any new causal A/B experiment must acquire one pinned NeXium executable **once**, save its SHA-256 and immutable upstream revision, distribute the identical binary to all six guest jobs, and verify its digest inside each job. Preserve the original failing cases separately: a change to emulator build identity is a new experimental condition, not a correction retroactively applied to prior evidence.
+
 ## Next experimental gate
 
 To claim a root cause, perform a **separate** A/B run measuring CPAL callback activity and host ALSA parameters around the first real guest submission while holding the NRO and game-side PCM constant. Compare requested hint, actual buffer period/size, callback execution and real guest enter/return timestamps. Reproduce at least three times per setting and preserve all failure evidence. Changes to NeXium or host instrumentation must be explicitly reported as a changed workload. An eventual physical Switch test is still required.
