@@ -73,7 +73,11 @@ contacts GitHub or downloads private data while running.
 run-selfcheck.sh first invokes verify-kit.py to validate each extracted
 file against its SHA-256 manifest, rejecting injected files and symlinks.
 The files.json manifest lists every shipped file and SHA-256.
-Authenticate the ZIP using its independently published SHA-256.
+Before extracting, check the downloaded archive with:
+    shasum -a 256 vh-map02-intel-catalina-offline-kit.zip
+Compare that output to the VH_MAP02_OFFLINE_KIT_INNER_ZIP_SHA256 line
+from the GitHub Actions provenance job which built this kit.
+The Actions artifact-wrapper digest is NOT the inner ZIP checksum.
 All paths are relative and intended for local verification. No PS1
 BIN/CUE, original proprietary assets, live GPU recordings, or private
 owner credentials are packaged.
