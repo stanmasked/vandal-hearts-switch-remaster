@@ -39,7 +39,7 @@ def check_trial(folder,ms):
     root=Path(folder)
     require(root.is_dir() and not root.is_symlink(),"Actual unlinked evidence directory needed")
     context=json_obj(root/"pinned-host-and-nro.json")
-    require(context["schema"]==f"vh-map02-stage{282 if False else (281 if ms==21 else 280)}-guest-host-pair/v1",
+    require(context["schema"]==f"vh-map02-stage{281 if ms==21 else 280}-guest-host-pair/v1",
             "Guest source context schema mismatch")
     require(context["new_host_executable_sha256"]==HOST_SHA,
             "Not one exact compiled NeXium host SHA across guest trials")
@@ -155,7 +155,7 @@ def compare(t21,t22):
     return {
         "schema":SCHEMA,
         "result":"SINGLE_MATCHED_HOST_NRO_21_22_CONTRAST_VERIFIED",
-        "compiled_neixum_elf_sha256":HOST_SHA,
+        "compiled_nexium_elf_sha256":HOST_SHA,
         "generated_research_nro_sha256":NRO_SHA,
         "guest_requested_hints_ms":[21,22],
         "independent_actual_raw_png_pcm_cpal_audit":True,
