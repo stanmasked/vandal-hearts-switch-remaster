@@ -48,8 +48,8 @@ class Stage307TemporalTests(unittest.TestCase):
         self.assertEqual(high["bins_alsa_writei_increment_only"],39)
 
     def test_reject_clock_lag_above_two_hundred_fifty_ms(self):
-        bad=[{"clock":v["clock"]-400_000_000,"values":v["values"]}
-             for v in self.a]
+        bad=[v for i,v in enumerate(self.a)
+             if i not in (15,16,17,18)]
         with self.assertRaisesRegex(ValueError,"250ms"):
             compare_intervals(self.c,bad,self.first,self.last)
 
