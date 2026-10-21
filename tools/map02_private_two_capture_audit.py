@@ -69,6 +69,16 @@ def audit_pair(movie: Path, plan: Path, first: Path, second: Path, *,
     for field in ("reported_bizhawk_version", "reported_psx_display_standard"):
         if field not in a or field not in b or a[field] != b[field]:
             raise ValueError("two capture attempts report different emulator runtime profiles")
+    # Two apparently identical frames may still be reached with different
+    # cumulative core lag histories. Enforce equality when both local APIs
+    # report samples. Never infer an Octoshock/BIOS identity from these counts.
+    lag_first = a.get("reported_psx_lag_counts_at_snapshots")
+    lag_second = b.get("reported_psx_lag_counts_at_snapshots")
+    if (lag_first is None) != (lag_second is None):
+        raise ValueError("two private PSX capture lag telemetry modes differ")
+    lag_comparable = lag_first is not None
+    if lag_comparable and lag_first != lag_second:
+        raise ValueError("two private PSX capture lag timelines diverge")
     _, rows = parse_plan(plan)
     if len(rows) != a["screenshot_count"]:
         raise ValueError("private plan/capture screenshot count mismatch")
@@ -124,6 +134,9 @@ def audit_pair(movie: Path, plan: Path, first: Path, second: Path, *,
         "schema": SCHEMA,
         "two_private_capture_chains_passed": True,
         "same_reported_bizhawk_runtime_profile": True,
+        "same_reported_psx_lag_timeline": lag_comparable,
+        "psx_lag_counter_available_in_both": lag_comparable,
+        "psx_lag_timeline_proves_controller_delivery": False,
         "octoshock_core_identity_authenticated": False,
         "distinct_capture_directories": True,
         "cross_run_png_inodes_distinct": True,
