@@ -43,6 +43,21 @@ each PNG image to RGBA and compares the width/height and per-pixel digest
 at each matching input candidate. Different PNG compression levels or byte
 encodings can pass if the decoded RGBA pixels are identical; changed pixels,
 metadata markers, manual labels, symlinks and reused input paths fail.
+
+A second, independent **visible-change witness** now compares the last
+captured `pre_map02` raster against the first captured `map02_candidate`
+raster **within each replay**. A candidate pair with identical decoded
+pixels is rejected, even if both sessions are otherwise perfectly
+repeatable: two still screenshots are not evidence of a visible transition.
+At least one changed decoded pixel is required. Later `post_map02`
+screenshots are allowed to repeat. The sanitized report adds
+`candidate_boundary_raster_change_observed=true` but explicitly keeps
+`scene_transition_authenticated=false`.
+
+This check does **not** mean that the changed pixels depict MAP02: it could
+just be a flashing cursor, sprite animation or unrelated UI transition.
+No scene classifier, timing calibration or emulator provenance is implied.
+
 The printed report contains no image names, paths, pixels or original hashes.
 
 The two inputs are merely *separate user-supplied file sets*. The script
