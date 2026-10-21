@@ -40,7 +40,7 @@ class RealProcSamplingSafetyTests(unittest.TestCase):
 
     def test_cpu_counter_regression_rejected(self):
         bad=[x.copy() for x in self.r]
-        bad[-2]["ticks"]=0
+        bad[-4]["ticks"]=0
         with self.assertRaisesRegex(ValueError,"regression"):
             summarize(bad,self.first,self.last)
 
@@ -55,7 +55,7 @@ class RealProcSamplingSafetyTests(unittest.TestCase):
     def test_task_sampler_source_schema_rejects_real_tid_leak(self):
         with tempfile.TemporaryDirectory() as t:
             p=Path(t)/"tasks.csv"
-            p.write_text("sample,observed_ns,task_tid,name_hint,linux_state,cpu_ticks,wait_bucket\n")
+            p.write_text("sample,observed_ns,task_tid,name_hint,linux_state,cpu_ticks,wait_bucket\n"+"0,100,123,AUDIO_NAMED,S,0,futex\n"*12)
             with self.assertRaisesRegex(ValueError,"schema"):
                 read_tasks(p)
 
