@@ -284,6 +284,110 @@ def summarize_high_fanout_relocations(remaining, game_refs, backend_refs,
     }
 
 
+
+def summarize_high_fanout_relocation_provenance(
+        remaining, game_refs, backend_refs, game_relocation_maps,
+        *, minimum_callers=8):
+    """Count exact known relocation classes and source sections, not semantics.
+
+    A relocation being inside '.rela.text' proves an ELF code-section patch,
+    NOT that the target symbol itself is a function. All private names stay
+    in process only; the returned dictionary has fixed numeric field names.
+    """
+    if (type(minimum_callers) is not int or minimum_callers < 2
+            or len(game_refs) != len(game_relocation_maps)):
+        raise ValueError("MAP02 relocation provenance object inventory invalid")
+    remaining = set(remaining)
+    game = [set(refs) & remaining for refs in game_refs]
+    backend = set().union(*(set(refs) & remaining for refs in backend_refs))
+    game_only = (set().union(*game) if game else set()) - backend
+    type_names = ("pc32", "plt32", "abs32", "abs32s", "abs64",
+                  "gotpcrel", "other")
+    section_names = ("text", "rodata", "data", "unwind", "other")
+    type_counts = {name: 0 for name in type_names}
+    section_counts = {name: 0 for name in section_names}
+    with_other = 0
+    mixed_text = 0
+    nontext_only = 0
+    no_record = 0
+    selected = 0
+    for symbol in game_only:
+        users = [i for i, refs in enumerate(game) if symbol in refs]
+        if len(users) < minimum_callers:
+            continue
+        selected += 1
+        rows = [row for i in users
+                for row in game_relocation_maps[i].get(symbol, ())]
+        if not rows:
+            no_record += 1
+            continue
+        saw_text = False
+        saw_nontext = False
+        saw_non_pc32 = False
+        for kind, section in rows:
+            if kind == "R_X86_64_PC32":
+                ty = "pc32"
+            elif kind == "R_X86_64_PLT32":
+                ty = "plt32"
+            elif kind == "R_X86_64_32":
+                ty = "abs32"
+            elif kind == "R_X86_64_32S":
+                ty = "abs32s"
+            elif kind == "R_X86_64_64":
+                ty = "abs64"
+            elif kind in (
+                    "R_X86_64_GOTPCREL", "R_X86_64_GOTPCRELX",
+                    "R_X86_64_REX_GOTPCRELX"):
+                ty = "gotpcrel"
+            else:
+                ty = "other"
+            type_counts[ty] += 1
+            if ty not in ("pc32", "plt32"):
+                saw_non_pc32 = True
+
+            if section.startswith((".rela.text", ".rel.text")):
+                sec = "text"
+                saw_text = True
+            elif section.startswith((".rela.rodata", ".rel.rodata")):
+                sec = "rodata"
+                saw_nontext = True
+            elif section.startswith((".rela.data", ".rel.data",
+                                    ".rela.bss", ".rel.bss")):
+                sec = "data"
+                saw_nontext = True
+            elif section.startswith((".rela.eh_frame", ".rel.eh_frame",
+                                    ".rela.gcc_except_table",
+                                    ".rel.gcc_except_table")):
+                sec = "unwind"
+                saw_nontext = True
+            else:
+                sec = "other"
+                saw_nontext = True
+            section_counts[sec] += 1
+        with_other += saw_non_pc32
+        mixed_text += saw_text and saw_nontext
+        nontext_only += saw_nontext and not saw_text
+    records = sum(type_counts.values())
+    if (records != sum(section_counts.values())
+            or with_other > selected - no_record
+            or mixed_text + nontext_only > selected - no_record
+            or not 0 <= no_record <= selected):
+        raise ValueError("MAP02 relocation provenance category totals inconsistent")
+    return {
+        "high_fanout_provenance_imports": selected,
+        **{"high_fanout_provenance_" + name + "_records": value
+           for name, value in type_counts.items()},
+        **{"high_fanout_provenance_section_" + name + "_records": value
+           for name, value in section_counts.items()},
+        "high_fanout_provenance_any_non_pc32_plt32_imports": with_other,
+        "high_fanout_provenance_both_text_nontext_imports": mixed_text,
+        "high_fanout_provenance_nontext_only_imports": nontext_only,
+        "high_fanout_provenance_without_relocation_records": no_record,
+        "high_fanout_provenance_total_records": records,
+        "source_section_and_relocation_type_do_not_prove_runtime_abi": True,
+    }
+
+
 def read_link_report(path):
     path = Path(path)
     if path.is_symlink():
@@ -434,6 +538,24 @@ def audit_owners(upstream, overlay_bundle,
         if (reloc_types["high_fanout_game_only_imports_with_relocation_check"]
                 != elf_types["high_fanout_game_only_imports"]):
             raise ValueError("MAP02 native relocation fanout differs from ELF types")
+        relocation_provenance = summarize_high_fanout_relocation_provenance(
+            remaining, refs[:EXPECTED_GAME], refs[EXPECTED_GAME:],
+            game_reloc_maps)
+        if (relocation_provenance["high_fanout_provenance_imports"]
+                != reloc_types["high_fanout_game_only_imports_with_relocation_check"]
+                or relocation_provenance["high_fanout_provenance_total_records"]
+                   != (reloc_types["high_fanout_reloc_plt32_records"] +
+                       reloc_types["high_fanout_reloc_pc32_records"] +
+                       reloc_types["high_fanout_reloc_other_records"])
+                or relocation_provenance["high_fanout_provenance_pc32_records"]
+                   != reloc_types["high_fanout_reloc_pc32_records"]
+                or relocation_provenance["high_fanout_provenance_plt32_records"]
+                   != reloc_types["high_fanout_reloc_plt32_records"]
+                or relocation_provenance["high_fanout_provenance_nontext_only_imports"]
+                   != reloc_types["high_fanout_only_nontext_relocation_names"]
+                or relocation_provenance["high_fanout_provenance_without_relocation_records"]
+                   != reloc_types["high_fanout_reloc_no_relocation_record"]):
+            raise ValueError("MAP02 native relocation class provenance disagrees")
         if (sum(fanout["game_only_fanout_" + name]
                 for name in ("one", "two_to_three", "four_to_seven",
                              "eight_or_more")) != output["original_game_only_imports"]
@@ -461,6 +583,7 @@ def audit_owners(upstream, overlay_bundle,
             **fanout,
             **elf_types,
             **reloc_types,
+            **relocation_provenance,
             "only_counts_and_hashes_published": True,
             "retail_asset_content_accessed": False,
             "executable_game_proven": False,
