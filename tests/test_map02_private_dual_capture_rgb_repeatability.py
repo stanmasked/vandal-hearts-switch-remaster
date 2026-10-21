@@ -116,7 +116,7 @@ class PrivateDualRGBTests(unittest.TestCase):
             if key != "source_capture_evidence_sha256"
         }
         self.assertNotIn("3000", json.dumps(public_fields))
-        self.assertNotIn("png_file", json.dumps(result))
+        self.assertNotIn("vh_review_w", json.dumps(result))
 
     def test_git_checkout_source_is_rejected_before_evidence_hashing(self):
         (self.root / ".git").mkdir()
