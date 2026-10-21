@@ -111,6 +111,83 @@ def summarize_game_only_fanout(remaining, game_refs, backend_refs):
     }
 
 
+
+def parse_readelf_global_undefined_types(readelf_output):
+    """Strictly parse genuine ELF symbol-table TYPE fields, never source syntax.
+
+    NOTYPE is *not* evidence of a function or object. Raw names only exist in
+    owner-private memory and must never enter the public JSON or error strings.
+    """
+    out = {}
+    for line in readelf_output.splitlines():
+        fields = line.split()
+        if (len(fields) < 8 or not fields[0].endswith(":")
+                or not fields[0][:-1].isdigit()
+                or fields[6] != "UND" or fields[4] != "GLOBAL"):
+            continue
+        kind, name = fields[3], fields[7]
+        if not name or name == "0":
+            raise ValueError("MAP02 native readelf undefined name malformed")
+        out.setdefault(name, set()).add(kind)
+    return out
+
+
+def summarize_high_fanout_elf_types(remaining, game_refs, backend_refs,
+                                   game_type_maps, *, minimum_callers=8):
+    """Group only the game-exclusive wide fanout names by recorded ELF type.
+
+    One name can have varying declared types across objects; any FUNC+OBJECT
+    conflict is reported as mixed rather than choosing a desired answer.
+    """
+    if (type(minimum_callers) is not int or minimum_callers < 2
+            or len(game_refs) != len(game_type_maps)):
+        raise ValueError("MAP02 high-fanout type input invalid")
+    remaining = set(remaining)
+    game = [set(refs) & remaining for refs in game_refs]
+    backend = set().union(*(set(refs) & remaining for refs in backend_refs))
+    game_only = (set().union(*game) if game else set()) - backend
+    bins = {
+        "function_marker": 0,
+        "object_marker": 0,
+        "mixed_function_object": 0,
+        "notype_only": 0,
+        "other_or_unknown": 0,
+    }
+    untyped = 0
+    selected = 0
+    for symbol in game_only:
+        users = [index for index, refs in enumerate(game) if symbol in refs]
+        if len(users) < minimum_callers:
+            continue
+        selected += 1
+        kinds = set()
+        for index in users:
+            per_object = game_type_maps[index]
+            if symbol not in per_object or not per_object[symbol]:
+                raise ValueError("MAP02 wide import has no native ELF type witness")
+            kinds.update(per_object[symbol])
+        if "FUNC" in kinds and "OBJECT" in kinds:
+            bins["mixed_function_object"] += 1
+        elif "FUNC" in kinds:
+            bins["function_marker"] += 1
+        elif "OBJECT" in kinds:
+            bins["object_marker"] += 1
+        elif kinds == {"NOTYPE"}:
+            bins["notype_only"] += 1
+        else:
+            bins["other_or_unknown"] += 1
+        if "NOTYPE" in kinds:
+            untyped += 1
+    if sum(bins.values()) != selected or untyped > selected:
+        raise ValueError("MAP02 high-fanout ELF type arithmetic differs")
+    return {
+        "high_fanout_game_only_imports": selected,
+        **{"high_fanout_elf_" + name: value for name, value in bins.items()},
+        "high_fanout_with_any_notype_declaration": untyped,
+        "elf_symbol_type_is_not_proof_of_abi_or_runtime_calls": True,
+    }
+
+
 def read_link_report(path):
     path = Path(path)
     if path.is_symlink():
@@ -194,6 +271,7 @@ def audit_owners(upstream, overlay_bundle,
             raise ValueError("MAP02 duplicate Make module owner")
         root = Path(upstream).absolute() / "platform" / "pc"
         refs = []
+        game_type_maps = []
         for index, relative in enumerate(all_paths):
             if (not relative.startswith("build-map02-cycle/")
                     or not relative.endswith(".o")
@@ -213,6 +291,20 @@ def audit_owners(upstream, overlay_bundle,
                     raise ValueError("MAP02 private module undefined-symbol inspection failed")
                 strong, _ = _undefined_symbol_names(res.stdout)
                 refs.append(strong)
+                if index < EXPECTED_GAME:
+                    native = subprocess.run(
+                        ["readelf", "-Ws", f"/proc/self/fd/{fd}"],
+                        capture_output=True, text=True, check=False,
+                        timeout=30, pass_fds=(fd,), umask=0o077,
+                        env={k: v for k, v in os.environ.items()
+                             if not k.startswith(("LD_", "DYLD_", "PYTHON", "VH_"))})
+                    if native.returncode:
+                        raise ValueError("MAP02 native object ELF symbol table unavailable")
+                    table = parse_readelf_global_undefined_types(native.stdout)
+                    required = set(strong) & remaining
+                    if not required.issubset(table):
+                        raise ValueError("MAP02 native ELF undefined symbol type witness incomplete")
+                    game_type_maps.append(table)
             finally:
                 os.close(fd)
             if stable_object_input(path) != witness:
@@ -223,6 +315,12 @@ def audit_owners(upstream, overlay_bundle,
             remaining, refs[:EXPECTED_GAME], refs[EXPECTED_GAME:])
         fanout = summarize_game_only_fanout(
             remaining, refs[:EXPECTED_GAME], refs[EXPECTED_GAME:])
+        elf_types = summarize_high_fanout_elf_types(
+            remaining, refs[:EXPECTED_GAME], refs[EXPECTED_GAME:],
+            game_type_maps)
+        if (elf_types["high_fanout_game_only_imports"] !=
+                fanout["game_only_fanout_eight_or_more"]):
+            raise ValueError("MAP02 wide game import ELF types differ from actual fanout")
         if (sum(fanout["game_only_fanout_" + name]
                 for name in ("one", "two_to_three", "four_to_seven",
                              "eight_or_more")) != output["original_game_only_imports"]
@@ -248,6 +346,7 @@ def audit_owners(upstream, overlay_bundle,
             "backend_and_observer_objects_checked": EXPECTED_BACKEND,
             **output,
             **fanout,
+            **elf_types,
             "only_counts_and_hashes_published": True,
             "retail_asset_content_accessed": False,
             "executable_game_proven": False,
