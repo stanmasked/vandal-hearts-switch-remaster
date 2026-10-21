@@ -13,7 +13,7 @@ local scenarios = 0
 local function run(option)
   scenarios = scenarios + 1
   local counter = option == "late-attach" and 80 or (option == "zero-counter" and 0 or 1)
-  local lines, screenshots, saved, log_lines = {}, {}, {}, {}
+  local lines, screenshots, saved, log_lines, exit_codes = {}, {}, {}, {}, {}
   local content = BASE
   if option == "boundary" then content = content:gsub("1,before,1664,held", "1,before,1663,held") end
   if option == "bad-header" then content = content:gsub("VH_MAP02_CAPTURE_PLAN_V1", "OTHER") end
@@ -138,16 +138,18 @@ local function run(option)
         saved[path] = option == "malformed-png" and "badbytes" or SIGNATURE
       end
     end,
+    exitCode = function(code) table.insert(exit_codes, code) end,
   }
+  if option == "missing-exit-api" then client.exitCode = nil end
   print = function(line) table.insert(lines, tostring(line)) end
   local ok, err = pcall(dofile, SCRIPT)
   print, os.getenv, io.open = old_print, old_getenv, old_open
   assert(ok, tostring(err))
-  return lines, screenshots, log_lines
+  return lines, screenshots, log_lines, exit_codes
 end
 
 for _, option in ipairs({"plain", "prefixed", "boundary", "zero-counter", "sparse-start"}) do
-  local lines, shots, log_lines = run(option)
+  local lines, shots, log_lines, exit_codes = run(option)
   assert(#shots == 3, option .. ": expected three screenshot calls")
   assert(#lines == 6, option .. ": log ready, Start preflight, three captures and summary")
   assert(#log_lines == #lines, option .. ": private file log must mirror console markers")
@@ -167,6 +169,8 @@ for _, option in ipairs({"plain", "prefixed", "boundary", "zero-counter", "spars
     assert(held == (i == 2 and "neutral" or "held"), option .. ": expected button state")
   end
   assert(lines[6] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes actual_map02=unverified")
+  assert(#exit_codes == 1 and exit_codes[1] == 0,
+         option .. ": successful bounded capture must close EmuHawk with exit code 0")
 end
 
 for _, option in ipairs({
@@ -176,9 +180,9 @@ for _, option in ipairs({
   "malformed-png", "invalid-role", "late-attach",
   "early-start", "missing-start", "ambiguous-start", "unknown-start",
   "nil-start-table", "git-root", "git-parent", "git-worktree",
-  "wrong-system", "system-changed", "missing-system-api"
+  "wrong-system", "system-changed", "missing-system-api", "missing-exit-api"
 }) do
-  local lines, shots = run(option)
+  local lines, shots, _, exit_codes = run(option)
   local rejected = false
   for _, line in ipairs(lines) do
     if line:match("^VH_PRIVATE_NEUTRAL_CAPTURE_ERROR ") then rejected = true end
@@ -187,6 +191,7 @@ for _, option in ipairs({
   end
   assert(rejected, option .. ": fail-closed diagnostic missing")
   assert(#shots < 3, option .. ": should reject before three successful PNGs")
+  assert(#exit_codes == 0, option .. ": failed capture must not signal successful process exit")
 end
 old_print("VH_MAP02_NEUTRAL_CAPTURE_LUA_MOCK_PASS cases=" .. scenarios ..
           " owner_bk2=0 actual_bizhawk=0 map02_verified=0")
