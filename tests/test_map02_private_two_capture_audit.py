@@ -73,15 +73,18 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
         count_b = kwargs.pop("count_b", len(ROWS))
         version_b = kwargs.pop("version_b", "2.11")
         display_b = kwargs.pop("display_b", "NTSC")
+        lag_b = kwargs.pop("lag_b", [300, 325, 350])
         with patch(
             "tools.map02_private_two_capture_audit.verify",
             side_effect=[
                 {"screenshot_count": count_a,
                  "reported_bizhawk_version": "2.11",
-                 "reported_psx_display_standard": "NTSC"},
+                 "reported_psx_display_standard": "NTSC",
+                 "reported_psx_lag_counts_at_snapshots": [300, 325, 350]},
                 {"screenshot_count": count_b,
                  "reported_bizhawk_version": version_b,
-                 "reported_psx_display_standard": display_b},
+                 "reported_psx_display_standard": display_b,
+                 "reported_psx_lag_counts_at_snapshots": lag_b},
             ],
         ) as verifier, patch(
             "tools.map02_private_two_capture_audit.parse_plan",
@@ -96,6 +99,9 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
         self.assertEqual(verifier.call_count, 2)
         self.assertTrue(report["two_private_capture_chains_passed"])
         self.assertTrue(report["same_reported_bizhawk_runtime_profile"])
+        self.assertTrue(report["same_reported_psx_lag_timeline"])
+        self.assertTrue(report["psx_lag_counter_available_in_both"])
+        self.assertFalse(report["psx_lag_timeline_proves_controller_delivery"])
         self.assertFalse(report["octoshock_core_identity_authenticated"])
         self.assertTrue(report["distinct_capture_directories"])
         self.assertEqual(report["screenshot_pairs_checked"], 3)
@@ -215,6 +221,34 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "different emulator runtime profiles"):
             self.call(display_b="PAL")
 
+    def test_lag_history_mismatch_blocks_even_identical_pixels(self):
+        with self.assertRaisesRegex(ValueError, "lag timelines diverge"):
+            self.call(lag_b=[300, 325, 349])
+
+    def test_missing_lag_api_on_both_sides_remains_unverified(self):
+        with patch(
+            "tools.map02_private_two_capture_audit.verify",
+            side_effect=[
+                {"screenshot_count": 3,
+                 "reported_bizhawk_version": "2.11",
+                 "reported_psx_display_standard": "NTSC",
+                 "reported_psx_lag_counts_at_snapshots": None},
+                {"screenshot_count": 3,
+                 "reported_bizhawk_version": "2.11",
+                 "reported_psx_display_standard": "NTSC",
+                 "reported_psx_lag_counts_at_snapshots": None},
+            ],
+        ), patch(
+            "tools.map02_private_two_capture_audit.parse_plan",
+            return_value=("fictional plan", ROWS),
+        ):
+            result = audit_pair(self.movie, self.plan, self.first, self.second)
+        self.assertFalse(result["same_reported_psx_lag_timeline"])
+
+    def test_one_missing_lag_api_blocks_cross_run_comparison(self):
+        with self.assertRaisesRegex(ValueError, "lag telemetry modes differ"):
+            self.call(lag_b=None)
+
     def test_different_chain_counts_rejected(self):
         with self.assertRaisesRegex(ValueError, "counts differ"):
             self.call(count_b=2)
@@ -228,9 +262,11 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
             "tools.map02_private_two_capture_audit.verify",
             side_effect=[
                 {"screenshot_count": 3, "reported_bizhawk_version": "2.11",
-                 "reported_psx_display_standard": "NTSC"},
+                 "reported_psx_display_standard": "NTSC",
+                 "reported_psx_lag_counts_at_snapshots": [300, 325, 350]},
                 {"screenshot_count": 3, "reported_bizhawk_version": "2.11",
-                 "reported_psx_display_standard": "NTSC"},
+                 "reported_psx_display_standard": "NTSC",
+                 "reported_psx_lag_counts_at_snapshots": [300, 325, 350]},
             ],
         ), patch(
             "tools.map02_private_two_capture_audit.parse_plan",
@@ -251,9 +287,11 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
             "tools.map02_private_two_capture_audit.verify",
             side_effect=[
                 {"screenshot_count": 3, "reported_bizhawk_version": "2.11",
-                 "reported_psx_display_standard": "NTSC"},
+                 "reported_psx_display_standard": "NTSC",
+                 "reported_psx_lag_counts_at_snapshots": [300, 325, 350]},
                 {"screenshot_count": 3, "reported_bizhawk_version": "2.11",
-                 "reported_psx_display_standard": "NTSC"},
+                 "reported_psx_display_standard": "NTSC",
+                 "reported_psx_lag_counts_at_snapshots": [300, 325, 350]},
             ],
         ), patch(
             "tools.map02_private_two_capture_audit.parse_plan",
