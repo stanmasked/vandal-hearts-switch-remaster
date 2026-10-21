@@ -119,13 +119,25 @@ jobs:
             -o stage308-build/stage308-two-thread-synthetic-null -lasound -ldl -pthread
           nm -D stage308-build/libmap02-same-tls-stage308.so | \
             grep -E ' [TW] vh_map02_stage308_cpal_callback_mark$'
-          clean="$(stage308-build/stage308-two-thread-synthetic-null)"
+          # Capture BOTH return codes rather than letting set -e hide
+          # an unconfigured ALSA null device failure inside $(...).
+          set +e
+          clean="$(stage308-build/stage308-two-thread-synthetic-null 2>&1)"
+          clean_rc="$?"
+          set -e
           python3 research/tools/capture_map02_alsa_userspace_stage305.py \
             --init --source "$RUNNER_TEMP/stage308-test-PRIVATE.bin"
+          set +e
           instrumented="$(env \
             LD_PRELOAD="$PWD/stage308-build/libmap02-same-tls-stage308.so" \
             VH_STAGE305_ALSA_COUNTER_PATH="$RUNNER_TEMP/stage308-test-PRIVATE.bin" \
-            stage308-build/stage308-two-thread-synthetic-null)"
+            stage308-build/stage308-two-thread-synthetic-null 2>&1)"
+          instrumented_rc="$?"
+          set -e
+          printf 'Synthetic plain exit=%s output=%s\n' "$clean_rc" "$clean"
+          printf 'Synthetic shim exit=%s output=%s\n' "$instrumented_rc" "$instrumented"
+          test "$clean_rc" -eq 0
+          test "$instrumented_rc" -eq 0
           test "$clean" = "$instrumented"
           python3 - <<'PY'
           from pathlib import Path
