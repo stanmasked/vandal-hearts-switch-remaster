@@ -125,6 +125,18 @@ It never accepts other prompts, BIOS dialogs, crash notifications or
 any unexpected window. Real owner-side use still requires the owner's
 own approval.
 
+Early no-media Windows CI attempts were **blocked** by a native
+`Initialization Error` dialog before the plugin constructor ran.
+Official BizHawk 2.11 MainForm code uses that caption when an audio
+backend cannot initialize. To avoid any sound-hardware requirement
+on a GitHub-hosted runner, the Stage504 launcher now writes a
+**temporary, runner-only JSON configuration** with
+`LastWrittenFrom=2.11` and `SoundOutputMethod=Dummy`, passes it
+using official `--config` and requests GDI graphics with `--gdi`.
+It deletes that file after the test, and neither edits the owner's
+normal settings nor loads real PS1 content. This workaround itself
+is not proof the in-process plugin started.
+
 The Stage504 Windows CI launches the exact SHA-256-pinned official
 `EmuHawk.exe` with **only** that external-tool argument, without a
 ROM, BIOS, disc, movie, Lua script or network input. A short,
