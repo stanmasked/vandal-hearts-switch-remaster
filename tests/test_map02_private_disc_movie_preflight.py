@@ -18,12 +18,19 @@ SYNC = json.dumps({"o":{"FIOConfig":{
 }}})
 
 
-def raw_sector(user):
+def raw_sector(user, lba):
     payload = bytes(user).ljust(USER_DATA_BYTES, b"\x00")
     if len(payload) != USER_DATA_BYTES:
         raise ValueError("test payload too large")
     sector = bytearray(SECTOR_BYTES)
     sector[:12] = b"\x00" + b"\xff" * 10 + b"\x00"
+    absolute_frame = lba + 150
+    sector[12:15] = bytes(
+        ((n // 10) << 4) | (n % 10)
+        for n in (absolute_frame // 4500,
+                  (absolute_frame // 75) % 60,
+                  absolute_frame % 75)
+    )
     sector[15] = 2
     sector[24:24 + USER_DATA_BYTES] = payload
     return bytes(sector)
@@ -70,12 +77,12 @@ class DiscMoviePreflightTests(unittest.TestCase):
         pvd[40:72] = volume_id.encode("ascii").ljust(32, b" ")
         with self.bin.open("r+b") as handle:
             handle.seek(PVD_LBA * SECTOR_BYTES)
-            handle.write(raw_sector(pvd))
+            handle.write(raw_sector(pvd, PVD_LBA))
             remaining = self.map_data
             for lba in range(MAP02_LBA, sectors):
                 block, remaining = remaining[:USER_DATA_BYTES], remaining[USER_DATA_BYTES:]
                 handle.seek(lba * SECTOR_BYTES)
-                handle.write(raw_sector(block))
+                handle.write(raw_sector(block, lba))
 
     def call(self, **kwargs):
         return inspect_pair(
@@ -116,6 +123,22 @@ class DiscMoviePreflightTests(unittest.TestCase):
         self.assertTrue(result["map02_prs_matches_expected_profile"])
         self.assertFalse(result["disc_size_matches_audited_profile"])
         self.assertFalse(result["media_preflight_ready_for_owner_replay"])
+
+    def test_rejects_wrong_pvd_sector_msf_despite_valid_payload(self):
+        with self.bin.open("r+b") as handle:
+            handle.seek(PVD_LBA * SECTOR_BYTES + 12)
+            handle.write(b"\x00\x00\x00")
+        with self.assertRaisesRegex(ValueError, "MSF address"):
+            self.call()
+
+    def test_rejects_wrong_map02_sector_msf_despite_valid_resource_hash(self):
+        # Leave the 2048-byte sector payload unchanged so its SHA-256 matches.
+        target = MAP02_LBA + 3
+        with self.bin.open("r+b") as handle:
+            handle.seek(target * SECTOR_BYTES + 12)
+            handle.write(b"\x00\x00\x00")
+        with self.assertRaisesRegex(ValueError, "MSF address"):
+            self.call()
 
     def test_different_map02_resource_profile_is_not_accepted(self):
         result = self.call(expected_map02_sha256=hashlib.sha256(b"other profile").hexdigest())
