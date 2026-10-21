@@ -68,15 +68,17 @@ public static class VhNoMediaWindows {
 
     // Bounded aggregate, never a process ID, handle, private path or title.
     // 0=all top-level process windows, 1=visible, 2=matching tool windows,
-    // 3=matching Save buttons, 4=matching disabled Save buttons.
+    // 3=matching Save buttons, 4=matching disabled Save buttons,
+    // 5=visible, process-owned first-load trust dialogs.
     public static int[] Probe(int processId) {
-        var counts = new int[5];
+        var counts = new int[6];
         EnumWindows((window, param) => {
             uint owner;
             GetWindowThreadProcessId(window, out owner);
             if (owner != (uint)processId) return true;
             counts[0]++;
             if (IsWindowVisible(window)) counts[1]++;
+            if (IsWindowVisible(window) && Title(window) == "Confirm loading") counts[5]++;
             if (!IsWindowVisible(window)
                 || Title(window) != "VH MAP02 PSX core witness") return true;
             counts[2]++;
@@ -112,11 +114,14 @@ if ([System.IO.Path]::GetFullPath($PluginFile) -cne [System.IO.Path]::GetFullPat
 
 # Hardcoded no-media CLI: there is no --movie, --lua or disc argument.
 # Only the registered external-tool filename is passed to the real host.
+$stdout = Join-Path $env:RUNNER_TEMP 'vh-map02-gameless-emuhawk-output.txt'
+$stderr = Join-Path $env:RUNNER_TEMP 'vh-map02-gameless-emuhawk-error.txt'
 $hosted = Start-Process -FilePath $emulator -WorkingDirectory $root `
-    -ArgumentList @('--open-ext-tool-dll', 'VhMap02CoreWitness.dll') -PassThru
+    -ArgumentList @('--open-ext-tool-dll', 'VhMap02CoreWitness.dll') `
+    -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
 try {
     $observed = $false
-    $diagnostic = @(0, 0, 0, 0, 0)
+    $diagnostic = @(0, 0, 0, 0, 0, 0)
     $ownPromptApproved = $false
     for ($i=0; $i -lt 60; $i++) {
         $hosted.Refresh()
@@ -140,6 +145,7 @@ try {
         $hasTool = [int]($diagnostic[2] -gt 0)
         $hasButton = [int]($diagnostic[3] -gt 0)
         $hasDisabledButton = [int]($diagnostic[4] -gt 0)
+        $hasTrustPrompt = [int]($diagnostic[5] -gt 0)
         $status = @(
             "VH_MAP02_REAL_EMUHAWK_NOMEDIA_DIAGNOSTIC"
             "same_windows_session=$sameSession"
@@ -148,6 +154,7 @@ try {
             "plugin_window_found=$hasTool"
             "save_button_found=$hasButton"
             "disabled_save_found=$hasDisabledButton"
+            "tool_trust_prompt_seen=$hasTrustPrompt"
             "own_tool_trust_confirmed=$([int]$ownPromptApproved)"
             "real_octoshock_authenticated=0"
         ) -join ' '
@@ -164,5 +171,24 @@ try {
     } catch {
         # A dead emulator cannot expose private source bytes in this job.
     }
-    $hosted.Dispose()
+    try {
+        # Never print raw console output: it may include temporary paths.
+        # Expose only a few fixed boolean classifications of the CLI result.
+        $out = if (Test-Path -LiteralPath $stdout) {
+            Get-Content -LiteralPath $stdout -Raw -ErrorAction SilentlyContinue
+        } else { '' }
+        $err = if (Test-Path -LiteralPath $stderr) {
+            Get-Content -LiteralPath $stderr -Raw -ErrorAction SilentlyContinue
+        } else { '' }
+        $missingMenuItem = [int]("$out".Contains(
+            'requested ext. tool dll VhMap02CoreWitness.dll could not be loaded'))
+        $skippedAssembly = [int]("$out".Contains('ignoring <exttools>/'))
+        $fatalStartup = [int]("$err".Contains('FATAL EXCEPTION'))
+        Write-Output "VH_MAP02_EMUHAWK_CLI_SANITIZED_DIAGNOSTIC tool_not_available=$missingMenuItem ignored_tool_assembly=$skippedAssembly fatal_startup=$fatalStartup"
+    } catch {
+        Write-Output 'VH_MAP02_EMUHAWK_CLI_SANITIZED_DIAGNOSTIC unavailable=1'
+    } finally {
+        Remove-Item -LiteralPath $stdout, $stderr -Force -ErrorAction SilentlyContinue
+        $hosted.Dispose()
+    }
 }
