@@ -65,7 +65,7 @@ class Stage310SameTLSTests(unittest.TestCase):
 
     def test_no_snapshot_near_original_input(self):
         with self.assertRaisesRegex(ValueError,"distant"):
-            source_window(self.a,self.t,4_000_000_000,6_000_000_000)
+            source_window(self.a,self.t,7_500_000_000,9_000_000_000)
 
     def test_read_tag_schema_fail_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
