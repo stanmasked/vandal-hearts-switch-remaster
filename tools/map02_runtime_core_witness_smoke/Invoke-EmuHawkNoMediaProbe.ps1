@@ -69,9 +69,10 @@ public static class VhNoMediaWindows {
     // Bounded aggregate, never a process ID, handle, private path or title.
     // 0=all top-level process windows, 1=visible, 2=matching tool windows,
     // 3=matching Save buttons, 4=matching disabled Save buttons,
-    // 5=visible, process-owned first-load trust dialogs.
+    // 5=visible, process-owned first-load trust dialogs,
+    // 6=exact "BizHawk" main title, 7=any visible native modal.
     public static int[] Probe(int processId) {
-        var counts = new int[6];
+        var counts = new int[8];
         EnumWindows((window, param) => {
             uint owner;
             GetWindowThreadProcessId(window, out owner);
@@ -79,6 +80,10 @@ public static class VhNoMediaWindows {
             counts[0]++;
             if (IsWindowVisible(window)) counts[1]++;
             if (IsWindowVisible(window) && Title(window) == "Confirm loading") counts[5]++;
+            if (IsWindowVisible(window) && Title(window) == "BizHawk") counts[6]++;
+            var cls = new StringBuilder(40);
+            GetClassName(window, cls, cls.Capacity);
+            if (IsWindowVisible(window) && cls.ToString() == "#32770") counts[7]++;
             if (!IsWindowVisible(window)
                 || Title(window) != "VH MAP02 PSX core witness") return true;
             counts[2]++;
@@ -126,7 +131,7 @@ $hosted = Start-Process -FilePath $emulator -WorkingDirectory $root `
     -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
 try {
     $observed = $false
-    $diagnostic = @(0, 0, 0, 0, 0, 0)
+    $diagnostic = @(0, 0, 0, 0, 0, 0, 0, 0)
     $ownPromptApproved = $false
     for ($i=0; $i -lt 60; $i++) {
         $hosted.Refresh()
@@ -151,6 +156,8 @@ try {
         $hasButton = [int]($diagnostic[3] -gt 0)
         $hasDisabledButton = [int]($diagnostic[4] -gt 0)
         $hasTrustPrompt = [int]($diagnostic[5] -gt 0)
+        $hasMainWindow = [int]($diagnostic[6] -gt 0)
+        $hasNativeModal = [int]($diagnostic[7] -gt 0)
         $phases = if (Test-Path -LiteralPath $canary -PathType Leaf) {
             @(Get-Content -LiteralPath $canary -ErrorAction SilentlyContinue)
         } else { @() }
@@ -167,6 +174,8 @@ try {
             "inprocess_constructor_seen=$constructed"
             "inprocess_restart_seen=$restarted"
             "tool_trust_prompt_seen=$hasTrustPrompt"
+            "bizhawk_main_window_seen=$hasMainWindow"
+            "native_modal_dialog_seen=$hasNativeModal"
             "own_tool_trust_confirmed=$([int]$ownPromptApproved)"
             "real_octoshock_authenticated=0"
         ) -join ' '
