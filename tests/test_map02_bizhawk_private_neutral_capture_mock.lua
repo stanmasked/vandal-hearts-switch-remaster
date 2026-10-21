@@ -200,6 +200,22 @@ local function run(option)
   if option == "missing-system-api" then emu.getsystemid = nil end
   if option == "missing-lag-api" then emu.lagcount = nil end
   client = {
+    getconfig = function()
+      if option == "config-read-error" then error("fictional config API fault") end
+      local preferred = "Octoshock"
+      if option == "config-nymashock" then preferred = "Nymashock" end
+      if option == "config-no-psx" then preferred = nil end
+      if option == "config-changes-after-start" and counter >= 1664 then
+        preferred = "Nymashock"
+      end
+      local disable_fallback = false
+      if option == "fallback-blocked" then disable_fallback = true end
+      if option == "config-fallback-changes" and counter >= 1664 then
+        disable_fallback = true
+      end
+      return {PreferredCores = {PSX = preferred},
+              DontTryOtherCores = disable_fallback}
+    end,
     getversion = function()
       if option == "bad-version" then return "2.11\nPRIVATE_PATH" end
       return "2.11"
@@ -216,6 +232,7 @@ local function run(option)
   }
   if option == "missing-exit-api" then client.exitCode = nil end
   if option == "missing-version-api" then client.getversion = nil end
+  if option == "missing-config-api" then client.getconfig = nil end
   if option == "missing-display-api" then emu.getdisplaytype = nil end
   print = function(line) table.insert(lines, tostring(line)) end
   local ok, err = pcall(dofile, SCRIPT)
@@ -224,10 +241,10 @@ local function run(option)
   return lines, screenshots, log_lines, exit_codes
 end
 
-for _, option in ipairs({"plain", "prefixed", "boundary", "zero-counter", "sparse-start", "mac-alias", "pal-display"}) do
+for _, option in ipairs({"plain", "prefixed", "boundary", "zero-counter", "sparse-start", "mac-alias", "pal-display", "fallback-blocked"}) do
   local lines, shots, log_lines, exit_codes = run(option)
   assert(#shots == 3, option .. ": expected three screenshot calls")
-  assert(#lines == 8, option .. ": log ready, source, runtime, Start anchor, three captures and summary")
+  assert(#lines == 9, option .. ": log ready, source, runtime, core preference, Start, three captures and summary")
   assert(#log_lines == #lines, option .. ": private file log must mirror console markers")
   for i = 1, #lines do
     assert(log_lines[i] == lines[i], option .. ": private log differs from console marker")
@@ -236,11 +253,13 @@ for _, option in ipairs({"plain", "prefixed", "boundary", "zero-counter", "spars
   assert(lines[2] == "VH_PRIVATE_NEUTRAL_MOVIE_SOURCE_PREFLIGHT source=poweron filename=matched core_identity=unverified", option .. ": wrong power-on source")
   local display = option == "pal-display" and "PAL" or "NTSC"
   assert(lines[3] == "VH_PRIVATE_NEUTRAL_RUNTIME_PREFLIGHT bizhawk_version=2.11 display=" .. display .. " active_core=unverified", option .. ": wrong runtime")
-  assert(lines[4] == "VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 candidate_input=1661 first_start_pressed=yes ps1_input_delivery=unverified", option .. ": wrong live anchor")
+  local fallback = option == "fallback-blocked" and "blocked" or "allowed"
+  assert(lines[4] == "VH_PRIVATE_NEUTRAL_CORE_PREFERENCE preferred=Octoshock fallback=" .. fallback .. " active_core=unverified", option .. ": wrong configured core preference")
+  assert(lines[5] == "VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 candidate_input=1661 first_start_pressed=yes ps1_input_delivery=unverified", option .. ": wrong live anchor")
   local frames = {option == "boundary" and 1663 or 1664, 1666, 1669}
   local roles = {"before", "middle", "after"}
   for i = 1, 3 do
-    local group, role, counter, candidate, held, lag_count = lines[i + 4]:match(
+    local group, role, counter, candidate, held, lag_count = lines[i + 5]:match(
       "^VH_PRIVATE_NEUTRAL_CAPTURE window=(%d+) role=([a-z]+) counter=(%d+) candidate_input=(%d+) expected_buttons=([a-z]+) lag_count=(%d+) png=written display_offset=unverified$")
     assert(tonumber(group) == 1 and role == roles[i], option .. ": bad role/group")
     assert(tonumber(counter) == frames[i] + 1, option .. ": bad core counter")
@@ -248,7 +267,7 @@ for _, option in ipairs({"plain", "prefixed", "boundary", "zero-counter", "spars
     assert(held == (i == 2 and "neutral" or "held"), option .. ": expected button state")
     assert(tonumber(lag_count) == math.floor((frames[i] + 1) / 10), option .. ": bad PSX lag metric")
   end
-  assert(lines[8] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes game_rom_id_sampled=stable core_input_poll_observed=yes actual_map02=unverified")
+  assert(lines[9] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes game_rom_id_sampled=stable core_input_poll_observed=yes actual_map02=unverified")
   assert(#exit_codes == 1 and exit_codes[1] == 0,
          option .. ": successful bounded capture must close EmuHawk with exit code 0")
 end
@@ -270,7 +289,9 @@ for _, option in ipairs({
   "game-id-read-error", "malformed-game-id",
   "game-id-changes", "game-id-changes-at-start",
   "lag-counter-errors", "lag-counter-NaN", "lag-counter-negative",
-  "lag-counter-too-large", "lag-counter-fractional", "lag-counter-regresses"
+  "lag-counter-too-large", "lag-counter-fractional", "lag-counter-regresses",
+  "missing-config-api", "config-read-error", "config-nymashock",
+  "config-no-psx", "config-changes-after-start", "config-fallback-changes"
 }) do
   local lines, shots, _, exit_codes = run(option)
   local rejected = false
@@ -291,23 +312,23 @@ end
 do
   local lines, shots, _, exit_codes = run("no-input-polls")
   assert(#shots == 3 and #exit_codes == 1 and exit_codes[1] == 0)
-  assert(lines[8] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes game_rom_id_sampled=stable core_input_poll_observed=no actual_map02=unverified")
+  assert(lines[9] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes game_rom_id_sampled=stable core_input_poll_observed=no actual_map02=unverified")
 end
 do
   local lines, shots, _, exit_codes = run("missing-input-event")
   assert(#shots == 3 and #exit_codes == 1 and exit_codes[1] == 0)
-  assert(lines[8] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes game_rom_id_sampled=stable core_input_poll_observed=no actual_map02=unverified")
+  assert(lines[9] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes game_rom_id_sampled=stable core_input_poll_observed=no actual_map02=unverified")
 end
 for _, option in ipairs({"missing-gameinfo", "missing-game-hash-api", "empty-game-id"}) do
   local lines, shots, _, exit_codes = run(option)
   assert(#shots == 3 and #exit_codes == 1 and exit_codes[1] == 0)
-  assert(lines[8] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes game_rom_id_sampled=unavailable core_input_poll_observed=yes actual_map02=unverified")
+  assert(lines[9] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes game_rom_id_sampled=unavailable core_input_poll_observed=yes actual_map02=unverified")
 end
 do
   local lines, shots, _, exits = run("missing-lag-api")
   assert(#shots == 3 and #exits == 1 and exits[1] == 0)
   for i = 5, 7 do
-    assert(lines[i]:find(" lag_count=unavailable png=written ", 1, true),
+    assert(lines[i + 1]:find(" lag_count=unavailable png=written ", 1, true),
            "lag counter missing must be explicit, not synthetic")
   end
 end

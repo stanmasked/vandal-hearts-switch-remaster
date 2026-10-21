@@ -173,6 +173,31 @@ end
 emit("VH_PRIVATE_NEUTRAL_RUNTIME_PREFLIGHT bizhawk_version=" ..
      runtime_version .. " display=" .. runtime_display ..
      " active_core=unverified")
+-- BizHawk client.getconfig().PreferredCores["PSX"] records the user's
+-- configured preference. RomLoader may still fall back to another core
+-- when that core fails to load (unless DontTryOtherCores is enabled).
+-- Therefore never present this as authentication of an active Octoshock.
+if type(client.getconfig) ~= "function" then
+  return fail("psx_core_preference_api_unavailable")
+end
+local function read_psx_core_preference()
+  local ok, preferred, fallback = pcall(function()
+    local settings = client.getconfig()
+    local preferred = settings.PreferredCores["PSX"]
+    local no_fallback = settings.DontTryOtherCores
+    return preferred, no_fallback
+  end)
+  if not ok or preferred ~= "Octoshock" then return nil end
+  if fallback == true then return "blocked" end
+  if fallback == false then return "allowed" end
+  return "unverified"
+end
+local configured_fallback = read_psx_core_preference()
+if configured_fallback == nil then
+  return fail("psx_octoshock_core_preference_missing_or_wrong")
+end
+emit("VH_PRIVATE_NEUTRAL_CORE_PREFERENCE preferred=Octoshock fallback=" ..
+     configured_fallback .. " active_core=unverified")
 -- BizHawk exposes the loaded ROM's game-database hash. On PSX this may
 -- be based on a QUICK disc identifier (not a full BIN digest); it is NOT
 -- proof of the mounted disc's bytes, BIOS, or Octoshock core. Never print it.
@@ -325,6 +350,9 @@ while true do
   local wanted = captures[current]
   if index > wanted.index then return fail("scheduled_frame_missed") end
   if index == wanted.index then
+    if read_psx_core_preference() ~= configured_fallback then
+      return fail("psx_core_preference_changed_during_capture")
+    end
     if not game_rom_id_unchanged() then
       return fail("active_game_id_changed_during_capture")
     end
