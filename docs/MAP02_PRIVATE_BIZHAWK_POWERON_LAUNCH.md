@@ -20,9 +20,11 @@
       --private-plan-output /private/vh-map02-review-plan.txt \
       --max-windows 4
 
-Создайте новую пустую папку для PNG:
+Создайте новую пустую папку для PNG. На Linux/macOS явно задайте права
+каталога: локальный запускатель откажется работать с правами шире `0700`.:
 
     mkdir -p /private/vh-map02-run1-png
+    chmod 700 /private/vh-map02-run1-png
 
 ## Проверка без запуска
 
