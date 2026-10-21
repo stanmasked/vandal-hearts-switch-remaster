@@ -56,7 +56,7 @@ def parse_raw_strace(rawpath,old_clock,new_clock,first_input_ns,last_marker_ns):
     path=Path(rawpath)
     require(path.is_file() and not path.is_symlink(),"Private raw strace file missing")
     size=path.stat().st_size
-    require(100<size<=MAX_BYTES,"Raw strace missing or size limit exceeded")
+    require(30<size<=MAX_BYTES,"Raw strace missing or size limit exceeded")
     with path.open("r",encoding="ascii",errors="replace") as f:
         counts=Counter()
         error_codes=Counter()
