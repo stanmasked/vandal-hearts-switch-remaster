@@ -53,18 +53,39 @@ def plan_lines(source: Path, *, limit: int = 4, minimum: int = 180,
     ]
 
 
+def _reject_git_ancestors(path: Path) -> None:
+    for parent in (path, *path.parents):
+        marker = parent / ".git"
+        if marker.exists() or marker.is_symlink():
+            raise ValueError("never process owner-private BK2/plans inside Git")
+
+
 def write_private_plan(movie: Path, output: Path, **kwargs) -> int:
-    # Parse and validate the entire source before touching output.
-    rows = plan_lines(movie, **kwargs)
+    # Resolve and privacy-check both paths BEFORE reading source bytes.
+    source = Path(movie)
+    if (not source.is_absolute() or source.is_symlink()
+            or not source.is_file()):
+        raise ValueError("source BK2 must be an absolute regular non-symlink file")
+    source = source.resolve(strict=True)
+    if not stat.S_ISREG(source.stat().st_mode):
+        raise ValueError("source BK2 must be a regular file")
+    _reject_git_ancestors(source)
+
     target = Path(output)
+    if not target.is_absolute() or target.exists() or target.is_symlink():
+        raise ValueError("private plan requires a new absolute output path")
+    if not target.parent.is_dir():
+        raise ValueError("private output requires an existing directory")
+    resolved_parent = target.parent.resolve(strict=True)
+    _reject_git_ancestors(resolved_parent)
+    # Use the resolved parent for creation to avoid writing through a
+    # symlinked parent after the Git-root check.
+    target = resolved_parent / target.name
     if target.exists() or target.is_symlink():
         raise ValueError("refuse overwrite of private plan")
-    if (target.parent.is_symlink() or not target.parent.is_dir()
-            or not target.is_absolute()):
-        raise ValueError("private output requires existing absolute directory")
-    for parent in (target.parent, *target.parents):
-        if (parent / ".git").exists():
-            raise ValueError("never generate private frame plan inside Git")
+
+    # Parse and validate the entire source before creating output.
+    rows = plan_lines(source, **kwargs)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
