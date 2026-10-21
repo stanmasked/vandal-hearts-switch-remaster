@@ -48,8 +48,10 @@ class Stage303SyscallTests(unittest.TestCase):
         self.assertFalse(r["raw_trace_is_uploaded"])
 
     def test_pid_prefix_and_no_pid_regex(self):
-        self.assertIsNotNone(TRACE_RE.match(self.lines[0]))
-        self.assertIsNotNone(TRACE_RE.match("1790000102.000001 poll([], 0, 0) = 0"))
+        self.assertIsNotNone(TRACE_RE.search(self.lines[0]))
+        self.assertIsNotNone(TRACE_RE.search("1790000102.000001 poll([], 0, 0) = 0"))
+        self.assertIsNotNone(TRACE_RE.search("1790000102.000001 [pid 42] poll([], 0, 0) = 0"))
+        self.assertIsNotNone(TRACE_RE.search("42 1790000102.000001 poll([], 0, 0) = 0"))
 
     def test_missing_alsa_ioctl_is_not_a_false_cause(self):
         s=self.raw.read_text().replace("SNDRV_PCM_IOCTL_STATUS","DRM_IOCTL_VERSION")
