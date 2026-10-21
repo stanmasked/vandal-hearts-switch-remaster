@@ -55,6 +55,16 @@ def _hash_source_file(digest, label: str, path: Path) -> None:
                 count += len(block)
                 digest.update(block)
         after = os.fstat(fd)
+        # Verify the path still names the inode we actually hashed. A caller
+        # may replace a capture between O_NOFOLLOW open and the last read;
+        # the fd remains stable while the pathname silently points elsewhere.
+        named = os.stat(path, follow_symlinks=False)
+        if (not stat.S_ISREG(named.st_mode)
+                or (named.st_dev, named.st_ino, named.st_size,
+                    named.st_mtime_ns, named.st_ctime_ns)
+                != (after.st_dev, after.st_ino, after.st_size,
+                    after.st_mtime_ns, after.st_ctime_ns)):
+            raise ValueError("capture evidence source path changed while being hashed")
         if (count != before.st_size
                 or (before.st_dev, before.st_ino, before.st_size,
                     before.st_mtime_ns, before.st_ctime_ns)

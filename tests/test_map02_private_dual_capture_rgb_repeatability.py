@@ -1,4 +1,5 @@
 """Fictional PNG and capture paths only; source BK2 audit is mocked."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -8,7 +9,7 @@ import unittest
 from unittest.mock import patch
 import zlib
 
-from tools.map02_private_dual_capture_rgb_repeatability import verify
+from tools.map02_private_dual_capture_rgb_repeatability import verify, _hash_source_file
 from tools.map02_private_visual_diff_triage import save_private_report
 
 
@@ -132,6 +133,29 @@ class PrivateDualRGBTests(unittest.TestCase):
         self.image(1, "middle").write_bytes(synthetic_png((240, 240, 240)))
         second = self.call()["source_capture_evidence_sha256"]
         self.assertNotEqual(first, second)
+
+    def test_source_path_replacement_during_hash_is_rejected(self):
+        # A stable open fd must not be mistaken for a stable source pathname.
+        replacement = self.root / "fictional-replacement.bk2"
+        replacement.write_bytes(b"x" * self.movie.stat().st_size)
+        original_fdopen = os.fdopen
+        swapped = [False]
+
+        def swap_path_once(fd, mode):
+            source = original_fdopen(fd, mode)
+            if not swapped[0]:
+                swapped[0] = True
+                os.replace(self.movie, self.root / "fictional-old.bk2")
+                os.replace(replacement, self.movie)
+            return source
+
+        with patch(
+            "tools.map02_private_dual_capture_rgb_repeatability.os.fdopen",
+            side_effect=swap_path_once,
+        ):
+            with self.assertRaisesRegex(ValueError, "source path changed"):
+                _hash_source_file(hashlib.sha256(), "source-bk2", self.movie)
+        self.assertTrue(swapped[0])
 
     def test_all_real_emulation_and_map_provenance_flags_remain_false(self):
         report = self.call()
