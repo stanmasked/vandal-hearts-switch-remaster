@@ -20,6 +20,7 @@ from tools.map02_private_bk2_capture_plan import plan_lines
 from tools.map02_private_disc_movie_preflight import (
     inspect_pair, read_private_full_bin_sha256,
 )
+from tools.map02_private_process_group import run_owned_process
 from tools.verify_map02_private_neutral_capture_chain import parse_plan
 
 MOVIE_LENGTH = 933949
@@ -258,14 +259,13 @@ def main() -> int:
             os.close(process_fd)
             raise OSError("private process log is not regular")
         with os.fdopen(process_fd, "ab") as private_output:
-            result = subprocess.run(
-                command, env=env, shell=False, check=False,
-                stdout=private_output, stderr=subprocess.STDOUT,
+            result = run_owned_process(
+                command, env=env, stdout=private_output,
                 timeout=args.emulator_timeout_seconds)
     except subprocess.TimeoutExpired:
-        # subprocess.run terminates and waits for the directly launched
-        # EmuHawk process; POSIX shell-wrapper descendants are not proven
-        # gone and must not be represented as a clean capture.
+        # On POSIX, the owned emulator process group has been sent TERM then
+        # KILL, including descendants that remained in the session. A
+        # daemonized child or new-session grandchild may still survive.
         try:
             _append_private_log(
                 log_path,
