@@ -129,6 +129,12 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
     root = Path(image_root)
     if not root.is_absolute() or root.is_symlink() or not root.is_dir():
         raise ValueError("capture images must be in one real absolute directory")
+    # Resolve parent symlinks as well: a private-looking path could otherwise
+    # point to a public Git checkout and be committed accidentally.
+    resolved = root.resolve(strict=True)
+    if any((parent / ".git").exists() or (parent / ".git").is_symlink()
+           for parent in (resolved, *resolved.parents)):
+        raise ValueError("private screenshots must stay outside Git checkouts")
     inodes = set()
     hash_count = 0
     for group, role, index, _ in planned:
