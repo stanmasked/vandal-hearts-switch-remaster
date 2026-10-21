@@ -65,6 +65,29 @@ def _hash_source_file(digest, label: str, path: Path) -> None:
         os.close(fd)
 
 
+def _preflight_source_path(path: Path, *, directory: bool) -> None:
+    """Reject missing, nonregular or Git-contained owner files before hashing."""
+    source = Path(path)
+    if source.is_symlink():
+        raise ValueError("private capture evidence path must not be a symlink")
+    if directory:
+        if not source.is_dir():
+            raise ValueError("private capture evidence root must be a directory")
+    elif not source.is_file():
+        raise ValueError("private capture evidence source must be a regular file")
+    real = source.resolve(strict=True)
+    info = real.stat()
+    if directory:
+        if not stat.S_ISDIR(info.st_mode):
+            raise ValueError("private capture evidence root must be a directory")
+    elif not stat.S_ISREG(info.st_mode):
+        raise ValueError("private capture evidence source must be regular")
+    for parent in (real, *real.parents):
+        marker = parent / ".git"
+        if marker.exists() or marker.is_symlink():
+            raise ValueError("owner-private capture evidence must stay outside Git")
+
+
 def capture_evidence_digest(
     private_bk2: Path, private_plan: Path,
     log_one: Path, root_one: Path, log_two: Path, root_two: Path,
@@ -111,6 +134,10 @@ def verify(private_bk2: Path, private_plan: Path,
         raise ValueError("pixel threshold must be an integer 0..254")
     _separate_real_files(log_one, log_two)
     _separate_real_files(root_one, root_two)
+    for source_path in (private_bk2, private_plan, log_one, log_two):
+        _preflight_source_path(source_path, directory=False)
+    for root_path in (root_one, root_two):
+        _preflight_source_path(root_path, directory=True)
     plan_snapshot, planned = parse_plan(private_plan)
     evidence_before = capture_evidence_digest(
         private_bk2, private_plan, log_one, root_one, log_two, root_two, planned,
