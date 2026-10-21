@@ -280,6 +280,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         "explicit_launch_requested": True,
         "emulator_processes_started": 2,
         "capture_attempts_audited": 2,
+        "same_reported_bizhawk_runtime_profile":
+            paired["same_reported_bizhawk_runtime_profile"],
         "same_bk2_bytes_across_capture_attempts": True,
         "same_cue_and_sampled_bin_sectors_across_attempts": True,
         "full_disc_content_equality_authenticated": False,
