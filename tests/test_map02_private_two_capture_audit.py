@@ -24,7 +24,7 @@ def synthetic_rgb_png(pixel: bytes, *, level: int = 6,
     if len(pixel) != 3:
         raise ValueError("synthetic RGB pixel must be exactly three bytes")
     header = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
-    metadata = _chunk(b"tEXt", b"Synthetic\\x00CIOnly") if extra_text else b""
+    metadata = _chunk(b"tEXt", b"Synthetic\x00CIOnly") if extra_text else b""
     return (b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", header) + metadata
             + _chunk(b"IDAT", zlib.compress(b"\x00" + pixel, level))
             + _chunk(b"IEND", b""))
