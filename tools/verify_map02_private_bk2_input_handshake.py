@@ -107,6 +107,8 @@ def inspect_reference(report_text: str, csv_text: str) -> tuple[int, int, list[i
         held = split_buttons(row["held_buttons"])
         if pressed & released:
             raise ValueError("same button simultaneously pressed and released")
+        if not changes and (pressed - held or released & held):
+            raise ValueError("source baseline has impossible press/release state")
         if prior is not None:
             if pressed != held - prior or released != prior - held:
                 raise ValueError("input edge does not agree with held state")
