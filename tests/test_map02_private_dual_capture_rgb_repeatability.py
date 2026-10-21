@@ -111,7 +111,11 @@ class PrivateDualRGBTests(unittest.TestCase):
         digest = result["source_capture_evidence_sha256"]
         self.assertRegex(digest, r"^[0-9a-f]{64}$")
         self.assertNotIn(str(self.root), json.dumps(result))
-        self.assertNotIn("3000", json.dumps(result))
+        public_fields = {
+            key: value for key, value in result.items()
+            if key != "source_capture_evidence_sha256"
+        }
+        self.assertNotIn("3000", json.dumps(public_fields))
         self.assertNotIn("png_file", json.dumps(result))
 
     def test_source_evidence_digest_changes_when_a_planned_png_changes(self):
