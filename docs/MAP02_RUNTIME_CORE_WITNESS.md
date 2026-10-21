@@ -116,6 +116,15 @@ uses it to find an enabled External Tool menu item and call its actual
 even with **no game loaded**; the plugin must then refuse saving since
 the platform is not PSX.
 
+BizHawk also asks for explicit first-load trust approval of a new
+External Tool DLL. In this **isolated public CI job only**, the probe
+recognizes the exact process-owned native `Confirm loading` dialog,
+requires BizHawk's full hardcoded external-tool safety prompt and the
+standard Yes button, and approves that one known self-built DLL.
+It never accepts other prompts, BIOS dialogs, crash notifications or
+any unexpected window. Real owner-side use still requires the owner's
+own approval.
+
 The Stage504 Windows CI launches the exact SHA-256-pinned official
 `EmuHawk.exe` with **only** that external-tool argument, without a
 ROM, BIOS, disc, movie, Lua script or network input. A short,
