@@ -313,6 +313,26 @@ class ModuleOwnerTests(unittest.TestCase):
         self.assertTrue(
             result["offset_gaps_do_not_identify_c_struct_or_executed_game"])
 
+    def test_abs64_gap_counts_physical_section_once_for_multiple_symbols(self):
+        game = [{"a", "b"} for _ in range(8)]
+        mapping = [
+            {
+                "a": [(".rela.data", 0), (".rela.data", 8)],
+                "b": [(".rela.data", 100), (".rela.data", 108)],
+            },
+            *({} for _ in range(7)),
+        ]
+        result = summarize_high_fanout_abs64_patch_gaps(
+            {"a", "b"}, game, [], mapping)
+        self.assertEqual(result["high_fanout_abs64_gap_total_records"], 4)
+        self.assertEqual(result["high_fanout_abs64_gap_source_objects"], 1)
+        # Two per-symbol gap groups, but only one physical object section.
+        self.assertEqual(result["high_fanout_abs64_gap_source_sections"], 1)
+        self.assertEqual(result["high_fanout_abs64_gap_adjacent_site_pairs"], 2)
+        self.assertEqual(result["high_fanout_abs64_gap_8"], 2)
+        self.assertEqual(
+            result["high_fanout_abs64_gap_largest_source_object_records"], 4)
+
     def test_abs64_gap_splits_sections_and_unaligned_spacing(self):
         game = [{"target"} for _ in range(8)]
         mapping = [{
