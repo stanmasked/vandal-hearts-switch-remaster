@@ -81,6 +81,12 @@ for g = 1, n / 3 do
     return fail("incomplete_group_order")
   end
 end
+-- Distinguish an actual PlayStation system from unrelated movies whose
+-- frame counts happen to match. This does not attest which PSX *core* is
+-- running; the owner must still verify Octoshock in EmuHawk.
+if type(emu.getsystemid) ~= "function" or emu.getsystemid() ~= "PSX" then
+  return fail("wrong_or_unknown_emulated_system")
+end
 if movie.length() ~= EXPECTED_LENGTH or movie.getreadonly() ~= true then
   return fail("wrong_movie_length_or_readonly")
 end
@@ -122,6 +128,9 @@ end
 local current, previous_counter = 1, nil
 local first_start_off_seen, first_start_on_seen = false, false
 while true do
+  if type(emu.getsystemid) ~= "function" or emu.getsystemid() ~= "PSX" then
+    return fail("emulated_system_changed")
+  end
   if movie.mode() ~= "PLAY" or movie.getreadonly() ~= true then
     return fail("movie_playback_left_readonly")
   end
