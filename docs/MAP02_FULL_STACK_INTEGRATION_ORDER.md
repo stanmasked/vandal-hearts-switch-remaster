@@ -102,6 +102,36 @@ A successful rehearsal is an integration *safety proof for the pinned
 snapshot*, not a claim that any branch was merged, or that its tests passed
 after a real merge.
 
+## Isolated integration candidate: object-only Git provenance
+
+The read-only full-stack workflow additionally builds
+`integration-candidate.json` via `tools/map02_integration_candidate.py`.
+This is a **review-only receipt**, not a new GitHub PR, branch or release.
+
+The candidate identifies the current `main` commit, exact source HEAD and
+tree, the **unreferenced virtual commit** created by the 26th simulated merge,
+all 26 source/virtual SHA pairs, and cryptographic SHA-256 checksums for the
+two input JSON audit reports. A mandatory CI step reopens every transient
+commit object with `git cat-file -p` and verifies its exact tree and two
+ordered parents. Thus a forged report with correct final tree but incorrect
+intermediate ancestry fails. The candidate's own canonical
+`receipt_sha256` detects accidental or deliberate changes to the receipt
+after generation, but is not a signature or an independent provenance
+authority.
+
+**No GitHub ref points to the candidate commit.** The ephemeral Git objects
+live only on that CI runner and are not portable to a new checkout.
+The report remains portable as an auditable record; its Git-object checks
+need a fresh rehearsal on a new runner.
+
+A separately downloaded and independently verified NeXium
+`bundle-receipt.json` may be cross-checked against the candidate with
+`--bundle-receipt`. Matching `source_commit` and `source_tree` binds
+the tested NRO/24 real PNGs to the candidate's exact **file contents**.
+This does not prove the runtime of the synthetic virtual merge commit
+itself, and the two workflows' GitHub URLs, successful statuses, and
+original artifacts still require independent review.
+
 ## Human-gated integration procedure
 
 For each PR, beginning at #241:
