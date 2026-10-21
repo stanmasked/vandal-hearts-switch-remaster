@@ -32,15 +32,15 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           architecture: x64
-      - name: Test 20 invented two-capture repeatability situations
+      - name: Test 21 invented two-capture repeatability situations
         shell: bash
         run: |
           set -euo pipefail
           python -m unittest discover -s tests \
             -p 'test_map02_private_dual_capture_rgb_repeatability.py' -v \
             2>&1 | tee /tmp/vh-map02-private-dual-rgb-test.log
-          grep -F 'Ran 20 tests' /tmp/vh-map02-private-dual-rgb-test.log
+          grep -F 'Ran 21 tests' /tmp/vh-map02-private-dual-rgb-test.log
           if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-private-dual-rgb-test.log; then
             exit 1
           fi
-          echo 'VH_MAP02_DUAL_RGB_TEST_PASS synthetic=20 owner_bk2=0 owner_png=0 real_octoshock=0 map02_identified=0'
+          echo 'VH_MAP02_DUAL_RGB_TEST_PASS synthetic=21 owner_bk2=0 owner_png=0 real_octoshock=0 map02_identified=0'
