@@ -25,7 +25,7 @@ from tools.map02_private_disc_movie_preflight import (
     _assert_stable, _identity, _open_stable, _parse_cue, _read_at,
     _resolve_private_file, EXPECTED_BIN_BYTES, MAP02_BYTES, MAP02_LBA,
     MAX_CUE_BYTES, PVD_LBA, SECTOR_BYTES, USER_DATA_BYTES,
-    inspect_pair, read_private_full_bin_sha256,
+    inspect_pair, read_private_full_bin_sha256, _full_image_sha256, _read_cue,
 )
 from tools.map02_private_two_capture_audit import _private_root, audit_pair
 from tools.verify_map02_private_neutral_capture_chain import verify
@@ -98,6 +98,31 @@ def _require_digest_reference_unchanged(
         raise ValueError(
             "owner-private full-BIN digest reference changed between capture attempts"
         )
+
+
+def _require_full_bin_unchanged(
+        cue_file: Path, expected_digest: str | None) -> None:
+    """Re-hash ALL BIN bytes at a post-EmuHawk checkpoint, if requested.
+
+    The prior sector snapshot cannot detect content changes elsewhere on
+    the image. The separate owner-local reference is pinned by the caller.
+    This checks on-disk bytes, NOT the actual media mounted by EmuHawk.
+    Do not print the source path, the digest, or any original game bytes.
+    """
+    if expected_digest is None:
+        return
+    cue = _resolve_private_file(cue_file)
+    bin_path = _resolve_private_file(cue.parent / _parse_cue(_read_cue(cue)))
+    fd, before = _open_stable(bin_path)
+    try:
+        if before.st_size != EXPECTED_BIN_BYTES:
+            raise ValueError("private complete BIN size changed")
+        actual = _full_image_sha256(fd, before.st_size)
+        _assert_stable(fd, bin_path, before)
+    finally:
+        os.close(fd)
+    if actual != expected_digest:
+        raise ValueError("private full BIN content changed after emulator process")
 
 
 def _private_movie_identity(path: Path) -> bytes:
@@ -260,6 +285,11 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         _require_movie_unchanged(private_bk2, movie_identity)
         _require_disc_unchanged(private_disc, disc_identity)
         _require_digest_reference_unchanged(expected_digest_file, digest)
+        # First hash verification occurs inside the child launcher before
+        # EmuHawk. Re-check all bytes AFTER EmuHawk returns, so mutation
+        # outside the small PVD/MAP02 sector sample cannot survive.
+        _require_full_bin_unchanged(private_disc, digest)
+        _require_digest_reference_unchanged(expected_digest_file, digest)
         if process.returncode != 0:
             raise ValueError("one private emulator capture process failed")
         # Reject an emulator that returned zero without the exact expected
@@ -275,6 +305,9 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     _require_movie_unchanged(private_bk2, movie_identity)
     _require_disc_unchanged(private_disc, disc_identity)
     _require_digest_reference_unchanged(expected_digest_file, digest)
+    # Third parent-side full read: the final PNG/pair audit may take time.
+    _require_full_bin_unchanged(private_disc, digest)
+    _require_digest_reference_unchanged(expected_digest_file, digest)
     return {
         "schema": SCHEMA,
         "explicit_launch_requested": True,
@@ -286,6 +319,11 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         "same_cue_and_sampled_bin_sectors_across_attempts": True,
         "full_disc_content_equality_authenticated": False,
         "full_bin_reference_stable_across_attempts": digest is not None,
+        "full_bin_postprocess_checks_performed": 2 if digest is not None else 0,
+        "full_bin_final_postaudit_check_performed": digest is not None,
+        "on_disk_full_bin_matched_private_reference_at_checkpoints":
+            digest is not None,
+        "emulator_mounted_disc_identity_authenticated": False,
         "emulator_timeout_seconds": (
             emulator_timeout_seconds
             if emulator_timeout_seconds is not None
