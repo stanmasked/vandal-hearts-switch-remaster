@@ -76,10 +76,17 @@ jobs:
           if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
             throw 'real-loader smoke test executable missing'
           }
-          & $exe $root $plugin
+          # Smoke includes a synthetic annotated IEmulator; no PlayStation
+          # emulation, BIOS, BK2 or game assets are read or executed.
+          $output = & $exe $root $plugin
           if ($LASTEXITCODE -ne 0) {
             throw 'BizHawk 2.11 external tool loader smoke rejected compiled DLL'
           }
+          $expected = 'VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_PASS metadata=1 activation=1 missing_core_fail_closed=1 fake_iemulator_positive=1 fake_negative_gates=4 in_memory_fake_witness_schema=1 emulator_process_started=0 original_disc=0 bios=0 bk2=0'
+          if (@($output).Count -ne 1 -or [string]$output -cne $expected) {
+            throw 'strict synthetic IEmulator loader smoke marker mismatch'
+          }
+          Write-Output $expected
       - name: Publish only the compiled experimental witness DLL (no original assets)
         uses: actions/upload-artifact@v4
         with:

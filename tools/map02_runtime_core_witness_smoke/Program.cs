@@ -59,6 +59,8 @@ namespace VhMap02LoaderSmoke
                 Console.WriteLine(
                     "VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_PASS"
                     + " metadata=1 activation=1 missing_core_fail_closed=1"
+                    + " fake_iemulator_positive=1 fake_negative_gates=4"
+                    + " in_memory_fake_witness_schema=1"
                     + " emulator_process_started=0 original_disc=0 bios=0 bk2=0");
                 return 0;
             }
@@ -108,6 +110,63 @@ namespace VhMap02LoaderSmoke
             }
         }
 
+        // Completely fictional IEmulator instances. They never simulate
+        // a PlayStation, BIOS, disc, movie input, or a game frame. These are
+        // dependency-injection test doubles, not actual core witnesses.
+        private abstract class SyntheticEmulator : IEmulator
+        {
+            public IEmulatorServiceProvider ServiceProvider => null;
+            public ControllerDefinition ControllerDefinition => null;
+            public bool FrameAdvance(IController controller, bool render, bool renderSound = true)
+                => throw new InvalidOperationException("no synthetic frame advancement");
+            public virtual int Frame => 1666;
+            public virtual string SystemId => "PSX";
+            public bool DeterministicEmulation => true;
+            public void ResetCounters() {}
+            public void Dispose() {}
+        }
+
+        [CoreAttribute("Octoshock", "Stage503 invented-only stand-in")]
+        private sealed class SyntheticOctoshock : SyntheticEmulator {}
+
+        [CoreAttribute("Nymashock", "Stage503 invented-only stand-in")]
+        private sealed class SyntheticNymashock : SyntheticEmulator {}
+
+        [CoreAttribute("Octoshock", "Stage503 invented-only stand-in")]
+        private sealed class SyntheticWrongPlatform : SyntheticEmulator
+        {
+            public override string SystemId => "GEN";
+        }
+
+        [CoreAttribute("Octoshock", "Stage503 invented-only stand-in")]
+        private sealed class SyntheticNegativeFrame : SyntheticEmulator
+        {
+            public override int Frame => -1;
+        }
+
+        private sealed class SyntheticNoCoreAttribute : SyntheticEmulator {}
+
+        private static void AssertBlocked(
+            Form form, PropertyInfo property, MethodInfo snapshot,
+            SyntheticEmulator invented)
+        {
+            property.SetValue(form, invented);
+            ((IExternalToolForm)form).Restart();
+            var button = form.Controls.OfType<Button>().Single();
+            if (button.Enabled)
+                throw new InvalidOperationException("unsafe save enabled on invalid fake core");
+            try
+            {
+                snapshot.Invoke(null, new object[] { invented });
+            }
+            catch (TargetInvocationException ex)
+            {
+                if (ex.InnerException is InvalidOperationException) return;
+                throw new InvalidOperationException("wrong fake-core rejection");
+            }
+            throw new InvalidOperationException("invalid fake core exported a witness");
+        }
+
         // Defer JIT resolution of BizHawk types until AssemblyResolve is hooked.
         [MethodImpl(MethodImplOptions.NoInlining)]
         private static void RunSmoke(string plug)
@@ -148,13 +207,55 @@ namespace VhMap02LoaderSmoke
                 {
                     if (form == null || !(form is IExternalToolForm))
                         throw new InvalidOperationException("external form constructor failed");
-                    _stage = "null-core-restart";
-                    ((IExternalToolForm)form).Restart();
-                    _stage = "disabled-save-control";
+                    _stage = "uninitialized-control";
                     var saveButtons = form.Controls.OfType<Button>().ToArray();
                     if (saveButtons.Length != 1 || saveButtons[0].Enabled)
                         throw new InvalidOperationException(
-                            "save must be disabled without injected real PSX IEmulator");
+                            "witness save must start disabled before core injection");
+                    _stage = "null-core-restart";
+                    ((IExternalToolForm)form).Restart();
+                    if (saveButtons[0].Enabled)
+                        throw new InvalidOperationException(
+                            "save must remain disabled without a loaded IEmulator");
+
+                    var snapshot = entrypoint.GetMethod(
+                        "Snapshot", BindingFlags.NonPublic | BindingFlags.Static);
+                    if (snapshot == null || snapshot.ReturnType != typeof(string))
+                        throw new InvalidOperationException("witness snapshot contract missing");
+
+                    _stage = "synthetic-positive-core-injection";
+                    var fictional = new SyntheticOctoshock();
+                    property.SetValue(form, fictional);
+                    ((IExternalToolForm)form).Restart();
+                    if (!saveButtons[0].Enabled)
+                        throw new InvalidOperationException("valid invented PSX core was rejected");
+                    var witness = snapshot.Invoke(null, new object[] { fictional }) as string;
+                    // Test schema in memory only. Never print the witness, process
+                    // ID/start time, any original SHA1, paths or game data.
+                    var rows = witness?.Split('\n');
+                    if (rows == null || rows.Length != 11
+                        || rows[0] != "VH_MAP02_RUNTIME_CORE_WITNESS_V1"
+                        || rows[1] != "system=PSX"
+                        || rows[2] != "loaded_core=Octoshock"
+                        || rows[3] != "core_source=IEmulator.Attributes.CoreName"
+                        || !rows[4].StartsWith("process_id=")
+                        || !rows[5].StartsWith("process_start_utc_ticks=")
+                        || rows[6] != "frame_count=1666"
+                        || rows[7] != "bios=unverified"
+                        || rows[8] != "disc=unverified"
+                        || rows[9] != "movie_sync=unverified"
+                        || rows[10] != "")
+                        throw new InvalidOperationException("synthetic witness schema invalid");
+
+                    _stage = "synthetic-negative-core-gates";
+                    AssertBlocked(form, property, snapshot, new SyntheticNymashock());
+                    AssertBlocked(form, property, snapshot, new SyntheticWrongPlatform());
+                    AssertBlocked(form, property, snapshot, new SyntheticNegativeFrame());
+                    AssertBlocked(form, property, snapshot, new SyntheticNoCoreAttribute());
+                    property.SetValue(form, null);
+                    ((IExternalToolForm)form).Restart();
+                    if (saveButtons[0].Enabled)
+                        throw new InvalidOperationException("save not disabled after clearing core");
                 }
 
         }
