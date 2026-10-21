@@ -65,6 +65,15 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
         raise ValueError("PNG output must be an existing private absolute directory")
     root = root.resolve(strict=True)
     _reject_git(root)
+    # The PNGs are copyrighted source-derived captures. Protect the directory
+    # itself so even a permissive process umask cannot expose newly saved PNGs.
+    # Windows ACLs are not represented reliably by POSIX mode bits.
+    if os.name != "nt":
+        root_info = root.stat()
+        if root_info.st_uid != os.geteuid():
+            raise ValueError("PNG output directory must be owned by current user")
+        if stat.S_IMODE(root_info.st_mode) & 0o077:
+            raise ValueError("PNG output directory must be owner-only (mode 0700)")
 
     # Re-derive the *exact* owner-private capture plan directly from the
     # current source BK2, before launching an emulator. No input export.
