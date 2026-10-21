@@ -17,6 +17,7 @@ import stat
 import subprocess
 
 from tools.map02_private_bk2_capture_plan import plan_lines
+from tools.map02_private_disc_movie_preflight import inspect_pair
 from tools.verify_map02_private_neutral_capture_chain import parse_plan
 
 MOVIE_LENGTH = 933949
@@ -106,15 +107,20 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
         raise ValueError("PNG output must be an existing private absolute directory")
     root = root.resolve(strict=True)
     _reject_git(root)
-    # Protect the output directory itself so saved copyrighted PNGs cannot
-    # become group/world-readable even when the caller has a permissive umask.
-    # Windows ACLs are not reliably represented by POSIX mode bits.
+    # On POSIX, require a private output directory independently of the
+    # caller's umask; Windows ACLs are not represented by POSIX mode bits.
     if os.name != "nt":
         root_info = root.stat()
         if root_info.st_uid != os.geteuid():
             raise ValueError("PNG output directory must be owned by current user")
         if stat.S_IMODE(root_info.st_mode) & 0o077:
             raise ValueError("PNG output directory must be owner-only (mode 0700)")
+
+    # Validate the known disc/MAP02 resource profile and BK2 metadata before
+    # deriving a plan or allowing the caller to launch EmuHawk.
+    media = inspect_pair(disc, movie)
+    if not media["media_preflight_ready_for_owner_replay"]:
+        raise ValueError("disc/movie media preflight did not match audited profile")
 
     # Re-derive the *exact* owner-private capture plan directly from the
     # current source BK2, before launching an emulator. No input export.
