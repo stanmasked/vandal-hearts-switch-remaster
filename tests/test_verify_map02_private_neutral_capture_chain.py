@@ -65,6 +65,8 @@ class CaptureAuditTests(unittest.TestCase):
 
     def write_log(self, *, complete=True, process_exit=True, exit_success=1):
         data = ["unrelated pretend emulator console text",
+                "VH_PRIVATE_NEUTRAL_MOVIE_SOURCE_PREFLIGHT "
+                "source=poweron filename=matched core_identity=unverified",
                 "VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 "
                 "candidate_input=1661 first_start_pressed=yes "
                 "ps1_input_delivery=unverified"]
@@ -102,6 +104,7 @@ class CaptureAuditTests(unittest.TestCase):
         self.assertTrue(value["private_plan_rebuilt_from_direct_bk2"])
         self.assertTrue(value["capture_logs_match_each_planned_input_and_counter"])
         self.assertTrue(value["owner_log_reports_live_first_start_anchor_before_screenshots"])
+        self.assertTrue(value["owner_log_reports_poweron_movie_path_match"])
         self.assertTrue(value["owner_launcher_reports_successful_process_exit"])
         self.assertTrue(value["all_png_crc_zlib_scanlines_pass"])
         self.assertEqual(value["screenshot_count"], 3)
@@ -112,6 +115,45 @@ class CaptureAuditTests(unittest.TestCase):
                      "source_native_gpu_vram_verified", "private_input_or_png_published"):
             self.assertFalse(value[name])
         self.assertNotIn(str(self.base), json.dumps(value))
+
+    def test_missing_poweron_movie_source_marker_refused(self):
+        text = self.log.read_text()
+        self.log.write_text("\n".join(
+            line for line in text.splitlines()
+            if not line.startswith("VH_PRIVATE_NEUTRAL_MOVIE_SOURCE_PREFLIGHT")
+        ) + "\n")
+        with self.assertRaisesRegex(ValueError, "movie"):
+            self.call()
+
+    def test_wrong_movie_source_marker_refused(self):
+        self.log.write_text(self.log.read_text().replace(
+            "source=poweron filename=matched",
+            "source=savestate filename=matched",
+        ))
+        with self.assertRaisesRegex(ValueError, "power-on movie source"):
+            self.call()
+
+    def test_duplicate_movie_source_marker_refused(self):
+        with self.log.open("a") as stream:
+            stream.write(
+                "VH_PRIVATE_NEUTRAL_MOVIE_SOURCE_PREFLIGHT "
+                "source=poweron filename=matched core_identity=unverified\n"
+            )
+        with self.assertRaisesRegex(ValueError, "power-on movie source"):
+            self.call()
+
+    def test_movie_source_marker_after_start_refused(self):
+        text = self.log.read_text()
+        marker = ("VH_PRIVATE_NEUTRAL_MOVIE_SOURCE_PREFLIGHT "
+                  "source=poweron filename=matched core_identity=unverified")
+        text = text.replace(marker + "\n", "")
+        anchor = ("VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 "
+                  "candidate_input=1661 first_start_pressed=yes "
+                  "ps1_input_delivery=unverified")
+        text = text.replace(anchor + "\n", anchor + "\n" + marker + "\n")
+        self.log.write_text(text)
+        with self.assertRaisesRegex(ValueError, "power-on movie source"):
+            self.call()
 
     def test_missing_live_start_preflight_refused(self):
         text = self.log.read_text()

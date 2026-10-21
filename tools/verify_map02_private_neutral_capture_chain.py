@@ -34,6 +34,10 @@ LOG_ROW = re.compile(
     r"candidate_input=([0-9]+) expected_buttons=(held|neutral) "
     r"png=written display_offset=unverified"
 )
+MOVIE_SOURCE_PREFLIGHT = (
+    "VH_PRIVATE_NEUTRAL_MOVIE_SOURCE_PREFLIGHT "
+    "source=poweron filename=matched core_identity=unverified"
+)
 START_PREFLIGHT = ("VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 "
                    "candidate_input=1661 first_start_pressed=yes "
                    "ps1_input_delivery=unverified")
@@ -103,6 +107,7 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
     observed = []
     completed = 0
     preflight = False
+    source_preflight = False
     process_exit = False
     for line in lines:
         if line.startswith("VH_PRIVATE_BIZHAWK_LAUNCH_ERROR"):
@@ -112,8 +117,16 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
                     or process_exit or len(observed) != len(planned)):
                 raise ValueError("private emulator process exit marker is invalid")
             process_exit = True
+        if line.startswith("VH_PRIVATE_NEUTRAL_MOVIE_SOURCE_PREFLIGHT"):
+            if (line != MOVIE_SOURCE_PREFLIGHT or source_preflight
+                    or preflight or completed or observed):
+                raise ValueError("missing, duplicate or misplaced power-on movie source marker")
+            source_preflight = True
         if line.startswith("VH_PRIVATE_NEUTRAL_START_PREFLIGHT"):
-            if line != START_PREFLIGHT or preflight or completed or observed:
+            if not source_preflight:
+                raise ValueError("missing power-on movie source marker before live Start")
+            if (line != START_PREFLIGHT
+                    or preflight or completed or observed):
                 raise ValueError("missing, duplicate or misplaced live Start anchor")
             preflight = True
         elif line.startswith("VH_PRIVATE_NEUTRAL_CAPTURE_ERROR"):
@@ -135,7 +148,7 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
                     or int(counter) != int(candidate) + 1):
                 raise ValueError("log counter, role or source frame differs")
             observed.append(item)
-    if (not preflight or completed != 1 or not process_exit
+    if (not source_preflight or not preflight or completed != 1 or not process_exit
             or len(observed) != len(planned)):
         raise ValueError("capture log missing Start anchor, successful process exit or completion")
 
@@ -174,6 +187,7 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
         "private_plan_rebuilt_from_direct_bk2": True,
         "capture_logs_match_each_planned_input_and_counter": True,
         "owner_log_reports_live_first_start_anchor_before_screenshots": True,
+        "owner_log_reports_poweron_movie_path_match": True,
         "owner_launcher_reports_successful_process_exit": True,
         "all_png_crc_zlib_scanlines_pass": True,
         "distinct_screenshot_file_inodes": True,

@@ -31,11 +31,26 @@ local function absolute_private_path(value)
      or value:find("..", 1, true) or value:find("[\r\n]") then return false end
   return value:sub(1, 1) == "/" or value:match("^[A-Za-z]:[\\/]") ~= nil
 end
+local function canonical_movie_path(value)
+  if not absolute_private_path(value) then return nil end
+  local path = value:gsub("\\", "/"):gsub("/+", "/")
+  -- macOS aliases /var to /private/var. Both may name the same file,
+  -- depending on whether BizHawk returns the provided or resolved path.
+  if path:sub(1, 13) == "/private/var/" then
+    path = path:sub(9)
+  end
+  if path:match("^[A-Za-z]:/") then
+    path = path:lower()
+  end
+  return path
+end
+local expected_movie = os.getenv("VH_PRIVATE_EXPECTED_MOVIE")
 local plan_file = os.getenv("VH_PRIVATE_CAPTURE_PLAN")
 local root = os.getenv("VH_PRIVATE_PNG_DIR")
 local log_path = os.getenv("VH_PRIVATE_CAPTURE_LOG")
 if not absolute_private_path(plan_file) or not absolute_private_path(root)
-    or not absolute_private_path(log_path) then
+    or not absolute_private_path(log_path)
+    or not canonical_movie_path(expected_movie) then
   return fail("absolute_private_paths_required")
 end
 -- Best-effort Git checkout guard for environments without LuaFileSystem.
@@ -123,6 +138,21 @@ end
 if movie.length() ~= EXPECTED_LENGTH or movie.getreadonly() ~= true then
   return fail("wrong_movie_length_or_readonly")
 end
+-- Movie metadata alone can be correct while EmuHawk has selected a
+-- pre-existing GUI instance and opened a *different* BK2. Reject it.
+if type(movie.filename) ~= "function"
+    or canonical_movie_path(movie.filename()) ~= canonical_movie_path(expected_movie) then
+  return fail("loaded_movie_path_does_not_match_private_source")
+end
+-- True replay from PS1 power-on must not silently start at a savestate or
+-- SaveRAM image; such a run cannot support the cold-start claim.
+if type(movie.startsfromsavestate) ~= "function"
+    or type(movie.startsfromsaveram) ~= "function"
+    or movie.startsfromsavestate() ~= false
+    or movie.startsfromsaveram() ~= false then
+  return fail("movie_not_poweron_anchored")
+end
+emit("VH_PRIVATE_NEUTRAL_MOVIE_SOURCE_PREFLIGHT source=poweron filename=matched core_identity=unverified")
 -- The owner-local launcher needs EmuHawk to exit as soon as the bounded
 -- captures finish, rather than playing the rest of this long BK2 movie.
 if type(client) ~= "table" or type(client.exitCode) ~= "function" then

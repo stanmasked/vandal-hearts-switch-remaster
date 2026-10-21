@@ -17,9 +17,19 @@ import stat
 import subprocess
 
 from tools.map02_private_bk2_capture_plan import plan_lines
+from tools.map02_private_disc_movie_preflight import (
+    inspect_pair, read_private_full_bin_sha256,
+)
+from tools.map02_private_process_group import run_owned_process
 from tools.verify_map02_private_neutral_capture_chain import parse_plan
 
 MOVIE_LENGTH = 933949
+# A full owner movie has 933,949 input frames: capture must not be allowed to
+# hang forever after the final frame or on a missing/incompatible boot.
+# This is a safety ceiling, not an estimate of normal execution duration.
+MIN_EMULATOR_TIMEOUT_SECONDS = 300
+MAX_EMULATOR_TIMEOUT_SECONDS = 86400
+DEFAULT_EMULATOR_TIMEOUT_SECONDS = 28800
 SCRIPT = Path(__file__).with_name("map02_bizhawk_private_neutral_capture.lua")
 
 
@@ -47,7 +57,8 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
                  private_png_root: Path, *,
                  script: Path = SCRIPT,
                  minimum: int = 180, maximum: int = 1800,
-                 after: int = 1663, before: int = MOVIE_LENGTH):
+                 after: int = 1663, before: int = MOVIE_LENGTH,
+                 private_full_bin_sha256_file: Path | None = None):
     """Return argv/env without starting EmuHawk or exposing paths to stdout."""
     executable = Path(private_emuhawk)
     if not executable.is_absolute() or not executable.is_file():
@@ -106,15 +117,27 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
         raise ValueError("PNG output must be an existing private absolute directory")
     root = root.resolve(strict=True)
     _reject_git(root)
-    # Protect the output directory itself so saved copyrighted PNGs cannot
-    # become group/world-readable even when the caller has a permissive umask.
-    # Windows ACLs are not reliably represented by POSIX mode bits.
+    # On POSIX, require a private output directory independently of the
+    # caller's umask; Windows ACLs are not represented by POSIX mode bits.
     if os.name != "nt":
         root_info = root.stat()
         if root_info.st_uid != os.geteuid():
             raise ValueError("PNG output directory must be owned by current user")
         if stat.S_IMODE(root_info.st_mode) & 0o077:
             raise ValueError("PNG output directory must be owner-only (mode 0700)")
+
+    # Validate the known disc/MAP02 resource profile and BK2 metadata before
+    # deriving a plan or allowing the caller to launch EmuHawk.
+    if private_full_bin_sha256_file is not None:
+        expected = read_private_full_bin_sha256(private_full_bin_sha256_file)
+        media = inspect_pair(
+            disc, movie, verify_full_bin_sha256=True,
+            expected_bin_sha256=expected,
+        )
+    else:
+        media = inspect_pair(disc, movie)
+    if not media["media_preflight_ready_for_owner_replay"]:
+        raise ValueError("disc/movie media preflight did not match audited profile")
 
     # Re-derive the *exact* owner-private capture plan directly from the
     # current source BK2, before launching an emulator. No input export.
@@ -147,6 +170,9 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
     env["VH_PRIVATE_PNG_DIR"] = str(root)
     env["VH_PRIVATE_CAPTURE_LOG"] = str(log_path)
     env["VH_PRIVATE_PROCESS_LOG"] = str(process_log_path)
+    # Lua must cross-check the movie that *actually* opened in EmuHawk,
+    # not just movie length and inputs of any pre-existing GUI instance.
+    env["VH_PRIVATE_EXPECTED_MOVIE"] = str(movie)
     return args, env, len(positions)
 
 
@@ -175,16 +201,28 @@ def main() -> int:
     parser.add_argument("--max-neutral-frames", type=int, default=1800)
     parser.add_argument("--after-input-frame", type=int, default=1663)
     parser.add_argument("--before-input-frame", type=int, default=MOVIE_LENGTH)
+    parser.add_argument(
+        "--emulator-timeout-seconds", type=int,
+        default=DEFAULT_EMULATOR_TIMEOUT_SECONDS,
+        help="Limit a launched local EmuHawk process to 300..86400 seconds",
+    )
+    parser.add_argument(
+        "--private-full-bin-sha256-file", type=Path,
+        help="Privately hash the entire BIN against a user-local 0600 digest file",
+    )
     parser.add_argument("--launch", action="store_true",
                         help="open BizHawk locally; without this, validate only")
     args = parser.parse_args()
+    if not MIN_EMULATOR_TIMEOUT_SECONDS <= args.emulator_timeout_seconds <= MAX_EMULATOR_TIMEOUT_SECONDS:
+        parser.error("EmuHawk timeout seconds must be within a bounded range")
     try:
         command, env, count = build_launch(
             args.absolute_emuhawk_executable, args.owner_private_ps1_disc,
             args.owner_private_bk2, args.owner_private_capture_plan,
             args.owner_private_png_directory, script=args.capture_lua,
             minimum=args.min_neutral_frames, maximum=args.max_neutral_frames,
-            after=args.after_input_frame, before=args.before_input_frame)
+            after=args.after_input_frame, before=args.before_input_frame,
+            private_full_bin_sha256_file=args.private_full_bin_sha256_file)
     except (OSError, ValueError, TypeError, UnicodeError, RuntimeError):
         parser.error("private BizHawk power-on launch preflight failed")
     if not args.launch:
@@ -224,9 +262,24 @@ def main() -> int:
             os.close(process_fd)
             raise OSError("private process log is not regular")
         with os.fdopen(process_fd, "ab") as private_output:
-            result = subprocess.run(
-                command, env=env, shell=False, check=False,
-                stdout=private_output, stderr=subprocess.STDOUT)
+            result = run_owned_process(
+                command, env=env, stdout=private_output,
+                timeout=args.emulator_timeout_seconds)
+    except subprocess.TimeoutExpired:
+        # On POSIX, the owned emulator process group has been sent TERM then
+        # KILL, including descendants that remained in the session. A
+        # daemonized child or new-session grandchild may still survive.
+        try:
+            _append_private_log(
+                log_path,
+                "VH_PRIVATE_BIZHAWK_LAUNCH_ERROR process_started=1 "
+                "reason=emulator_timeout original_ps1_authenticated=0",
+            )
+        except OSError:
+            pass
+        print("VH_PRIVATE_BIZHAWK_LOCAL_PROCESS_EXITED exit_success=0 "
+              "reason=timeout original_ps1_authenticated=0 map02_identified=0")
+        return 1
     except OSError:
         try:
             _append_private_log(log_path,
