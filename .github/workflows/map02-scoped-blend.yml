@@ -1067,6 +1067,21 @@ jobs:
           assert (1 <= r["high_fanout_abs64_data_longest_eight_byte_run"] <=
                   r["high_fanout_abs64_data_max_records_in_one_source_object"] <= 222)
           assert r["patch_offset_adjacency_does_not_prove_runtime_pointer_table"] is True
+          gap_buckets = ("8", "16", "24", "32", "40_to_64",
+                         "over_64", "non_multiple_8")
+          assert r["high_fanout_abs64_gap_total_records"] == 222
+          assert r["high_fanout_abs64_gap_source_objects"] == 2
+          assert r["high_fanout_abs64_gap_source_sections"] == 2
+          assert r["high_fanout_abs64_gap_adjacent_site_pairs"] == 220
+          assert sum(r["high_fanout_abs64_gap_" + name]
+                     for name in gap_buckets) == 220
+          assert r["high_fanout_abs64_gap_8"] == 2
+          assert (r["high_fanout_abs64_gap_largest_source_object_records"],
+                  r["high_fanout_abs64_gap_second_largest_source_object_records"]) == (219, 3)
+          assert r["high_fanout_abs64_gap_8"] == r["high_fanout_abs64_data_adjacent_eight_byte_pairs"]
+          assert r["high_fanout_abs64_gap_non_multiple_8"] == 0
+          assert r["high_fanout_abs64_gap_smallest_positive_distance_bytes"] == 8
+          assert r["offset_gaps_do_not_identify_c_struct_or_executed_game"] is True
           assert r["fanout_counts_distinct_source_objects_not_runtime_calls"] is True
           assert r["only_counts_and_hashes_published"] is True
           assert r["retail_asset_content_accessed"] is False
@@ -1114,6 +1129,12 @@ jobs:
                 r["high_fanout_abs64_data_adjacent_eight_byte_pairs"],
                 "longest contiguous run:",
                 r["high_fanout_abs64_data_longest_eight_byte_run"])
+          print("ABS64 source-local adjacent offset gap histogram:",
+                {key: r["high_fanout_abs64_gap_" + key]
+                 for key in gap_buckets})
+          print("ABS64 per-source rank counts:",
+                r["high_fanout_abs64_gap_largest_source_object_records"],
+                r["high_fanout_abs64_gap_second_largest_source_object_records"])
           print("Per-source names and paths are kept private; no retail MAP02 executed.")
           PY
       - name: Fail closed on upstream rasterizer source drift
