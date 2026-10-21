@@ -15,6 +15,7 @@ permissions:
   actions: read
 env:
   PINNED_STAGE310_PARENT: 'a7b75eced8911130066b48e818b8319598025eda'
+  PINNED_STAGE309_HOST_SOURCE_HEAD: '42c050bfe11a3cfd420190147653890561236152'
   PINNED_STAGE309_REAL_BUILD_ACTION: '39589981836'
   STAGE309_ELF_SHA: 'e5ddfc61ac9435dc5a6e2dcd569766db0c444bbdeef8a3fa6a65c9c2e9fc6f25'
   ORIGINAL_UNMODIFIED_NRO_SHA: '371c9fd9f1f41ad87cbb5f7f96a3e5e9d56878f8cfff2bf7fea2c17120c2611b'
@@ -103,7 +104,7 @@ jobs:
           assert hashlib.sha256(binary).hexdigest()==os.environ["STAGE309_ELF_SHA"]
           assert m["schema"]=="vh-map02-stage309-real-compiled-opt-in-cpal-alsa-tls-host/v1"
           assert m["result"]=="STAGE309_EXPERIMENTAL_SAME_TLS_TAGGED_NEXIUM_LINUX_BINARY_COMPILED"
-          assert m["research_head_sha"]==os.environ["PINNED_STAGE309_PARENT"]
+          assert m["research_head_sha"]==os.environ["PINNED_STAGE309_HOST_SOURCE_HEAD"]
           assert m["executable_sha256"]==os.environ["STAGE309_ELF_SHA"]
           assert m["pinned_upstream_source_sha"]=="089562567a0a8760dfdd8420e1f57c35159a9219"
           assert m["cargo_lock_sha256"]=="e6e8fcb90624650afddd1f25327dd4e6b042b094e8336cb5f43d2dc370e28739"
