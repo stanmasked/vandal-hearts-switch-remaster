@@ -1,0 +1,47 @@
+name: MAP02 private replay marker bridge (synthetic CI)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-private-replay-markers.yml'
+      - 'tools/validate_map02_private_replay_markers.py'
+      - 'tools/map02_bizhawk_private_replay_observer.lua'
+      - 'tests/test_validate_map02_private_replay_markers.py'
+      - 'docs/MAP02_PRIVATE_BK2_REPLAY_MARKERS.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  marker-contract:
+    name: Synthetic replay markers (${{ matrix.os }} Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.9'
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: macos-15-intel
+            python: '3.11'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Test synthetic marker validation without original game/movie
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_validate_map02_private_replay_markers.py' -v \
+            2>&1 | tee /tmp/vh-map02-private-replay-markers.log
+          grep -F 'Ran 10 tests' /tmp/vh-map02-private-replay-markers.log
+          if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-private-replay-markers.log; then
+            exit 1
+          fi
+          echo "VH_MAP02_PRIVATE_REPLAY_MARKERS_PASS synthetic=10 owner_bk2=0 ps1_emulator=0 map02_identified=0"
