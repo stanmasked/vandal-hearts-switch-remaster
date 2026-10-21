@@ -13,6 +13,7 @@ from tools.check_map02_public_pc_unresolved_module_owners import (
     summarize_high_fanout_relocation_provenance,
     parse_readelf_abs64_data_patch_offsets,
     summarize_high_fanout_abs64_patch_layout,
+    summarize_high_fanout_abs64_patch_gaps,
 )
 from tools.check_map02_public_reloc_link import _undefined_symbol_names
 
@@ -286,6 +287,76 @@ class ModuleOwnerTests(unittest.TestCase):
         ])
         self.assertNotIn("source", got)
         self.assertNotIn("other", got)
+
+    def test_abs64_gap_histogram_separates_source_objects(self):
+        game = [{"s"} for _ in range(8)]
+        mapping = [
+            {"s": [(".rela.data", x) for x in (0, 16, 40, 72, 112)]},
+            {"s": [(".rela.data", x) for x in (0, 8, 16)]},
+            *({} for _ in range(6)),
+        ]
+        result = summarize_high_fanout_abs64_patch_gaps(
+            {"s"}, game, [], mapping)
+        self.assertEqual(result["high_fanout_abs64_gap_total_records"], 8)
+        self.assertEqual(result["high_fanout_abs64_gap_source_objects"], 2)
+        self.assertEqual(result["high_fanout_abs64_gap_source_sections"], 2)
+        self.assertEqual(result["high_fanout_abs64_gap_adjacent_site_pairs"], 6)
+        expected = {"8": 2, "16": 1, "24": 1, "32": 1,
+                    "40_to_64": 1, "over_64": 0, "non_multiple_8": 0}
+        for key, count in expected.items():
+            self.assertEqual(result["high_fanout_abs64_gap_" + key], count)
+        self.assertEqual(
+            result["high_fanout_abs64_gap_largest_source_object_records"], 5)
+        self.assertEqual(
+            result["high_fanout_abs64_gap_second_largest_source_object_records"], 3)
+        self.assertEqual(result["high_fanout_abs64_gap_smallest_positive_distance_bytes"], 8)
+        self.assertTrue(
+            result["offset_gaps_do_not_identify_c_struct_or_executed_game"])
+
+    def test_abs64_gap_counts_physical_section_once_for_multiple_symbols(self):
+        game = [{"a", "b"} for _ in range(8)]
+        mapping = [
+            {
+                "a": [(".rela.data", 0), (".rela.data", 8)],
+                "b": [(".rela.data", 100), (".rela.data", 108)],
+            },
+            *({} for _ in range(7)),
+        ]
+        result = summarize_high_fanout_abs64_patch_gaps(
+            {"a", "b"}, game, [], mapping)
+        self.assertEqual(result["high_fanout_abs64_gap_total_records"], 4)
+        self.assertEqual(result["high_fanout_abs64_gap_source_objects"], 1)
+        # Two per-symbol gap groups, but only one physical object section.
+        self.assertEqual(result["high_fanout_abs64_gap_source_sections"], 1)
+        self.assertEqual(result["high_fanout_abs64_gap_adjacent_site_pairs"], 2)
+        self.assertEqual(result["high_fanout_abs64_gap_8"], 2)
+        self.assertEqual(
+            result["high_fanout_abs64_gap_largest_source_object_records"], 4)
+
+    def test_abs64_gap_splits_sections_and_unaligned_spacing(self):
+        game = [{"target"} for _ in range(8)]
+        mapping = [{
+            "target": [(".rela.data", 0), (".rela.data", 12),
+                       (".rela.data", 100), (".rela.data.rel.ro", 4)]
+        }] + [{} for _ in range(7)]
+        result = summarize_high_fanout_abs64_patch_gaps(
+            {"target"}, game, [], mapping)
+        self.assertEqual(result["high_fanout_abs64_gap_source_sections"], 2)
+        self.assertEqual(result["high_fanout_abs64_gap_adjacent_site_pairs"], 2)
+        self.assertEqual(result["high_fanout_abs64_gap_non_multiple_8"], 1)
+        self.assertEqual(result["high_fanout_abs64_gap_over_64"], 1)
+        self.assertEqual(result["high_fanout_abs64_gap_singleton_sections"], 1)
+
+    def test_abs64_gap_rejects_duplicate_and_fake_source_inventory(self):
+        game = [{"s"} for _ in range(8)]
+        dupe = [{"s": [(".rela.data", 8), (".rela.data", 8)]}] + [
+            {} for _ in range(7)]
+        with self.assertRaisesRegex(ValueError, "duplicate ABS64"):
+            summarize_high_fanout_abs64_patch_gaps(
+                {"s"}, game, [], dupe)
+        with self.assertRaisesRegex(ValueError, "object count invalid"):
+            summarize_high_fanout_abs64_patch_gaps(
+                {"s"}, game, [], [{}])
 
     def test_abs64_source_objects_do_not_mix_offsets_between_files(self):
         game = [{"target"} for _ in range(8)]
