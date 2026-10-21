@@ -1,0 +1,19 @@
+# MAP02 Stage304 — public ALSA snd_pcm_avail_delay return observations
+
+**Research-only Draft / DO NOT MERGE.** Descends from Stage303 [Draft PR #391](https://github.com/stanmasked/vandal-hearts-switch-remaster/pull/391). The previous real [Actions #39519732823](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39519732823) verified genuine ROM-free MAP02 playback tests at 21ms (no new CPAL callback entries) and 22ms (1682 callback entries, CRC 8/8 passed), while numerous selected Linux `poll`/`recvmsg` syscalls were observed in both. Those system calls could not be tied to CPAL's actual ALSA userspace interface.
+
+## Stage304 isolation
+
+GitHub Actions compiles a separate Linux x86-64 userspace shared-object `libvh_map02_alsa_stage304.so` from a source-pinned, explicitly allowlisted research C file. The original Stage298 NeXium x86-64/rustarmic **binary is unchanged** (ELF SHA-256 `fb154cbd581826a4f217485eff338badf0ea14c28a82bff258e7baf32c84153a`) and the original generated **ROM-free research NRO is unchanged** (SHA-256 `371c9fd9f1f41ad87cbb5f7f96a3e5e9d56878f8cfff2bf7fea2c17120c2611b`). The production game, `main`, NeXium upstream source, and CPAL data callback bodies are not changed. Independent 21 and 22ms trial runners retain the same Stage294/301 keyboard route and 48k virtual Pulse recording.
+
+For **only the NeXium child executable**, `LD_PRELOAD` adds an interposition wrapper around the public libasound function `snd_pcm_avail_delay`. This wrapper calls the original symbol via `RTLD_NEXT` and records a finite **per-run anonymous thread slot** and relaxed atomic cumulative counters of calls, nonnegative returns, negative `-EIO`, `-EPIPE`, `-EAGAIN` and other negatives. Only negative returns incur a monotonic `clock_gettime` and first/last negative timestamp update. **No raw Linux TID/PID, process paths, PCM pointers, guest audio, libasound internal symbols or raw host logs are exported**. Every ~200ms a separate low-priority-independent (not realtime) thread writes bounded `H` heartbeat and `T` per-thread snapshot rows; it does not write from inside the function wrapper.
+
+Each trial compiles and SHA-identifies its newly built shared object; the independent auditor re-validates the original immutable host/NRO identity, true P/L host CPAL samples, actual guest optical screenshots, Pulse sink-input notifications, virtual PCM byte SHA and GUI FileLogger. The ALSA observer's CSV counter monotonicity, anonymous thread slots, exact common host monotonic sample timestamps and bounds relative to guest input/final observation are verified. Synthetic tests deliberately corrupt these fields to reject false positives.
+
+## Important interpretation
+
+`LD_PRELOAD` sees calls that dynamically resolve the public `snd_pcm_avail_delay` symbol through its symbol interposer. It **may not** see intra-library calls, symbol-version-specific paths, functions resolved through direct pointers or alternate backends; **zero intercepted calls does not prove zero ALSA activity**. Successful interposition also **does not** prove the instrumented calls originate on CPAL's own data callback thread without further ownership evidence.
+
+Running the preload library, a reporter thread, new atomics and optional new guest startup conditions **can perturb scheduling** and cause a different 21/22ms result from prior experiments. ALSA's returned `-EIO` in a particular thread would be direct userspace return evidence for **that intercepted symbol only**, not automatically proof it caused MAP02's audio stall. Requested latency hints are not hardware buffer measurements.
+
+No permanent CPU deadlock, precise root-cause diagnosis, original PS1 soundtrack playback, actual physical Nintendo Switch speaker/DAC audio or production fix is claimed. This is a **ROM-free, private experimental harness** and must not be merged into the main game or shipping emulator.
