@@ -26,14 +26,19 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.root = Path(tmp.name)
         self.program = self.root / "EmuHawk.exe"
         self.disc = self.root / "fictional.cue"
+        self.track = self.root / "fictional.bin"
         self.bk2 = self.root / "fictional.bk2"
         self.plan = self.root / "private-plan.txt"
         self.lua = self.root / "capture.lua"
         self.output = self.root / "private-png"
         self.output.mkdir()
         self.output.chmod(0o700)
-        for path in (self.program, self.disc, self.bk2, self.lua):
+        for path in (self.program, self.track, self.bk2, self.lua):
             path.write_bytes(b"synthetic only")
+        self.disc.write_text(
+            'FILE "fictional.bin" BINARY\nTRACK 01 MODE2/2352\nINDEX 01 00:00:00\n',
+            encoding="ascii",
+        )
         self.plan.write_text("\n".join(ROWS) + "\n", encoding="ascii")
 
     def call(self, **kwargs):
@@ -80,6 +85,19 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         other.symlink_to(self.bk2)
         with self.assertRaises(ValueError):
             self.call(movie=other)
+
+    def test_refuses_cue_with_missing_track_file(self):
+        self.track.unlink()
+        with self.assertRaisesRegex(ValueError, "CUE track file is missing"):
+            self.call()
+
+    def test_refuses_cue_track_path_escape(self):
+        self.disc.write_text(
+            'FILE "../outside.bin" BINARY\nTRACK 01 MODE2/2352\nINDEX 01 00:00:00\n',
+            encoding="ascii",
+        )
+        with self.assertRaisesRegex(ValueError, "remain under descriptor directory"):
+            self.call()
 
     def test_refuses_missing_private_disc(self):
         with self.assertRaises(ValueError):
