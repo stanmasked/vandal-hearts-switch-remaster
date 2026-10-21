@@ -5,6 +5,7 @@ on:
       - '.github/workflows/map02-real-cpal-alsa-same-tls-guests-stage310.yml'
       - 'tools/capture_map02_same_tls_guests_stage310.py'
       - 'tools/run_map02_real_same_tls_guest_stage310.sh'
+      - 'tools/map02_same_tls_synthetic_stage310.c'
       - 'tools/audit_map02_real_direct_tls_guests_stage310.py'
       - 'tests/test_audit_map02_real_direct_tls_guests_stage310.py'
       - 'docs/MAP02_REAL_CPAL_ALSA_SAME_TLS_GUESTS_STAGE310.md'
@@ -45,6 +46,7 @@ jobs:
               ".github/workflows/map02-real-cpal-alsa-same-tls-guests-stage310.yml",
               "tools/capture_map02_same_tls_guests_stage310.py",
               "tools/run_map02_real_same_tls_guest_stage310.sh",
+              "tools/map02_same_tls_synthetic_stage310.c",
               "tools/audit_map02_real_direct_tls_guests_stage310.py",
               "tests/test_audit_map02_real_direct_tls_guests_stage310.py",
               "docs/MAP02_REAL_CPAL_ALSA_SAME_TLS_GUESTS_STAGE310.md"}
@@ -152,7 +154,7 @@ jobs:
             tools/map02_alsa_same_tls_stage308.c \
             -o research/libmap02-stage310-direct-tls.so -lasound -ldl -pthread
           gcc -std=gnu11 -O2 -Werror -Wall -Wextra \
-            tools/map02_same_tls_synthetic_stage308.c \
+            tools/map02_same_tls_synthetic_stage310.c \
             -o research/map02-stage310-two-thread-synthetic-null -lasound -ldl -pthread
           nm -D research/libmap02-stage310-direct-tls.so | \
             grep -E ' [TW] vh_map02_stage308_cpal_callback_mark$'
