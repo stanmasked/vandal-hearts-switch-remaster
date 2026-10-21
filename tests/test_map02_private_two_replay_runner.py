@@ -106,7 +106,11 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
                 sys.executable, "-m", "tools.map02_private_bizhawk_poweron_launch",
             ])
             self.assertEqual(argv[-1], "--launch")
-            self.assertEqual(argv[-2], str(self.workspace / RUN_NAMES[index]))
+            # macOS aliases /var to /private/var; compare canonical roots.
+            self.assertEqual(
+                Path(argv[-2]).resolve(strict=True),
+                (self.workspace / RUN_NAMES[index]).resolve(strict=True),
+            )
             self.assertFalse(process_call.kwargs["shell"])
             self.assertIs(process_call.kwargs["stdout"], subprocess.DEVNULL)
             self.assertIs(process_call.kwargs["stderr"], subprocess.DEVNULL)
