@@ -37,12 +37,23 @@ python3 -m tools.verify_map02_private_persistent_raster \
 
 The verifier decodes the three selected images to RGBA in each supplied
 run, compares the candidate and post frames to the last pre frame, and
-requires a **common set of persistently changed pixel positions** of at
-least 1% of image area (minimum 16 pixels). Those positions must cover at
-least **4 out of a 4×4 grid of screen tiles**. Screenshots must retain
+requires a **common set of genuinely stable changed pixel values** of at
+least 1% of image area (minimum 16 pixels). A pixel counts only when
+its decoded RGBA value is **different in the candidate from the pre frame
+and remains exactly the same in candidate and post**. Merely changing at
+the same coordinates in both later frames is insufficient (e.g.,
+RGB 10→100→120 fails). The qualifying positions must cover at least
+**4 out of a 4×4 grid of screen tiles**. Screenshots must retain
 identical dimensions and be at least 16×16. A one-pixel blinking cursor,
 a transient single-frame effect, a tiny localized indicator or a remote
 post-candidate frame will be rejected.
+
+This stronger comparison is schema
+`vh.map02.private-persistent-raster-witness.v2`. Added invented tests
+explicitly reject two unrelated large frame changes, candidate/post RGBA
+differences (including alpha changes), and 15 stable pixels among many
+moving pixels. Exactly 16 stable positions across multiple tiles are
+accepted. The original BK2 and user screenshots remain private.
 
 These spatial/temporal cutoffs are conservative *heuristics for manual
 screen review*. They might reject a genuine but small PS1 scene change,

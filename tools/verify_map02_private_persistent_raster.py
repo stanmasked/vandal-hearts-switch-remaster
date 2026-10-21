@@ -24,7 +24,7 @@ from tools.verify_map02_private_start_candidate_order import verify as verify_pa
 from tools.compare_map02_private_replay_rasters import _observations
 from tools.verify_map02_private_visual_candidates import read_png_private
 
-SCHEMA = "vh.map02.private-persistent-raster-witness.v1"
+SCHEMA = "vh.map02.private-persistent-raster-witness.v2"
 GRID = 4
 MIN_TILES = 4
 MIN_PIXELS = 16
@@ -83,11 +83,17 @@ def persistent_witness(pre: Image.Image, candidate: Image.Image,
         MIN_PIXELS, (width * height + FRACTION_DENOMINATOR - 1)
         // FRACTION_DENOMINATOR,
     )
+    # A pixel changed from its pre-frame value twice is NOT necessarily
+    # stable: 10 -> 100 -> 120 is two different colors. Require every
+    # counted position to be different from PRE *and* exactly identical
+    # (all RGBA channels) in candidate and later post.
     first = _changed(pre, candidate)
     later = _changed(pre, post)
-    shared = ImageChops.darker(first, later)
+    same_candidate_post = ImageChops.invert(_changed(candidate, post))
+    shared = ImageChops.darker(
+        ImageChops.darker(first, later), same_candidate_post)
     if shared.histogram()[255] < threshold:
-        raise ValueError("insufficient persistent changed pixels")
+        raise ValueError("insufficient persistent same-value changed pixels")
     if _covered_tiles(shared) < MIN_TILES:
         raise ValueError("persistent change too spatially localized")
 
@@ -143,6 +149,7 @@ def verify(
         "same_input_frame_candidate_and_post_labels": True,
         "post_capture_within_120_counters": True,
         "decoded_raster_persistent_change_at_least_one_percent": True,
+        "persistent_candidate_post_rgba_values_identical": True,
         "persistently_changed_pixels_span_at_least_four_4x4_tiles": True,
         "two_supplied_raster_windows_pass": True,
         "original_ps1_game_authenticated": False,
