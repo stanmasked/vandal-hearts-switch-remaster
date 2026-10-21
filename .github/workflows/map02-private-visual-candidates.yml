@@ -32,15 +32,15 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           architecture: x64
-      - name: Check 14 fully invented PNG, hash, manual marker invariants
+      - name: Check 15 fully invented PNG, hash, manual marker invariants
         shell: bash
         run: |
           set -euo pipefail
           python -m unittest discover -s tests \
             -p 'test_verify_map02_private_visual_candidates.py' -v \
             2>&1 | tee /tmp/vh-map02-visual-candidates.log
-          grep -F 'Ran 14 tests' /tmp/vh-map02-visual-candidates.log
+          grep -F 'Ran 15 tests' /tmp/vh-map02-visual-candidates.log
           if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-visual-candidates.log; then
             exit 1
           fi
-          echo "VH_MAP02_VISUAL_CANDIDATES_PASS synthetic=14 owner_png=0 owner_bk2=0 ps1_emulation=0 scene_verified=0"
+          echo "VH_MAP02_VISUAL_CANDIDATES_PASS synthetic=15 owner_png=0 owner_bk2=0 ps1_emulation=0 scene_verified=0"
