@@ -79,6 +79,9 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
             group, role, frame + 1)
         if (root / filename).exists() or (root / filename).is_symlink():
             raise ValueError("planned PNG filename already exists: no overwrite")
+    log_path = root / "vh_private_capture.log"
+    if log_path.exists() or log_path.is_symlink():
+        raise ValueError("private capture log already exists: no overwrite")
 
     args = [
         str(executable),
@@ -89,7 +92,21 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
     env = os.environ.copy()
     env["VH_PRIVATE_CAPTURE_PLAN"] = str(plan)
     env["VH_PRIVATE_PNG_DIR"] = str(root)
+    env["VH_PRIVATE_CAPTURE_LOG"] = str(log_path)
     return args, env, len(positions)
+
+
+def _append_private_log(path: Path, line: str) -> None:
+    flags = os.O_WRONLY | os.O_APPEND
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ValueError("private capture log must remain a regular file")
+        os.write(fd, (line + "\n").encode("ascii"))
+    finally:
+        os.close(fd)
 
 
 def main() -> int:
@@ -120,14 +137,44 @@ def main() -> int:
         print("VH_PRIVATE_BIZHAWK_LAUNCH_PREFLIGHT_OK planned_png=%d "
               "emulator_started=0 original_ps1_authenticated=0" % count)
         return 0
-    # No shell, no echo of arguments, no capture/upload of private output.
-    # EmuHawk startup, core, firmware, movie and actual PNGs still require
-    # independent observation; exit status alone proves none of those.
-    result = subprocess.run(command, env=env, shell=False, check=False)
+    # Create the structured log before EmuHawk starts, with restrictive
+    # permissions and exclusive creation. Lua appends only sanitized marker
+    # lines; the owner can feed this file directly to the private auditor.
+    log_path = Path(env["VH_PRIVATE_CAPTURE_LOG"])
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(log_path, flags, 0o600)
+        os.close(fd)
+    except OSError:
+        parser.error("private capture log could not be created safely")
+    # No shell, no echo of arguments, no upload of private output.
+    # EmuHawk startup/core/firmware and actual PNGs still require audit.
+    try:
+        result = subprocess.run(command, env=env, shell=False, check=False)
+    except OSError:
+        try:
+            _append_private_log(log_path,
+                "VH_PRIVATE_BIZHAWK_LAUNCH_ERROR process_started=0 original_ps1_authenticated=0")
+        except OSError:
+            pass
+        print("VH_PRIVATE_BIZHAWK_LOCAL_PROCESS_EXITED exit_success=0 "
+              "original_ps1_authenticated=0 map02_identified=0")
+        return 1
+    success = result.returncode == 0
+    try:
+        _append_private_log(log_path,
+            "VH_PRIVATE_BIZHAWK_LOCAL_PROCESS_EXITED exit_success=%d "
+            "original_ps1_authenticated=0 map02_identified=0" % success)
+    except OSError:
+        print("VH_PRIVATE_BIZHAWK_LOCAL_PROCESS_EXITED exit_success=0 "
+              "private_log_write_success=0 original_ps1_authenticated=0")
+        return 1
     print("VH_PRIVATE_BIZHAWK_LOCAL_PROCESS_EXITED "
           "exit_success=%d original_ps1_authenticated=0 map02_identified=0" %
-          (result.returncode == 0))
-    return int(result.returncode != 0)
+          success)
+    return int(not success)
 
 
 if __name__ == "__main__":
