@@ -56,9 +56,9 @@ as a pixel match and a PNG-byte mismatch. Schema v2 adds one opaque
 plan, both logs and all planned PNG bytes in deterministic group/role order.
 This binds a later shortlist to the precise evidence that was audited,
 without publishing individual file hashes, paths, raw movie-input frame
-numbers, image bytes or decoded RGB buffers. It is saved only to a new
-owner-only file (0600) outside the Git checkout; overwriting an existing
-file is refused.
+numbers, image bytes or decoded RGB buffers. The digest is computed before and after the full audit; changes during that
+interval cause a fail-closed error. It is saved only to a new owner-only file
+(0600) outside the Git checkout; overwriting an existing file is refused.
 
 ## Evidence limitations
 
