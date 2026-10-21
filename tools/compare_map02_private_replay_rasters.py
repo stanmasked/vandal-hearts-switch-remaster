@@ -74,6 +74,8 @@ def compare(
     if len(frames_a) > MAX_SHOTS or len(frames_b) != len(frames_a):
         raise ValueError("unexpected screenshot count")
     matched = 0
+    latest_pre_raster = None
+    first_candidate_checked = False
     for a, b in zip(frames_a, frames_b):
         triple_a = (a["emulator_counter"], a["movie_input_candidate"], a["label"])
         triple_b = (b["emulator_counter"], b["movie_input_candidate"], b["label"])
@@ -83,7 +85,20 @@ def compare(
         raster_b = _raster_key(read_png_private(second_images, b["png_file"]))
         if raster_a != raster_b:
             raise ValueError("decoded PNG pixels differ across claimed replays")
+        # A repeated static screen in both runs is not evidence that a
+        # purported transition has even a visible raster change. Require
+        # the *first* manually labelled candidate to differ from the most
+        # recently captured pre-candidate screen. Even a changed pixel is
+        # only a visual-change witness; it cannot identify a PS1 scene.
+        if a["label"] == "pre_map02":
+            latest_pre_raster = raster_a
+        elif a["label"] == "map02_candidate" and not first_candidate_checked:
+            if latest_pre_raster is None or raster_a == latest_pre_raster:
+                raise ValueError("no decoded raster change at candidate boundary")
+            first_candidate_checked = True
         matched += 1
+    if not first_candidate_checked:
+        raise ValueError("candidate transition was not compared")
     if first["manual_candidate_interval_counter_exclusive_inclusive"] != (
             second["manual_candidate_interval_counter_exclusive_inclusive"]):
         raise ValueError("candidate intervals differ")
@@ -95,6 +110,8 @@ def compare(
         "two_distinct_private_evidence_paths": True,
         "png_idat_streams_checked": True,
         "repeatability_of_provided_images": True,
+        "candidate_boundary_raster_change_observed": True,
+        "scene_transition_authenticated": False,
         "independent_emulator_runs_authenticated": False,
         "movie_to_video_sync_authenticated": False,
         "original_ps1_game_authenticated": False,
