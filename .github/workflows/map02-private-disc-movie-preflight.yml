@@ -5,6 +5,9 @@ on:
       - '.github/workflows/map02-private-disc-movie-preflight.yml'
       - 'tools/map02_private_disc_movie_preflight.py'
       - 'tools/map02_private_psx_firmware_probe.py'
+      - 'tools/map02_private_core_witness_audit.py'
+      - 'tests/test_map02_private_core_witness_audit.py'
+      - 'tools/map02_runtime_core_witness/**'
       - 'tests/test_map02_private_psx_firmware_probe.py'
       - 'tools/map02_private_bin_digest_init.py'
       - 'tests/test_map02_private_bin_digest_init.py'
@@ -87,3 +90,20 @@ jobs:
           fi
           grep -qx 'OK' /tmp/vh-map02-psx-firmware-probe.log
           echo "VH_MAP02_PRIVATE_PSX_FIRMWARE_METADATA_PASS cases=$count actual_bios=0 original_bk2=0 emuhawk=0"
+      - name: Audit 20 fictional in-process PSX runtime core witnesses
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_map02_private_core_witness_audit.py' -v \
+            2>&1 | tee /tmp/vh-map02-runtime-core-witness.log
+          count=$(sed -nE 's/^Ran ([1-9][0-9]*) tests? in .*$/\1/p' /tmp/vh-map02-runtime-core-witness.log)
+          if [[ "$count" != "20" ]]; then
+            echo 'unexpected synthetic runtime core witness test count' >&2
+            exit 1
+          fi
+          if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-runtime-core-witness.log; then
+            exit 1
+          fi
+          grep -qx 'OK' /tmp/vh-map02-runtime-core-witness.log
+          echo "VH_MAP02_RUNTIME_CORE_WITNESS_SYNTHETIC_PASS cases=$count real_emuhawk=0 loaded_core_authenticated=0"
