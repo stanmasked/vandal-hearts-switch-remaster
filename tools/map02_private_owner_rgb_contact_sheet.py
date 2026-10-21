@@ -106,12 +106,16 @@ def _read_private_candidate_report(path: Path) -> dict:
 
 
 def _eligible_candidate_groups(
-    report_path: Path, plan_sha256: str, groups: list[tuple[int, dict]],
+    report_path: Path, plan_sha256: str, source_evidence_sha256: str,
+    groups: list[tuple[int, dict]],
 ) -> set[int]:
     report = _read_private_candidate_report(report_path)
     if (report.get("schema") != CANDIDATE_SCHEMA
-            or report.get("source_plan_sha256") != plan_sha256):
-        raise ValueError("reviewed candidate report does not match current private capture plan")
+            or report.get("source_plan_sha256") != plan_sha256
+            or report.get("source_capture_evidence_sha256") != source_evidence_sha256):
+        raise ValueError(
+            "reviewed candidate report does not match current private capture plan or evidence"
+        )
     false_provenance_flags = (
         "two_capture_sets_independently_authenticated",
         "independent_human_reviewers_authenticated",
@@ -266,7 +270,8 @@ def render(
     candidate_group_ids = None
     if reviewed_candidates is not None:
         candidate_group_ids = _eligible_candidate_groups(
-            reviewed_candidates, plan_digest, groups,
+            reviewed_candidates, plan_digest,
+            proof["source_capture_evidence_sha256"], groups,
         )
         groups = [(group, indices) for group, indices in groups
                   if group in candidate_group_ids]
@@ -333,6 +338,9 @@ def render(
         "source_audited_decoded_rgb_mismatches": sum(not value for value in matches.values()),
         "reviewed_candidate_filter_applied": candidate_group_ids is not None,
         "candidate_report_plan_binding_verified": candidate_group_ids is not None,
+        "candidate_report_capture_evidence_binding_verified": (
+            candidate_group_ids is not None
+        ),
         "candidate_filter_group_count": (
             len(candidate_group_ids) if candidate_group_ids is not None else None
         ),
