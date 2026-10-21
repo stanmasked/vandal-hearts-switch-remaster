@@ -49,7 +49,9 @@ _Static_assert(sizeof(struct vh_shared)<=VH_SIZE,
                "Stage308 C shim counter storage exceeds bounded private mmap");
 
 static struct vh_shared *vh = NULL;
-static __thread int vh_alias = -1;
+/* LD_PRELOAD at process start permits initial-exec static TLS: do not
+ * invoke a dynamic TLS runtime allocator on the first CPAL callback. */
+static __thread __attribute__((tls_model("initial-exec"))) int vh_alias = -1;
 
 #define REAL_FN(name) static __typeof__(&name) real_##name
 REAL_FN(snd_pcm_avail_delay);
