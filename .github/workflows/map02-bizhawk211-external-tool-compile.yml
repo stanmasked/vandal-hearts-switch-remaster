@@ -87,6 +87,14 @@ jobs:
             throw 'strict synthetic IEmulator loader smoke marker mismatch'
           }
           Write-Output $expected
+      - name: Launch real EmuHawk without media and observe disabled External Tool window
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = "$env:VH_BIZHAWK_RELEASE_ROOT"
+          $plugin = Join-Path $root 'ExternalTools/VhMap02CoreWitness.dll'
+          & tools/map02_runtime_core_witness_smoke/Invoke-EmuHawkNoMediaProbe.ps1 -BizHawkRoot $root -PluginFile $plugin
+          if ($LASTEXITCODE -ne 0) { throw 'real no-media EmuHawk startup probe failed' }
       - name: Publish only the compiled experimental witness DLL (no original assets)
         uses: actions/upload-artifact@v4
         with:
