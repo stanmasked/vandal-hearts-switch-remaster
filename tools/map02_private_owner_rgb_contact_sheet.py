@@ -140,7 +140,7 @@ def _eligible_candidate_groups(
         group = row.get("review_group")
         state = row.get("state")
         if (type(group) is not int or group not in available or group in seen
-                or state not in CANDIDATE_STATES
+                or type(state) is not str or state not in CANDIDATE_STATES
                 or row.get("actual_map02_scene_authenticated") is not False):
             raise ValueError("reviewed candidate report groups do not match capture plan")
         seen.add(group)
