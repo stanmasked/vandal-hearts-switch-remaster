@@ -157,6 +157,41 @@ The ability to show a GUI depends on the hosted Windows runner's
 desktop environment, so a Windows CI failure must be diagnosed
 rather than interpreted as a game or core bug.
 
+## Stage505: genuine NullHawk IEmulator injection proof, no original media
+
+The Stage504 real EmuHawk UI test proved the form could open and Save
+was disabled, but that alone did **not** distinguish a correctly injected
+IEmulator service from the constructor's default disabled state.
+
+Stage505 strengthens this evidence **without accessing PS1 content**:
+
+- The real External Tool's `Restart()` reports a distinct, exact UI
+  label, `Injected IEmulator: NullHawk (no game); witness disabled.`,
+  **only** when the injected service is the real official BizHawk
+  `NullEmulator`, its system is `VSystemID.Raw.NULL`, and its own
+  `CoreAttribute` identifies `NullHawk`. Save remains disabled.
+- Windows CI probes that exact label in a **process-owned WinForms static
+  label** alongside the one disabled Save button. The default constructor
+  label is different, so passing requires `Restart()` to read the
+  injected actual service. The success marker includes
+  `injected_nullhawk_service_observed=1`.
+- The separate .NET Framework harness also invokes the actual
+  `ServiceInjector.UpdateServices` from the official BizHawk 2.11 DLL
+  with its own genuine `NullEmulator.ServiceProvider`. It verifies
+  reference identity in the injected `IEmulator` property, checks the
+  exact label and disabled Save button, and confirms the core-only
+  `Snapshot()` rejects NullHawk.
+- Temporary Stage504 CI-only canary writes were removed from the plugin.
+  There are no gameplay data or process details in the text exposed by
+  these tests. The temporary audio config is deleted after the run.
+
+Thus a successful result directly supports **real no-media
+IEmulator/NullHawk service injection inside EmuHawk**, rather than mere
+window creation. It still cannot prove an actual **PSX/Octoshock** core
+has been injected, let alone verify original BIOS, Russian source disc,
+USA BK2 synchronization, MAP02 pixels or a Switch remake. Those still
+require the owner's private real-disc replay.
+
 ## Owner-local build (requires a matching, unmodified BizHawk source tree)
 
 1. Use your own BizHawk **2.11** source tree and local EmuHawk build/output.
