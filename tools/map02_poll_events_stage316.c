@@ -37,6 +37,7 @@
 #define VH_POLL_META_FIELDS 9
 #define VH_POLL_EVENT_OFFSET 27664
 #define VH_POLL_EVENT_FIELDS 9
+#define VH_POLL_EVENT_LAST_OFFSET 32272
 #define VH_SIZE 65536
 #define VH_MAGIC "VH305AL1"
 
@@ -61,8 +62,15 @@ struct vh_shared {
    * for poll(nfds==2), never fd numbers or raw pollfd/revents/event masks.
    */
   uint64_t poll_event_categories[VH_SLOTS][VH_POLL_EVENT_FIELDS];
+  /* Per-alias byte pair: last requested POLLIN/POLLOUT category bits and
+   * last completed return category. These values identify an in-flight
+   * two-fd poll's requested bits even when it entered before guest input.
+   * Bit 7 = exactly two valid pollfd positions; low bits are documented
+   * categories, never FD numbers or full event masks. */
+  uint8_t poll_event_last[VH_SLOTS][2];
   unsigned char padding[32768 - (16 + VH_SLOTS*VH_OPS*VH_KINDS*8)
-                        - VH_SLOTS*VH_POLL_EVENT_FIELDS*8];
+                        - VH_SLOTS*VH_POLL_EVENT_FIELDS*8
+                        - VH_SLOTS*2];
   uint64_t cpal_callback_entries[VH_SLOTS];
   unsigned char stage311_padding[512];
   /* Each independently sampled (begin, return, negative_return) is atomic.
@@ -89,6 +97,8 @@ struct vh_shared {
 };
 _Static_assert(offsetof(struct vh_shared, poll_event_categories)==VH_POLL_EVENT_OFFSET,
                "Stage316 event counters in original unused source memory gap");
+_Static_assert(offsetof(struct vh_shared, poll_event_last)==VH_POLL_EVENT_LAST_OFFSET,
+               "Stage316 last poll request/return masks fit in reserved mmap gap");
 _Static_assert(offsetof(struct vh_shared, cpal_callback_entries)==32768,
                "CPAL anonymous TLS counter must be at stable mmap byte offset");
 _Static_assert(offsetof(struct vh_shared, phase)==VH_PHASE_OFFSET,
@@ -394,28 +404,52 @@ enum {
 };
 static void vh_poll_event_entry(int alias,const struct pollfd *fds,nfds_t nfds) {
   struct vh_shared *s=vh;
-  if (!s || alias<0 || alias>=VH_SLOTS || nfds!=2 || !fds) return;
-  /* The source already has a valid two-element pollfd for libc poll().
-   * Reading fields is intrusive and unsupported invalid pointers may crash;
-   * this is a separate, nonproduction, opt-in experiment only. */
-  uint64_t *v=s->poll_event_categories[alias];
-  short a=fds[0].events, b=fds[1].events;
-  if (a&POLLIN) __atomic_fetch_add(&v[VH_ORD0_REQUEST_POLLIN],1,__ATOMIC_RELAXED);
-  if (a&POLLOUT) __atomic_fetch_add(&v[VH_ORD0_REQUEST_POLLOUT],1,__ATOMIC_RELAXED);
-  if (b&POLLIN) __atomic_fetch_add(&v[VH_ORD1_REQUEST_POLLIN],1,__ATOMIC_RELAXED);
-  if (b&POLLOUT) __atomic_fetch_add(&v[VH_ORD1_REQUEST_POLLOUT],1,__ATOMIC_RELAXED);
+  if (!s || alias<0 || alias>=VH_SLOTS) return;
+  uint8_t code=0;
+  if (nfds==2 && fds) {
+    /* Bit 7 marks a valid two-position snapshot. Bits 0..3 mean
+     * ordinal0 IN/OUT and ordinal1 IN/OUT. Other request bits are not saved. */
+    short a=fds[0].events, b=fds[1].events;
+    code=0x80;
+    if (a&POLLIN) code|=1u<<0;
+    if (a&POLLOUT) code|=1u<<1;
+    if (b&POLLIN) code|=1u<<2;
+    if (b&POLLOUT) code|=1u<<3;
+    uint64_t *v=s->poll_event_categories[alias];
+    if (a&POLLIN) __atomic_fetch_add(&v[VH_ORD0_REQUEST_POLLIN],1,__ATOMIC_RELAXED);
+    if (a&POLLOUT) __atomic_fetch_add(&v[VH_ORD0_REQUEST_POLLOUT],1,__ATOMIC_RELAXED);
+    if (b&POLLIN) __atomic_fetch_add(&v[VH_ORD1_REQUEST_POLLIN],1,__ATOMIC_RELAXED);
+    if (b&POLLOUT) __atomic_fetch_add(&v[VH_ORD1_REQUEST_POLLOUT],1,__ATOMIC_RELAXED);
+  }
+  /* Clear stale two-position metadata on any other poll() call. */
+  __atomic_store_n(&s->poll_event_last[alias][0],code,__ATOMIC_RELAXED);
 }
 static void vh_poll_event_return(int alias,const struct pollfd *fds,nfds_t nfds,int rc) {
   struct vh_shared *s=vh;
-  if (!s || alias<0 || alias>=VH_SLOTS || nfds!=2 || !fds || rc<=0) return;
-  uint64_t *v=s->poll_event_categories[alias];
-  short a=fds[0].revents, b=fds[1].revents;
-  if (a&POLLIN) __atomic_fetch_add(&v[VH_ORD0_RETURN_POLLIN],1,__ATOMIC_RELAXED);
-  if (a&POLLOUT) __atomic_fetch_add(&v[VH_ORD0_RETURN_POLLOUT],1,__ATOMIC_RELAXED);
-  if (b&POLLIN) __atomic_fetch_add(&v[VH_ORD1_RETURN_POLLIN],1,__ATOMIC_RELAXED);
-  if (b&POLLOUT) __atomic_fetch_add(&v[VH_ORD1_RETURN_POLLOUT],1,__ATOMIC_RELAXED);
-  if ((a|b)&(POLLERR|POLLHUP|POLLNVAL|POLLPRI))
-    __atomic_fetch_add(&v[VH_RETURN_EXCEPTIONAL_ANY],1,__ATOMIC_RELAXED);
+  if (!s || alias<0 || alias>=VH_SLOTS) return;
+  uint8_t code=0;
+  if (nfds==2 && fds) {
+    /* Return status bits 5..6: 1=ready, 2=timeout, 3=error.
+     * Bit 7 marks two valid positions; bits 0..3 encode IN/OUT per ordinal;
+     * bit 4 flags at least one exceptional revent (ERR/HUP/NVAL/PRI). */
+    unsigned status=rc>0 ? 1u : rc==0 ? 2u : 3u;
+    code=(uint8_t)(0x80u|(status<<5));
+    if (rc>0) {
+      uint64_t *v=s->poll_event_categories[alias];
+      short a=fds[0].revents, b=fds[1].revents;
+      if (a&POLLIN) { code|=1u<<0; __atomic_fetch_add(&v[VH_ORD0_RETURN_POLLIN],1,__ATOMIC_RELAXED); }
+      if (a&POLLOUT) { code|=1u<<1; __atomic_fetch_add(&v[VH_ORD0_RETURN_POLLOUT],1,__ATOMIC_RELAXED); }
+      if (b&POLLIN) { code|=1u<<2; __atomic_fetch_add(&v[VH_ORD1_RETURN_POLLIN],1,__ATOMIC_RELAXED); }
+      if (b&POLLOUT) { code|=1u<<3; __atomic_fetch_add(&v[VH_ORD1_RETURN_POLLOUT],1,__ATOMIC_RELAXED); }
+      if ((a|b)&(POLLERR|POLLHUP|POLLNVAL|POLLPRI)) {
+        code|=1u<<4;
+        __atomic_fetch_add(&v[VH_RETURN_EXCEPTIONAL_ANY],1,__ATOMIC_RELAXED);
+      }
+    }
+  }
+  /* Distinguish the last completed return from the potentially active poll.
+   * This stores only a compact category code, not raw revents. */
+  __atomic_store_n(&s->poll_event_last[alias][1],code,__ATOMIC_RELAXED);
 }
 int poll(struct pollfd *fds,nfds_t nfds,int timeout) {
   ASSERT_RESOLVED(real_poll);
