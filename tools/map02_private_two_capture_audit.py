@@ -18,6 +18,7 @@ from tools.verify_map02_private_neutral_capture_chain import (
     FRAME_COUNT, parse_plan, verify,
 )
 from tools.verify_map02_private_visual_candidates import read_png_private
+from tools.map02_private_png_pixels import private_normalized_pixel_sha256
 
 SCHEMA = "vh.map02.private-two-capture-review.v1"
 
@@ -41,11 +42,12 @@ def _private_root(directory: Path) -> Path:
 def audit_pair(movie: Path, plan: Path, first: Path, second: Path, *,
                minimum: int = 180, maximum: int = 1800,
                after: int = 1663, before: int = FRAME_COUNT) -> dict:
-    """Require two distinct private capture chains and compare PNG file bytes.
+    """Compare both chain receipts and normalized PNG pixel content.
 
-    Byte differences can arise from PNG encoding/metadata; they are a review
-    flag, NOT proof of a PS1 rendered-pixel mismatch. Matching PNG files do
-    not independently prove the emulator executed a real original scene.
+    Byte differences may be benign encoder or metadata changes; for supported
+    RGB/RGBA 8-bit noninterlaced PNGs compare reconstructed pixels. Unsupported
+    pixel formats stay unverified rather than pretending to be mismatches.
+    This does not authenticate the original emulation or MAP02.
     """
     first_root = _private_root(first)
     second_root = _private_root(second)
@@ -68,6 +70,9 @@ def audit_pair(movie: Path, plan: Path, first: Path, second: Path, *,
     first_inodes = set()
     second_inodes = set()
     equal = 0
+    decoded_equal = 0
+    decoded_different = 0
+    decoded_unsupported = 0
     for group, role, index, _ in rows:
         name = "vh_review_w%02d_%s_counter_%07d.png" % (
             group, role, index + 1,
@@ -93,8 +98,21 @@ def audit_pair(movie: Path, plan: Path, first: Path, second: Path, *,
         if (identity(os.stat(p, follow_symlinks=False)) != identity(p_info)
                 or identity(os.stat(q, follow_symlinks=False)) != identity(q_info)):
             raise ValueError("capture file replaced or changed during comparison")
-        equal += (hashlib.sha256(first_bytes).digest()
-                  == hashlib.sha256(second_bytes).digest())
+        file_bytes_match = (hashlib.sha256(first_bytes).digest()
+                            == hashlib.sha256(second_bytes).digest())
+        equal += file_bytes_match
+        if file_bytes_match:
+            # Both PNGs already passed full private-chain PNG validation.
+            decoded_equal += 1
+        else:
+            first_pixels = private_normalized_pixel_sha256(first_bytes)
+            second_pixels = private_normalized_pixel_sha256(second_bytes)
+            if first_pixels is None or second_pixels is None:
+                decoded_unsupported += 1
+            elif first_pixels == second_pixels:
+                decoded_equal += 1
+            else:
+                decoded_different += 1
 
     return {
         "schema": SCHEMA,
@@ -105,7 +123,14 @@ def audit_pair(movie: Path, plan: Path, first: Path, second: Path, *,
         "byte_identical_png_pairs": equal,
         "byte_different_png_pairs": len(rows) - equal,
         "all_png_file_bytes_identical": equal == len(rows),
+        "decoded_pixel_equal_pairs": decoded_equal,
+        "decoded_pixel_different_pairs": decoded_different,
+        "decoded_pixel_unsupported_pairs": decoded_unsupported,
+        "all_supported_png_pixel_content_equal": (
+            decoded_different == 0 and decoded_unsupported == 0),
         "byte_differences_require_manual_visual_review": equal != len(rows),
+        "unresolved_pixel_differences_require_manual_review": (
+            decoded_different > 0 or decoded_unsupported > 0),
         "independent_cold_boots_authenticated": False,
         "actual_octoshock_playback_authenticated": False,
         "original_map02_scene_authenticated": False,
@@ -131,7 +156,7 @@ def main() -> int:
     except (OSError, ValueError, TypeError, KeyError, UnicodeError):
         parser.error("two private capture chains could not be verified")
     print(json.dumps(report, sort_keys=True, indent=2))
-    return 0 if report["all_png_file_bytes_identical"] else 2
+    return 0 if report["all_supported_png_pixel_content_equal"] else 2
 
 
 if __name__ == "__main__":
