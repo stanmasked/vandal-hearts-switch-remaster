@@ -39,8 +39,8 @@ jobs:
           python -m unittest discover -s tests \
             -p 'test_map02_private_bizhawk_poweron_launch.py' -v \
             2>&1 | tee /tmp/map02-bizhawk-owner-private-launch-tests.log
-          grep -F 'Ran 14 tests' /tmp/map02-bizhawk-owner-private-launch-tests.log
+          grep -F 'Ran 17 tests' /tmp/map02-bizhawk-owner-private-launch-tests.log
           if grep -E '^(FAILED|ERROR)' /tmp/map02-bizhawk-owner-private-launch-tests.log; then
             exit 1
           fi
-          echo 'VH_MAP02_LOCAL_BIZHAWK_LAUNCH_TEST_PASS synthetic=14 owner_bk2=0 actual_bizhawk=0 real_ps1=0 map02=unverified'
+          echo 'VH_MAP02_LOCAL_BIZHAWK_LAUNCH_TEST_PASS synthetic=17 owner_bk2=0 actual_bizhawk=0 real_ps1=0 map02=unverified'
