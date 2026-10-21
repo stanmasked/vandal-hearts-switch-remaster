@@ -37,7 +37,7 @@
 #define VH_POLL_META_FIELDS 9
 #define VH_POLL_EVENT_OFFSET 27664
 #define VH_POLL_EVENT_FIELDS 9
-#define VH_POLL_EVENT_LAST_OFFSET 32272
+#define VH_POLL_EVENT_STATE_OFFSET 33280
 #define VH_SIZE 65536
 #define VH_MAGIC "VH305AL1"
 
@@ -62,17 +62,14 @@ struct vh_shared {
    * for poll(nfds==2), never fd numbers or raw pollfd/revents/event masks.
    */
   uint64_t poll_event_categories[VH_SLOTS][VH_POLL_EVENT_FIELDS];
-  /* Per-alias byte pair: last requested POLLIN/POLLOUT category bits and
-   * last completed return category. These values identify an in-flight
-   * two-fd poll's requested bits even when it entered before guest input.
-   * Bit 7 = exactly two valid pollfd positions; low bits are documented
-   * categories, never FD numbers or full event masks. */
-  uint8_t poll_event_last[VH_SLOTS][2];
   unsigned char padding[32768 - (16 + VH_SLOTS*VH_OPS*VH_KINDS*8)
-                        - VH_SLOTS*VH_POLL_EVENT_FIELDS*8
-                        - VH_SLOTS*2];
+                        - VH_SLOTS*VH_POLL_EVENT_FIELDS*8];
   uint64_t cpal_callback_entries[VH_SLOTS];
-  unsigned char stage311_padding[512];
+  /* One aligned atomic 64-bit state per TLS alias in the former Stage311
+   * padding. Low byte is the currently active two-position poll request;
+   * the next byte is the last completed return. Updating/clearing the
+   * active byte and publishing the return are one atomic state transition. */
+  uint64_t poll_event_state[VH_SLOTS];
   /* Each independently sampled (begin, return, negative_return) is atomic.
    * NEVER treat a single sampled in-flight phase as a deadlock. */
   uint64_t phase[VH_SLOTS][VH_PHASE_OPS][3];
@@ -97,8 +94,8 @@ struct vh_shared {
 };
 _Static_assert(offsetof(struct vh_shared, poll_event_categories)==VH_POLL_EVENT_OFFSET,
                "Stage316 event counters in original unused source memory gap");
-_Static_assert(offsetof(struct vh_shared, poll_event_last)==VH_POLL_EVENT_LAST_OFFSET,
-               "Stage316 last poll request/return masks fit in reserved mmap gap");
+_Static_assert(offsetof(struct vh_shared, poll_event_state)==VH_POLL_EVENT_STATE_OFFSET,
+               "Stage316 active poll state fits former Stage311 reserved bytes");
 _Static_assert(offsetof(struct vh_shared, cpal_callback_entries)==32768,
                "CPAL anonymous TLS counter must be at stable mmap byte offset");
 _Static_assert(offsetof(struct vh_shared, phase)==VH_PHASE_OFFSET,
@@ -421,8 +418,11 @@ static void vh_poll_event_entry(int alias,const struct pollfd *fds,nfds_t nfds) 
     if (b&POLLIN) __atomic_fetch_add(&v[VH_ORD1_REQUEST_POLLIN],1,__ATOMIC_RELAXED);
     if (b&POLLOUT) __atomic_fetch_add(&v[VH_ORD1_REQUEST_POLLOUT],1,__ATOMIC_RELAXED);
   }
-  /* Clear stale two-position metadata on any other poll() call. */
-  __atomic_store_n(&s->poll_event_last[alias][0],code,__ATOMIC_RELAXED);
+  /* Keep the previous return in the high byte, but publish the active
+   * request (or zero for any other poll shape) in the low byte. */
+  uint64_t state=__atomic_load_n(&s->poll_event_state[alias],__ATOMIC_RELAXED);
+  __atomic_store_n(&s->poll_event_state[alias],
+                   (state&~UINT64_C(0xff))|code,__ATOMIC_RELAXED);
 }
 static void vh_poll_event_return(int alias,const struct pollfd *fds,nfds_t nfds,int rc) {
   struct vh_shared *s=vh;
@@ -447,9 +447,11 @@ static void vh_poll_event_return(int alias,const struct pollfd *fds,nfds_t nfds,
       }
     }
   }
-  /* Distinguish the last completed return from the potentially active poll.
-   * This stores only a compact category code, not raw revents. */
-  __atomic_store_n(&s->poll_event_last[alias][1],code,__ATOMIC_RELAXED);
+  /* One atomic 64-bit transition clears the active request and publishes
+   * the last completed return; a reader can never combine a stale active
+   * request with the newly completed result. */
+  __atomic_store_n(&s->poll_event_state[alias],((uint64_t)code)<<8,
+                   __ATOMIC_RELAXED);
 }
 int poll(struct pollfd *fds,nfds_t nfds,int timeout) {
   ASSERT_RESOLVED(real_poll);

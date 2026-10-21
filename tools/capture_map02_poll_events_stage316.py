@@ -24,8 +24,8 @@ PHASE_OPS=("avail_delay","prepare","recover","status","start","drop",
 PHASE_ROW_BYTES=3*8
 LIBC_WAIT_OFFSET=54784
 POLL_EVENT_OFFSET=27664
-POLL_EVENT_LAST_OFFSET=32272
-POLL_EVENT_LAST_FIELDS=("last_requested_event_code","last_completed_return_code")
+POLL_EVENT_STATE_OFFSET=33280
+POLL_EVENT_LAST_FIELDS=("active_request_event_code","last_completed_return_code")
 POLL_EVENT_FIELDS=(
     "ordinal0_requested_POLLIN","ordinal0_requested_POLLOUT",
     "ordinal1_requested_POLLIN","ordinal1_requested_POLLOUT",
@@ -135,8 +135,11 @@ def observe(source,alsa_csv,tag_csv,phase_csv,libc_csv,meta_csv,event_csv,ready)
                         for alias in range(min(count,SLOTS)):
                             pos=POLL_EVENT_OFFSET+alias*len(POLL_EVENT_FIELDS)*8
                             vals=struct.unpack_from("<"+"Q"*len(POLL_EVENT_FIELDS),mm,pos)
-                            last_codes=struct.unpack_from("<BB",mm,
-                                POLL_EVENT_LAST_OFFSET+alias*len(POLL_EVENT_LAST_FIELDS))
+                            state=struct.unpack_from("<Q",mm,
+                                POLL_EVENT_STATE_OFFSET+alias*8)[0]
+                            if state>>16:
+                                raise ValueError("Stage316 poll state has unexpected high bits")
+                            last_codes=(state&0xff,(state>>8)&0xff)
                             if any(vals) or any(last_codes):
                                 ew.writerow(("M",now,alias,*vals,*last_codes))
                         a.flush();t.flush();ph.flush();lc.flush();pm.flush();ev.flush()

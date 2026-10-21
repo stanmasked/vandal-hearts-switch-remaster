@@ -96,9 +96,9 @@ jobs:
           assert "VH_POLL_ARGUMENT_OFFSET 60928" in c
           assert "VH_POLL_EVENT_OFFSET 27664" in c
           assert "VH_POLL_EVENT_FIELDS 9" in c
-          assert "VH_POLL_EVENT_LAST_OFFSET 32272" in c
-          assert "poll_event_last[alias][0]" in c
-          assert "poll_event_last[alias][1]" in c
+          assert "VH_POLL_EVENT_STATE_OFFSET 33280" in c
+          assert "poll_event_state[alias]" in c
+          assert "((uint64_t)code)<<8" in c
           assert "vh_poll_event_entry(alias,fds,nfds);" in c
           assert "vh_poll_event_return(alias,fds,nfds,rc);" in c
           assert "VH_POLL_META_FIELDS 9" in c

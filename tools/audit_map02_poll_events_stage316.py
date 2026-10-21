@@ -73,7 +73,7 @@ def read_source(path):
     require(len(frames)>=15,"Poll ordinal source lacks real observation samples")
     return frames,hashlib.sha256(data).hexdigest()
 
-def decode_last_request(code):
+def decode_active_request(code):
     valid=bool(code&0x80)
     return {
         "valid_two_position_pollfd_snapshot":valid,
@@ -99,7 +99,7 @@ def decode_last_return(code):
         "ordinal1_returned_POLLIN":bool(code&4) if valid and status==1 else None,
         "ordinal1_returned_POLLOUT":bool(code&8) if valid and status==1 else None,
         "any_exceptional_return_event":bool(code&16) if valid and status==1 else None,
-        "this_is_last_completed_return_not_necessarily_the_active_poll":True,
+        "this_is_last_completed_return_not_the_active_request_result":True,
     }
 
 def summarize(frames,first,last,cpal_aliases):
@@ -121,13 +121,13 @@ def summarize(frames,first,last,cpal_aliases):
             o=before.get(field,0);n=after.get(field,0)
             require(n>=o,"Poll ordinal guest window counter regressed")
             values[field+"_guest_delta"]=n-o
-        request_code=after.get("last_requested_event_code",0)
+        request_code=after.get("active_request_event_code",0)
         return_code=after.get("last_completed_return_code",0)
         detail.append({
             "anonymous_same_process_native_TLS_alias":alias,
             "source_proven_preinput_CPAL_callback_thread":alias in cpal_aliases,
             **values,
-            "last_requested_poll_categories":decode_last_request(request_code),
+            "active_poll_request_categories":decode_active_request(request_code),
             "last_completed_poll_return_categories":decode_last_return(return_code),
             "two_ordinal_positions_are_not_linux_fd_numbers":True,
             "POLLIN_or_POLLOUT_count_may_coexist_in_one_return":True,
@@ -138,8 +138,8 @@ def summarize(frames,first,last,cpal_aliases):
         "cpal_proven_native_thread_poll_event_categories":[x for x in detail
            if x["source_proven_preinput_CPAL_callback_thread"]],
         "requested_events_and_returned_revents_are_not_one_to_one":True,
-        "last_requested_categories_can_describe_a_poll_already_in_flight_before_input":True,
-        "last_completed_return_categories_do_not_describe_the_active_poll_unless_it_has_returned":True,
+        "active_request_code_is_zero_when_no_two_position_poll_is_currently_active":True,
+        "active_request_and_last_completed_return_are_sampled_as_one_atomic_state":True,
         "no_descriptors_or_raw_masks_captured":True,
     }
 
