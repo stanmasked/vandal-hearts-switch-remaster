@@ -84,6 +84,22 @@ def _require_disc_unchanged(cue_file: Path, original_snapshot: tuple) -> None:
         raise ValueError("owner-private disc source changed between capture attempts")
 
 
+def _require_digest_reference_unchanged(
+        reference_file: Path | None, initial_digest: str | None) -> None:
+    """Recheck the owner-only digest file at every source checkpoint.
+
+    The child launcher reads this reference independently. A changed value
+    must never let consecutive runs silently verify different BIN images.
+    No digest, file path or contents appear in public-safe output.
+    """
+    if reference_file is None:
+        return
+    if read_private_full_bin_sha256(reference_file) != initial_digest:
+        raise ValueError(
+            "owner-private full-BIN digest reference changed between capture attempts"
+        )
+
+
 def _private_movie_identity(path: Path) -> bytes:
     """Fingerprint one bounded owner-local BK2; never print the digest.
 
@@ -180,12 +196,14 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         raise ValueError("owner-private original media preflight failed")
     _require_movie_unchanged(private_bk2, movie_identity)
     _require_disc_unchanged(private_disc, disc_identity)
+    _require_digest_reference_unchanged(expected_digest_file, digest)
     if not start:
         candidate = plan_lines(private_bk2, limit=max_windows)
         if len(candidate) < 6 or (len(candidate) - 3) % 3:
             raise ValueError("private BK2 candidate capture plan is malformed")
         _require_movie_unchanged(private_bk2, movie_identity)
         _require_disc_unchanged(private_disc, disc_identity)
+        _require_digest_reference_unchanged(expected_digest_file, digest)
         return {
             "schema": SCHEMA,
             "explicit_launch_requested": False,
@@ -194,6 +212,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             "disc_source_stable_during_preflight": True,
             "private_capture_plan_rows_checked": len(candidate) - 3,
             "full_bin_sha256_checked": digest is not None,
+            "full_bin_reference_stable_during_preflight": digest is not None,
             "emulator_timeout_seconds": (
                 emulator_timeout_seconds
                 if emulator_timeout_seconds is not None
@@ -213,10 +232,12 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         raise ValueError("private capture plan contains invalid number of frames")
     _require_movie_unchanged(private_bk2, movie_identity)
     _require_disc_unchanged(private_disc, disc_identity)
+    _require_digest_reference_unchanged(expected_digest_file, digest)
 
     for name in RUN_NAMES:
         _require_movie_unchanged(private_bk2, movie_identity)
         _require_disc_unchanged(private_disc, disc_identity)
+        _require_digest_reference_unchanged(expected_digest_file, digest)
         output = workspace / name
         _capture_dir(output)
         argv = [
@@ -238,6 +259,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         )
         _require_movie_unchanged(private_bk2, movie_identity)
         _require_disc_unchanged(private_disc, disc_identity)
+        _require_digest_reference_unchanged(expected_digest_file, digest)
         if process.returncode != 0:
             raise ValueError("one private emulator capture process failed")
         # Reject an emulator that returned zero without the exact expected
@@ -245,12 +267,14 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         verify(private_bk2, plan, output / "vh_private_capture.log", output)
         _require_movie_unchanged(private_bk2, movie_identity)
         _require_disc_unchanged(private_disc, disc_identity)
+        _require_digest_reference_unchanged(expected_digest_file, digest)
 
     paired = audit_pair(
         private_bk2, plan, workspace / RUN_NAMES[0], workspace / RUN_NAMES[1],
     )
     _require_movie_unchanged(private_bk2, movie_identity)
     _require_disc_unchanged(private_disc, disc_identity)
+    _require_digest_reference_unchanged(expected_digest_file, digest)
     return {
         "schema": SCHEMA,
         "explicit_launch_requested": True,
@@ -259,6 +283,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         "same_bk2_bytes_across_capture_attempts": True,
         "same_cue_and_sampled_bin_sectors_across_attempts": True,
         "full_disc_content_equality_authenticated": False,
+        "full_bin_reference_stable_across_attempts": digest is not None,
         "emulator_timeout_seconds": (
             emulator_timeout_seconds
             if emulator_timeout_seconds is not None
