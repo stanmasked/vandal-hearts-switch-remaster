@@ -16,7 +16,7 @@ from tools.check_map02_private_incremental_link import (
     _private_output_dir, _unresolved, probe_private_incremental_link,
 )
 from tools.check_map02_private_provider_coverage import (
-    _candidate_strong_exports, read_private_manifest,
+    STRONG_KINDS, _candidate_strong_exports, read_private_manifest,
 )
 from tools.check_map02_public_x11_after_sdl2 import _save_local_undefined_manifest
 
@@ -38,6 +38,48 @@ def _read_aggregate(path):
     if not isinstance(report, dict) or report.get("schema") != CENSUS_SCHEMA:
         raise ValueError("MAP02 glibc census schema invalid")
     return report
+
+
+
+def _archive_binding_classes(path):
+    """Classify actual GNU nm exported definitions; never return names to stdout."""
+    opened = _open_owned(path, require_private=True)
+    try:
+        _check_abi(opened)
+        fd = opened[0]
+        safe_env = {
+            k: v for k, v in os.environ.items()
+            if not k.startswith(("LD_", "DYLD_", "PYTHON", "VH_"))
+        }
+        try:
+            report = subprocess.run(
+                ["nm", "-g", "-P", "--defined-only", f"/proc/self/fd/{fd}"],
+                pass_fds=(fd,), capture_output=True, text=True,
+                timeout=45, check=False, umask=0o077, env=safe_env)
+        except (OSError, subprocess.TimeoutExpired):
+            raise ValueError("MAP02 glibc binding-class tool unavailable") from None
+        if report.returncode:
+            raise ValueError("MAP02 glibc binding-class nm failed")
+        buckets = {"strong": set(), "weak": set(), "common": set()}
+        for line in report.stdout.splitlines():
+            fields = line.split()
+            if not fields or (line.endswith(":") and len(fields) == 1):
+                continue
+            if len(fields) < 3 or len(fields[1]) != 1:
+                raise ValueError("MAP02 glibc binding-class nm malformed")
+            name, kind = fields[:2]
+            if kind in STRONG_KINDS:
+                buckets["strong"].add(name)
+            elif kind in ("W", "V"):
+                buckets["weak"].add(name)
+            elif kind == "C":
+                buckets["common"].add(name)
+            else:
+                raise ValueError("MAP02 glibc binding-class symbol type unsupported")
+        _confirm_owned(opened)
+        return buckets
+    finally:
+        os.close(opened[0])
 
 
 def audit_glibc_real_link(original_manifest, original_elf,
@@ -100,8 +142,14 @@ def audit_glibc_real_link(original_manifest, original_elf,
                 or prior.get("original_pc_still_strong_undefined") != len(pc)):
             raise ValueError("MAP02 real-glibc original origin baseline invalid")
 
-        libc_exports = _candidate_strong_exports(libc[1])
-        libm_exports = _candidate_strong_exports(libm[1])
+        libc_kinds = _archive_binding_classes(libc[1])
+        libm_kinds = _archive_binding_classes(libm[1])
+        libc_exports = libc_kinds["strong"]
+        libm_exports = libm_kinds["strong"]
+        # This must agree with the original strong-only provider implementation.
+        if (libc_exports != _candidate_strong_exports(libc[1])
+                or libm_exports != _candidate_strong_exports(libm[1])):
+            raise ValueError("MAP02 glibc strong export parsers disagree")
         c, m = pc & libc_exports, pc & libm_exports
         predicted = (
             ("original_pc_libc_only_strong_export", len(c - m)),
@@ -135,6 +183,35 @@ def audit_glibc_real_link(original_manifest, original_elf,
         sdl_left = sdl_new & after
         system_left = system_new & after
         introduced = after - before
+        # Rank mutually exclusive name-provider categories: strong > weak >
+        # common > no exported name. A successful ld-r result is measured
+        # separately; an export name alone does not imply linker selection.
+        strong = libc_kinds["strong"] | libm_kinds["strong"]
+        weak_only = (libc_kinds["weak"] | libm_kinds["weak"]) - strong
+        common_only = ((libc_kinds["common"] | libm_kinds["common"])
+                       - strong - weak_only)
+        strength = {
+            "strong": pc & strong,
+            "weak_only": pc & weak_only,
+            "common_only": pc & common_only,
+            "no_export": pc - strong - weak_only - common_only,
+        }
+        if (sum(map(len, strength.values())) != len(pc)
+                or len(strength["strong"]) != len(c | m)):
+            raise ValueError("MAP02 glibc binding-class buckets disagree")
+        resolved_pc = pc - pc_left
+        binding_counts = {}
+        for name, matches in strength.items():
+            binding_counts[f"original_pc_{name}_candidate"] = len(matches)
+            binding_counts[f"original_pc_{name}_resolved_by_ld_r"] = (
+                len(matches & resolved_pc))
+            binding_counts[f"original_pc_{name}_still_undefined"] = (
+                len(matches & pc_left))
+        if (sum(binding_counts[f"original_pc_{x}_resolved_by_ld_r"]
+                for x in strength) != len(resolved_pc)
+                or sum(binding_counts[f"original_pc_{x}_still_undefined"]
+                       for x in strength) != len(pc_left)):
+            raise ValueError("MAP02 glibc actual resolution by binding differs")
         if (len(pc_left) + len(sdl_left) + len(system_left)
                 + len(introduced) != len(after)
                 or link["final_strong_import_count"] != len(after)
@@ -157,6 +234,8 @@ def audit_glibc_real_link(original_manifest, original_elf,
             "initial_original_pc_undefined": len(pc),
             "original_pc_resolved_by_real_glibc_ld_r": len(pc - pc_left),
             "original_pc_remaining_after_real_glibc_ld_r": len(pc_left),
+            **binding_counts,
+            "name_provider_strength_does_not_prove_link_selection": True,
             "sdl2_survivors_resolved_by_real_glibc_ld_r": len(sdl_new - sdl_left),
             "sdl2_survivors_remaining_after_real_glibc_ld_r": len(sdl_left),
             "four_archive_new_resolved_by_real_glibc_ld_r": len(system_new - system_left),
