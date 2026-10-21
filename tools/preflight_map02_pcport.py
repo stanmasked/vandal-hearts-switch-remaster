@@ -92,6 +92,11 @@ def identify_disc_boot_family(path: Path) -> str:
     return "unknown"
 
 
+def identify_disc_release(path: Path) -> str:
+    """Backward-compatible alias; returns only the boot/card-ID family."""
+    return identify_disc_boot_family(path)
+
+
 def _run(args, *, cwd=None):
     try:
         return subprocess.run(args, cwd=cwd, capture_output=True, text=True,
