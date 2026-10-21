@@ -21,6 +21,11 @@ local function run(option)
   if option == "duplicate-index" then content = content:gsub("1,middle,1666", "1,middle,1664") end
   if option == "invalid-role" then content = content:gsub("1,middle,1666", "1,before,1666") end
   os.getenv = function(name)
+    if name == "VH_PRIVATE_EXPECTED_MOVIE" then
+      if option == "relative-movie" then return "not-absolute.bk2" end
+      if option == "mac-alias" then return "/var/private-movie.bk2" end
+      return "/private/private-movie.bk2"
+    end
     if name == "VH_PRIVATE_CAPTURE_PLAN" then
       return option == "relative-plan" and "fake-plan.txt" or PLAN
     end
@@ -77,6 +82,13 @@ local function run(option)
     }
   end
   movie = {
+    filename = function()
+      if option == "wrong-movie" then return "/private/some-other.bk2" end
+      if option == "mac-alias" then return "/private/var/private-movie.bk2" end
+      return "/private/private-movie.bk2"
+    end,
+    startsfromsavestate = function() return option == "savestate-movie" end,
+    startsfromsaveram = function() return option == "saveram-movie" end,
     length = function()
       return option == "wrong-length" and 500 or 933949
     end,
@@ -112,6 +124,9 @@ local function run(option)
       return {[key] = pressed}
     end,
   }
+  if option == "missing-filename-api" then movie.filename = nil end
+  if option == "missing-savestate-api" then movie.startsfromsavestate = nil end
+  if option == "missing-saveram-api" then movie.startsfromsaveram = nil end
   emu = {
     getsystemid = function()
       if option == "wrong-system" then return "NES" end
@@ -148,27 +163,28 @@ local function run(option)
   return lines, screenshots, log_lines, exit_codes
 end
 
-for _, option in ipairs({"plain", "prefixed", "boundary", "zero-counter", "sparse-start"}) do
+for _, option in ipairs({"plain", "prefixed", "boundary", "zero-counter", "sparse-start", "mac-alias"}) do
   local lines, shots, log_lines, exit_codes = run(option)
   assert(#shots == 3, option .. ": expected three screenshot calls")
-  assert(#lines == 6, option .. ": log ready, Start preflight, three captures and summary")
+  assert(#lines == 7, option .. ": log ready, movie source, Start anchor, three captures and summary")
   assert(#log_lines == #lines, option .. ": private file log must mirror console markers")
   for i = 1, #lines do
     assert(log_lines[i] == lines[i], option .. ": private log differs from console marker")
   end
   assert(lines[1] == "VH_PRIVATE_CAPTURE_LOG_READY schema=1", option .. ": missing log-ready marker")
-  assert(lines[2] == "VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 candidate_input=1661 first_start_pressed=yes ps1_input_delivery=unverified", option .. ": wrong live anchor")
+  assert(lines[2] == "VH_PRIVATE_NEUTRAL_MOVIE_SOURCE_PREFLIGHT source=poweron filename=matched core_identity=unverified", option .. ": wrong power-on source")
+  assert(lines[3] == "VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 candidate_input=1661 first_start_pressed=yes ps1_input_delivery=unverified", option .. ": wrong live anchor")
   local frames = {option == "boundary" and 1663 or 1664, 1666, 1669}
   local roles = {"before", "middle", "after"}
   for i = 1, 3 do
-    local group, role, counter, candidate, held = lines[i + 2]:match(
+    local group, role, counter, candidate, held = lines[i + 3]:match(
       "^VH_PRIVATE_NEUTRAL_CAPTURE window=(%d+) role=([a-z]+) counter=(%d+) candidate_input=(%d+) expected_buttons=([a-z]+) png=written display_offset=unverified$")
     assert(tonumber(group) == 1 and role == roles[i], option .. ": bad role/group")
     assert(tonumber(counter) == frames[i] + 1, option .. ": bad core counter")
     assert(tonumber(candidate) == frames[i], option .. ": off-by-one movie frame")
     assert(held == (i == 2 and "neutral" or "held"), option .. ": expected button state")
   end
-  assert(lines[6] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes actual_map02=unverified")
+  assert(lines[7] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes actual_map02=unverified")
   assert(#exit_codes == 1 and exit_codes[1] == 0,
          option .. ": successful bounded capture must close EmuHawk with exit code 0")
 end
@@ -180,7 +196,9 @@ for _, option in ipairs({
   "malformed-png", "invalid-role", "late-attach",
   "early-start", "missing-start", "ambiguous-start", "unknown-start",
   "nil-start-table", "git-root", "git-parent", "git-worktree",
-  "wrong-system", "system-changed", "missing-system-api", "missing-exit-api"
+  "wrong-system", "system-changed", "missing-system-api", "missing-exit-api",
+  "wrong-movie", "relative-movie", "savestate-movie", "saveram-movie",
+  "missing-filename-api", "missing-savestate-api", "missing-saveram-api"
 }) do
   local lines, shots, _, exit_codes = run(option)
   local rejected = false
