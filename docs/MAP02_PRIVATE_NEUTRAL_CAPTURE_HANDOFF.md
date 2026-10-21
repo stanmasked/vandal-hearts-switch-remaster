@@ -86,3 +86,23 @@ emulator, screenshot and file APIs, plus invented candidate input lists.
 It never loads the private BK2, game disc/BIOS, screenshots or input
 logs and **cannot** claim actual BizHawk replay or scene capture.
 Keep every PR Draft until real owner-local observations are verified.
+
+## Обязательная контрольная точка начала фильма
+
+Перед запуском Lua-зонда поставьте фильм в начало (счётчик `emu.framecount()`
+равен 0 или 1) и включите режим `PLAY` с `read-only`. В новой версии
+скрипт **отказывает при позднем подключении**, а также требует
+непрерывного последовательного продвижения кадров до первого Start:
+
+- Кадр ввода BK2 1660: Start отпущена.
+- Кадр ввода BK2 1661: Start нажата, причём Lua считывает
+  `movie.getinput(1661, 1)` в текущем воспроизведении.
+
+После этого выводится отдельная приватная строка
+`VH_PRIVATE_NEUTRAL_START_PREFLIGHT` с `counter=1662`,
+`candidate_input=1661` и отметкой, что PS1 input delivery ещё
+не подтверждена. Если её нет или она следует после снимков,
+дальнейший аудитор отклонит весь захват. Это предотвращает
+случайное принятие захвата, начатого из середины BK2, за непрерывное
+воспроизведение. Однако счётчик и строку Lua можно искусственно
+подделать: **это не доказательство реального старта PlayStation**.
