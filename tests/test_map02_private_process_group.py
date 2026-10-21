@@ -5,6 +5,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import Mock, patch
 
@@ -65,6 +66,39 @@ class OwnerProcessGroupTests(unittest.TestCase):
                     timeout=5,
                 )
         self.assertEqual(signal_group.call_count, 2)
+
+    @unittest.skipIf(os.name == "nt", "POSIX process group signals only")
+    def test_timeout_stops_synthetic_shell_wrapper_descendant(self):
+        # A fictional Python wrapper starts another fictional Python worker
+        # in the same POSIX group. The worker writes a harmless heartbeat.
+        # After timeout, the heartbeat must stop: process-group termination
+        # is verified as an effect, not just a mocked os.killpg call.
+        worker_source = (
+            "import pathlib, sys, time\n"
+            "marker = pathlib.Path(sys.argv[1])\n"
+            "while True:\n"
+            "    with marker.open('ab') as file: file.write(b'x')\n"
+            "    time.sleep(0.04)\n"
+        )
+        wrapper_source = (
+            "import subprocess, sys, time\n"
+            "subprocess.Popen([sys.executable, '-c', sys.argv[2], sys.argv[1]])\n"
+            "time.sleep(30)\n"
+        )
+        with tempfile.TemporaryDirectory() as root:
+            heartbeat = Path(root) / "invented-worker-heartbeat.bin"
+            with self.assertRaises(subprocess.TimeoutExpired):
+                run_owned_process(
+                    [sys.executable, "-c", wrapper_source,
+                     str(heartbeat), worker_source],
+                    env=os.environ.copy(), stdout=subprocess.DEVNULL,
+                    timeout=1.5,
+                )
+            self.assertTrue(heartbeat.is_file())
+            self.assertGreater(heartbeat.stat().st_size, 0)
+            stopped_size = heartbeat.stat().st_size
+            time.sleep(0.25)
+            self.assertEqual(heartbeat.stat().st_size, stopped_size)
 
     @unittest.skipIf(os.name == "nt", "POSIX process group signals only")
     def test_actual_synthetic_timeout_refuses_success(self):
