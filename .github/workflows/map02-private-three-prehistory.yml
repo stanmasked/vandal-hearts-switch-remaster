@@ -1,0 +1,45 @@
+name: MAP02 private BK2 three-prehistory animation witness (synthetic CI)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-private-three-prehistory.yml'
+      - 'tools/verify_map02_private_three_pre_history.py'
+      - 'tests/test_verify_map02_private_three_pre_history.py'
+      - 'docs/MAP02_PRIVATE_THREE_PREHISTORY.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-prehistory:
+    name: Invented three-pre history (${{ matrix.os }} Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.9'
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: macos-15-intel
+            python: '3.11'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Install Pillow for invented PNG fixtures
+        shell: bash
+        run: python -m pip install 'Pillow>=10,<12'
+      - name: Verify 14 synthetic three-prehistory cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_verify_map02_private_three_pre_history.py' -v             2>&1 | tee "$RUNNER_TEMP/map02-three-prehistory.log"
+          grep -F 'Ran 14 tests' "$RUNNER_TEMP/map02-three-prehistory.log"
+          if grep -E '^(FAILED|ERROR)' "$RUNNER_TEMP/map02-three-prehistory.log"; then exit 1; fi
+          echo 'VH_MAP02_THREE_PREHISTORY_PASS synthetic=14 original_bk2=0 private_png=0 map02_scene_authenticated=0'
