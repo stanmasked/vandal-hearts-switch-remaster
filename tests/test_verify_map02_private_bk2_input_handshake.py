@@ -65,7 +65,8 @@ class Map02PrivateInputHandshakeTests(unittest.TestCase):
         for key in ("actual_emulated_input_delivery_verified",
                     "emulator_to_bk2_frame_offset_independently_verified",
                     "map02_scene_frame_identified", "original_game_boot_confirmed",
-                    "ps1_gpu_or_vram_verified"):
+                    "ps1_gpu_or_vram_verified",
+                    "actual_lua_runtime_execution_verified"):
             self.assertFalse(report[key])
 
     def test_off_by_one_counter_refused(self):
