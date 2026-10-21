@@ -24,6 +24,9 @@ USER_DATA_BYTES = 2048
 PVD_LBA = 16
 MAP02_LBA = 7116
 MAP02_BYTES = 22783
+# Owner-local RU v1.6 image length from the independent disc inventory.
+# A valid MAP02 sector range alone does not establish a complete disc image.
+EXPECTED_BIN_BYTES = 664849248
 EXPECTED_VOLUME_ID = "SLUS_00447"
 EXPECTED_MAP02_SHA256 = "c370660f7f13e6d6e76f4126a45418bc9c64c747de8309ca946d37b502516387"
 MAX_CUE_BYTES = 64 * 1024
@@ -149,11 +152,14 @@ def _raw_sector(fd: int, lba: int, file_size: int) -> bytes:
     return sector
 
 
-def _disc_profile(bin_path: Path, expected_map02_sha256: str) -> tuple[bool, bool]:
+def _disc_profile(bin_path: Path, expected_map02_sha256: str) -> tuple[bool, bool, bool]:
     fd, before = _open_stable(bin_path)
     try:
         if before.st_size <= 0 or before.st_size % SECTOR_BYTES:
             raise ValueError("BIN is not aligned to 2352-byte raw sectors")
+        # Do not accept a truncated image containing only the probed PVD and
+        # MAP02 resource, or a differently-sized image with those bytes copied.
+        size_match = before.st_size == EXPECTED_BIN_BYTES
         required_sectors = MAP02_LBA + (MAP02_BYTES + USER_DATA_BYTES - 1) // USER_DATA_BYTES
         if before.st_size < required_sectors * SECTOR_BYTES:
             raise ValueError("BIN is too short for audited MAP02 resource")
@@ -178,7 +184,7 @@ def _disc_profile(bin_path: Path, expected_map02_sha256: str) -> tuple[bool, boo
         raise ValueError("incomplete MAP02 resource read")
     resource_match = hashlib.sha256(payload).hexdigest() == expected_map02_sha256
     volume_match = volume_id == EXPECTED_VOLUME_ID
-    return volume_match, resource_match
+    return volume_match, resource_match, size_match
 
 
 def _movie_metadata(movie_path: Path) -> tuple[bool, bool]:
@@ -221,15 +227,16 @@ def inspect_pair(cue_path: Path, movie_path: Path, *,
     cue_text = _read_cue(cue)
     bin_name = _parse_cue(cue_text)
     bin_path = _resolve_private_file(cue.parent / bin_name)
-    volume_match, resource_match = _disc_profile(bin_path, expected_map02_sha256)
+    volume_match, resource_match, size_match = _disc_profile(bin_path, expected_map02_sha256)
     movie_header_match, movie_sync_match = _movie_metadata(movie)
-    profile_match = volume_match and resource_match
+    profile_match = volume_match and resource_match and size_match
     ready = profile_match and movie_header_match and movie_sync_match
     return {
         "schema": SCHEMA,
         "cue_single_mode2_2352_track": True,
         "iso9660_pvd_valid": True,
         "disc_volume_id_matches_audited_profile": volume_match,
+        "disc_size_matches_audited_profile": size_match,
         "map02_prs_matches_expected_profile": resource_match,
         "movie_header_matches_vandal_hearts_usa_psx_octoshock": movie_header_match,
         "movie_sync_matches_one_controller_no_cards": movie_sync_match,
