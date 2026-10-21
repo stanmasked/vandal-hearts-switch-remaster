@@ -115,6 +115,7 @@ def inspect_movie(private_movie: Path, *, minimum=DEFAULT_MINIMUM,
     movie = Path(private_movie)
     if movie.is_symlink() or not movie.is_file():
         raise ValueError("source must be regular and not a symlink")
+    movie = _reject_git_checkout(movie)
     info = movie.stat()
     if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= MAX_BK2_ARCHIVE:
         raise ValueError("source archive exceeds bounded size")
