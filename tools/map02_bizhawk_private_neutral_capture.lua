@@ -125,6 +125,7 @@ while true do
       return fail("start_anchor_press_missing_or_ambiguous")
     end
     first_start_on_seen = true
+    print("VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 candidate_input=1661 first_start_pressed=yes ps1_input_delivery=unverified")
   elseif index > 1661 and not first_start_on_seen then
     return fail("start_anchor_was_not_observed_live")
   end
