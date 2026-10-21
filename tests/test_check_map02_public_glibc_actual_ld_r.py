@@ -4,7 +4,9 @@ from pathlib import Path
 import unittest
 
 from tools.check_map02_public_glibc_pc_provider_census import audit_glibc_static_coverage
-from tools.check_map02_public_glibc_actual_ld_r import audit_glibc_real_link, SCHEMA
+from tools.check_map02_public_glibc_actual_ld_r import (
+    audit_glibc_real_link, _reject_strong_to_weak_undefined, SCHEMA,
+)
 from tests.test_check_map02_public_glibc_pc_provider_census import (
     OriginalPCGLibCProviderCensusTests as Fixture,
 )
@@ -16,7 +18,8 @@ class RealGlibcGroupedLinkTests(unittest.TestCase):
     archive = Fixture.archive
     make_manifest = Fixture.make_manifest
 
-    def build_case(self, *, independent_provider_members=True):
+    def build_case(self, *, independent_provider_members=True,
+                   weak_libc_export=False):
         # In a real group, 'both' duplicated within selected members causes a
         # legitimate multiple-definition linker failure. Split libm members
         # for the positive case so the double-export remains selectable but
@@ -25,6 +28,14 @@ class RealGlibcGroupedLinkTests(unittest.TestCase):
             part = self.compile("libm-only", "int orig_libm(void){return 3;}\n")
             alternate = self.compile("libm-alternate", "int orig_both(void){return 4;}\n")
             self.libm = self.archive("libm-separate-members.a", part, alternate)
+        if weak_libc_export:
+            # libc member is selected by strong orig_both; the same selected
+            # member also exports a weak orig_libc that must be attributed.
+            libc_member = self.compile(
+                "libc-weak-member",
+                "int orig_both(void){return 2;}\n"
+                "__attribute__((weak)) int orig_libc(void){return 1;}\n")
+            self.libc = self.archive("libc-with-weak-member.a", libc_member)
         census = audit_glibc_static_coverage(
             self.orig_manifest, self.original, self.sdl_manifest,
             self.sdl_elf, self.four_elf, self.libc, self.libm,
@@ -52,6 +63,12 @@ class RealGlibcGroupedLinkTests(unittest.TestCase):
         self.assertEqual(result["initial_original_pc_undefined"], 4)
         self.assertEqual(result["original_pc_resolved_by_real_glibc_ld_r"], 3)
         self.assertEqual(result["original_pc_remaining_after_real_glibc_ld_r"], 1)
+        self.assertEqual(result["original_pc_strong_candidate"], 3)
+        self.assertEqual(result["original_pc_strong_resolved_by_ld_r"], 3)
+        self.assertEqual(result["original_pc_weak_only_candidate"], 0)
+        self.assertEqual(result["original_pc_common_only_candidate"], 0)
+        self.assertEqual(result["original_pc_no_export_candidate"], 1)
+        self.assertEqual(result["original_pc_no_export_still_undefined"], 1)
         self.assertEqual(result["sdl2_survivors_resolved_by_real_glibc_ld_r"], 0)
         self.assertEqual(result["four_archive_new_remaining_after_real_glibc_ld_r"], 1)
         self.assertEqual(result["glibc_new_strong_undefined"], 0)
@@ -59,10 +76,27 @@ class RealGlibcGroupedLinkTests(unittest.TestCase):
         self.assertTrue(result["actual_native_grouped_ld_r_executed"])
         self.assertFalse(result["fully_linked_game_executable"])
         self.assertFalse(result["authentic_map02_execution_proven"])
+        self.assertEqual(result["strong_input_still_weak_undefined"], 0)
         self.assertFalse(result["private_symbol_names_disclosed"])
         for sensitive in ("orig_libc", "orig_libm", "orig_both",
                           "orig_uncovered", str(self.root)):
             self.assertNotIn(sensitive, json.dumps(result))
+
+    def test_real_weak_definition_resolves_from_selected_archive_member(self):
+        self.build_case(weak_libc_export=True)
+        result = self.probe("weak-actual")
+        self.assertEqual(result["original_pc_strong_candidate"], 2)
+        self.assertEqual(result["original_pc_strong_resolved_by_ld_r"], 2)
+        self.assertEqual(result["original_pc_weak_only_candidate"], 1)
+        self.assertEqual(result["original_pc_weak_only_resolved_by_ld_r"], 1)
+        self.assertEqual(result["original_pc_weak_only_still_undefined"], 0)
+        self.assertEqual(result["original_pc_no_export_candidate"], 1)
+        self.assertEqual(result["original_pc_resolved_by_real_glibc_ld_r"], 3)
+
+    def test_strong_to_weak_undefined_is_not_resolved(self):
+        with self.assertRaisesRegex(ValueError, "remains weak-undefined"):
+            _reject_strong_to_weak_undefined({"still_ref"}, {"still_ref"})
+        _reject_strong_to_weak_undefined({"actually_resolved"}, {"other_weak"})
 
     def test_report_source_sha_mismatch_fails_before_link(self):
         self.build_case()

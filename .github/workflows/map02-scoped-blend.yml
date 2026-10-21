@@ -922,6 +922,24 @@ jobs:
           assert result["libm_archive_sha256"] == census["copied_native_libm_archive_sha256"]
           assert result["initial_four_group_undefined"] == 983
           assert result["initial_original_pc_undefined"] == 493
+          assert (result["original_pc_strong_candidate"] ==
+                  census["original_pc_with_libc_strong_export"] +
+                  census["original_pc_libm_only_strong_export"] == 51)
+          strengths = ("strong", "weak_only", "common_only", "no_export")
+          assert sum(result[f"original_pc_{kind}_candidate"]
+                     for kind in strengths) == 493
+          assert (sum(result[f"original_pc_{kind}_resolved_by_ld_r"]
+                      for kind in strengths) ==
+                  result["original_pc_resolved_by_real_glibc_ld_r"])
+          assert (sum(result[f"original_pc_{kind}_still_undefined"]
+                      for kind in strengths) ==
+                  result["original_pc_remaining_after_real_glibc_ld_r"])
+          assert all(
+              result[f"original_pc_{kind}_resolved_by_ld_r"] +
+              result[f"original_pc_{kind}_still_undefined"] ==
+              result[f"original_pc_{kind}_candidate"]
+              for kind in strengths)
+          assert result["name_provider_strength_does_not_prove_link_selection"] is True
           assert (result["original_pc_resolved_by_real_glibc_ld_r"] +
                   result["original_pc_remaining_after_real_glibc_ld_r"] == 493)
           assert (result["original_pc_remaining_after_real_glibc_ld_r"] +
@@ -931,12 +949,19 @@ jobs:
                   result["final_strong_undefined"])
           assert result["actual_native_grouped_ld_r_executed"] is True
           assert result["final_product_is_elf_rel_only"] is True
+          assert result["strong_input_still_weak_undefined"] == 0
+          assert result["final_weak_undefined"] >= 0
           assert result["fully_linked_game_executable"] is False
           assert result["authentic_map02_execution_proven"] is False
           assert result["switch_game_proven"] is False
           assert result["private_symbol_names_disclosed"] is False
           print("Original PC imports actually resolved by native libc/libm:",
                 result["original_pc_resolved_by_real_glibc_ld_r"])
+          print("Resolved original PC imports by export binding:",
+                {kind: result[f"original_pc_{kind}_resolved_by_ld_r"]
+                 for kind in strengths})
+          print("Remaining original PC imports without named archive export:",
+                result["original_pc_no_export_still_undefined"])
           print("Original PC imports remaining:",
                 result["original_pc_remaining_after_real_glibc_ld_r"])
           print("This is only an ELF ET_REL, never a complete playable game.")
