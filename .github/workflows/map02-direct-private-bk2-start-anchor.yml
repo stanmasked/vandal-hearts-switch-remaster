@@ -1,0 +1,46 @@
+name: MAP02 direct private BK2 Start anchor (fictional CI)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-direct-private-bk2-start-anchor.yml'
+      - 'tools/verify_map02_direct_private_bk2_anchor.py'
+      - 'tests/test_verify_map02_direct_private_bk2_anchor.py'
+      - 'docs/MAP02_DIRECT_PRIVATE_BK2_START_ANCHOR.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-complete-bk2:
+    name: Fictional 933949-frame movie (${{ matrix.os }} Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.9'
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: macos-15-intel
+            python: '3.11'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Verify 13 synthetic tests against a generated fictional full-length BK2
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_verify_map02_direct_private_bk2_anchor.py' -v \
+            2>&1 | tee /tmp/vh-map02-direct-bk2-fixture.log
+          grep -F 'Ran 13 tests' /tmp/vh-map02-direct-bk2-fixture.log
+          if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-direct-bk2-fixture.log; then
+            exit 1
+          fi
+          echo 'VH_MAP02_DIRECT_BK2_PASS synthetic=13 owner_bk2=0 real_ps1=0 actual_octoshock=0 scene=unknown'
