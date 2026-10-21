@@ -47,6 +47,33 @@ remains supported. CI only confirms compilation, **not** runtime load,
 service injection, movie replay, BIOS, actual disc mount or MAP02
 frames.
 
+## Stage502: real DLL discovery and constructor smoke
+
+An additional **Windows .NET Framework** executable now inspects and
+instantiates the compiled witness against the exact official BizHawk 2.11
+assemblies. Its test mirrors the source of
+`ExternalToolManager.GenerateToolTipFromFileName()`, checking that:
+
+- the DLL directly references BizHawk;
+- there is exactly one concrete `IExternalToolForm` entry class annotated
+  `[ExternalTool]`, with the expected tool name;
+- the `IEmulator` property is publicly writable and decorated with
+  `[RequiredService]`;
+- creating the Windows Form in the standalone host succeeds, and calling
+  `Restart()` without an injected PSX core leaves the **Save** button
+  disabled (failure-closed).
+
+The workflow uses the pinned release binaries and places only our
+experimental DLL into the release's `ExternalTools` directory in CI.
+It deliberately does **not** launch `EmuHawk.exe`, load a PS1 game,
+attach BIOS, deliver controller inputs or capture frames.
+
+A passed Stage502 smoke test therefore supports **DLL discovery
+metadata and constructor safety in a release-compatible .NET process**,
+not in-process injection by the genuine EmuHawk UI. True loaded core,
+firmware/media identity and BK2/MAP02 visual parity still require
+owner-local runtime evidence.
+
 ## Owner-local build (requires a matching, unmodified BizHawk source tree)
 
 1. Use your own BizHawk **2.11** source tree and local EmuHawk build/output.
