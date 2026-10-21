@@ -8,6 +8,7 @@ import unittest
 from tools.check_map02_public_pc_unresolved_module_owners import (
     SCHEMA, LINK_SCHEMA, summarize_owner_groups,
     summarize_game_only_fanout, read_link_report,
+    parse_readelf_global_undefined_types, summarize_high_fanout_elf_types,
 )
 from tools.check_map02_public_reloc_link import _undefined_symbol_names
 
@@ -76,6 +77,75 @@ class ModuleOwnerTests(unittest.TestCase):
         self.assertEqual(output["game_only_fanout_one"], 1)
         self.assertEqual(output["game_only_reference_pairs"], 1)
         self.assertEqual(output["game_only_max_caller_objects_per_symbol"], 1)
+
+    def test_strict_readelf_global_undefined_types_from_real_nm_style_rows(self):
+        example = (
+            "Symbol table '.symtab' contains 8 entries:\\n"
+            "  Num:    Value          Size Type    Bind   Vis      Ndx Name\\n"
+            "    1: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND method\\n"
+            "    2: 0000000000000000     0 OBJECT  GLOBAL DEFAULT  UND buffer\\n"
+            "    3: 0000000000000000     0 NOTYPE  GLOBAL DEFAULT  UND unknown\\n"
+            "    4: 0000000000000000     0 FUNC    WEAK   DEFAULT  UND weak_only\\n"
+            "    5: 0000000000000000    11 FUNC    GLOBAL DEFAULT    1 defined\\n"
+        ).replace("\\\\n", "\\n")
+        classes = parse_readelf_global_undefined_types(example)
+        self.assertEqual(classes, {
+            "method": {"FUNC"}, "buffer": {"OBJECT"},
+            "unknown": {"NOTYPE"},
+        })
+
+    def test_high_fanout_native_type_marker_partition_and_shared_exclusion(self):
+        game = [{"fun", "obj", "mixed", "unknown", "other", "shared"}
+                for _ in range(8)]
+        game[0].add("rare")
+        table = [{
+            "fun": {"FUNC"}, "obj": {"OBJECT"},
+            "mixed": {"FUNC"} if i == 0 else {"OBJECT"},
+            "unknown": {"NOTYPE"}, "other": {"TLS"},
+            "shared": {"FUNC"}, "rare": {"NOTYPE"},
+        } for i in range(8)]
+        report = summarize_high_fanout_elf_types(
+            {"fun", "obj", "mixed", "unknown", "other", "shared", "rare"},
+            game, [{"shared"}], table, minimum_callers=8)
+        self.assertEqual(report["high_fanout_game_only_imports"], 5)
+        for key in ("function_marker", "object_marker",
+                    "mixed_function_object", "notype_only",
+                    "other_or_unknown"):
+            self.assertEqual(report["high_fanout_elf_" + key], 1)
+        self.assertEqual(report["high_fanout_with_any_notype_declaration"], 1)
+        self.assertTrue(report["elf_symbol_type_is_not_proof_of_abi_or_runtime_calls"])
+
+    def test_high_fanout_missing_elf_type_evidence_fails_closed(self):
+        games = [{"wide"} for _ in range(8)]
+        witnesses = [{"wide": {"FUNC"}} for _ in range(7)] + [{}]
+        with self.assertRaisesRegex(ValueError, "witness"):
+            summarize_high_fanout_elf_types(
+                {"wide"}, games, [], witnesses)
+
+    def test_real_compiler_produces_parseable_undefined_global_elf_metadata(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            source = root / "caller.c"
+            obj = root / "caller.o"
+            source.write_text(
+                "extern int external_global;\\n"
+                "extern int external_function(void);\\n"
+                "int call(void) { return external_global + external_function(); }\\n"
+            )
+            subprocess.run(
+                ["cc", "-c", str(source), "-o", str(obj)],
+                check=True, capture_output=True, timeout=30)
+            nm = subprocess.run(
+                ["nm", "-u", str(obj)], check=True,
+                capture_output=True, text=True, timeout=30)
+            readelf = subprocess.run(
+                ["readelf", "-Ws", str(obj)], check=True,
+                capture_output=True, text=True, timeout=30)
+            strong, _ = _undefined_symbol_names(nm.stdout)
+            types = parse_readelf_global_undefined_types(readelf.stdout)
+            self.assertIn("external_global", strong)
+            self.assertIn("external_function", strong)
+            self.assertTrue(set(strong).issubset(types))
 
     def test_unattributed_name_not_silently_counted_as_owned(self):
         r = summarize_owner_groups(
