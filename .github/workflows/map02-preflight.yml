@@ -1,0 +1,33 @@
+name: MAP02 PC-port preflight semantics
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-preflight.yml'
+      - 'tools/preflight_map02_pcport.py'
+      - 'tests/test_preflight_map02_pcport.py'
+      - 'docs/MAP02_PC_PORT_PREFLIGHT.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preflight-tests:
+    name: Preflight contract (Python ${{ matrix.python }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Run synthetic preflight contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_preflight_map02_pcport.py' -v
+          echo "VH_MAP02_PC_PREFLIGHT_CONTRACT_PASS python=${{ matrix.python }} original_disc=0 proprietary_assets=0"
