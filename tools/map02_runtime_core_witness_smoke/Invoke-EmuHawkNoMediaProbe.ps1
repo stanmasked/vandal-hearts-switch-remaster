@@ -31,33 +31,35 @@ public static class VhNoMediaWindows {
         return text.ToString();
     }
 
-    public static bool HasDisabledWitnessWindow(int processId) {
-        bool matched = false;
+    // Bounded aggregate, never a process ID, handle, private path or title.
+    // 0=all top-level process windows, 1=visible, 2=matching tool windows,
+    // 3=matching Save buttons, 4=matching disabled Save buttons.
+    public static int[] Probe(int processId) {
+        var counts = new int[5];
         EnumWindows((window, param) => {
             uint owner;
             GetWindowThreadProcessId(window, out owner);
-            if (owner != (uint)processId || !IsWindowVisible(window)
+            if (owner != (uint)processId) return true;
+            counts[0]++;
+            if (IsWindowVisible(window)) counts[1]++;
+            if (!IsWindowVisible(window)
                 || Title(window) != "VH MAP02 PSX core witness") return true;
-
-            int saveCount = 0;
-            int disabledSaveCount = 0;
+            counts[2]++;
             EnumChildWindows(window, (child, arg) => {
                 var classname = new StringBuilder(40);
                 GetClassName(child, classname, classname.Capacity);
-                if (classname.ToString() == "WindowsForms10.BUTTON.app.0"
-                    || classname.ToString().StartsWith("WindowsForms10.BUTTON.")
+                if (classname.ToString().StartsWith("WindowsForms10.BUTTON.")
                     || classname.ToString() == "Button") {
                     if (Title(child) == "Write private core witness...") {
-                        saveCount++;
-                        if (!IsWindowEnabled(child)) disabledSaveCount++;
+                        counts[3]++;
+                        if (!IsWindowEnabled(child)) counts[4]++;
                     }
                 }
                 return true;
             }, IntPtr.Zero);
-            if (saveCount == 1 && disabledSaveCount == 1) matched = true;
             return true;
         }, IntPtr.Zero);
-        return matched;
+        return counts;
     }
 }
 '@ -ReferencedAssemblies @('System.dll')
@@ -79,16 +81,36 @@ $hosted = Start-Process -FilePath $emulator -WorkingDirectory $root `
     -ArgumentList @('--open-ext-tool-dll', 'VhMap02CoreWitness.dll') -PassThru
 try {
     $observed = $false
-    for ($i=0; $i -lt 90; $i++) {
+    $diagnostic = @(0, 0, 0, 0, 0)
+    for ($i=0; $i -lt 50; $i++) {
         $hosted.Refresh()
         if ($hosted.HasExited) { throw 'no-media EmuHawk exited before tool appeared' }
-        if ([VhNoMediaWindows]::HasDisabledWitnessWindow($hosted.Id)) {
+        $diagnostic = [VhNoMediaWindows]::Probe($hosted.Id)
+        if ($diagnostic[2] -eq 1 -and $diagnostic[3] -eq 1 -and $diagnostic[4] -eq 1) {
             $observed = $true
             break
         }
         Start-Sleep -Milliseconds 500
     }
-    if (-not $observed) { throw 'no-media EmuHawk tool window was not witnessed' }
+    if (-not $observed) {
+        # These are simple bounded booleans only. Do not print PID,
+        # window captions, stack traces, installation or media paths.
+        $sameSession = [int]($hosted.SessionId -eq [System.Diagnostics.Process]::GetCurrentProcess().SessionId)
+        $hasWindow = [int]($diagnostic[0] -gt 0)
+        $hasVisibleWindow = [int]($diagnostic[1] -gt 0)
+        $hasTool = [int]($diagnostic[2] -gt 0)
+        $hasButton = [int]($diagnostic[3] -gt 0)
+        $hasDisabledButton = [int]($diagnostic[4] -gt 0)
+        Write-Output ("VH_MAP02_REAL_EMUHAWK_NOMEDIA_DIAGNOSTIC"
+            + " same_windows_session=$sameSession"
+            + " process_window_found=$hasWindow"
+            + " visible_process_window_found=$hasVisibleWindow"
+            + " plugin_window_found=$hasTool"
+            + " save_button_found=$hasButton"
+            + " disabled_save_found=$hasDisabledButton"
+            + " real_octoshock_authenticated=0")
+        throw 'no-media EmuHawk tool window was not witnessed'
+    }
 
     Write-Output 'VH_MAP02_REAL_EMUHAWK_NOMEDIA_PLUGIN_UI_PASS genuine_process=1 actual_tool_window=1 save_disabled_no_psx=1 rom=0 bios=0 bk2=0 png=0 active_octoshock=unverified'
 } finally {
