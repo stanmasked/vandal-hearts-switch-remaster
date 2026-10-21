@@ -67,6 +67,8 @@ jobs:
           name: map02-stage304-real-userspace-alsa-hint${{ matrix.hint }}
           path: |
             evidence/stage304-real-alsa-userfunc-receipt.json
+            evidence/stage304-sanitized-early-exit.json
+            evidence/host-early-exit-code.txt
             evidence/host-alsa-avail-delay-usertrace.csv
             evidence/research-alsa-preload-sha256.txt
             evidence/stage301-pulse-subscribe-verified.json
