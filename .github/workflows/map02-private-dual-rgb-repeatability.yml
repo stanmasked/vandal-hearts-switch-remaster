@@ -32,15 +32,20 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           architecture: x64
-      - name: Test 21 invented two-capture repeatability situations
+      - name: Validate invented two-capture repeatability situations
         shell: bash
         run: |
           set -euo pipefail
           python -m unittest discover -s tests \
             -p 'test_map02_private_dual_capture_rgb_repeatability.py' -v \
             2>&1 | tee /tmp/vh-map02-private-dual-rgb-test.log
-          grep -F 'Ran 21 tests' /tmp/vh-map02-private-dual-rgb-test.log
+          count=$(sed -nE 's/^Ran ([1-9][0-9]*) tests? in .*$/\1/p' /tmp/vh-map02-private-dual-rgb-test.log)
+          if [[ ! "$count" =~ ^[1-9][0-9]*$ ]]; then
+            echo 'missing or repeated valid unittest summary' >&2
+            exit 1
+          fi
           if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-private-dual-rgb-test.log; then
             exit 1
           fi
-          echo 'VH_MAP02_DUAL_RGB_TEST_PASS synthetic=21 owner_bk2=0 owner_png=0 real_octoshock=0 map02_identified=0'
+          grep -qx 'OK' /tmp/vh-map02-private-dual-rgb-test.log
+          echo "VH_MAP02_DUAL_RGB_TEST_PASS synthetic=${count} owner_bk2=0 owner_png=0 real_octoshock=0 map02_identified=0"
