@@ -167,6 +167,15 @@ local function run(option)
       return "PSX"
     end,
     framecount = function() return counter end,
+    lagcount = function()
+      if option == "lag-counter-errors" then error("fictional lag API fault") end
+      if option == "lag-counter-NaN" then return 0 / 0 end
+      if option == "lag-counter-negative" then return -1 end
+      if option == "lag-counter-too-large" then return counter + 1 end
+      if option == "lag-counter-fractional" then return 1.5 end
+      if option == "lag-counter-regresses" and counter >= 1667 then return 1 end
+      return math.floor(counter / 10)
+    end,
     getdisplaytype = function()
       if option == "unknown-display" then return "UNKNOWN" end
       if option == "display-changes" and counter >= 1665 then return "PAL" end
@@ -189,6 +198,7 @@ local function run(option)
     end,
   }
   if option == "missing-system-api" then emu.getsystemid = nil end
+  if option == "missing-lag-api" then emu.lagcount = nil end
   client = {
     getversion = function()
       if option == "bad-version" then return "2.11\nPRIVATE_PATH" end
@@ -230,12 +240,13 @@ for _, option in ipairs({"plain", "prefixed", "boundary", "zero-counter", "spars
   local frames = {option == "boundary" and 1663 or 1664, 1666, 1669}
   local roles = {"before", "middle", "after"}
   for i = 1, 3 do
-    local group, role, counter, candidate, held = lines[i + 4]:match(
-      "^VH_PRIVATE_NEUTRAL_CAPTURE window=(%d+) role=([a-z]+) counter=(%d+) candidate_input=(%d+) expected_buttons=([a-z]+) png=written display_offset=unverified$")
+    local group, role, counter, candidate, held, lag_count = lines[i + 4]:match(
+      "^VH_PRIVATE_NEUTRAL_CAPTURE window=(%d+) role=([a-z]+) counter=(%d+) candidate_input=(%d+) expected_buttons=([a-z]+) lag_count=(%d+) png=written display_offset=unverified$")
     assert(tonumber(group) == 1 and role == roles[i], option .. ": bad role/group")
     assert(tonumber(counter) == frames[i] + 1, option .. ": bad core counter")
     assert(tonumber(candidate) == frames[i], option .. ": off-by-one movie frame")
     assert(held == (i == 2 and "neutral" or "held"), option .. ": expected button state")
+    assert(tonumber(lag_count) == math.floor((frames[i] + 1) / 10), option .. ": bad PSX lag metric")
   end
   assert(lines[8] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes game_rom_id_sampled=stable core_input_poll_observed=yes actual_map02=unverified")
   assert(#exit_codes == 1 and exit_codes[1] == 0,
@@ -257,7 +268,9 @@ for _, option in ipairs({
   "bad-version", "missing-version-api", "missing-display-api",
   "unknown-display", "display-changes",
   "game-id-read-error", "malformed-game-id",
-  "game-id-changes", "game-id-changes-at-start"
+  "game-id-changes", "game-id-changes-at-start",
+  "lag-counter-errors", "lag-counter-NaN", "lag-counter-negative",
+  "lag-counter-too-large", "lag-counter-fractional", "lag-counter-regresses"
 }) do
   local lines, shots, _, exit_codes = run(option)
   local rejected = false
@@ -289,6 +302,14 @@ for _, option in ipairs({"missing-gameinfo", "missing-game-hash-api", "empty-gam
   local lines, shots, _, exit_codes = run(option)
   assert(#shots == 3 and #exit_codes == 1 and exit_codes[1] == 0)
   assert(lines[8] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes game_rom_id_sampled=unavailable core_input_poll_observed=yes actual_map02=unverified")
+end
+do
+  local lines, shots, _, exits = run("missing-lag-api")
+  assert(#shots == 3 and #exits == 1 and exits[1] == 0)
+  for i = 5, 7 do
+    assert(lines[i]:find(" lag_count=unavailable png=written ", 1, true),
+           "lag counter missing must be explicit, not synthetic")
+  end
 end
 old_print("VH_MAP02_NEUTRAL_CAPTURE_LUA_MOCK_PASS cases=" .. scenarios ..
           " owner_bk2=0 actual_bizhawk=0 map02_verified=0")
