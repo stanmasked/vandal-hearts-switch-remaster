@@ -77,6 +77,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
             "--lua=" + str(self.lua.resolve()), str(self.disc.resolve()),
         ])
         self.assertEqual(env["VH_PRIVATE_CAPTURE_PLAN"], str(self.plan.resolve()))
+        self.assertEqual(env["VH_PRIVATE_EXPECTED_MOVIE"], str(self.bk2.resolve()))
         self.assertEqual(env["VH_PRIVATE_PNG_DIR"], str(self.output.resolve()))
         self.assertEqual(env["VH_PRIVATE_CAPTURE_LOG"],
                          str((self.output / "vh_private_capture.log").resolve()))
