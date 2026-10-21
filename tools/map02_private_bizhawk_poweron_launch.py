@@ -17,6 +17,7 @@ import stat
 import subprocess
 
 from tools.map02_private_bk2_capture_plan import plan_lines
+from tools.map02_private_disc_movie_preflight import inspect_pair
 from tools.verify_map02_private_neutral_capture_chain import parse_plan
 
 MOVIE_LENGTH = 933949
@@ -65,6 +66,12 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
         raise ValueError("PNG output must be an existing private absolute directory")
     root = root.resolve(strict=True)
     _reject_git(root)
+
+    # Validate the known disc/MAP02 resource profile and BK2 metadata before
+    # deriving a plan or allowing the caller to launch EmuHawk.
+    media = inspect_pair(disc, movie)
+    if not media["media_preflight_ready_for_owner_replay"]:
+        raise ValueError("disc/movie media preflight did not match audited profile")
 
     # Re-derive the *exact* owner-private capture plan directly from the
     # current source BK2, before launching an emulator. No input export.
