@@ -63,7 +63,7 @@ class CaptureAuditTests(unittest.TestCase):
                             (group, role, index + 1))).write_bytes(
                                 invented_png(i + 1))
 
-    def write_log(self, *, complete=True):
+    def write_log(self, *, complete=True, process_exit=True, exit_success=1):
         data = ["unrelated pretend emulator console text",
                 "VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 "
                 "candidate_input=1661 first_start_pressed=yes "
@@ -73,6 +73,9 @@ class CaptureAuditTests(unittest.TestCase):
             data.append("VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=%d "
                         "movie_input_only=yes actual_map02=unverified" %
                         len(self.records))
+        if process_exit:
+            data.append("VH_PRIVATE_BIZHAWK_LOCAL_PROCESS_EXITED exit_success=%d "
+                        "original_ps1_authenticated=0 map02_identified=0" % exit_success)
         self.log.write_text("\n".join(data) + "\n", encoding="utf-8")
 
     def call(self, *, expected=None, **kwargs):
@@ -176,6 +179,28 @@ class CaptureAuditTests(unittest.TestCase):
 
     def test_missing_completion_refused(self):
         self.write_log(complete=False)
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_nonzero_launcher_exit_refused(self):
+        self.write_log(exit_success=0)
+        with self.assertRaisesRegex(ValueError, "process exit marker is invalid"):
+            self.call()
+
+    def test_missing_launcher_exit_marker_refused(self):
+        self.write_log(process_exit=False)
+        with self.assertRaisesRegex(ValueError, "successful process exit"):
+            self.call()
+
+    def test_launcher_exit_before_capture_completion_refused(self):
+        self.write_log(complete=False, process_exit=True)
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_duplicate_launcher_exit_marker_refused(self):
+        with self.log.open("a") as stream:
+            stream.write("VH_PRIVATE_BIZHAWK_LOCAL_PROCESS_EXITED exit_success=1 "
+                         "original_ps1_authenticated=0 map02_identified=0\\n")
         with self.assertRaises(ValueError):
             self.call()
 
