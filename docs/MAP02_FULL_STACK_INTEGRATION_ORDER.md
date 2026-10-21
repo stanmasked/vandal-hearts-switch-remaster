@@ -132,6 +132,32 @@ This does not prove the runtime of the synthetic virtual merge commit
 itself, and the two workflows' GitHub URLs, successful statuses, and
 original artifacts still require independent review.
 
+## Last-minute remote-state recheck (not an actual lock)
+
+After the 26-step object-only candidate is created, the full-stack CI
+executes `tools/map02_final_ref_lock.py` as a **last read-only gate**.
+It queries GitHub again rather than relying on the earlier cached audit:
+
+- Fetch current `refs/heads/main` SHA and compare against the checked
+  `main` commit used by the candidate.
+- Re-fetch and revalidate **all 26** PR head SHA, base SHA, branch identity,
+  repository, open/unmerged and Draft states. Require exact equality with
+  the original observed PR snapshot.
+- Re-query the **25** upstream exact-commit successful Actions receipts.
+  Any new completed failure, missing evidence, changed upstream head,
+  retargeted PR or inaccessible GitHub API stops the process.
+- Independently reverify the candidate's on-runner 26 commit objects and
+  canonical receipt, and compare current checkout/main refs to the candidate.
+
+The resulting `final-ref-check.json` is stored alongside
+`integration-candidate.json` in the same CI artifact; it explicitly
+declares `main_merged=false`, `branch_mutations=false`,
+`time_of_check_only=true`, and `integration_authorized=false`.
+It is a **point-in-time observation**, not an atomic GitHub branch lock:
+someone could change a remote ref after it has passed. A real merge
+requires a separate transaction/review and fresh checks at that moment.
+This workflow intentionally provides no automated merge mechanism.
+
 ## Human-gated integration procedure
 
 For each PR, beginning at #241:
