@@ -143,7 +143,7 @@ class FinalRefLockTests(unittest.TestCase):
     def test_refuse_lost_original_pr_snapshot(self):
         old = copy.deepcopy(self.audit)
         del old["live_pr_metadata"]["prs"]
-        with self.assertRaisesRegex(AuditError, "after original audit"):
+        with self.assertRaisesRegex(AuditError, "live PR chain missing"):
             self.check(audit=old)
 
     def test_refuse_cross_repository_pr(self):
