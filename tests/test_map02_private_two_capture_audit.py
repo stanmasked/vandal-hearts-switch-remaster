@@ -19,14 +19,21 @@ def _chunk(kind: bytes, payload: bytes) -> bytes:
 
 
 def synthetic_rgb_png(pixel: bytes, *, level: int = 6,
-                      extra_text: bool = False) -> bytes:
-    # 1x1 RGB image generated entirely from invented pixel values.
+                      extra_text: bool = False, alpha=None,
+                      gamma: bool = False) -> bytes:
+    # 1x1 fictional PNG, optionally RGBA with an explicit alpha value.
     if len(pixel) != 3:
         raise ValueError("synthetic RGB pixel must be exactly three bytes")
-    header = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    if alpha is not None and not 0 <= alpha <= 255:
+        raise ValueError("synthetic alpha must be a valid byte")
+    channels = 6 if alpha is not None else 2
+    header = struct.pack(">IIBBBBB", 1, 1, 8, channels, 0, 0, 0)
     metadata = _chunk(b"tEXt", b"Synthetic\x00CIOnly") if extra_text else b""
+    if gamma:
+        metadata += _chunk(b"gAMA", struct.pack(">I", 45455))
+    samples = pixel if alpha is None else pixel + bytes([alpha])
     return (b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", header) + metadata
-            + _chunk(b"IDAT", zlib.compress(b"\x00" + pixel, level))
+            + _chunk(b"IDAT", zlib.compress(b"\x00" + samples, level))
             + _chunk(b"IEND", b""))
 
 
@@ -114,6 +121,33 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
         self.assertEqual(report["decoded_pixel_different_pairs"], 0)
         self.assertTrue(report["all_supported_png_pixel_content_equal"])
         self.assertFalse(report["unresolved_pixel_differences_require_manual_review"])
+
+    def test_opaque_rgba_and_rgb_replays_are_sample_identical(self):
+        name = self.names[0]
+        (self.first / name).write_bytes(synthetic_rgb_png(b"ABC", level=0))
+        (self.second / name).write_bytes(
+            synthetic_rgb_png(b"ABC", alpha=255, level=9))
+        report, _ = self.call()
+        self.assertEqual(report["byte_different_png_pairs"], 1)
+        self.assertEqual(report["decoded_pixel_equal_pairs"], 3)
+        self.assertFalse(report["unresolved_pixel_differences_require_manual_review"])
+        self.assertTrue(report["all_supported_png_pixel_content_equal"])
+
+    def test_nonopaque_rgba_requires_manual_review(self):
+        name = self.names[0]
+        (self.first / name).write_bytes(synthetic_rgb_png(b"ABC"))
+        (self.second / name).write_bytes(synthetic_rgb_png(b"ABC", alpha=17))
+        report, _ = self.call()
+        self.assertEqual(report["decoded_pixel_different_pairs"], 1)
+        self.assertFalse(report["all_supported_png_pixel_content_equal"])
+
+    def test_color_transform_metadata_requires_manual_review(self):
+        name = self.names[0]
+        (self.first / name).write_bytes(synthetic_rgb_png(b"ABC"))
+        (self.second / name).write_bytes(synthetic_rgb_png(b"ABC", gamma=True))
+        report, _ = self.call()
+        self.assertEqual(report["decoded_pixel_unsupported_pairs"], 1)
+        self.assertTrue(report["unresolved_pixel_differences_require_manual_review"])
 
     def test_same_directory_rejected_before_capture_verification(self):
         with self.assertRaisesRegex(ValueError, "separate private directories"):
