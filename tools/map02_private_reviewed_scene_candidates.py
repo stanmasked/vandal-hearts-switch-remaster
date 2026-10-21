@@ -72,10 +72,17 @@ def _intra_group_visual_changes(plan: Path, image_root: Path) -> dict[int, bool]
 
 def shortlist(positions: list[tuple[int, str]], proof: dict,
               annotation_csv: Path, visual_changes: dict[int, bool], *,
-              source_plan_sha256: str) -> dict:
-    if (type(source_plan_sha256) is not str or len(source_plan_sha256) != 64
-            or any(ch not in "0123456789abcdef" for ch in source_plan_sha256)):
-        raise ValueError("invalid canonical source plan SHA-256")
+              source_plan_sha256: str,
+              source_capture_evidence_sha256: str) -> dict:
+    for label, value in (
+        ("canonical source plan SHA-256", source_plan_sha256),
+        ("source capture evidence SHA-256", source_capture_evidence_sha256),
+    ):
+        if (type(value) is not str or len(value) != 64
+                or any(ch not in "0123456789abcdef" for ch in value)):
+            raise ValueError("invalid " + label)
+    if proof.get("source_capture_evidence_sha256") != source_capture_evidence_sha256:
+        raise ValueError("source capture evidence digest mismatch")
     # The upstream annotation CSV checker enforces exact header, roles,
     # bounded labels, full coverage and absence of duplicate/foreign rows.
     annotation_audit = audit_manual_labels(positions, annotation_csv)
@@ -162,6 +169,7 @@ def shortlist(positions: list[tuple[int, str]], proof: dict,
     return {
         "schema": SCHEMA,
         "source_plan_sha256": source_plan_sha256,
+        "source_capture_evidence_sha256": source_capture_evidence_sha256,
         "private_review_group_count": len(groups),
         "fully_reviewed_position_pairs": annotation_audit["fully_categorized_position_pairs"],
         "matching_human_label_pairs": annotation_audit["matching_human_label_pairs"],
@@ -213,6 +221,7 @@ def verify(
     return shortlist(
         positions, source, annotations, visual_changes,
         source_plan_sha256=plan_digest,
+        source_capture_evidence_sha256=source["source_capture_evidence_sha256"],
     )
 
 
