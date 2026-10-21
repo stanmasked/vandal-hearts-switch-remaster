@@ -188,6 +188,102 @@ def summarize_high_fanout_elf_types(remaining, game_refs, backend_refs,
     }
 
 
+
+def parse_readelf_relocation_types(readelf_output):
+    """Internal only: native ELF relocation symbol -> [(kind, section), ...].
+
+    The relocation *record* proves static reference metadata, not a function
+    call or runtime use. Ignore local sections until matched to proven imports.
+    """
+    records = {}
+    section = None
+    saw_header = False
+    for line in readelf_output.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Relocation section '"):
+            parts = stripped.split("'")
+            if len(parts) < 3 or not parts[1].startswith((".rela", ".rel")):
+                raise ValueError("MAP02 native relocation section header invalid")
+            section = parts[1]
+            saw_header = True
+            continue
+        if not stripped or stripped.startswith(("Offset ", "Offset", "There are no relocations")):
+            continue
+        fields = stripped.split()
+        if (section and len(fields) >= 5
+                and all(c in "0123456789abcdefABCDEF" for c in fields[0])
+                and fields[2].startswith("R_")):
+            kind, name = fields[2], fields[4]
+            records.setdefault(name, []).append((kind, section))
+    if not saw_header and "There are no relocations" not in readelf_output:
+        raise ValueError("MAP02 native relocation output lacked section metadata")
+    return records
+
+
+def summarize_high_fanout_relocations(remaining, game_refs, backend_refs,
+                                      game_relocation_maps, *, minimum_callers=8):
+    """Disjoint relocation-type presence buckets for game-exclusive imports."""
+    if (type(minimum_callers) is not int or minimum_callers < 2
+            or len(game_refs) != len(game_relocation_maps)):
+        raise ValueError("MAP02 game relocation source inventory invalid")
+    remaining = set(remaining)
+    game = [set(x) & remaining for x in game_refs]
+    backend = set().union(*(set(x) & remaining for x in backend_refs))
+    game_only = (set().union(*game) if game else set()) - backend
+    bucket = {"plt32_only": 0, "pc32_only": 0, "plt32_and_pc32": 0,
+              "other_or_mixed": 0, "no_relocation_record": 0}
+    kinds_total = {"plt32_records": 0, "pc32_records": 0,
+                   "other_records": 0}
+    only_nontext = 0
+    selected = 0
+    for symbol in game_only:
+        users = [i for i, refs in enumerate(game) if symbol in refs]
+        if len(users) < minimum_callers:
+            continue
+        selected += 1
+        rows = [
+            row
+            for i in users for row in game_relocation_maps[i].get(symbol, [])
+        ]
+        if not rows:
+            bucket["no_relocation_record"] += 1
+            continue
+        categories = set()
+        for kind, section in rows:
+            if kind == "R_X86_64_PLT32":
+                categories.add("plt32")
+                kinds_total["plt32_records"] += 1
+            elif kind == "R_X86_64_PC32":
+                categories.add("pc32")
+                kinds_total["pc32_records"] += 1
+            else:
+                categories.add("other")
+                kinds_total["other_records"] += 1
+        if all(not section.startswith((".rela.text", ".rel.text"))
+               for kind, section in rows):
+            only_nontext += 1
+        if categories == {"plt32"}:
+            bucket["plt32_only"] += 1
+        elif categories == {"pc32"}:
+            bucket["pc32_only"] += 1
+        elif categories == {"plt32", "pc32"}:
+            bucket["plt32_and_pc32"] += 1
+        else:
+            bucket["other_or_mixed"] += 1
+    if (sum(bucket.values()) != selected
+            or only_nontext > selected - bucket["no_relocation_record"]
+            or sum(kinds_total.values()) < selected -
+               bucket["no_relocation_record"]):
+        raise ValueError("MAP02 high-fanout relocation counts inconsistent")
+    return {
+        "high_fanout_game_only_imports_with_relocation_check": selected,
+        **{"high_fanout_reloc_" + k: v for k, v in bucket.items()},
+        **{"high_fanout_reloc_" + k: v for k, v in kinds_total.items()},
+        "high_fanout_only_nontext_relocation_names": only_nontext,
+        "relocation_types_do_not_prove_function_or_data_semantics": True,
+    }
+
+
 def read_link_report(path):
     path = Path(path)
     if path.is_symlink():
@@ -272,6 +368,7 @@ def audit_owners(upstream, overlay_bundle,
         root = Path(upstream).absolute() / "platform" / "pc"
         refs = []
         game_type_maps = []
+        game_reloc_maps = []
         for index, relative in enumerate(all_paths):
             if (not relative.startswith("build-map02-cycle/")
                     or not relative.endswith(".o")
@@ -305,6 +402,16 @@ def audit_owners(upstream, overlay_bundle,
                     if not required.issubset(table):
                         raise ValueError("MAP02 native ELF undefined symbol type witness incomplete")
                     game_type_maps.append(table)
+                    relocation = subprocess.run(
+                        ["readelf", "-rW", f"/proc/self/fd/{fd}"],
+                        capture_output=True, text=True, check=False,
+                        timeout=30, pass_fds=(fd,), umask=0o077,
+                        env={k: v for k, v in os.environ.items()
+                             if not k.startswith(("LD_", "DYLD_", "PYTHON", "VH_"))})
+                    if relocation.returncode:
+                        raise ValueError("MAP02 native object relocation metadata unavailable")
+                    game_reloc_maps.append(
+                        parse_readelf_relocation_types(relocation.stdout))
             finally:
                 os.close(fd)
             if stable_object_input(path) != witness:
@@ -321,6 +428,12 @@ def audit_owners(upstream, overlay_bundle,
         if (elf_types["high_fanout_game_only_imports"] !=
                 fanout["game_only_fanout_eight_or_more"]):
             raise ValueError("MAP02 wide game import ELF types differ from actual fanout")
+        reloc_types = summarize_high_fanout_relocations(
+            remaining, refs[:EXPECTED_GAME], refs[EXPECTED_GAME:],
+            game_reloc_maps)
+        if (reloc_types["high_fanout_game_only_imports_with_relocation_check"]
+                != elf_types["high_fanout_game_only_imports"]):
+            raise ValueError("MAP02 native relocation fanout differs from ELF types")
         if (sum(fanout["game_only_fanout_" + name]
                 for name in ("one", "two_to_three", "four_to_seven",
                              "eight_or_more")) != output["original_game_only_imports"]
@@ -347,6 +460,7 @@ def audit_owners(upstream, overlay_bundle,
             **output,
             **fanout,
             **elf_types,
+            **reloc_types,
             "only_counts_and_hashes_published": True,
             "retail_asset_content_accessed": False,
             "executable_game_proven": False,
