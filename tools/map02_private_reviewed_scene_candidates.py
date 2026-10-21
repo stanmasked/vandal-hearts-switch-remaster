@@ -20,7 +20,7 @@ import json
 from pathlib import Path
 
 from tools.map02_private_dual_capture_rgb_repeatability import (
-    verify as verify_dual, ROLES,
+    verify as verify_dual, capture_evidence_digest, ROLES,
 )
 from tools.map02_private_human_review_ledger import (
     checked_positions, evaluate as audit_manual_labels, HEADER, LABELS,
@@ -218,6 +218,12 @@ def verify(
     visual_changes = _intra_group_visual_changes(plan, images1)
     if _read_regular(plan, PLAN_LIMIT) != plan_snapshot:
         raise ValueError("private capture plan changed during audit")
+    _, planned_rows = parse_plan(plan)
+    evidence_after_review = capture_evidence_digest(
+        movie, plan, log1, images1, log2, images2, planned_rows,
+    )
+    if evidence_after_review != source["source_capture_evidence_sha256"]:
+        raise ValueError("private capture evidence changed during manual review")
     return shortlist(
         positions, source, annotations, visual_changes,
         source_plan_sha256=plan_digest,
