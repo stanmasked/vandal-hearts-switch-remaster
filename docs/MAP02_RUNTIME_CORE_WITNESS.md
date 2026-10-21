@@ -74,6 +74,39 @@ not in-process injection by the genuine EmuHawk UI. True loaded core,
 firmware/media identity and BK2/MAP02 visual parity still require
 owner-local runtime evidence.
 
+## Stage503: synthetic IEmulator injection in the real Windows loader host
+
+After Stage502 established that the Windows Form could be instantiated
+against official BizHawk 2.11 binaries, Stage503 tests its **core-gating
+logic** with five fictional `IEmulator` implementations compiled into
+the standalone Windows loader smoke program.
+
+The test constructs a dummy C# class annotated `[Core("Octoshock", ...)]`
+whose `SystemId` says PSX and `Frame` is 1666. It injects this mock
+through the same publicly writable `[RequiredService] IEmulator`
+property that the real EmuHawk host is expected to populate; calls
+`Restart()`; and checks that the Save button enables. It invokes the
+private `Snapshot` helper **only in memory** and verifies that its
+structured text retains all explicit `bios=unverified`,
+`disc=unverified` and `movie_sync=unverified` fields.
+
+Four other invented cores must fail closed: an annotated Nymashock,
+an Octoshock-named non-PSX system, a negative frame counter, and an
+unannotated IEmulator class. Clearing the injected service must disable
+Save again. The plugin also initializes Save as disabled **before any**
+BizHawk service injection and tolerates missing CoreAttribute metadata.
+
+These examples do **not** implement real PlayStation frame advancement
+or provide a BIOS, game disc, BK2 input or verified runtime injection.
+The test's fake `[Core("Octoshock")]` attribute can impersonate an
+actual core: its acceptance only confirms **the implementation's
+decision logic**, not authentic provenance.
+
+The Windows CI requires an exact `fake_iemulator_positive=1`,
+`fake_negative_gates=4`, `in_memory_fake_witness_schema=1` success
+marker, with `emulator_process_started=0`. No private witness,
+process identifier or sample data is published.
+
 ## Owner-local build (requires a matching, unmodified BizHawk source tree)
 
 1. Use your own BizHawk **2.11** source tree and local EmuHawk build/output.
