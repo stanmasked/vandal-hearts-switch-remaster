@@ -18,6 +18,12 @@ end
 local function fail(code)
   emit("VH_PRIVATE_NEUTRAL_CAPTURE_ERROR " .. code)
   if log_handle then log_handle:close(); log_handle = nil end
+  -- Do not leave a failed capture running through the remaining long movie.
+  -- The launcher will record the nonzero process exit; if the API is missing,
+  -- the existing preflight error remains fail-closed and needs owner cleanup.
+  if type(client) == "table" and type(client.exitCode) == "function" then
+    pcall(client.exitCode, 1)
+  end
   return
 end
 local function absolute_private_path(value)
