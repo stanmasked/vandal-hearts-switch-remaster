@@ -1,0 +1,218 @@
+# MAP02 — integration order for the 26 Draft PRs (planning only)
+
+This document describes a **reviewable integration order**, not permission to
+merge. The current Nintendo Switch MAP02 asset-free 4v4 prototype and its two
+authentic NeXium cold-boot replays are established independently of the retail
+PS1 game. No physical Nintendo Switch test or PS1 asset verification is claimed.
+
+## Frozen input and evidence
+
+- Pin exact upstream PR SHAs from `data/map02_full_stack_snapshot.json`.
+  PR #352 is the current `HEAD` so that new safety-check commits do not
+  invalidate their own manifest. Any upstream head drift must **fail closed**.
+- Require `tools/audit_map02_full_stack.py` and
+  `.github/workflows/map02-full-stack-integration.yml` to pass on the exact
+  candidate SHA. Verify all 26 PR heads, 25 edges, root `main` ancestry,
+  four protected original fixture files, no added binary/retail images, and
+  zero Git branch or worktree merges.
+- In the **same integration CI**, inspect authenticated GitHub Actions
+  `pull_request` workflow history for the **exact 25 pinned upstream
+  commit SHAs**. Require at least one completed-successful run on each SHA;
+  an observed completed failure or timeout blocks the audit. Exclude #352's
+  current HEAD from this upstream history requirement to avoid a circular
+  dependency on the still-running CI; its own native/NeXium jobs form a
+  separate required check. Record each evidence run URL in the report.
+  API errors, missing runs, or incomplete result pages block integration.
+- In the **same CI run**, query GitHub's authenticated read-only pull-request
+  API for all 26 PRs. Require every PR to remain open, unmerged and Draft,
+  with pinned head/base branch names, head SHAs, source repository and base
+  SHAs. For #265, its base SHA is the historical merge-base of #262/#265,
+  not the later #262 head. Any network failure or metadata mismatch blocks
+  the audit; stored history alone is insufficient evidence of PR state.
+- Require `.github/workflows/map02-cold-restart.yml` on the exact candidate:
+  adversarial Python tests; source-pinned devkitPro/libnx NRO; two genuinely
+  terminated NeXium processes and 24 PNGs; exact board/HUD comparisons; and
+  the separate saved-artifact `--audit-only` pass.
+
+## Proposed *upstream-to-downstream* review batches
+
+Each item is a PR number; every dependency must be individually reviewed.
+The numbered order below is identical to the committed 26-PR manifest, not an
+instruction to merge them as a batch.
+
+1. **Baseline tactical encounter and data:** #241 → #243 → #247 → #250 →
+   #251 → #252.
+2. **Rosters and optional 4v4 battle:** #253 → #256 → #259 → #262 → #265 →
+   #270 → #273.
+3. **Second arena and actor abilities:** #281 → #284 → #289 → #295.
+4. **Source-preserving integration and artifact identity:** #302 → #305 →
+   #314 → #318.
+5. **Complete behavioral and regression evidence:** #322 → #325 → #333 →
+   #347 → #352.
+
+The full ordered list has **26 PRs**. The final #352 branch currently sits
+above all of them but is a Draft stacked on #347, not directly on `main`.
+All previously approved fixtures and the existing legacy arena must survive.
+
+## Critical historical divergence: #262 → #265
+
+These are **not** a linear ancestor pair. #265 branched before two historical
+#262 commits and independently reproduced their script/oracle fixes. A normal
+GitHub green mergeable flag or a conflict-free `git merge-tree` is
+insufficient: a conflict-free merge could silently reintroduce older-only
+content into #265.
+
+The full-stack audit now verifies both:
+
+- The existing 11-PR audit confirms the common-source content and that
+  `git merge-tree --write-tree <#262 SHA> <#265 SHA>` has no conflicts.
+- The **resulting simulated tree SHA is required to equal the exact tree SHA
+  of #265 itself**. If they differ, halt and reconcile/review the differences
+  in a separate throwaway branch; do not rewrite reviewed branches, force push,
+  or claim that the two history versions are equivalent.
+
+Even identical trees do **not** mean the Git histories are identical; the
+historical divergence remains explicitly recorded.
+
+## Full-chain virtual integration rehearsal (object-only)
+
+Before any real merge, `tools/rehearse_map02_full_stack.py` simulates the
+complete sequence of **26 individual merges** starting from the pinned
+`origin/main` commit, in precisely the manifest order. Each intermediate
+`git merge-tree --write-tree` must have no conflicts **and** produce the
+exact same Git tree SHA as the reviewed downstream PR at that step. This
+prevents silent reintroduction of older-only files even if Git sees no conflict.
+
+The tool then creates an **unreferenced temporary Git commit object** using
+`git commit-tree` to model the parents of the following merge. This writes
+objects only to the ephemeral CI runner's local Git object database; **no
+branch, tag, worktree, index, remote repository, or PR is changed**. The final
+simulated tree must equal the checked-out PR #352 tree, byte for byte.
+
+The required CI produces `virtual-merge.json` listing all 26 source commits,
+their expected/rehearsed tree hashes, and ephemeral commit hashes. The report
+also records **every intermediate changed path** (added, modified, deleted or
+type-changed) from each simulated merge, not just the final merged tree.
+Added/modified/type-changed retail ROM, game-image, archive, audio or screenshot
+paths are rejected **even if a later PR deletes them**. Thus a final-tree-only
+scan cannot hide transient unwanted content. Eight synthetic tests cover
+linear/copied-history replay, detached CI checkouts, conflicts, revived files,
+incorrect final heads, temporary retail assets, and per-step deletions.
+A successful rehearsal is an integration *safety proof for the pinned
+snapshot*, not a claim that any branch was merged, or that its tests passed
+after a real merge.
+
+## Isolated integration candidate: object-only Git provenance
+
+The read-only full-stack workflow additionally builds
+`integration-candidate.json` via `tools/map02_integration_candidate.py`.
+This is a **review-only receipt**, not a new GitHub PR, branch or release.
+
+The candidate identifies the current `main` commit, exact source HEAD and
+tree, the **unreferenced virtual commit** created by the 26th simulated merge,
+all 26 source/virtual SHA pairs, and cryptographic SHA-256 checksums for the
+two input JSON audit reports. A mandatory CI step reopens every transient
+commit object with `git cat-file -p` and verifies its exact tree and two
+ordered parents. Thus a forged report with correct final tree but incorrect
+intermediate ancestry fails. The candidate's own canonical
+`receipt_sha256` detects accidental or deliberate changes to the receipt
+after generation, but is not a signature or an independent provenance
+authority.
+
+**No GitHub ref points to the candidate commit.** The ephemeral Git objects
+live only on that CI runner and are not portable to a new checkout.
+The report remains portable as an auditable record; its Git-object checks
+need a fresh rehearsal on a new runner.
+
+A separately downloaded and independently verified NeXium
+`bundle-receipt.json` may be cross-checked against the candidate with
+`--bundle-receipt`. Matching `source_commit` and `source_tree` binds
+the tested NRO/24 real PNGs to the candidate's exact **file contents**.
+This does not prove the runtime of the synthetic virtual merge commit
+itself, and the two workflows' GitHub URLs, successful statuses, and
+original artifacts still require independent review.
+
+## Last-minute remote-state recheck (not an actual lock)
+
+After the 26-step object-only candidate is created, the full-stack CI
+executes `tools/map02_final_ref_lock.py` as a **last read-only gate**.
+It queries GitHub again rather than relying on the earlier cached audit:
+
+- Fetch current `refs/heads/main` SHA and compare against the checked
+  `main` commit used by the candidate.
+- Re-fetch and revalidate **all 26** PR head SHA, base SHA, branch identity,
+  repository, open/unmerged and Draft states. Require exact equality with
+  the original observed PR snapshot.
+- Re-query the **25** upstream exact-commit successful Actions receipts.
+  Any new completed failure, missing evidence, changed upstream head,
+  retargeted PR or inaccessible GitHub API stops the process.
+- Independently reverify the candidate's on-runner 26 commit objects and
+  canonical receipt, and compare current checkout/main refs to the candidate.
+
+The resulting `final-ref-check.json` is stored alongside
+`integration-candidate.json` in the same CI artifact; it explicitly
+declares `main_merged=false`, `branch_mutations=false`,
+`time_of_check_only=true`, and `integration_authorized=false`.
+It is a **point-in-time observation**, not an atomic GitHub branch lock:
+someone could change a remote ref after it has passed. A real merge
+requires a separate transaction/review and fresh checks at that moment.
+This workflow intentionally provides no automated merge mechanism.
+
+## Automatic independent workflow evidence check
+
+The NeXium workflow now has a final **read-only** job, executed only after
+the actual two-cold-boot NeXium job succeeds. Using GitHub's authenticated
+Actions API, it selects the **newest** full-stack integration run for the
+exact tested source commit, requires that run to have completed successfully,
+and downloads its independent evidence artifact. An older green run cannot
+override a newer failed or queued run.
+
+The job also downloads the NRO + 24 real screenshots from its own successful
+NeXium run, revalidates all 35 included files and the 72 PNG/RGB SHA-256
+digests, confirms separate emulator processes and the stored offline-audit
+result, and checks the exact source commit and Git tree against the
+26-PR integration candidate and post-candidate ref-check receipt.
+
+The new report, `cross-workflow.json`, includes both GitHub run IDs, the NRO
+SHA-256, the unified NeXium evidence root, the integration candidate hash,
+and an independently computed SHA-256 over those references. This is
+**evidence consistency**, not a digital signature, a physical hardware
+test or proof of legal ownership. It does not make a GitHub commit or merge
+anything into `main`.
+
+## Human-gated integration procedure
+
+For each PR, beginning at #241:
+
+- Confirm its head SHA, actual base, Draft status, diff, review decisions,
+  required CI and candidate metadata before changing any Git ref.
+- Prepare and inspect a *disposable* branch based on the current protected
+  integration target, simulate the intended merge, review exact tree/path
+  changes, then run native tests and the relevant NeXium scenarios.
+- At #262/#265, require the reconciliation-tree equality above; stop for
+  explicit review if any tree content differs, even when Git reports no
+  textual conflict. Do not silently skip old commits.
+- After any real merge decision, repeat ancestry/source-identity checks and
+  take a **new** baseline screenshot/artifact. The previous NRO and screenshot
+  receipts belong to their original immutable source commits, not to a newly
+  rewritten branch.
+- Never automatically move `main`, publish copyrighted game data, or
+  convert a Draft to ready-for-review from this audit workflow.
+
+## Stop conditions and remaining gates
+
+**Stop** if any pinned upstream PR lacks completed-successful Actions evidence,
+if a known failed/timed-out workflow applies to its exact SHA, or if the
+workflow history cannot be verified completely.
+
+**Stop** if a PR is closed, marked ready, retargeted, moved to another
+repository or updated to an unpinned head/base SHA; if GitHub metadata cannot
+be retrieved; if upstream refs move, `main` advances unexpectedly, any
+reconciliation changes the #265 tree, protected fixtures change, source
+receipts disagree, native tests fail, or genuine NeXium PNG comparison fails.
+The existing artifact-free playable demo is **not** evidence for retail PS1
+compatibility. Hardware loading on a physical Switch and licensing/source
+rights remain independent gates before any public distribution.
+
+No actual merge, rebase, cherry-pick, branch rewrite or release is performed
+by either the full-stack audit or this plan.

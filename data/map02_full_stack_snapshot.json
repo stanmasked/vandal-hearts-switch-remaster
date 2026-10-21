@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "repo": "stanmasked/vandal-hearts-switch-remaster",
+  "policy": "read-only, no merge and no retail game assets",
+  "expected_pr_count": 26,
+  "root_base": "main",
+  "permitted_divergent_edge": [
+    262,
+    265
+  ],
+  "existing_core_stack_snapshot": "data/map02_pr_stack_snapshot.json",
+  "pull_requests": [
+    {
+      "number": 241,
+      "head_sha": "1f77f0ba762aedd183c15405425c772d0552493d",
+      "head_branch": "feat/map02-playable-fixture-battle-core",
+      "base_branch": "main"
+    },
+    {
+      "number": 243,
+      "head_sha": "60625017ece33f27b6f5579ee45aba1e06ada138",
+      "head_branch": "feat/map02-playable-fixture-nexium-smoke",
+      "base_branch": "feat/map02-playable-fixture-battle-core"
+    },
+    {
+      "number": 247,
+      "head_sha": "017abe8bb106f0410b9aca87aff88a0e50257f17",
+      "head_branch": "feat/map02-nexium-full-victory-input",
+      "base_branch": "feat/map02-playable-fixture-nexium-smoke"
+    },
+    {
+      "number": 250,
+      "head_sha": "913cd46c3a858d39e726899ea1bd40a074e08948",
+      "head_branch": "feat/map02-data-driven-encounter",
+      "base_branch": "feat/map02-nexium-full-victory-input"
+    },
+    {
+      "number": 251,
+      "head_sha": "8c76bead3a3dcaab896ce127cd9e80b700cfb6e1",
+      "head_branch": "feat/map02-selectable-scenarios",
+      "base_branch": "feat/map02-data-driven-encounter"
+    },
+    {
+      "number": 252,
+      "head_sha": "0aa19e1db2795face4993838d794354423956078",
+      "head_branch": "feat/map02-second-scene-nexium-smoke",
+      "base_branch": "feat/map02-selectable-scenarios"
+    },
+    {
+      "number": 253,
+      "head_sha": "1472a763740a9e34f8ad61eefa09703525a04c08",
+      "head_branch": "feat/map02-variable-active-rosters",
+      "base_branch": "feat/map02-second-scene-nexium-smoke"
+    },
+    {
+      "number": 256,
+      "head_sha": "57dba2ec849f5e58e0f8b134c48175af9da45587",
+      "head_branch": "feat/map02-eight-slot-roster-contract",
+      "base_branch": "feat/map02-variable-active-rosters"
+    },
+    {
+      "number": 259,
+      "head_sha": "61c50b558753e7794d0c80685bb407ae78e06a4b",
+      "head_branch": "feat/map02-eight-slot-turn-engine",
+      "base_branch": "feat/map02-eight-slot-roster-contract"
+    },
+    {
+      "number": 262,
+      "head_sha": "e4c58b0429b605c66a6f7ce30875154e85ec942f",
+      "head_branch": "feat/map02-switch-eight-slot-demo",
+      "base_branch": "feat/map02-eight-slot-turn-engine"
+    },
+    {
+      "number": 265,
+      "head_sha": "965229da0ee4e08ea9db1a3a61e79cd585c07f57",
+      "head_branch": "feat/map02-switch-4v4-move-path-proof",
+      "base_branch": "feat/map02-switch-eight-slot-demo"
+    },
+    {
+      "number": 270,
+      "head_sha": "d98ff154dd23b8ad08cadd7d4e55cb41264c8787",
+      "head_branch": "feat/map02-switch-selectable-roster-sizes",
+      "base_branch": "feat/map02-switch-4v4-move-path-proof"
+    },
+    {
+      "number": 273,
+      "head_sha": "bd69abe44f7c90b855132c5766b52b6d59bfda4e",
+      "head_branch": "feat/map02-switch-second-eight-slot-arena",
+      "base_branch": "feat/map02-switch-selectable-roster-sizes"
+    },
+    {
+      "number": 281,
+      "head_sha": "17d7269a9e942d2adbf4b3f83f4515941a370e88",
+      "head_branch": "feat/map02-second-arena-ranged-shot",
+      "base_branch": "feat/map02-switch-second-eight-slot-arena"
+    },
+    {
+      "number": 284,
+      "head_sha": "cb45aa08d1e285bf46c8467dd136adcc075d58fd",
+      "head_branch": "feat/map02-second-arena-field-medic",
+      "base_branch": "feat/map02-second-arena-ranged-shot"
+    },
+    {
+      "number": 289,
+      "head_sha": "2e129f49167a06e391799c770bf0873fd960790d",
+      "head_branch": "feat/map02-second-arena-guard-stance",
+      "base_branch": "feat/map02-second-arena-field-medic"
+    },
+    {
+      "number": 295,
+      "head_sha": "1bde3009760e9e9932253923935a666c311d052c",
+      "head_branch": "feat/map02-guard-status-hud",
+      "base_branch": "feat/map02-second-arena-guard-stance"
+    },
+    {
+      "number": 302,
+      "head_sha": "50eec6a7e8379fc0955e51b50403d81069a32116",
+      "head_branch": "chore/map02-stacked-integration-preflight",
+      "base_branch": "feat/map02-guard-status-hud"
+    },
+    {
+      "number": 305,
+      "head_sha": "b75688135a5fb0ede418b05b9486da0350b757d2",
+      "head_branch": "chore/map02-reconciled-stack",
+      "base_branch": "chore/map02-stacked-integration-preflight"
+    },
+    {
+      "number": 314,
+      "head_sha": "0ccc9e9b1ccb03a5d67ffcede307dfdea6c6d1f1",
+      "head_branch": "chore/map02-candidate-artifact-integrity",
+      "base_branch": "chore/map02-reconciled-stack"
+    },
+    {
+      "number": 318,
+      "head_sha": "685485880e39202277d7f7c061068d34771b89c6",
+      "head_branch": "chore/map02-switch-nro-hardware-preflight",
+      "base_branch": "chore/map02-candidate-artifact-integrity"
+    },
+    {
+      "number": 322,
+      "head_sha": "d2b5ad031fd8c7bbe0eafff3202eea2485385789",
+      "head_branch": "feat/map02-nexium-single-session-combo",
+      "base_branch": "chore/map02-switch-nro-hardware-preflight"
+    },
+    {
+      "number": 325,
+      "head_sha": "c753b3a568bc2306ce247feb03bdb647274cd641",
+      "head_branch": "test/map02-single-session-victory-defeat",
+      "base_branch": "feat/map02-nexium-single-session-combo"
+    },
+    {
+      "number": 333,
+      "head_sha": "cf1864ae35b752ca70ffac0f14c19448603fc865",
+      "head_branch": "test/map02-nexium-interrupted-states",
+      "base_branch": "test/map02-single-session-victory-defeat"
+    },
+    {
+      "number": 347,
+      "head_sha": "736768b4b58845f4e8c0381da46717934b86a892",
+      "head_branch": "test/map02-reentry-actions-after-interrupt",
+      "base_branch": "test/map02-nexium-interrupted-states"
+    },
+    {
+      "number": 352,
+      "head_sha": "HEAD",
+      "head_branch": "test/map02-cold-boot-determinism",
+      "base_branch": "test/map02-reentry-actions-after-interrupt"
+    }
+  ]
+}

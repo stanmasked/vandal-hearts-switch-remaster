@@ -1,0 +1,185 @@
+name: MAP02 complete 26-PR read-only integration audit
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-full-stack-integration.yml'
+      - 'data/map02_full_stack_snapshot.json'
+      - 'tools/audit_map02_full_stack.py'
+      - 'tools/audit_map02_pr_metadata.py'
+      - 'tools/audit_map02_upstream_ci.py'
+      - 'tools/rehearse_map02_full_stack.py'
+      - 'tools/map02_integration_candidate.py'
+      - 'tools/map02_final_ref_lock.py'
+      - 'tests/test_map02_full_stack_audit.py'
+      - 'tests/test_map02_live_pr_metadata.py'
+      - 'tests/test_map02_upstream_ci.py'
+      - 'tests/test_map02_virtual_merge.py'
+      - 'tests/test_map02_integration_candidate.py'
+      - 'tests/test_map02_final_ref_lock.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+
+jobs:
+  full-stack-audit:
+    name: Verify 26 PR heads, one reviewed divergence and original data
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Reject malformed or forged 26-PR ancestry snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/audit_map02_full_stack.py tools/audit_map02_pr_metadata.py tools/audit_map02_upstream_ci.py tests/test_map02_full_stack_audit.py tests/test_map02_live_pr_metadata.py tests/test_map02_upstream_ci.py
+          python3 -m unittest discover -s tests -p 'test_map02_full_stack_audit.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_live_pr_metadata.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_upstream_ci.py' -v
+          python3 -m py_compile tools/rehearse_map02_full_stack.py tests/test_map02_virtual_merge.py
+          python3 -m unittest discover -s tests -p 'test_map02_virtual_merge.py' -v
+          python3 -m py_compile tools/map02_integration_candidate.py tests/test_map02_integration_candidate.py
+          python3 -m unittest discover -s tests -p 'test_map02_integration_candidate.py' -v
+          python3 -m py_compile tools/map02_final_ref_lock.py tests/test_map02_final_ref_lock.py
+          python3 -m unittest discover -s tests -p 'test_map02_final_ref_lock.py' -v
+      - name: Compare all 26 immutable PR refs and live GitHub Draft metadata
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/map02-full-stack-audit
+          python3 tools/audit_map02_full_stack.py \
+            --repo . \
+            --manifest data/map02_full_stack_snapshot.json \
+            --verify-live-prs \
+            --verify-upstream-ci \
+            --report build/map02-full-stack-audit/report.json \
+            | tee build/map02-full-stack-audit/result.log
+          grep -Fx 'VH_MAP02_FULL_STACK_AUDIT_PASS prs=26 pinned=25 linear_edges=24 reviewed_divergent=1 retail_assets=0 main_merge=0' build/map02-full-stack-audit/result.log
+          grep -Fx 'VH_MAP02_FULL_STACK_LIVE_PRS_PASS count=26 draft=26 bases=26 head_shas=26' build/map02-full-stack-audit/result.log
+          grep -Fx 'VH_MAP02_UPSTREAM_CI_PASS pinned=25 success_exact_sha=25 self_excluded=1' build/map02-full-stack-audit/result.log
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x = json.loads(Path("build/map02-full-stack-audit/report.json").read_text())
+          assert x["integration_merge_performed"] is False
+          assert x["pr_count"] == 26 and x["pinned_upstream_prs"] == 25
+          assert x["checked_edges"] == 25
+          assert sum(e["result"] == "reviewed_core_divergence" for e in x["edges"]) == 1
+          assert sum(e["result"] == "linear" for e in x["edges"]) == 24
+          assert x["core_audit"]["integration_merge_performed"] is False
+          assert len(x["core_audit"]["preserved_files"]) == 4
+          reconciliation = x["divergent_tree_reconciliation"]
+          assert reconciliation["edge"] == [262, 265]
+          assert reconciliation["tree_identical"] is True
+          assert reconciliation["history_rewritten"] is False
+          assert reconciliation["simulated_merge_tree"] == reconciliation["unchanged_downstream_tree"]
+          assert not x["forbidden_added_assets"]
+          live = x["live_pr_metadata"]
+          assert live["verified"] and live["pr_count"] == 26
+          assert live["open_draft_unmerged"] == 26
+          assert live["head_and_base_sha_pinned"] == 26
+          upstream = x["upstream_ci_provenance"]
+          assert upstream["verified"] is True
+          assert upstream["upstream_pr_count"] == 25
+          assert upstream["successful_exact_commit_workflows"] == 25
+          assert upstream["current_pr_self_run_excluded"] is True
+          assert all(p["conclusion"] == "success" for p in upstream["prs"])
+          PY
+      - name: Rehearse every merge in disposable Git objects with exact tree match
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/rehearse_map02_full_stack.py \
+            --repo . --manifest data/map02_full_stack_snapshot.json \
+            --report build/map02-full-stack-audit/virtual-merge.json \
+            | tee build/map02-full-stack-audit/virtual-merge.log
+          grep -Fx 'VH_MAP02_VIRTUAL_MERGE_PASS stages=26 unchanged_trees=26 git_refs_updated=0 worktree_updated=0' build/map02-full-stack-audit/virtual-merge.log
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path("build/map02-full-stack-audit/virtual-merge.json").read_text())
+          assert r["stages"] == 26 and r["unchanged_trees"] == 26
+          assert r["virtual_object_only_commits"] == 26
+          assert r["intermediate_changes_checked"] == sum(
+              step["changed_file_count"] for step in r["steps"])
+          assert r["unique_changed_paths"] >= 1
+          assert not r["forbidden_intermediate_assets"]
+          assert all(step["changed_file_count"] == len(step["path_changes"])
+                     for step in r["steps"])
+          assert all(change["status"] in ("A", "M", "D", "T")
+                     for step in r["steps"] for change in step["path_changes"])
+          assert r["final_source_tree"] == r["final_virtual_tree"]
+          assert r["git_refs_updated"] is False
+          assert r["worktree_updated"] is False
+          assert r["real_merge_performed"] is False
+          assert all(x["identical"] for x in r["steps"])
+          PY
+      - name: Record and reverify isolated integration candidate commit ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/map02_integration_candidate.py \
+            --action create --repo . \
+            --audit build/map02-full-stack-audit/report.json \
+            --virtual build/map02-full-stack-audit/virtual-merge.json \
+            --candidate build/map02-full-stack-audit/integration-candidate.json \
+            | tee build/map02-full-stack-audit/integration-candidate.log
+          python3 tools/map02_integration_candidate.py \
+            --action verify --repo . \
+            --audit build/map02-full-stack-audit/report.json \
+            --virtual build/map02-full-stack-audit/virtual-merge.json \
+            --candidate build/map02-full-stack-audit/integration-candidate.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          c = json.loads(Path("build/map02-full-stack-audit/integration-candidate.json").read_text())
+          assert c["kind"] == "map02-review-only-virtual-integration"
+          assert c["review_only"] is True and c["merged_into_main"] is False
+          assert c["pr_count"] == 26 and len(c["steps"]) == 26
+          assert c["isolated_candidate_tree_sha"] == c["source_tree_sha"]
+          assert c["separate_nro_and_nexium_evidence_required"] is True
+          PY
+      - name: Recheck live remote main and every pinned PR after candidate creation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 tools/map02_final_ref_lock.py \
+            --repo . --manifest data/map02_full_stack_snapshot.json \
+            --audit build/map02-full-stack-audit/report.json \
+            --virtual build/map02-full-stack-audit/virtual-merge.json \
+            --candidate build/map02-full-stack-audit/integration-candidate.json \
+            --report build/map02-full-stack-audit/final-ref-check.json \
+            | tee build/map02-full-stack-audit/final-ref-check.log
+          grep -F 'VH_MAP02_FINAL_REF_LOCK_PASS prs=26 upstream=25 main_unchanged=1 candidate_intact=1 merge=0' build/map02-full-stack-audit/final-ref-check.log
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          seal = json.loads(Path("build/map02-full-stack-audit/final-ref-check.json").read_text())
+          candidate = json.loads(Path("build/map02-full-stack-audit/integration-candidate.json").read_text())
+          assert seal["source_head_sha"] == candidate["source_head_sha"]
+          assert seal["source_tree_sha"] == candidate["source_tree_sha"]
+          assert seal["candidate_receipt_sha256"] == candidate["receipt_sha256"]
+          assert seal["fresh_live_prs"] == 26 and seal["fresh_upstream_ci"] == 25
+          assert seal["main_merged"] is False
+          assert seal["branch_mutations"] is False
+          assert seal["time_of_check_only"] is True
+          assert seal["integration_authorized"] is False
+          PY
+      - name: Save the read-only integration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-full-stack-no-merge-audit
+          path: build/map02-full-stack-audit/
+          if-no-files-found: warn
