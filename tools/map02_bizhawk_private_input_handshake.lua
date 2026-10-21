@@ -12,7 +12,12 @@ local BUTTONS = {
 }
 local next_input = START_INPUT
 while true do
-  if movie.mode() == "PLAY" then
+  local mode = movie.mode()
+  if mode ~= "PLAY" and next_input > START_INPUT then
+    print("VH_PRIVATE_BK2_SYNC_ERROR movie_left_play_mode")
+    return
+  end
+  if mode == "PLAY" then
     local counter = emu.framecount()
     local candidate = counter - 1
     if candidate >= START_INPUT and candidate <= END_INPUT
@@ -24,7 +29,15 @@ while true do
       end
       local mask = 0
       for i, name in ipairs(BUTTONS) do
-        if data[name] == true then
+        -- BizHawk can expose controller-qualified names depending on API.
+        -- Fail closed if both forms disagree instead of silently losing Start.
+        local plain = data[name]
+        local qualified = data["P1 " .. name]
+        if plain ~= nil and qualified ~= nil and plain ~= qualified then
+          print("VH_PRIVATE_BK2_SYNC_ERROR ambiguous_controller_name")
+          return
+        end
+        if plain == true or qualified == true then
           mask = mask + 2 ^ (i - 1)
         end
       end
