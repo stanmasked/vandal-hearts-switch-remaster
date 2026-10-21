@@ -1,0 +1,70 @@
+name: MAP02 private BK2 neutral frame capture handoff (synthetic CI)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-private-neutral-capture-handoff.yml'
+      - 'tools/map02_private_bk2_capture_plan.py'
+      - 'tools/map02_bizhawk_private_neutral_capture.lua'
+      - 'tests/test_map02_private_bk2_capture_plan.py'
+      - 'tests/test_map02_bizhawk_private_neutral_capture_mock.lua'
+      - 'docs/MAP02_PRIVATE_NEUTRAL_CAPTURE_HANDOFF.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  private-plan-fixtures:
+    name: Synthetic BK2 capture plan (${{ matrix.os }} Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.9'
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: macos-15-intel
+            python: '3.11'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Ensure all 15 capture-plan unit tests use fake selection metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_map02_private_bk2_capture_plan.py' -v \
+            2>&1 | tee /tmp/vh-map02-capture-plan.log
+          grep -F 'Ran 15 tests' /tmp/vh-map02-capture-plan.log
+          if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-capture-plan.log; then
+            exit 1
+          fi
+          echo 'VH_MAP02_CAPTURE_PLAN_PASS synthetic=15 original_bk2=0 game=0 map02=unknown'
+  lua-capture-mocks:
+    name: Execute private capture Lua against seventeen invented emulator scenarios
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install standalone Lua 5.4 (not BizHawk)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends lua5.4
+      - name: Run actual capture script with synthetic movie, emulator and screenshot APIs
+        shell: bash
+        run: |
+          set -euo pipefail
+          lua5.4 tests/test_map02_bizhawk_private_neutral_capture_mock.lua \
+            2>&1 | tee /tmp/vh-map02-lua-mock.log
+          grep -F 'VH_MAP02_NEUTRAL_CAPTURE_LUA_MOCK_PASS cases=17 owner_bk2=0 actual_bizhawk=0 map02_verified=0' \
+            /tmp/vh-map02-lua-mock.log
