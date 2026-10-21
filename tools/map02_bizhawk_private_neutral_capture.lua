@@ -261,6 +261,23 @@ local function any_held(data)
   return held
 end
 
+-- This is an optional independent *timing observation* of the PSX core:
+-- a cumulative count of lagged video frames, not controller delivery or
+-- proof of Octoshock/BIOS identity. Never invent values on unsupported cores.
+local lag_counter_supported = type(emu.lagcount) == "function"
+local last_reported_lag = nil
+local function observed_lag_at_snapshot(counter)
+  if not lag_counter_supported then return "unavailable" end
+  local ok, observed = pcall(emu.lagcount)
+  if not ok or type(observed) ~= "number" or observed % 1 ~= 0
+      or observed < 0 or observed > counter
+      or (last_reported_lag ~= nil and observed < last_reported_lag) then
+    return nil
+  end
+  last_reported_lag = observed
+  return tostring(observed)
+end
+
 local current, previous_counter = 1, nil
 local first_start_off_seen, first_start_on_seen = false, false
 while true do
@@ -311,6 +328,8 @@ while true do
     if not game_rom_id_unchanged() then
       return fail("active_game_id_changed_during_capture")
     end
+    local lag_count = observed_lag_at_snapshot(counter)
+    if lag_count == nil then return fail("invalid_or_regressed_psx_lag_counter") end
     local state = any_held(movie.getinput(index, 1))
     if state == nil or state ~= (wanted.held == "held") then
       return fail("movie_getinput_neutral_state_mismatch")
@@ -327,8 +346,8 @@ while true do
     saved:close()
     if sig ~= "\137PNG\r\n\26\n" then return fail("screenshot_not_png") end
     emit(string.format(
-      "VH_PRIVATE_NEUTRAL_CAPTURE window=%d role=%s counter=%d candidate_input=%d expected_buttons=%s png=written display_offset=unverified",
-      wanted.group, wanted.role, counter, index, wanted.held))
+      "VH_PRIVATE_NEUTRAL_CAPTURE window=%d role=%s counter=%d candidate_input=%d expected_buttons=%s lag_count=%s png=written display_offset=unverified",
+      wanted.group, wanted.role, counter, index, wanted.held, lag_count))
     current = current + 1
     if current > #captures then
       emit(string.format(
