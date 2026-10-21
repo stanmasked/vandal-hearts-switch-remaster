@@ -23,6 +23,7 @@ class PrivatePlanTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
         self.bk2 = self.root / "fake.bk2"
+        self.bk2.write_bytes(b"fictional BK2 placeholder; never a real movie")
         self.plan = self.root / "capture-plan.txt"
 
     def mock(self, windows):
