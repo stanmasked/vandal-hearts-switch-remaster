@@ -90,6 +90,7 @@ def inspect_reference(report_text: str, csv_text: str) -> tuple[int, int, list[i
     last_frame = start - 1
     prior = None
     start_onsets = 0
+    start_onset_frames = []
     for row in stream:
         if len(changes) >= MAX_WINDOW or None in row or None in row.values():
             raise ValueError("too many/invalid controller changes")
@@ -113,11 +114,16 @@ def inspect_reference(report_text: str, csv_text: str) -> tuple[int, int, list[i
                 raise ValueError("redundant controller change row")
         if "Start" in pressed:
             start_onsets += 1
+            start_onset_frames.append(frame)
         changes.append((frame, held))
         prior = held
         last_frame = frame
     if len(changes) != expected_changes:
         raise ValueError("CSV does not match inspection changes count")
+    # The known first Start onset for this owner recording is zero-based 1661.
+    # Require the expected event whenever the selected window includes it.
+    if start <= 1661 < start + length and 1661 not in start_onset_frames:
+        raise ValueError("first owner Start anchor absent from bounded window")
     index = 0
     held = frozenset()
     masks: list[int] = []
