@@ -58,6 +58,7 @@ class PrivateDualRGBTests(unittest.TestCase):
         self.addCleanup(work.cleanup)
         self.root = Path(work.name)
         self.movie = self.root / "fictional-source.bk2"
+        self.movie.write_bytes(b"fictional BK2 source for synthetic audit only")
         self.plan = self.root / "private-plan.txt"
         self.plan.write_text("\n".join(LINES) + "\n", encoding="ascii")
         self.logs = [self.root / "first-console.log", self.root / "second-console.log"]
@@ -104,6 +105,20 @@ class PrivateDualRGBTests(unittest.TestCase):
         self.assertTrue(result["all_decoded_rgb_images_repeated_exactly"])
         self.assertEqual(len(result["matches_and_differences_by_review_position"]), 3)
         self.assertNotIn(str(self.root), json.dumps(result))
+
+    def test_aggregate_source_evidence_digest_has_no_private_paths_or_frames(self):
+        result = self.call()
+        digest = result["source_capture_evidence_sha256"]
+        self.assertRegex(digest, r"^[0-9a-f]{64}$")
+        self.assertNotIn(str(self.root), json.dumps(result))
+        self.assertNotIn("3000", json.dumps(result))
+        self.assertNotIn("png_file", json.dumps(result))
+
+    def test_source_evidence_digest_changes_when_a_planned_png_changes(self):
+        first = self.call()["source_capture_evidence_sha256"]
+        self.image(1, "middle").write_bytes(synthetic_png((240, 240, 240)))
+        second = self.call()["source_capture_evidence_sha256"]
+        self.assertNotEqual(first, second)
 
     def test_all_real_emulation_and_map_provenance_flags_remain_false(self):
         report = self.call()
