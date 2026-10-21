@@ -20,6 +20,7 @@ from tools.map02_private_disc_movie_preflight import (
 
 PAIR_OK = {
     "screenshot_pairs_checked": 3,
+    "same_reported_bizhawk_runtime_profile": True,
     "decoded_pixel_equal_pairs": 3,
     "decoded_pixel_different_pairs": 0,
     "decoded_pixel_unsupported_pairs": 0,
