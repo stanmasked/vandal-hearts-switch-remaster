@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from tools.preflight_map02_pcport import (UPSTREAM_COMMIT, REQUIRED_SOURCE_FILES,
                                           KROM_US_BYTES, check_disc_image,
-                                          identify_disc_release, inspect)
+                                          identify_disc_boot_family, inspect)
 
 
 def fake_sources(root):
@@ -139,6 +139,13 @@ class PreflightMap02PcportTests(unittest.TestCase):
                 report = inspect(root, disc_image=disc, krom_source=krom)
             self.assertIn("retail_executable_md5_mismatch", report["blockers"])
             self.assertFalse(report["ready_for_attempt"])
+            # A patched/localized executable may preserve the original boot/card ID.
+            # Runtime family recognition is not proof of exact retail executable identity.
+            self.assertEqual(report["checks"]["disc_boot_id_family"], "USA")
+            self.assertTrue(report["checks"]["disc_boot_id_accepted_by_us_runtime"])
+            self.assertFalse(report["checks"]["disc_exact_retail_release_verified"])
+            self.assertIn("localized or patched content",
+                          report["checks"]["disc_identification_basis"])
 
     def test_raw_disc_structure_invalid_is_explicit(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -223,7 +230,7 @@ class PreflightMap02PcportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             exe, krom, disc = fake_sources(root)
-            self.assertEqual(identify_disc_release(disc), "USA")
+            self.assertEqual(identify_disc_boot_family(disc), "USA")
             self.assertEqual(check_disc_image(disc)[0], True)
             image_offset = (0x800f5551 - 0x80010000) + 0x800
             ident_offset = ((23 + image_offset // 2048) * 2352
@@ -231,7 +238,7 @@ class PreflightMap02PcportTests(unittest.TestCase):
             with disc.open("r+b") as handle:
                 handle.seek(ident_offset)
                 handle.write(b"BISCPS-45183VH")
-            self.assertEqual(identify_disc_release(disc), "Asia")
+            self.assertEqual(identify_disc_boot_family(disc), "Asia")
             with patch("tools.preflight_map02_pcport._run", side_effect=fake_run), \
                  patch("tools.preflight_map02_pcport.US_EXE_MD5",
                        hashlib.md5(exe.read_bytes()).hexdigest()), \
@@ -239,8 +246,8 @@ class PreflightMap02PcportTests(unittest.TestCase):
                        hashlib.sha256(krom.read_bytes()).hexdigest()):
                 result = inspect(root, disc_image=disc, krom_source=krom,
                                  no_webp=True, no_hdvideo=True)
-            self.assertTrue(result["checks"]["disc_supported_by_us_port"])
-            self.assertEqual(result["checks"]["disc_release"], "Asia")
+            self.assertTrue(result["checks"]["disc_boot_id_accepted_by_us_runtime"])
+            self.assertEqual(result["checks"]["disc_boot_id_family"], "Asia")
 
     def test_other_disc_with_valid_iso_pvd_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -249,10 +256,10 @@ class PreflightMap02PcportTests(unittest.TestCase):
             with disc.open("r+b") as handle:
                 handle.seek(23 * 2352 + 24)
                 handle.write(b"OTHER EX")
-            self.assertEqual(identify_disc_release(disc), "unknown")
+            self.assertEqual(identify_disc_boot_family(disc), "unknown")
             with patch("tools.preflight_map02_pcport._run", side_effect=fake_run):
                 result = inspect(root, disc_image=disc, krom_source=krom)
-            self.assertIn("disc_release_unrecognized", result["blockers"])
+            self.assertIn("disc_boot_id_unrecognized", result["blockers"])
             self.assertTrue(result["checks"]["disc_raw_layout_ok"])
 
     def test_japanese_disc_is_rejected_for_pinned_us_build(self):
@@ -270,7 +277,7 @@ class PreflightMap02PcportTests(unittest.TestCase):
                 handle.seek(ident_offset)
                 handle.write(b"BISLPM-86007VH")
                 handle.truncate(((ident_offset // 2352) + 1) * 2352)
-            self.assertEqual(identify_disc_release(disc), "Japan")
+            self.assertEqual(identify_disc_boot_family(disc), "Japan")
             with patch("tools.preflight_map02_pcport._run", side_effect=fake_run):
                 result = inspect(root, disc_image=disc, krom_source=krom)
             self.assertIn("disc_region_not_supported_by_us_build", result["blockers"])
