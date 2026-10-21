@@ -1053,6 +1053,20 @@ jobs:
           assert (r["high_fanout_provenance_nontext_only_imports"] ==
                   r["high_fanout_only_nontext_relocation_names"])
           assert r["source_section_and_relocation_type_do_not_prove_runtime_abi"] is True
+          assert r["high_fanout_abs64_data_records"] == 222
+          assert r["high_fanout_abs64_data_records"] == (
+              r["high_fanout_provenance_abs64_records"] ==
+              r["high_fanout_provenance_section_data_records"])
+          assert r["high_fanout_abs64_data_symbol_names"] == 1
+          assert 1 <= r["high_fanout_abs64_data_source_objects"] <= 85
+          assert (r["high_fanout_abs64_data_source_objects"] <=
+                  r["high_fanout_abs64_data_source_sections"] <= 222)
+          assert 0 <= r["high_fanout_abs64_data_aligned_eight_byte_records"] <= 222
+          assert (0 <= r["high_fanout_abs64_data_adjacent_eight_byte_pairs"] <=
+                  222 - r["high_fanout_abs64_data_source_sections"])
+          assert (1 <= r["high_fanout_abs64_data_longest_eight_byte_run"] <=
+                  r["high_fanout_abs64_data_max_records_in_one_source_object"] <= 222)
+          assert r["patch_offset_adjacency_does_not_prove_runtime_pointer_table"] is True
           assert r["fanout_counts_distinct_source_objects_not_runtime_calls"] is True
           assert r["only_counts_and_hashes_published"] is True
           assert r["retail_asset_content_accessed"] is False
@@ -1090,6 +1104,16 @@ jobs:
                 r["high_fanout_provenance_any_non_pc32_plt32_imports"])
           print("High-fanout names referenced from both text and nontext:",
                 r["high_fanout_provenance_both_text_nontext_imports"])
+          print("One ABS64 data-referenced name: owning game source objects:",
+                r["high_fanout_abs64_data_source_objects"],
+                "independent patch sections:",
+                r["high_fanout_abs64_data_source_sections"])
+          print("ABS64 8-byte aligned patch records:",
+                r["high_fanout_abs64_data_aligned_eight_byte_records"],
+                "adjacent offset pairs:",
+                r["high_fanout_abs64_data_adjacent_eight_byte_pairs"],
+                "longest contiguous run:",
+                r["high_fanout_abs64_data_longest_eight_byte_run"])
           print("Per-source names and paths are kept private; no retail MAP02 executed.")
           PY
       - name: Fail closed on upstream rasterizer source drift
