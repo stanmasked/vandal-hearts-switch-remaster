@@ -1021,6 +1021,17 @@ jobs:
           assert sum(r["high_fanout_elf_" + kind] for kind in type_buckets) == 33
           assert 0 <= r["high_fanout_with_any_notype_declaration"] <= 33
           assert r["elf_symbol_type_is_not_proof_of_abi_or_runtime_calls"] is True
+          relocation_buckets = ("plt32_only", "pc32_only", "plt32_and_pc32",
+                                "other_or_mixed", "no_relocation_record")
+          assert r["high_fanout_game_only_imports_with_relocation_check"] == 33
+          assert sum(r["high_fanout_reloc_" + category]
+                     for category in relocation_buckets) == 33
+          assert r["high_fanout_only_nontext_relocation_names"] <= 33
+          assert (r["high_fanout_reloc_plt32_records"] +
+                  r["high_fanout_reloc_pc32_records"] +
+                  r["high_fanout_reloc_other_records"] >=
+                  33 - r["high_fanout_reloc_no_relocation_record"])
+          assert r["relocation_types_do_not_prove_function_or_data_semantics"] is True
           assert r["fanout_counts_distinct_source_objects_not_runtime_calls"] is True
           assert r["only_counts_and_hashes_published"] is True
           assert r["retail_asset_content_accessed"] is False
@@ -1040,6 +1051,14 @@ jobs:
                 {kind: r["high_fanout_elf_" + kind] for kind in type_buckets})
           print("Wide imports with any native NOTYPE marker:",
                 r["high_fanout_with_any_notype_declaration"])
+          print("Wide game-only imports by ELF relocation type presence:",
+                {category: r["high_fanout_reloc_" + category]
+                 for category in relocation_buckets})
+          print("Native relocation record totals by type:",
+                {name: r["high_fanout_reloc_" + name]
+                 for name in ("plt32_records", "pc32_records", "other_records")})
+          print("Only non-.text relocations:",
+                r["high_fanout_only_nontext_relocation_names"])
           print("Per-source names and paths are kept private; no retail MAP02 executed.")
           PY
       - name: Fail closed on upstream rasterizer source drift
