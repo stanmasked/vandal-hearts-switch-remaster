@@ -17,7 +17,9 @@ import stat
 import subprocess
 
 from tools.map02_private_bk2_capture_plan import plan_lines
-from tools.map02_private_disc_movie_preflight import inspect_pair
+from tools.map02_private_disc_movie_preflight import (
+    inspect_pair, read_private_full_bin_sha256,
+)
 from tools.verify_map02_private_neutral_capture_chain import parse_plan
 
 MOVIE_LENGTH = 933949
@@ -48,7 +50,8 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
                  private_png_root: Path, *,
                  script: Path = SCRIPT,
                  minimum: int = 180, maximum: int = 1800,
-                 after: int = 1663, before: int = MOVIE_LENGTH):
+                 after: int = 1663, before: int = MOVIE_LENGTH,
+                 private_full_bin_sha256_file: Path | None = None):
     """Return argv/env without starting EmuHawk or exposing paths to stdout."""
     executable = Path(private_emuhawk)
     if not executable.is_absolute() or not executable.is_file():
@@ -118,7 +121,14 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
 
     # Validate the known disc/MAP02 resource profile and BK2 metadata before
     # deriving a plan or allowing the caller to launch EmuHawk.
-    media = inspect_pair(disc, movie)
+    if private_full_bin_sha256_file is not None:
+        expected = read_private_full_bin_sha256(private_full_bin_sha256_file)
+        media = inspect_pair(
+            disc, movie, verify_full_bin_sha256=True,
+            expected_bin_sha256=expected,
+        )
+    else:
+        media = inspect_pair(disc, movie)
     if not media["media_preflight_ready_for_owner_replay"]:
         raise ValueError("disc/movie media preflight did not match audited profile")
 
@@ -181,6 +191,10 @@ def main() -> int:
     parser.add_argument("--max-neutral-frames", type=int, default=1800)
     parser.add_argument("--after-input-frame", type=int, default=1663)
     parser.add_argument("--before-input-frame", type=int, default=MOVIE_LENGTH)
+    parser.add_argument(
+        "--private-full-bin-sha256-file", type=Path,
+        help="Privately hash the entire BIN against a user-local 0600 digest file",
+    )
     parser.add_argument("--launch", action="store_true",
                         help="open BizHawk locally; without this, validate only")
     args = parser.parse_args()
@@ -190,7 +204,8 @@ def main() -> int:
             args.owner_private_bk2, args.owner_private_capture_plan,
             args.owner_private_png_directory, script=args.capture_lua,
             minimum=args.min_neutral_frames, maximum=args.max_neutral_frames,
-            after=args.after_input_frame, before=args.before_input_frame)
+            after=args.after_input_frame, before=args.before_input_frame,
+            private_full_bin_sha256_file=args.private_full_bin_sha256_file)
     except (OSError, ValueError, TypeError, UnicodeError, RuntimeError):
         parser.error("private BizHawk power-on launch preflight failed")
     if not args.launch:
