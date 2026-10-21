@@ -63,6 +63,24 @@ end
 if movie.length() ~= EXPECTED_LENGTH or movie.getreadonly() ~= true then
   return fail("wrong_movie_length_or_readonly")
 end
+-- Fail closed on a late Lua attachment, manual seek, or a savestate loaded
+-- after startup. This still cannot prove an authentic PS1 power-on.
+local first_counter = emu.framecount()
+if type(first_counter) ~= "number" or
+    (first_counter ~= 0 and first_counter ~= 1) then
+  return fail("lua_must_attach_at_movie_start")
+end
+
+local function start_state(data)
+  if type(data) ~= "table" then return nil end
+  local plain, prefixed = data["Start"], data["P1 Start"]
+  if plain ~= nil and type(plain) ~= "boolean" then return nil end
+  if prefixed ~= nil and type(prefixed) ~= "boolean" then return nil end
+  if plain ~= nil and prefixed ~= nil and plain ~= prefixed then return nil end
+  if plain == true or prefixed == true then return true end
+  if plain == false or prefixed == false then return false end
+  return nil
+end
 
 local function any_held(data)
   if type(data) ~= "table" then return nil end
@@ -78,6 +96,7 @@ local function any_held(data)
 end
 
 local current, previous_counter = 1, nil
+local first_start_off_seen, first_start_on_seen = false, false
 while true do
   if movie.mode() ~= "PLAY" or movie.getreadonly() ~= true then
     return fail("movie_playback_left_readonly")
@@ -90,7 +109,25 @@ while true do
     return fail("emulator_counter_jump")
   end
   previous_counter = counter
-  local index = counter - 1 -- a provisional input-to-counter convention
+  local index = counter - 1 -- still only a provisional input-to-display convention
+  -- The previously inspected owner's BK2 has its first Start press at zero-
+  -- based movie input 1661. Observe that known edge during THIS uninterrupted
+  -- replay before accepting any later plan candidate. movie.getinput is still
+  -- recorded movie data, not independently observed PS1 controller delivery.
+  if index == 1660 then
+    local pressed = start_state(movie.getinput(index, 1))
+    if pressed == nil or pressed then
+      return fail("start_anchor_before_missing_or_pressed")
+    end
+    first_start_off_seen = true
+  elseif index == 1661 then
+    if not first_start_off_seen or start_state(movie.getinput(index, 1)) ~= true then
+      return fail("start_anchor_press_missing_or_ambiguous")
+    end
+    first_start_on_seen = true
+  elseif index > 1661 and not first_start_on_seen then
+    return fail("start_anchor_was_not_observed_live")
+  end
   local wanted = captures[current]
   if index > wanted.index then return fail("scheduled_frame_missed") end
   if index == wanted.index then
