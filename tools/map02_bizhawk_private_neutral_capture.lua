@@ -79,7 +79,10 @@ local function start_state(data)
   if plain ~= nil and prefixed ~= nil and plain ~= prefixed then return nil end
   if plain == true or prefixed == true then return true end
   if plain == false or prefixed == false then return false end
-  return nil
+  -- BizHawk may return a sparse table containing pressed buttons only.
+  -- Missing Start therefore means "not pressed" (not an error). The
+  -- following frame still MUST contain an explicit Start=true.
+  return false
 end
 
 local function any_held(data)
