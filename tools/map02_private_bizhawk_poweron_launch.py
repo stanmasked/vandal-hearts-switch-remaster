@@ -170,6 +170,9 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
     env["VH_PRIVATE_PNG_DIR"] = str(root)
     env["VH_PRIVATE_CAPTURE_LOG"] = str(log_path)
     env["VH_PRIVATE_PROCESS_LOG"] = str(process_log_path)
+    # Lua must cross-check the movie that *actually* opened in EmuHawk,
+    # not just movie length and inputs of any pre-existing GUI instance.
+    env["VH_PRIVATE_EXPECTED_MOVIE"] = str(movie)
     return args, env, len(positions)
 
 
