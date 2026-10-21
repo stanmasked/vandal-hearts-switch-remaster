@@ -53,6 +53,8 @@ def unique_json(path: Path) -> dict:
     try:
         value = json.loads(path.read_text(encoding="utf-8"),
                            object_pairs_hook=no_duplicates)
+    except CrossProofError:
+        raise
     except (UnicodeError, ValueError) as exc:
         raise CrossProofError(f"invalid JSON: {path.name}") from exc
     if not isinstance(value, dict):
