@@ -901,7 +901,9 @@ jobs:
           set -euo pipefail
           python3 -m tools.check_map02_public_glibc_actual_ld_r \
             "${RUNNER_TEMP}/map02-public-code-reloc/map02-unresolved-symbols.private.json" \
+            "${RUNNER_TEMP}/map02-public-code-reloc/map02-public-original-cd-gpu-reloc.o" \
             "${RUNNER_TEMP}/map02-real-x11-native-provider/after-sdl2-unresolved.private.json" \
+            "${RUNNER_TEMP}/map02-real-sdl2-native-provider/linked/map02-private-candidate-linked.o" \
             "${RUNNER_TEMP}/map02-real-four-archive-group/linked/map02-private-candidate-linked.o" \
             "${RUNNER_TEMP}/map02-glibc-static-original-pc-census/glibc-system-libc-static.a" \
             "${RUNNER_TEMP}/map02-glibc-static-original-pc-census/glibc-system-libm-static.a" \
