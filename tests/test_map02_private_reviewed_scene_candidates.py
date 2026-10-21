@@ -151,9 +151,13 @@ class ReviewShortlistTests(unittest.TestCase):
     def test_forged_or_missing_intra_group_rgb_evidence_rejected(self):
         proof = self.sample.call()
         with self.assertRaisesRegex(ValueError, "incomplete source-validated"):
-            shortlist(POSITIONS, proof, self.labels, {1: "true"}, source_plan_sha256=PLAN_SHA)
+            shortlist(POSITIONS, proof, self.labels, {1: "true"},
+                      source_plan_sha256=PLAN_SHA,
+                      source_capture_evidence_sha256=proof["source_capture_evidence_sha256"])
         with self.assertRaisesRegex(ValueError, "incomplete source-validated"):
-            shortlist(POSITIONS, proof, self.labels, {}, source_plan_sha256=PLAN_SHA)
+            shortlist(POSITIONS, proof, self.labels, {},
+                      source_plan_sha256=PLAN_SHA,
+                      source_capture_evidence_sha256=proof["source_capture_evidence_sha256"])
 
     def test_corrupt_png_blocks_report_generation(self):
         self.sample.image(1, "after").write_bytes(b"not an image")
@@ -190,7 +194,9 @@ class ReviewShortlistTests(unittest.TestCase):
         row = audit["matches_and_differences_by_review_position"][0]
         audit["matches_and_differences_by_review_position"].append(dict(row))
         with self.assertRaisesRegex(ValueError, "source RGB witness"):
-            shortlist(POSITIONS, audit, self.labels, {1: True}, source_plan_sha256=PLAN_SHA)
+            shortlist(POSITIONS, audit, self.labels, {1: True},
+                      source_plan_sha256=PLAN_SHA,
+                      source_capture_evidence_sha256=audit["source_capture_evidence_sha256"])
 
     def test_forged_source_game_proof_is_rejected(self):
         audit = self.sample.call()
@@ -213,6 +219,16 @@ class ReviewShortlistTests(unittest.TestCase):
         )
         self.assertNotIn(self.sample.plan.read_text(encoding="ascii"),
                          json.dumps(report))
+
+    def test_report_binds_exact_capture_evidence_digest(self):
+        report = self.call()
+        source = self.sample.call()
+        self.assertEqual(
+            report["source_capture_evidence_sha256"],
+            source["source_capture_evidence_sha256"],
+        )
+        self.assertNotIn(str(self.sample.root), json.dumps(report))
+        self.assertNotIn("3000", json.dumps(report))
 
     def test_capture_plan_mutation_during_audit_fails_closed(self):
         def mutate_plan(*_args, **_kwargs):
