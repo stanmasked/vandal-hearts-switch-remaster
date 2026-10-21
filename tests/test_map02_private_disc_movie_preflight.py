@@ -13,6 +13,7 @@ from tools.map02_private_disc_movie_preflight import (
     EXPECTED_BIN_BYTES, EXPECTED_VOLUME_ID, inspect_pair, _full_image_sha256,
     read_private_full_bin_sha256,
 )
+from tools.inspect_map02_private_bk2 import AXES, BUTTONS
 
 SYNC = json.dumps({"o":{"FIOConfig":{
     "Devices8":[2,0,0,0,0,0,0,0],
@@ -40,13 +41,18 @@ def raw_sector(user, lba):
 
 
 def write_movie(path, *, game="Vandal Hearts (USA)", core="Octoshock",
-                sync=SYNC):
+                sync=SYNC, frames=3, log_override=None):
     header = ("MovieVersion SyntheticCIOnly\nPlatform PSX\n"
               + "GameName " + game + "\nCore " + core + "\n")
+    keys = (["#Disc Select", "Open", "Close", "Reset", "#" + AXES[0]]
+            + list(AXES[1:]) + ["P1 " + name for name in BUTTONS] + [""])
+    neutral = "|1,...|128,128,128,128," + "." * len(BUTTONS) + "|"
+    log = ("[Input]\nLogKey:" + "|".join(keys) + "\n"
+           + (neutral + "\n") * frames + "[/Input]\n")
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("Header.txt", header)
         archive.writestr("SyncSettings.json", sync)
-        archive.writestr("Input Log.txt", "[Input]\nsynthetic only\n[/Input]\n")
+        archive.writestr("Input Log.txt", log_override if log_override is not None else log)
 
 
 class DiscMoviePreflightTests(unittest.TestCase):
@@ -92,6 +98,7 @@ class DiscMoviePreflightTests(unittest.TestCase):
             self.cue, self.movie,
             expected_map02_sha256=kwargs.pop(
                 "expected_map02_sha256", hashlib.sha256(self.map_data).hexdigest()),
+            expected_movie_frames=kwargs.pop("expected_movie_frames", 3),
             **kwargs,
         )
 
@@ -102,6 +109,7 @@ class DiscMoviePreflightTests(unittest.TestCase):
         self.assertTrue(result["map02_prs_matches_expected_profile"])
         self.assertTrue(result["movie_header_matches_vandal_hearts_usa_psx_octoshock"])
         self.assertTrue(result["movie_sync_matches_one_controller_no_cards"])
+        self.assertTrue(result["movie_input_log_matches_expected_frame_count"])
         self.assertTrue(result["media_preflight_ready_for_owner_replay"])
         self.assertFalse(result["exact_disc_movie_compatibility_verified"])
         self.assertFalse(result["actual_octoshock_playback_verified"])
@@ -316,6 +324,41 @@ class DiscMoviePreflightTests(unittest.TestCase):
         self.bin.symlink_to(actual)
         with self.assertRaisesRegex(ValueError, "nonsymlink"):
             self.call()
+
+    def test_movie_truncated_input_log_blocks_replay(self):
+        write_movie(self.movie, frames=2)
+        result = self.call()
+        self.assertTrue(result["movie_header_matches_vandal_hearts_usa_psx_octoshock"])
+        self.assertTrue(result["movie_sync_matches_one_controller_no_cards"])
+        self.assertFalse(result["movie_input_log_matches_expected_frame_count"])
+        self.assertFalse(result["media_preflight_ready_for_owner_replay"])
+
+    def test_movie_extra_input_frame_blocks_replay(self):
+        write_movie(self.movie, frames=4)
+        result = self.call()
+        self.assertFalse(result["movie_input_log_matches_expected_frame_count"])
+        self.assertFalse(result["media_preflight_ready_for_owner_replay"])
+
+    def test_movie_malformed_log_rejected_even_with_valid_header_and_sync(self):
+        write_movie(self.movie, log_override="[Input]\nnot a LogKey\n[/Input]\n")
+        with self.assertRaisesRegex(ValueError, "LogKey"):
+            self.call()
+
+    def test_movie_malformed_controller_frame_rejected(self):
+        keys = (["#Disc Select", "Open", "Close", "Reset", "#" + AXES[0]]
+                + list(AXES[1:]) + ["P1 " + name for name in BUTTONS] + [""])
+        invalid = ("[Input]\nLogKey:" + "|".join(keys)
+                   + "\n|1,...|999,128,128,128," + "." * len(BUTTONS)
+                   + "|\n[/Input]\n")
+        write_movie(self.movie, log_override=invalid)
+        with self.assertRaisesRegex(ValueError, "analog input"):
+            self.call()
+
+    def test_expected_movie_frame_limit_is_bounded(self):
+        with self.assertRaisesRegex(ValueError, "frame count"):
+            self.call(expected_movie_frames=0)
+        with self.assertRaisesRegex(ValueError, "frame count"):
+            self.call(expected_movie_frames=1500001)
 
     def test_wrong_movie_game_header_returns_not_ready(self):
         write_movie(self.movie, game="Vandal Hearts (Japan)")
