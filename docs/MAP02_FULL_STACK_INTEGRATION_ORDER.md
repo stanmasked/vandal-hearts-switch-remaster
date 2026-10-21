@@ -158,6 +158,28 @@ someone could change a remote ref after it has passed. A real merge
 requires a separate transaction/review and fresh checks at that moment.
 This workflow intentionally provides no automated merge mechanism.
 
+## Automatic independent workflow evidence check
+
+The NeXium workflow now has a final **read-only** job, executed only after
+the actual two-cold-boot NeXium job succeeds. Using GitHub's authenticated
+Actions API, it selects the **newest** full-stack integration run for the
+exact tested source commit, requires that run to have completed successfully,
+and downloads its independent evidence artifact. An older green run cannot
+override a newer failed or queued run.
+
+The job also downloads the NRO + 24 real screenshots from its own successful
+NeXium run, revalidates all 35 included files and the 72 PNG/RGB SHA-256
+digests, confirms separate emulator processes and the stored offline-audit
+result, and checks the exact source commit and Git tree against the
+26-PR integration candidate and post-candidate ref-check receipt.
+
+The new report, `cross-workflow.json`, includes both GitHub run IDs, the NRO
+SHA-256, the unified NeXium evidence root, the integration candidate hash,
+and an independently computed SHA-256 over those references. This is
+**evidence consistency**, not a digital signature, a physical hardware
+test or proof of legal ownership. It does not make a GitHub commit or merge
+anything into `main`.
+
 ## Human-gated integration procedure
 
 For each PR, beginning at #241:
