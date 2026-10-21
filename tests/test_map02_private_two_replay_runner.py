@@ -661,6 +661,113 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         paired.assert_called_once()
         self.assertEqual(hashed.call_count, 3)
 
+    def _exercise_firmware_gate(self, receipts, *, launch=True):
+        candidate = self.root / "fictional-PSX-bios.bin"
+        candidate.write_bytes(b"synthetic PSX BIOS candidate only")
+        success = {"candidate_bios_sha1_matches_movie_psx_firmware_metadata": True}
+        rejected = {"candidate_bios_sha1_matches_movie_psx_firmware_metadata": False}
+        results = [success if value else rejected for value in receipts]
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_two_replay_runner.plan_lines",
+            return_value=["Header", "Frames", "Count", "R1", "R2", "R3"],
+        ), patch(
+            "tools.map02_private_two_replay_runner.write_private_plan",
+            side_effect=self._write_plan,
+        ), patch(
+            "tools.map02_private_two_replay_runner.compare_firmware",
+            side_effect=results,
+        ) as firmware, patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+            side_effect=[Mock(returncode=0), Mock(returncode=0)],
+        ) as process, patch(
+            "tools.map02_private_two_replay_runner.verify",
+            return_value={"screenshot_count": 3},
+        ) as chain, patch(
+            "tools.map02_private_two_replay_runner.audit_pair",
+            return_value=dict(PAIR_OK),
+        ) as pair:
+            try:
+                outcome = capture_twice(
+                    *self.args, start=launch,
+                    private_psx_bios_candidate=candidate,
+                )
+            except ValueError as exc:
+                outcome = str(exc)
+        for invocation in firmware.call_args_list:
+            self.assertEqual(invocation.args, (self.movie, candidate))
+        return outcome, firmware, process, chain, pair
+
+    def test_bios_optional_gate_skips_without_owner_file(self):
+        with patch(
+            "tools.map02_private_two_replay_runner.compare_firmware",
+        ) as firmware:
+            report, *_ = self.run_mocked()
+        firmware.assert_not_called()
+        self.assertFalse(report["candidate_bios_matched_bk2_metadata_at_checkpoints"])
+        self.assertFalse(report["actual_emuhawk_loaded_bios_authenticated"])
+
+    def test_bios_candidate_dry_run_validated_without_launch(self):
+        report, firmware, process, _, _ = self._exercise_firmware_gate(
+            [True], launch=False,
+        )
+        firmware.assert_called_once()
+        process.assert_not_called()
+        self.assertTrue(report["candidate_bios_matches_bk2_psx_firmware_metadata"])
+        self.assertFalse(report["actual_emuhawk_loaded_bios_authenticated"])
+
+    def test_bios_metadata_missing_or_mismatched_blocks_launch(self):
+        result, firmware, process, _, _ = self._exercise_firmware_gate([False])
+        self.assertIn("firmware metadata absent", result)
+        firmware.assert_called_once()
+        process.assert_not_called()
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_bios_candidate_mismatch_after_first_process_blocks_second(self):
+        result, firmware, process, chain, pair = self._exercise_firmware_gate(
+            [True, True, False],
+        )
+        self.assertIn("firmware metadata absent", result)
+        self.assertEqual(firmware.call_count, 3)
+        process.assert_called_once()
+        chain.assert_not_called()
+        pair.assert_not_called()
+        self.assertFalse((self.workspace / RUN_NAMES[1]).exists())
+
+    def test_bios_candidate_mismatch_after_second_process_blocks_pair_review(self):
+        result, firmware, process, chain, pair = self._exercise_firmware_gate(
+            [True, True, True, True, False],
+        )
+        self.assertIn("firmware metadata absent", result)
+        self.assertEqual(firmware.call_count, 5)
+        self.assertEqual(process.call_count, 2)
+        chain.assert_called_once()
+        pair.assert_not_called()
+
+    def test_bios_candidate_changed_during_pair_review_blocks_success(self):
+        result, firmware, process, chain, pair = self._exercise_firmware_gate(
+            [True, True, True, True, True, False],
+        )
+        self.assertIn("firmware metadata absent", result)
+        self.assertEqual(firmware.call_count, 6)
+        self.assertEqual(process.call_count, 2)
+        self.assertEqual(chain.call_count, 2)
+        pair.assert_called_once()
+
+    def test_bios_candidate_verified_across_all_optional_checkpoints(self):
+        report, firmware, process, chain, pair = self._exercise_firmware_gate(
+            [True] * 6,
+        )
+        self.assertEqual(firmware.call_count, 6)
+        self.assertEqual(process.call_count, 2)
+        self.assertEqual(chain.call_count, 2)
+        pair.assert_called_once()
+        self.assertTrue(report["candidate_bios_matched_bk2_metadata_at_checkpoints"])
+        self.assertFalse(report["actual_emuhawk_loaded_bios_authenticated"])
+        self.assertFalse(report["original_map02_scene_authenticated"])
+
     def test_requested_private_digest_is_used_before_both_runs(self):
         digest_file = self.root / "fictional.sha256"
         digest_file.write_text("a" * 64)
