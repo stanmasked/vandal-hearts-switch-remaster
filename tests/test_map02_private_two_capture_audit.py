@@ -73,7 +73,7 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
         count_b = kwargs.pop("count_b", len(ROWS))
         version_b = kwargs.pop("version_b", "2.11")
         display_b = kwargs.pop("display_b", "NTSC")
-        fallback_b = kwargs.pop("fallback_b", "allowed")
+        fallback_b = kwargs.pop("fallback_b", "blocked")
         lag_b = kwargs.pop("lag_b", [300, 325, 350])
         with patch(
             "tools.map02_private_two_capture_audit.verify",
@@ -81,7 +81,7 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
                 {"screenshot_count": count_a,
                  "reported_bizhawk_version": "2.11",
                  "reported_psx_display_standard": "NTSC",
-                 "reported_psx_core_fallback_configuration": "allowed",
+                 "reported_psx_core_fallback_configuration": "blocked",
                  "reported_psx_lag_counts_at_snapshots": [300, 325, 350]},
                 {"screenshot_count": count_b,
                  "reported_bizhawk_version": version_b,
@@ -103,6 +103,7 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
         self.assertTrue(report["two_private_capture_chains_passed"])
         self.assertTrue(report["same_reported_bizhawk_runtime_profile"])
         self.assertTrue(report["same_reported_psx_core_fallback_configuration"])
+        self.assertTrue(report["both_runs_reported_psx_core_fallback_disabled"])
         self.assertTrue(report["same_reported_psx_lag_timeline"])
         self.assertTrue(report["psx_lag_counter_available_in_both"])
         self.assertFalse(report["psx_lag_timeline_proves_controller_delivery"])
@@ -236,12 +237,12 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
                 {"screenshot_count": 3,
                  "reported_bizhawk_version": "2.11",
                  "reported_psx_display_standard": "NTSC",
-                 "reported_psx_core_fallback_configuration": "allowed",
+                 "reported_psx_core_fallback_configuration": "blocked",
                  "reported_psx_lag_counts_at_snapshots": None},
                 {"screenshot_count": 3,
                  "reported_bizhawk_version": "2.11",
                  "reported_psx_display_standard": "NTSC",
-                 "reported_psx_core_fallback_configuration": "allowed",
+                 "reported_psx_core_fallback_configuration": "blocked",
                  "reported_psx_lag_counts_at_snapshots": None},
             ],
         ), patch(
@@ -257,7 +258,11 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
 
     def test_different_core_fallback_settings_block_pair_comparison(self):
         with self.assertRaisesRegex(ValueError, "core fallback configuration"):
-            self.call(fallback_b="blocked")
+            self.call(fallback_b="allowed")
+
+    def test_one_allowed_fallback_rejected_even_with_matching_images(self):
+        with self.assertRaisesRegex(ValueError, "core fallback configuration"):
+            self.call(fallback_b="allowed")
 
     def test_unavailable_core_preference_evidence_blocks_pair_comparison(self):
         with self.assertRaisesRegex(ValueError, "core fallback configuration"):
@@ -277,11 +282,11 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
             side_effect=[
                 {"screenshot_count": 3, "reported_bizhawk_version": "2.11",
                  "reported_psx_display_standard": "NTSC",
-                 "reported_psx_core_fallback_configuration": "allowed",
+                 "reported_psx_core_fallback_configuration": "blocked",
                  "reported_psx_lag_counts_at_snapshots": [300, 325, 350]},
                 {"screenshot_count": 3, "reported_bizhawk_version": "2.11",
                  "reported_psx_display_standard": "NTSC",
-                 "reported_psx_core_fallback_configuration": "allowed",
+                 "reported_psx_core_fallback_configuration": "blocked",
                  "reported_psx_lag_counts_at_snapshots": [300, 325, 350]},
             ],
         ), patch(
@@ -304,11 +309,11 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
             side_effect=[
                 {"screenshot_count": 3, "reported_bizhawk_version": "2.11",
                  "reported_psx_display_standard": "NTSC",
-                 "reported_psx_core_fallback_configuration": "allowed",
+                 "reported_psx_core_fallback_configuration": "blocked",
                  "reported_psx_lag_counts_at_snapshots": [300, 325, 350]},
                 {"screenshot_count": 3, "reported_bizhawk_version": "2.11",
                  "reported_psx_display_standard": "NTSC",
-                 "reported_psx_core_fallback_configuration": "allowed",
+                 "reported_psx_core_fallback_configuration": "blocked",
                  "reported_psx_lag_counts_at_snapshots": [300, 325, 350]},
             ],
         ), patch(
