@@ -1,0 +1,48 @@
+name: MAP02 private Start-to-candidate BK2 chronology (synthetic CI)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-private-start-candidate-order.yml'
+      - 'tools/verify_map02_private_start_candidate_order.py'
+      - 'tests/test_verify_map02_private_start_candidate_order.py'
+      - 'docs/MAP02_PRIVATE_START_CANDIDATE_ORDER.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  invented-start-to-candidate:
+    name: Synthetic Start/candidate chronology (${{ matrix.os }} Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.9'
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: macos-15-intel
+            python: '3.11'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Install Pillow for synthetic 1x1 PNG only
+        shell: bash
+        run: python -m pip install 'Pillow>=10,<12'
+      - name: Validate fifteen fabricated Start-anchor and candidate-frame cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_verify_map02_private_start_candidate_order.py' -v \
+            2>&1 | tee "$RUNNER_TEMP/map02-start-candidate-synthetic.log"
+          grep -F 'Ran 15 tests' "$RUNNER_TEMP/map02-start-candidate-synthetic.log"
+          if grep -E '^(FAILED|ERROR)' "$RUNNER_TEMP/map02-start-candidate-synthetic.log"; then
+            exit 1
+          fi
+          echo 'VH_MAP02_START_CANDIDATE_ORDER_PASS synthetic=15 owner_bk2=0 ps1_emulation=0 map02_frame_identified=0'
