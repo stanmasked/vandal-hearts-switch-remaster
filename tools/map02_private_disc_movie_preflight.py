@@ -246,7 +246,7 @@ def _disc_profile(bin_path: Path, expected_map02_sha256: str, *,
 
 
 def _movie_metadata(movie_path: Path, expected_movie_frames: int
-                    ) -> tuple[bool, bool, bool]:
+                    ) -> tuple[bool, bool, bool, bool]:
     fd, before = _open_stable(movie_path)
     with os.fdopen(fd, "rb") as handle:
         if before.st_size <= 0 or before.st_size > 8 * 1024 * 1024:
@@ -261,8 +261,17 @@ def _movie_metadata(movie_path: Path, expected_movie_frames: int
                     and header.get("GameName") == "Vandal Hearts (USA)"
                     and header.get("Core") == "Octoshock"
                 )
+                # BizHawk treats StartsFromSavestate presence as an anchor;
+                # its value (even "False") is not reliable proof of power-on.
+                # Refuse all save-anchored header variants. safe_members()
+                # separately rejects a CoreState/SaveRAM ZIP member.
+                poweron_declared = not any(
+                    key.casefold().startswith("startsfromsave")
+                    for key in header
+                )
             except ValueError:
                 header_match = False
+                poweron_declared = False
             try:
                 sync = parse_sync(read_small(archive, "SyncSettings.json"))
                 sync_match = (
@@ -305,7 +314,7 @@ def _movie_metadata(movie_path: Path, expected_movie_frames: int
                     raise ValueError("BK2 input end marker missing or extra bytes")
             input_match = frames == expected_movie_frames
         _assert_stable(handle.fileno(), movie_path, before)
-        return header_match, sync_match, input_match
+        return header_match, sync_match, input_match, poweron_declared
 
 
 def inspect_pair(cue_path: Path, movie_path: Path, *,
@@ -337,15 +346,14 @@ def inspect_pair(cue_path: Path, movie_path: Path, *,
         verify_full_bin_sha256=verify_full_bin_sha256,
         expected_bin_sha256=expected_bin_sha256,
     )
-    movie_header_match, movie_sync_match, movie_input_match = _movie_metadata(
-        movie, expected_movie_frames
-    )
+    (movie_header_match, movie_sync_match, movie_input_match,
+     movie_declares_poweron) = _movie_metadata(movie, expected_movie_frames)
     profile_match = (
         volume_match and resource_match and size_match
         and (not verify_full_bin_sha256 or full_match is True)
     )
     ready = (profile_match and movie_header_match and movie_sync_match
-             and movie_input_match)
+             and movie_input_match and movie_declares_poweron)
     return {
         "schema": SCHEMA,
         "cue_single_mode2_2352_track": True,
@@ -358,6 +366,7 @@ def inspect_pair(cue_path: Path, movie_path: Path, *,
         "movie_header_matches_vandal_hearts_usa_psx_octoshock": movie_header_match,
         "movie_sync_matches_one_controller_no_cards": movie_sync_match,
         "movie_input_log_matches_expected_frame_count": movie_input_match,
+        "movie_has_no_declared_save_anchor": movie_declares_poweron,
         "media_preflight_ready_for_owner_replay": ready,
         "exact_disc_movie_compatibility_verified": False,
         "bios_configuration_verified": False,
