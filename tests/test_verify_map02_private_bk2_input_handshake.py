@@ -141,6 +141,29 @@ class Map02PrivateInputHandshakeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             verify(self.report_path, link, self.log_path)
 
+    def test_known_first_start_anchor_at_1661_is_required(self):
+        self.report["input_log_frame_count"] = 2000
+        self.report["window"] = {
+            "start_frame": 1650, "length_requested": 41, "changes_exported": 3
+        }
+        self.change_rows = [
+            (1650, "", "", ""),
+            (1661, "Start", "", "Start"),
+            (1663, "", "Start", ""),
+        ]
+        self.probes = [(frame + 1, frame, 32 if 1661 <= frame <= 1662 else 0)
+                       for frame in range(1650, 1691)]
+        self.write_files()
+        self.assertEqual(verify(self.report_path, self.csv_path, self.log_path)["frames_compared"], 41)
+        # A different first Start onset cannot validate the owner's known anchor,
+        # even when a synthetic Lua probe agrees with that wrong event stream.
+        self.change_rows[1] = (1662, "Start", "", "Start")
+        self.probes = [(frame + 1, frame, 32 if frame == 1662 else 0)
+                       for frame in range(1650, 1691)]
+        self.write_files()
+        with self.assertRaises(ValueError):
+            verify(self.report_path, self.csv_path, self.log_path)
+
     def test_lua_uses_movie_getinput_and_does_not_inject_game_inputs(self):
         lua = (Path(__file__).resolve().parents[1] / "tools" /
                "map02_bizhawk_private_input_handshake.lua").read_text(encoding="utf-8")
