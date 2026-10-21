@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Stage306 verified post-input ALSA per-anonymous-alias snapshot deltas.
 
-Retrospectively re-open the *two actual Stage305 Actions artifacts*, not
-fabricated/synthetic counters. Re-run full Stage305 pinned NRO/ELF/P/L/Pulse
-source audits; compare only last completed 200ms source snapshot at or before
-original guest first-input/last-observation markers. No exact callback time.
+Read only the two original Stage305 Actions artifacts. Independently reparse
+retained raw CPAL P/L and userspace ALSA CSV, hash original Pulse event CSV,
+and cross-check Stage305 SUCCESS receipts where private Pulse snapshots,
+raw virtual PCM and private GUI FileLogger were NOT uploaded intentionally.
+Never reconstruct or claim a recheck of missing raw evidence.
 The same alias number across separate trial processes is NOT thread identity.
 """
 import argparse
@@ -14,7 +15,8 @@ import hashlib
 import json
 from pathlib import Path
 
-from audit_map02_alsa_userspace_stage305 import audit as audit_prior
+from audit_map02_alsa_userspace_stage305 import samples as reparse_alsa
+from audit_map02_cpal_lifetime_stage299 import analyze as reparse_cpal
 from capture_map02_alsa_userspace_stage305 import KINDS,OPS,SLOTS
 
 SCHEMA="vh-map02-stage306-source-reparsed-alsa-guest-window-alias-deltas/v1"
@@ -119,11 +121,91 @@ def window_deltas(csv_path,first,last):
         "separate_trial_anonymous_aliases_are_not_globally_comparable":True,
     }
 
+
+def verify_available_original_stage305_sources(root,hint):
+    """Replay only genuine available source streams; trust private data receipts."""
+    root=Path(root)
+    saved=read_json(root/"stage305-userspace-alsa-guest-audit.json")
+    require(saved["schema"]=="vh-map02-stage305-real-userspace-alsa-interposer/v1"
+            and saved["result"]==
+                "REAL_STAGE305_PINNED_GUEST_USERSPACE_ALSA_COUNTERS_SOURCE_REPARSED"
+            and saved["real_actions_run_id"]==SOURCE_RUN
+            and saved["requested_pulse_latency_hint_ms"]==hint,
+            "Original actual Stage305 verified receipt invalid")
+    meta=read_json(root/"stage299-pinned-new-host-guest.json")
+    require(meta["schema"]=="vh-map02-stage299-pinned-new-elf-and-generated-nro/v1"
+            and meta["actual_stage299_run_id"]==SOURCE_RUN
+            and meta["attempt"]==1 and meta["hint_ms"]==hint
+            and meta["exact_stage298_elf_sha256"]==saved["host_elf_sha256"]
+            and meta["exact_generated_nro_sha256"]==
+                saved["generated_rom_free_nro_sha256"],
+            "Source build identity does not match verified receipt")
+    build=read_json(root/"stage305-interposer-build-manifest.json")
+    require(build["result"]=="REAL_ALSA_INTERPOSER_BINARY_COMPILED"
+            and build["interposer_so_sha256"]==saved["interposer_so_sha256"]
+            and build["preflight_synthetic_null_device_return_codes_match"] is True
+            and build["preflight_interposer_observed_public_alsa_calls"] is True
+            and build["actual_original_game_or_ps1_music_used"] is False,
+            "Original private shim built identity was altered")
+    first=int((root/"guest-first-input-monotonic-ns.txt").read_text().strip())
+    last=int((root/"guest-final-observation-monotonic-ns.txt").read_text().strip())
+    host=reparse_cpal(root/"host-cpal-lifetime-p.csv",
+                      root/"host-cpal-audioout-timeline.csv",first,last)
+    require(host==read_json(root/"host-cpal-lifetime-audit.json")
+            and host["guest_window_original_l_cpal_entry_delta"]==
+                saved["guest_cpal_entries_after_input"],
+            "Independent raw P/L time series differs from original audited receipt")
+    alsa=reparse_alsa(root/"alsa-userspace-anonymous-atomic.csv")
+    require(all(saved.get(k)==v for k,v in alsa.items()),
+            "Source raw ALSA rows differ from signed trial summary")
+    pulse=read_json(root/"stage301-pulse-subscribe-verified.json")
+    pulse_raw=(root/"pulse-sink-input-events-monotonic.csv").read_bytes()
+    require(pulse["schema"]==
+                "vh-map02-stage301-pulse-subscribe-monotonic-real-guest/v1"
+            and pulse["result"]==
+                "REAL_STAGE301_GUEST_CPAL_PULSE_RECEIPT_CLOCKS_REPARSED"
+            and pulse["source_actions_run_id"]==SOURCE_RUN
+            and pulse["hint_ms"]==hint
+            and pulse["guest_first_input_monotonic_ns"]==first
+            and pulse["guest_last_observation_monotonic_ns"]==last
+            and pulse["host_guest_window_cpal_callback_entries"]==
+                saved["guest_cpal_entries_after_input"]
+            and pulse["guest_final_8_page_crc_verified"]==
+                saved["guest_crc_8_pages_passed"]
+            and pulse["virtual_pcm_nonzero_samples"]==
+                saved["virtual_pcm16_nonzero_samples"]
+            and hashlib.sha256(pulse_raw).hexdigest()==
+                pulse["pulse_subscribe_receipt_sha256"],
+            "Retained Pulse event file SHA or previous verified Pulse receipt changed")
+    old=read_json(root/"stage299-source-pinned-real-lifetime-receipt.json")
+    require(old["schema"]==
+                "vh-map02-stage299-real-new-elf-lifetime-guest-evidence/v1"
+            and old["result"]==
+                "REAL_STAGE299_NEW_SHA_PINNED_P_L_GUEST_FILELOGGER_VERIFIED"
+            and old["actual_run_id"]==SOURCE_RUN
+            and old["hint_ms"]==hint
+            and old["guest_8_pages_crc_verified"]==
+                saved["guest_crc_8_pages_passed"]
+            and old["virtual_pcm_nonzero_samples"]==
+                saved["virtual_pcm16_nonzero_samples"]
+            and old["host_L_guest_window_callback_delta"]==
+                saved["guest_cpal_entries_after_input"],
+            "Original previously audited GUI/optical/PCM receipt changed")
+    image=read_json(root/"guest-final-receipt.json")
+    require((image["result"]=="GUEST_PRESUBMIT_PCM_PAGES_MATCHED")==
+            saved["guest_crc_8_pages_passed"],
+            "Original optical receipt disagrees with original ALSA audit")
+    pcm=read_json(root/"virtual-pcm-health.json")
+    require(pcm["nonzero_pcm16_samples"]==
+            saved["virtual_pcm16_nonzero_samples"],
+            "Prior real PCM sha verified receipt differs from ALSA guest")
+    return saved
+
 def one(root,hint):
     root=Path(root)
     require(root.name==EXPECTED_NAMES[hint] and root.is_dir() and not root.is_symlink(),
             "Original Stage305 Actions artifact directory identity absent")
-    original=audit_prior(root,hint,SOURCE_RUN)
+    original=verify_available_original_stage305_sources(root,hint)
     saved=read_json(root/"stage305-userspace-alsa-guest-audit.json")
     require(original==saved and original["result"]==
             "REAL_STAGE305_PINNED_GUEST_USERSPACE_ALSA_COUNTERS_SOURCE_REPARSED",
@@ -144,7 +226,10 @@ def one(root,hint):
     return {
         "requested_pulse_hint_ms":hint,
         "source_real_actions_run_id":SOURCE_RUN,
-        "full_original_stage305_real_guest_elf_nro_cpal_pulse_audit_reparsed":True,
+        "retained_raw_cpal_P_L_and_alsa_reparsed":True,
+        "retained_pulse_event_csv_sha_rechecked":True,
+        "unuploaded_private_pulse_pcm_filelogger_not_reparsed":True,
+        "prior_stage305_pulse_pcm_filelogger_receipts_cross_checked":True,
         "stage305_original_audit_json_sha256":hashlib.sha256(
             (root/"stage305-userspace-alsa-guest-audit.json").read_bytes()).hexdigest(),
         "actual_guest_CPAL_post_input_entries":
@@ -174,6 +259,8 @@ def compare(root):
         "original_stage305_head_commit":SOURCE_HEAD,
         "trials":data,
         "unobserved_library_internal_or_dlsym_calls_may_exist":True,
+        "raw_Pulse_snapshots_virtual_PCM_and_private_FileLogger_were_not_uploaded":True,
+        "full_source_replay_of_unuploaded_data_is_impossible":True,
         "ld_preload_perturbs_nexium_symbol_resolution_and_timing":True,
         "alsa_export_call_not_source_proven_cpal_callback_thread":True,
         "guest_window_endpoints_are_bounded_sample_times_not_exact_callbacks":True,
