@@ -23,6 +23,12 @@ from tools.map02_private_disc_movie_preflight import (
 from tools.verify_map02_private_neutral_capture_chain import parse_plan
 
 MOVIE_LENGTH = 933949
+# A full owner movie has 933,949 input frames: capture must not be allowed to
+# hang forever after the final frame or on a missing/incompatible boot.
+# This is a safety ceiling, not an estimate of normal execution duration.
+MIN_EMULATOR_TIMEOUT_SECONDS = 300
+MAX_EMULATOR_TIMEOUT_SECONDS = 86400
+DEFAULT_EMULATOR_TIMEOUT_SECONDS = 28800
 SCRIPT = Path(__file__).with_name("map02_bizhawk_private_neutral_capture.lua")
 
 
@@ -192,12 +198,19 @@ def main() -> int:
     parser.add_argument("--after-input-frame", type=int, default=1663)
     parser.add_argument("--before-input-frame", type=int, default=MOVIE_LENGTH)
     parser.add_argument(
+        "--emulator-timeout-seconds", type=int,
+        default=DEFAULT_EMULATOR_TIMEOUT_SECONDS,
+        help="Limit a launched local EmuHawk process to 300..86400 seconds",
+    )
+    parser.add_argument(
         "--private-full-bin-sha256-file", type=Path,
         help="Privately hash the entire BIN against a user-local 0600 digest file",
     )
     parser.add_argument("--launch", action="store_true",
                         help="open BizHawk locally; without this, validate only")
     args = parser.parse_args()
+    if not MIN_EMULATOR_TIMEOUT_SECONDS <= args.emulator_timeout_seconds <= MAX_EMULATOR_TIMEOUT_SECONDS:
+        parser.error("EmuHawk timeout seconds must be within a bounded range")
     try:
         command, env, count = build_launch(
             args.absolute_emuhawk_executable, args.owner_private_ps1_disc,
@@ -247,7 +260,23 @@ def main() -> int:
         with os.fdopen(process_fd, "ab") as private_output:
             result = subprocess.run(
                 command, env=env, shell=False, check=False,
-                stdout=private_output, stderr=subprocess.STDOUT)
+                stdout=private_output, stderr=subprocess.STDOUT,
+                timeout=args.emulator_timeout_seconds)
+    except subprocess.TimeoutExpired:
+        # subprocess.run terminates and waits for the directly launched
+        # EmuHawk process; POSIX shell-wrapper descendants are not proven
+        # gone and must not be represented as a clean capture.
+        try:
+            _append_private_log(
+                log_path,
+                "VH_PRIVATE_BIZHAWK_LAUNCH_ERROR process_started=1 "
+                "reason=emulator_timeout original_ps1_authenticated=0",
+            )
+        except OSError:
+            pass
+        print("VH_PRIVATE_BIZHAWK_LOCAL_PROCESS_EXITED exit_success=0 "
+              "reason=timeout original_ps1_authenticated=0 map02_identified=0")
+        return 1
     except OSError:
         try:
             _append_private_log(log_path,
