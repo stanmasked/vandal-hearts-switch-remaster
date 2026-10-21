@@ -131,6 +131,25 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "counts differ"):
             self.call(count_b=2)
 
+    def test_main_returns_review_code_for_different_png_bytes(self):
+        (self.second / self.names[-1]).write_bytes(b"fictional changed encoding")
+        args = ["audit", str(self.movie), str(self.plan), str(self.first),
+                str(self.second)]
+        with patch.object(sys, "argv", args), patch(
+            "tools.map02_private_two_capture_audit.verify",
+            side_effect=[{"screenshot_count": 3}, {"screenshot_count": 3}],
+        ), patch(
+            "tools.map02_private_two_capture_audit.parse_plan",
+            return_value=("fictional plan", ROWS),
+        ):
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                status = main()
+        self.assertEqual(status, 2)
+        result = json.loads(buffer.getvalue())
+        self.assertEqual(result["byte_different_png_pairs"], 1)
+        self.assertNotIn(str(self.root), buffer.getvalue())
+
     def test_main_reports_only_aggregate_fields(self):
         args = ["audit", str(self.movie), str(self.plan), str(self.first),
                 str(self.second)]
