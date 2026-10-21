@@ -1,0 +1,352 @@
+name: MAP02 Stage311 genuine ALSA entry-return waits with CPAL same-thread markers
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-alsa-inflight-stage311.yml'
+      - 'tools/map02_alsa_inflight_stage311.c'
+      - 'tools/capture_map02_alsa_inflight_stage311.py'
+      - 'tools/run_map02_alsa_inflight_guest_stage311.sh'
+      - 'tools/audit_map02_alsa_inflight_stage311.py'
+      - 'tests/test_audit_map02_alsa_inflight_stage311.py'
+      - 'docs/MAP02_ALSA_INFLIGHT_STAGE311.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+env:
+  PINNED_STAGE310_PARENT: 'a7b75eced8911130066b48e818b8319598025eda'
+  PINNED_STAGE309_REAL_BUILD_ACTION: '39589981836'
+  STAGE309_ELF_SHA: 'e5ddfc61ac9435dc5a6e2dcd569766db0c444bbdeef8a3fa6a65c9c2e9fc6f25'
+  ORIGINAL_UNMODIFIED_NRO_SHA: '371c9fd9f1f41ad87cbb5f7f96a3e5e9d56878f8cfff2bf7fea2c17120c2611b'
+jobs:
+  real-new-tagged-gui-neXium:
+    name: Source-observe ALSA exported entry and return phases, requested Pulse hint ${{ matrix.hint }}ms
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        hint: [21, 22]
+    env:
+      VH_HINT: ${{ matrix.hint }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scope this new experiment to exactly six research files and synthetic negative controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,subprocess
+          changed=set(subprocess.check_output(["git","diff","--name-only",
+                             os.environ["PINNED_STAGE310_PARENT"],"HEAD"],text=True).splitlines())
+          allowed={
+              ".github/workflows/map02-alsa-inflight-stage311.yml",
+              "tools/map02_alsa_inflight_stage311.c",
+              "tools/capture_map02_alsa_inflight_stage311.py",
+              "tools/run_map02_alsa_inflight_guest_stage311.sh",
+              "tools/audit_map02_alsa_inflight_stage311.py",
+              "tests/test_audit_map02_alsa_inflight_stage311.py",
+              "docs/MAP02_ALSA_INFLIGHT_STAGE311.md"
+          }
+          assert changed and changed<=allowed,sorted(changed-allowed)
+          PY
+          python3 -m unittest discover -s tests -p 'test_audit_map02_real_direct_tls_guests_stage310.py' -v
+          python3 -m unittest discover -s tests -p 'test_audit_map02_alsa_inflight_stage311.py' -v
+          python3 -m unittest discover -s tests -p 'test_patch_map02_cpal_thread_tag_stage308.py' -v
+          python3 -m unittest discover -s tests -p 'test_audit_map02_alsa_userspace_stage305.py' -v
+          python3 -m py_compile tools/capture_map02_same_tls_guests_stage310.py tools/audit_map02_real_direct_tls_guests_stage310.py
+          python3 -m py_compile tools/capture_map02_alsa_inflight_stage311.py tools/audit_map02_alsa_inflight_stage311.py
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path("tools/run_map02_alsa_inflight_guest_stage311.sh").read_text()
+          for needle in ("for button in c x m","sleep 9",
+                         'VH_MAP02_STAGE308_CALLBACK_TAG=1',
+                         'LD_PRELOAD="$MAP02_STAGE305_SHIM"',
+                         'cpal-tag-anonymous-atomic.csv',
+                         'alsa-inflight-anonymous-atomic.csv',
+                         'guest-first-input-monotonic-ns.txt',
+                         'guest-final-observation-monotonic-ns.txt',
+                         'export NEXIUM_CPU_BACKEND=rustarmic'):
+              assert needle in s,needle
+          assert 'vh_map02_stage308_cpal_callback_mark' in Path(
+              "tools/map02_alsa_inflight_stage311.c").read_text()
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-stage309-new-optin-direct-alsa-cpal-tagged-nexium-linux-x86_64
+          run-id: ${{ env.PINNED_STAGE309_REAL_BUILD_ACTION }}
+          github-token: ${{ github.token }}
+          path: host
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-audout-presubmit-research-nro
+          run-id: 39460035568
+          github-token: ${{ github.token }}
+          path: guest
+      - name: Fail closed on exact NEW compiled experimental host and OLD unchanged generated guest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence research
+          chmod 0755 host/nexium
+          echo "$STAGE309_ELF_SHA  host/nexium" | sha256sum -c -
+          echo "$ORIGINAL_UNMODIFIED_NRO_SHA  guest/vandal-hearts-map02-audio.nro" | sha256sum -c -
+          python3 - <<'PY'
+          import hashlib,json,os,struct
+          from pathlib import Path
+          binary=Path("host/nexium").read_bytes()
+          m=json.loads(Path("host/manifest.json").read_text())
+          assert binary[:4]==b"\x7fELF" and struct.unpack_from("<H",binary,18)[0]==62
+          assert hashlib.sha256(binary).hexdigest()==os.environ["STAGE309_ELF_SHA"]
+          assert m["schema"]=="vh-map02-stage309-real-compiled-opt-in-cpal-alsa-tls-host/v1"
+          assert m["result"]=="STAGE309_EXPERIMENTAL_SAME_TLS_TAGGED_NEXIUM_LINUX_BINARY_COMPILED"
+          assert m["research_head_sha"]==os.environ["PINNED_STAGE309_PARENT"]
+          assert m["executable_sha256"]==os.environ["STAGE309_ELF_SHA"]
+          assert m["pinned_upstream_source_sha"]=="089562567a0a8760dfdd8420e1f57c35159a9219"
+          assert m["cargo_lock_sha256"]=="e6e8fcb90624650afddd1f25327dd4e6b042b094e8336cb5f43d2dc370e28739"
+          assert m["stage309_direct_cpal_alsa_tls_probe_function_compiled"] is True
+          assert m["stage309_direct_cpal_alsa_tls_source_marker_in_both_callbacks"] is True
+          assert b"VH_MAP02_STAGE308_CALLBACK_TAG" in binary
+          assert b"vh_map02_stage308_cpal_callback_mark" in binary
+          assert b"VH_MAP02_CPAL_TRACE_PATH" in binary
+          assert b"VH_MAP02_CPAL_LIFETIME_PATH" in binary
+          nro=Path("guest/vandal-hearts-map02-audio.nro").read_bytes()
+          g=json.loads(Path("guest/manifest.json").read_text())
+          assert nro[16:20]==b"NRO0"
+          assert g["schema"]=="vh-map02-presubmit-guest-nro/v1"
+          assert g["source_sha"]=="04b20024a50327091cff430eb5c28e4722d4ec76"
+          assert g["run_id"]==39460035568
+          assert g["nro_sha256"]==os.environ["ORIGINAL_UNMODIFIED_NRO_SHA"]
+          Path("evidence/stage310-host-source-sha-manifest.json").write_text(
+              json.dumps(m,sort_keys=True,indent=2)+"\n")
+          pair={
+              "schema":"vh-map02-stage310-direct-tls-new-host-romfree-guest-pair/v1",
+              "experimental_stage309_host_sha256":os.environ["STAGE309_ELF_SHA"],
+              "unchanged_romfree_original_guest_sha256":g["nro_sha256"],
+              "actual_run_id":int(os.environ["GITHUB_RUN_ID"]),
+              "hint_ms":int(os.environ["VH_HINT"]),
+              "licensed_original_game_rom_or_music_used":False,
+              "physical_switch_audio_proven":False,
+          }
+          Path("evidence/stage310-actual-elf-nro-pair.json").write_text(
+              json.dumps(pair,sort_keys=True,indent=2)+"\n")
+          PY
+      - name: Install exact GUI plus ALSA/Pulse synthetic dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 \
+            libxkbcommon0 libxkbcommon-x11-0 libx11-xcb1 \
+            libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers libgl1-mesa-dri \
+            pulseaudio pulseaudio-utils libasound2-plugins \
+            libasound2-dev gcc binutils
+          ldd host/nexium >evidence/host-linked-libraries.txt
+          ! grep -F 'not found' evidence/host-linked-libraries.txt
+      - name: Compile direct same-TLS research shim and verify separate two-thread ALSA-null parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcc -std=gnu11 -O2 -Werror -Wall -Wextra -fPIC -shared \
+            tools/map02_alsa_inflight_stage311.c \
+            -o research/libmap02-stage311-direct-tls.so -lasound -ldl -pthread
+          gcc -std=gnu11 -O2 -Werror -Wall -Wextra \
+            tools/map02_same_tls_synthetic_stage310.c \
+            -o research/map02-stage310-two-thread-synthetic-null -lasound -ldl -pthread
+          nm -D research/libmap02-stage311-direct-tls.so | \
+            grep -E ' [TW] vh_map02_stage308_cpal_callback_mark$'
+          plain="$(research/map02-stage310-two-thread-synthetic-null)"
+          python3 tools/capture_map02_alsa_userspace_stage305.py \
+            --init --source "$RUNNER_TEMP/stage310-null-PRIVATE.bin"
+          hooked="$(env \
+            LD_PRELOAD="$PWD/research/libmap02-stage311-direct-tls.so" \
+            VH_STAGE305_ALSA_COUNTER_PATH="$RUNNER_TEMP/stage310-null-PRIVATE.bin" \
+            research/map02-stage310-two-thread-synthetic-null)"
+          test "$plain" = "$hooked"
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,mmap,os,struct
+          from tools.capture_map02_alsa_userspace_stage305 import snapshot,SIZE
+          source=Path(os.environ["RUNNER_TEMP"])/"stage310-null-PRIVATE.bin"
+          with source.open("rb") as f,mmap.mmap(f.fileno(),SIZE,access=mmap.ACCESS_READ) as mm:
+              aliases,rows=snapshot(mm)
+              tags=[struct.unpack_from("<Q",mm,32768+i*8)[0] for i in range(min(64,aliases))]
+          assert aliases==2,(aliases,rows,tags)
+          prep={alias:counts[0] for alias,op,*counts in rows if op=="prepare"}
+          assert sorted(prep.values())==[10,15],prep
+          marked=[i for i,v in enumerate(tags) if v]
+          assert len(marked)==1 and tags[marked[0]]==7 and prep[marked[0]]==10
+          raw=Path("research/libmap02-stage311-direct-tls.so").read_bytes()
+          sha=hashlib.sha256(raw).hexdigest()
+          manifest={
+              "schema":"vh-map02-stage310-alsainterposer-v1",
+              "shim_elf_sha256":sha,
+              "synthetic_two_thread_stage308_proof_rechecked":True,
+              "native_tagged_host_and_alsa_share_same_shim":True,
+              "same_process_source_marker_symbol_available":True,
+              "experimental_instrumentation_causes_scheduler_perturbation":True,
+              "actual_guest_callback_hook_ownership_verified":False,
+              "physical_switch_audio_fixed":False,
+          }
+          Path("evidence/stage310-new-tagged-shim.json").write_text(
+              json.dumps(manifest,sort_keys=True,indent=2)+"\n")
+          print("Exactly two synthetic TLS aliases, marked one has 7 tags and 10 ALSA preparations",sha)
+          PY
+      - name: REAL new source-pinned NeXium GUI, original research ROM-free guest and direct TLS marker
+        timeout-minutes: 7
+        shell: bash
+        run: |
+          set -euo pipefail
+          export MAP02_HOST="$PWD/host/nexium"
+          export MAP02_NRO="$PWD/guest/vandal-hearts-map02-audio.nro"
+          export MAP02_EVIDENCE="$PWD/evidence"
+          export MAP02_STAGE305_SHIM="$PWD/research/libmap02-stage311-direct-tls.so"
+          export VH_MAP02_CPAL_LIFETIME_PATH="$MAP02_EVIDENCE/host-cpal-lifetime-p.csv"
+          bash tools/run_map02_alsa_inflight_guest_stage311.sh
+          for name in cpal-tag-anonymous-atomic.csv alsa-userspace-anonymous-atomic.csv \
+              alsa-inflight-anonymous-atomic.csv \
+              host-cpal-audioout-timeline.csv host-cpal-lifetime-p.csv \
+              guest-first-input-monotonic-ns.txt guest-final-observation-monotonic-ns.txt \
+              guest-final.png virtual-pulse-48k-stereo-s16le.pcm; do
+            test -s "evidence/$name"
+          done
+      - name: Real CPAL P/L replay, optical guest source truth and virtual 48k PCM
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_map02_cpal_lifetime_stage299.py \
+            --p evidence/host-cpal-lifetime-p.csv \
+            --l evidence/host-cpal-audioout-timeline.csv \
+            --first-input-marker evidence/guest-first-input-monotonic-ns.txt \
+            --final-observation-marker evidence/guest-final-observation-monotonic-ns.txt \
+            --output evidence/host-cpal-lifetime-audit.json
+          python3 tools/decode_map02_prejoin_stage.py \
+            --image evidence/guest-prejoin.png \
+            --output evidence/guest-prejoin-stage.json
+          if python3 tools/decode_map02_audout_presubmit.py \
+            --image evidence/guest-final.png \
+            --output evidence/guest-final-receipt.json; then
+            echo "Generated ROM-free optical CRC 8/8 pass" >evidence/optical-status.txt
+          else
+            echo "Generated optical CRC UNVERIFIED" >evidence/optical-status.txt
+          fi
+          python3 - <<'PY'
+          from array import array
+          from pathlib import Path
+          import hashlib,json,sys
+          p=Path("evidence/virtual-pulse-48k-stereo-s16le.pcm")
+          r={"schema":"vh-map02-stage310-virtual-48k-stereo-pcm/v1",
+             "physical_switch_audio_proven":False}
+          if p.exists():
+              b=p.read_bytes()
+              r.update(pcm16le_sha256=hashlib.sha256(b).hexdigest(),
+                       bytes=len(b),sample_format_valid=len(b)>0 and len(b)%4==0)
+              if r["sample_format_valid"]:
+                  a=array("h");a.frombytes(b)
+                  if sys.byteorder!="little":a.byteswap()
+                  r["nonzero_pcm16_samples"]=sum(v!=0 for v in a)
+          Path("evidence/stage310-virtual-pcm-health.json").write_text(
+              json.dumps(r,sort_keys=True,indent=2)+"\n")
+          print(json.dumps(r,sort_keys=True))
+          PY
+      - name: Independent reparse of TRUE same-TLS CPAL callback markers and ALSA functions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_map02_real_direct_tls_guests_stage310.py \
+            --evidence evidence --hint "$VH_HINT" --run-id "$GITHUB_RUN_ID" \
+            --output evidence/stage310-direct-tls-guest-audit.json
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          r=json.loads(Path("evidence/stage310-direct-tls-guest-audit.json").read_text())
+          assert r["result"]=="REAL_STAGE310_NEW_HOST_DIRECT_CPAL_ALSA_TLS_SNAPSHOT_REPARSED"
+          assert r["requested_pulse_latency_hint_ms"]==int(os.environ["VH_HINT"])
+          assert r["experimental_stage309_host_sha256"]==os.environ["STAGE309_ELF_SHA"]
+          assert r["marker_and_alsa_export_same_alias_is_direct_source_thread_identity"]
+          assert r["no_audio_root_cause_or_production_switch_sound_fix_proven"]
+          print("Observed in this guest at requested hint",r["requested_pulse_latency_hint_ms"])
+          print("Original host P/L callback count",r["host_original_cpal_p_reported_callback_entry_delta"])
+          print("Direct CPAL marker total",r["guest_window_source_tagged_cpal_marker_increments"])
+          for entry in r["matched_native_thread_aliases"]:
+              if entry["real_tagged_cpal_callback_entry_delta"] or entry["alsa_export_total_deltas"]["writei"]:
+                  print("Anonymous TLS alias",entry)
+          PY
+      - name: Independent source-replay of REAL ALSA exported begin, return and negative phases
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_map02_alsa_inflight_stage311.py \
+            --evidence evidence --hint "$VH_HINT" --run-id "$GITHUB_RUN_ID" \
+            --output evidence/stage311-real-alsa-entry-return-audit.json
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          r=json.loads(Path("evidence/stage311-real-alsa-entry-return-audit.json").read_text())
+          assert r["result"]=="REAL_STAGE311_SOURCE_PINNED_NEW_HOST_ALSA_RETURN_PHASES_REPARSED"
+          assert r["compiled_stage309_new_host_sha256"]==os.environ["STAGE309_ELF_SHA"]
+          assert r["hint_ms"]==int(os.environ["VH_HINT"])
+          assert r["production_audio_fixed"] is False
+          print("Stage311 real source-reparsed guest wait/end phases:")
+          for item in r["per_tls_alias_and_function"]:
+              if item["source_window_begun_delta"] or item["observed_snapshots_with_unreturned_calls"]:
+                  print(item)
+          PY
+      - name: Report source-bound actual 21/22ms markers, no causal ALSA repair inferred
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os,json
+          from pathlib import Path
+          p=Path("evidence/stage310-direct-tls-guest-audit.json")
+          r=json.loads(p.read_text()) if p.exists() else {"result":"UNVERIFIED"}
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
+              print("### Stage310 NEW compiled NeXium CPAL/ALSA direct same-TLS guest",file=f)
+              print("Audit: **"+r["result"]+"**",file=f)
+              if r["result"]=="REAL_STAGE310_NEW_HOST_DIRECT_CPAL_ALSA_TLS_SNAPSHOT_REPARSED":
+                  print("Requested hint: "+str(r["requested_pulse_latency_hint_ms"]),file=f)
+                  print("Original CPAL entries after input: "+str(
+                        r["host_original_cpal_p_reported_callback_entry_delta"]),file=f)
+                  print("Same TLS CPAL marker entries after input: "+str(
+                        r["guest_window_source_tagged_cpal_marker_increments"]),file=f)
+                  print("Direct same native thread marker and ALSA export: "+str(
+                        r["any_same_thread_cpal_marker_and_alsa_export"]),file=f)
+                  print("Direct same native thread marker and ALSA writei: "+str(
+                        r["any_same_thread_cpal_marker_and_alsa_writei"]),file=f)
+              print("This NEW instrumented host changes scheduling, does NOT prove "
+                    "unmodified NeXium 21/22ms causal audio boundary, production "
+                    "fix, original game audio or Nintendo Switch DAC.",file=f)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage311-new-host-alsa-inflight-hint${{ matrix.hint }}-evidence
+          path: |
+            evidence/stage310-host-source-sha-manifest.json
+            evidence/stage310-actual-elf-nro-pair.json
+            evidence/stage310-new-tagged-shim.json
+            evidence/stage310-direct-tls-guest-audit.json
+            evidence/stage311-real-alsa-entry-return-audit.json
+            evidence/alsa-inflight-anonymous-atomic.csv
+            evidence/cpal-tag-anonymous-atomic.csv
+            evidence/alsa-userspace-anonymous-atomic.csv
+            evidence/host-cpal-audioout-timeline.csv
+            evidence/host-cpal-lifetime-p.csv
+            evidence/host-cpal-lifetime-audit.json
+            evidence/guest-first-input-monotonic-ns.txt
+            evidence/guest-final-observation-monotonic-ns.txt
+            evidence/guest-prejoin-stage.json
+            evidence/guest-final-receipt.json
+            evidence/optical-status.txt
+            evidence/stage310-virtual-pcm-health.json
+            evidence/host-linked-libraries.txt
+          if-no-files-found: warn
