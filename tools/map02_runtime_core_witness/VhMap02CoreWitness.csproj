@@ -1,0 +1,8 @@
+<!-- Owner-local build template. COPY this project and CustomMainForm.cs into
+     <private BizHawk 2.11 source>/ExternalToolProjects/VhMap02CoreWitness/.
+     The upstream NET48ExternalToolForm.targets supplies actual BizHawk
+     assembly references; no binary, firmware or licensed image is committed. -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="$(MSBuildProjectDirectory)/../NET48ExternalToolForm.targets" />
+  <Import Project="$(MSBuildProjectDirectory)/../ExtToolCommon.props" />
+</Project>
