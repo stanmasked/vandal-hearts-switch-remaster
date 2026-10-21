@@ -87,9 +87,12 @@ def audit_pair(movie: Path, plan: Path, first: Path, second: Path, *,
         second_inodes.add(q_id)
         first_bytes = read_png_private(first_root, name)
         second_bytes = read_png_private(second_root, name)
-        if (os.stat(p, follow_symlinks=False).st_ino != p_info.st_ino
-                or os.stat(q, follow_symlinks=False).st_ino != q_info.st_ino):
-            raise ValueError("capture file replaced during comparison")
+        def identity(info):
+            return (info.st_dev, info.st_ino, info.st_size,
+                    info.st_mtime_ns, info.st_ctime_ns)
+        if (identity(os.stat(p, follow_symlinks=False)) != identity(p_info)
+                or identity(os.stat(q, follow_symlinks=False)) != identity(q_info)):
+            raise ValueError("capture file replaced or changed during comparison")
         equal += (hashlib.sha256(first_bytes).digest()
                   == hashlib.sha256(second_bytes).digest())
 
