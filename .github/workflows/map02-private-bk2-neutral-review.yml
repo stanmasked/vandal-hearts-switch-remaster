@@ -1,0 +1,46 @@
+name: MAP02 BK2 neutral review windows (synthetic CI)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-private-bk2-neutral-review.yml'
+      - 'tools/map02_private_bk2_neutral_review_windows.py'
+      - 'tests/test_map02_private_bk2_neutral_review_windows.py'
+      - 'docs/MAP02_PRIVATE_BK2_NEUTRAL_REVIEW_WINDOWS.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  invented-movie-neutral-window-review:
+    name: Fictional full-length BK2 neutral windows (${{ matrix.os }} Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.9'
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: macos-15-intel
+            python: '3.11'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Scan synthetic BK2 with fictional controller activity only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_map02_private_bk2_neutral_review_windows.py' -v \
+            2>&1 | tee /tmp/vh-map02-neutral-review.log
+          grep -F 'Ran 21 tests' /tmp/vh-map02-neutral-review.log
+          if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-neutral-review.log; then
+            exit 1
+          fi
+          echo 'VH_MAP02_NEUTRAL_REVIEW_PASS synthetic=21 owner_movie=0 real_bizhawk=0 map02_scene=unknown'
