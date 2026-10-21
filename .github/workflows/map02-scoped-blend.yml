@@ -1099,6 +1099,18 @@ jobs:
           assert (1 <= r["high_fanout_abs64_addend_max_records_same_value_in_one_object"] <= 219)
           assert (1 <= r["high_fanout_abs64_addend_min_distinct_values_per_source_object"] <=
                   r["high_fanout_abs64_addend_max_distinct_values_per_source_object"] <= 222)
+          assert r["high_fanout_abs64_addend_nonzero_records"] == 2
+          assert r["high_fanout_abs64_addend_distinct_nonzero_values"] == 2
+          assert r["high_fanout_abs64_addend_objects_with_nonzero_values"] == 1
+          assert r["high_fanout_abs64_addend_objects_with_zero_only_values"] == 1
+          assert (r["high_fanout_abs64_addend_min_zero_records_per_source_object"],
+                  r["high_fanout_abs64_addend_max_zero_records_per_source_object"]) == (1, 219)
+          assert (r["high_fanout_abs64_addend_min_nonzero_records_per_source_object"],
+                  r["high_fanout_abs64_addend_max_nonzero_records_per_source_object"]) == (0, 2)
+          assert r["high_fanout_abs64_addend_nonzero_values_shared_across_source_objects"] == 0
+          assert r["high_fanout_abs64_addend_records_with_cross_object_shared_nonzero_values"] == 0
+          assert (r["high_fanout_abs64_addend_min_distinct_nonzero_values_per_source_object"],
+                  r["high_fanout_abs64_addend_max_distinct_nonzero_values_per_source_object"]) == (0, 2)
           assert r["addend_multiplicity_does_not_prove_game_data_structure"] is True
           assert r["fanout_counts_distinct_source_objects_not_runtime_calls"] is True
           assert r["only_counts_and_hashes_published"] is True
@@ -1166,7 +1178,17 @@ jobs:
                      "records_with_cross_object_shared_values",
                      "max_records_same_value_in_one_object",
                      "min_distinct_values_per_source_object",
-                     "max_distinct_values_per_source_object")})
+                     "max_distinct_values_per_source_object",
+                     "nonzero_records", "distinct_nonzero_values",
+                     "objects_with_nonzero_values", "objects_with_zero_only_values",
+                     "min_zero_records_per_source_object",
+                     "max_zero_records_per_source_object",
+                     "min_nonzero_records_per_source_object",
+                     "max_nonzero_records_per_source_object",
+                     "nonzero_values_shared_across_source_objects",
+                     "records_with_cross_object_shared_nonzero_values",
+                     "min_distinct_nonzero_values_per_source_object",
+                     "max_distinct_nonzero_values_per_source_object")})
           print("Per-source names and paths are kept private; no retail MAP02 executed.")
           PY
       - name: Fail closed on upstream rasterizer source drift

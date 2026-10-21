@@ -82,6 +82,36 @@ class Map02ScopedCiPolicyTests(unittest.TestCase):
         self.assertEqual(len(checks[0].ops), 2)
         self.assertTrue(all(isinstance(op, ast.Eq) for op in checks[0].ops))
 
+    def test_abs64_addend_object_split_reports_only_aggregate_counts(self):
+        raw = WORKFLOW.read_text(encoding="utf-8")
+        for metric in (
+            "nonzero_records", "distinct_nonzero_values",
+            "objects_with_nonzero_values", "objects_with_zero_only_values",
+            "min_zero_records_per_source_object",
+            "max_zero_records_per_source_object",
+            "min_nonzero_records_per_source_object",
+            "max_nonzero_records_per_source_object",
+            "nonzero_values_shared_across_source_objects",
+            "records_with_cross_object_shared_nonzero_values",
+            "min_distinct_nonzero_values_per_source_object",
+            "max_distinct_nonzero_values_per_source_object",
+        ):
+            self.assertIn(
+                f'assert r["high_fanout_abs64_addend_{metric}"]' if metric in (
+                    "nonzero_records", "distinct_nonzero_values",
+                    "objects_with_nonzero_values", "objects_with_zero_only_values",
+                    "nonzero_values_shared_across_source_objects",
+                    "records_with_cross_object_shared_nonzero_values")
+                else f'"high_fanout_abs64_addend_{metric}"',
+                raw)
+        output = raw.split(
+            'print("ABS64 target-addend private values reduced to counts:",', 1
+        )[1].split('\n          print("Per-source names', 1)[0]
+        self.assertIn('r["high_fanout_abs64_addend_" + name]', output)
+        self.assertNotIn("game_addends", output)
+        self.assertNotIn("game_patch_offsets", output)
+        self.assertNotIn("parse_readelf_abs64_data_patch_addends", output)
+
     def test_no_private_evidence_artifact_upload(self):
         raw = WORKFLOW.read_text(encoding="utf-8")
         self.assertNotIn("actions/upload-artifact", raw)

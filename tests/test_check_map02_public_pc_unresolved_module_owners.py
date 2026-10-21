@@ -349,6 +349,71 @@ class ModuleOwnerTests(unittest.TestCase):
             summary["high_fanout_abs64_addend_min_distinct_values_per_source_object"], 2)
         self.assertEqual(
             summary["high_fanout_abs64_addend_max_distinct_values_per_source_object"], 3)
+        self.assertEqual(summary["high_fanout_abs64_addend_nonzero_records"], 4)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_distinct_nonzero_values"], 3)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_objects_with_nonzero_values"], 2)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_objects_with_zero_only_values"], 0)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_min_zero_records_per_source_object"], 1)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_max_zero_records_per_source_object"], 1)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_min_nonzero_records_per_source_object"], 1)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_max_nonzero_records_per_source_object"], 3)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_nonzero_values_shared_across_source_objects"], 0)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_records_with_cross_object_shared_nonzero_values"], 0)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_min_distinct_nonzero_values_per_source_object"], 1)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_max_distinct_nonzero_values_per_source_object"], 2)
+
+    def test_addend_separates_zero_only_object_from_nonzero_records(self):
+        game = [{"target"} for _ in range(8)]
+        addends = [
+            {"target": [(".rela.data", 0, 0),
+                        (".rela.data", 8, 0),
+                        (".rela.data", 16, 0)]},
+            {"target": [(".rela.data", 0, 16),
+                        (".rela.data", 8, 32)]},
+        ] + [{} for _ in range(6)]
+        patches = [
+            {"target": [(".rela.data", 0), (".rela.data", 8),
+                        (".rela.data", 16)]},
+            {"target": [(".rela.data", 0), (".rela.data", 8)]},
+        ] + [{} for _ in range(6)]
+        summary = summarize_high_fanout_abs64_target_addends(
+            {"target"}, game, [], addends, patches)
+        self.assertEqual(summary["high_fanout_abs64_addend_total_records"], 5)
+        self.assertEqual(summary["high_fanout_abs64_addend_zero_records"], 3)
+        self.assertEqual(summary["high_fanout_abs64_addend_nonzero_records"], 2)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_distinct_nonzero_values"], 2)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_objects_with_nonzero_values"], 1)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_objects_with_zero_only_values"], 1)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_min_zero_records_per_source_object"], 0)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_max_zero_records_per_source_object"], 3)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_min_nonzero_records_per_source_object"], 0)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_max_nonzero_records_per_source_object"], 2)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_nonzero_values_shared_across_source_objects"], 0)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_records_with_cross_object_shared_nonzero_values"], 0)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_min_distinct_nonzero_values_per_source_object"], 0)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_max_distinct_nonzero_values_per_source_object"], 2)
 
     def test_addend_missing_original_relocation_witness_is_rejected(self):
         game = [{"one"} for _ in range(8)]

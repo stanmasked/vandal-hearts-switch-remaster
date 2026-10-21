@@ -647,6 +647,9 @@ def summarize_high_fanout_abs64_target_addends(
     objects = set()
     selected_symbols = set()
     per_object_values = []
+    per_object_zero_counts = []
+    per_object_nonzero_counts = []
+    per_object_distinct_nonzero_values = []
     for i, mapping in enumerate(game_addends):
         object_values = {}
         for name, rows in mapping.items():
@@ -674,6 +677,11 @@ def summarize_high_fanout_abs64_target_addends(
                 object_values[addend] = object_values.get(addend, 0) + 1
         if object_values:
             per_object_values.append(object_values)
+            per_object_zero_counts.append(object_values.get(0, 0))
+            per_object_nonzero_counts.append(sum(
+                count for value, count in object_values.items() if value != 0))
+            per_object_distinct_nonzero_values.append(
+                sum(value != 0 for value in object_values))
     # A missing addend witness in an object holding source patch offsets
     # must not silently pass merely because other objects include that name.
     for i, mapping in enumerate(game_patch_offsets):
@@ -700,15 +708,45 @@ def summarize_high_fanout_abs64_target_addends(
     cross_object_values = {
         value for value, count in object_frequency.items() if count > 1}
     cross_object_records = sum(values[value] for value in cross_object_values)
+    nonzero_values = {value for value in values if value != 0}
+    nonzero_shared_values = {
+        value for value in cross_object_values if value != 0}
+    nonzero_cross_object_records = sum(
+        values[value] for value in nonzero_shared_values)
+    nonzero_records = records - zero
+    objects_with_nonzero_values = sum(
+        count > 0 for count in per_object_nonzero_counts)
+    objects_with_zero_only_values = sum(
+        count == 0 for count in per_object_nonzero_counts)
     if (sum(values.values()) != records or not 0 <= zero <= records
             or not 0 <= negative <= records or not 0 <= aligned <= records
             or not 0 <= duplicate_records <= records
             or not 0 <= within_object_reused_records <= records
             or not 0 <= cross_object_records <= records
+            or not 0 <= nonzero_records <= records
+            or not 0 <= nonzero_cross_object_records <= nonzero_records
+            or not 0 <= objects_with_nonzero_values <= len(objects)
+            or not 0 <= objects_with_zero_only_values <= len(objects)
+            or objects_with_nonzero_values + objects_with_zero_only_values
+            != len(objects)
+            or sum(per_object_zero_counts) != zero
+            or sum(per_object_nonzero_counts) != nonzero_records
             or len(per_object_values) != len(objects)
+            or len(per_object_zero_counts) != len(objects)
+            or len(per_object_nonzero_counts) != len(objects)
+            or len(per_object_distinct_nonzero_values) != len(objects)
             or (per_object_values and
                 not 1 <= min(distinct_values_per_object)
-                <= max(distinct_values_per_object) <= records)):
+                <= max(distinct_values_per_object) <= records)
+            or (per_object_values and
+                not 0 <= min(per_object_zero_counts)
+                <= max(per_object_zero_counts) <= records)
+            or (per_object_values and
+                not 0 <= min(per_object_nonzero_counts)
+                <= max(per_object_nonzero_counts) <= records)
+            or (per_object_values and
+                not 0 <= min(per_object_distinct_nonzero_values)
+                <= max(per_object_distinct_nonzero_values) <= len(nonzero_values))):
         raise ValueError("MAP02 ABS64 target addend arithmetic inconsistent")
     return {
         "high_fanout_abs64_addend_total_records": records,
@@ -738,6 +776,28 @@ def summarize_high_fanout_abs64_target_addends(
             min(distinct_values_per_object, default=0),
         "high_fanout_abs64_addend_max_distinct_values_per_source_object":
             max(distinct_values_per_object, default=0),
+        "high_fanout_abs64_addend_nonzero_records": nonzero_records,
+        "high_fanout_abs64_addend_distinct_nonzero_values": len(nonzero_values),
+        "high_fanout_abs64_addend_objects_with_nonzero_values":
+            objects_with_nonzero_values,
+        "high_fanout_abs64_addend_objects_with_zero_only_values":
+            objects_with_zero_only_values,
+        "high_fanout_abs64_addend_min_zero_records_per_source_object":
+            min(per_object_zero_counts, default=0),
+        "high_fanout_abs64_addend_max_zero_records_per_source_object":
+            max(per_object_zero_counts, default=0),
+        "high_fanout_abs64_addend_min_nonzero_records_per_source_object":
+            min(per_object_nonzero_counts, default=0),
+        "high_fanout_abs64_addend_max_nonzero_records_per_source_object":
+            max(per_object_nonzero_counts, default=0),
+        "high_fanout_abs64_addend_nonzero_values_shared_across_source_objects":
+            len(nonzero_shared_values),
+        "high_fanout_abs64_addend_records_with_cross_object_shared_nonzero_values":
+            nonzero_cross_object_records,
+        "high_fanout_abs64_addend_min_distinct_nonzero_values_per_source_object":
+            min(per_object_distinct_nonzero_values, default=0),
+        "high_fanout_abs64_addend_max_distinct_nonzero_values_per_source_object":
+            max(per_object_distinct_nonzero_values, default=0),
         "addend_multiplicity_does_not_prove_game_data_structure": True,
     }
 
