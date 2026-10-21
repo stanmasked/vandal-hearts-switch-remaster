@@ -70,7 +70,8 @@ class EvidenceBundleTests(unittest.TestCase):
             folder = Path(tmp)
             prepare(folder)
             bundle.create(folder, SOURCE, TREE)
-            (folder / bundle.NRO_NAME).write_bytes(b"NRO0 substituted bytes")
+            size = (folder / bundle.NRO_NAME).stat().st_size
+            (folder / bundle.NRO_NAME).write_bytes(b"X" * size)
             with self.assertRaisesRegex(ValueError, "NRO SHA-256 mismatch"):
                 bundle.verify(folder, SOURCE, TREE)
 
