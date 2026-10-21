@@ -27,9 +27,8 @@ MAP02_BYTES = 22783
 # Owner-local RU v1.6 image length from the independent disc inventory.
 # A valid MAP02 sector range alone does not establish a complete disc image.
 EXPECTED_BIN_BYTES = 664849248
-# Exact owner-local SHA-256 pinned after two reads of the same RU v1.6 BIN.
-# Equality identifies that *specific copy*; it is not release authenticity.
-EXPECTED_BIN_SHA256 = "48c686f9ae7e57615c06fd20d1048b2b8e9e7debabc371e6e941821b6b3b121a"
+# Full-image comparison uses a user-private local reference file; never
+# publish an owner-specific full-image digest in source, stdout or CI.
 FULL_HASH_CHUNK_BYTES = 1024 * 1024
 EXPECTED_VOLUME_ID = "SLUS_00447"
 EXPECTED_MAP02_SHA256 = "c370660f7f13e6d6e76f4126a45418bc9c64c747de8309ca946d37b502516387"
@@ -190,7 +189,7 @@ def _full_image_sha256(fd: int, file_size: int) -> str:
 
 def _disc_profile(bin_path: Path, expected_map02_sha256: str, *,
                   verify_full_bin_sha256: bool = False,
-                  expected_bin_sha256: str = EXPECTED_BIN_SHA256
+                  expected_bin_sha256: str | None = None
                   ) -> tuple[bool, bool, bool, bool | None]:
     fd, before = _open_stable(bin_path)
     try:
@@ -267,14 +266,18 @@ def _movie_metadata(movie_path: Path) -> tuple[bool, bool]:
 def inspect_pair(cue_path: Path, movie_path: Path, *,
                  expected_map02_sha256: str = EXPECTED_MAP02_SHA256,
                  verify_full_bin_sha256: bool = False,
-                 expected_bin_sha256: str = EXPECTED_BIN_SHA256) -> dict:
+                 expected_bin_sha256: str | None = None) -> dict:
     if (not isinstance(expected_map02_sha256, str)
             or not re.fullmatch(r"[0-9a-f]{64}", expected_map02_sha256)):
         raise ValueError("expected MAP02 profile digest must be lowercase SHA-256")
-    if (type(verify_full_bin_sha256) is not bool
-            or not isinstance(expected_bin_sha256, str)
+    if type(verify_full_bin_sha256) is not bool:
+        raise ValueError("full BIN verification flag must be boolean")
+    if verify_full_bin_sha256 and (
+            not isinstance(expected_bin_sha256, str)
             or not re.fullmatch(r"[0-9a-f]{64}", expected_bin_sha256)):
-        raise ValueError("full BIN verification requires a lowercase SHA-256")
+        raise ValueError("full BIN verification requires a private lowercase SHA-256")
+    if not verify_full_bin_sha256 and expected_bin_sha256 is not None:
+        raise ValueError("private full BIN digest provided without verification")
     cue = _resolve_private_file(cue_path)
     movie = _resolve_private_file(movie_path)
     cue_text = _read_cue(cue)
@@ -318,14 +321,31 @@ def main() -> int:
     parser.add_argument("owner_private_cue", type=Path)
     parser.add_argument("owner_private_bk2", type=Path)
     parser.add_argument(
-        "--verify-full-bin-sha256", action="store_true",
-        help="Stream the entire owner-local RU v1.6 BIN and check its pinned SHA-256",
+        "--private-full-bin-sha256-file", type=Path,
+        help="Read a 64-hex full-BIN SHA-256 reference from an owner-local private file",
     )
     args = parser.parse_args()
     try:
+        expected_digest = None
+        if args.private_full_bin_sha256_file is not None:
+            private_ref = _resolve_private_file(args.private_full_bin_sha256_file)
+            if os.name != "nt":
+                info = private_ref.stat()
+                if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o077:
+                    raise ValueError("full-BIN digest reference must be user-private")
+            fd, before = _open_stable(private_ref)
+            try:
+                if before.st_size not in (64, 65):
+                    raise ValueError("private full-BIN digest must be exactly 64 hex digits")
+                raw = _read_at(fd, 0, before.st_size)
+                _assert_stable(fd, private_ref, before)
+            finally:
+                os.close(fd)
+            expected_digest = raw.decode("ascii").strip()
         report = inspect_pair(
             args.owner_private_cue, args.owner_private_bk2,
-            verify_full_bin_sha256=args.verify_full_bin_sha256,
+            verify_full_bin_sha256=expected_digest is not None,
+            expected_bin_sha256=expected_digest,
         )
     except (OSError, ValueError, UnicodeError, KeyError, zipfile.BadZipFile,
             RuntimeError, TypeError):
