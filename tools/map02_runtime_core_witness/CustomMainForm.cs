@@ -44,11 +44,43 @@ namespace VhMap02CoreWitness
             _save.Click += SaveWitness;
             Controls.Add(_summary);
             Controls.Add(_save);
+            EmitNoMediaCiMarker("constructor");
+        }
+
+        // CI-only no-media diagnostic. In ordinary gameplay all three opt-in
+        // environment checks are false, so this never writes anything.
+        // Only fixed stage words are permitted: no BIOS, disc, movie,
+        // game hashes, input, window handles, process IDs or paths in data.
+        private static void EmitNoMediaCiMarker(string stage)
+        {
+            if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != "true"
+                || Environment.GetEnvironmentVariable("VH_MAP02_CI_NO_MEDIA_WITNESS") != "enabled")
+                return;
+            if (stage != "constructor" && stage != "restart") return;
+            var target = Environment.GetEnvironmentVariable("VH_MAP02_CI_NO_MEDIA_CANARY_PATH");
+            if (string.IsNullOrEmpty(target) || Path.GetFileName(target) != "vh-map02-test-inprocess-core.txt")
+                return;
+            try
+            {
+                var path = Path.GetFullPath(target);
+                var parent = Path.GetDirectoryName(path);
+                var temp = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar);
+                if (!string.Equals(parent, temp, StringComparison.OrdinalIgnoreCase)) return;
+                File.AppendAllText(path, stage + "\n", Encoding.ASCII);
+            }
+            catch (Exception)
+            {
+                // Optional CI-only probe cannot affect real plugin operation.
+            }
         }
 
         // EmuHawk injects RequiredService after constructor. Restart is also
         // called after a new movie session starts; do not cache the core.
-        public override void Restart() => RefreshStatus();
+        public override void Restart()
+        {
+            RefreshStatus();
+            EmitNoMediaCiMarker("restart");
+        }
 
         private void RefreshStatus()
         {

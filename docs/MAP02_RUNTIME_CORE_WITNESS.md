@@ -107,6 +107,56 @@ The Windows CI requires an exact `fake_iemulator_positive=1`,
 marker, with `emulator_process_started=0`. No private witness,
 process identifier or sample data is published.
 
+## Stage504: genuine EmuHawk process with no original media
+
+BizHawk 2.11's **real** `ArgParser` supports
+`--open-ext-tool-dll VhMap02CoreWitness.dll`. Upstream `MainForm`
+uses it to find an enabled External Tool menu item and call its actual
+`ToolManager` loader. `NullEmulator` provides an `IEmulator` service
+even with **no game loaded**; the plugin must then refuse saving since
+the platform is not PSX.
+
+BizHawk also asks for explicit first-load trust approval of a new
+External Tool DLL. In this **isolated public CI job only**, the probe
+recognizes the exact process-owned native `Confirm loading` dialog,
+requires BizHawk's full hardcoded external-tool safety prompt and the
+standard Yes button, and approves that one known self-built DLL.
+It never accepts other prompts, BIOS dialogs, crash notifications or
+any unexpected window. Real owner-side use still requires the owner's
+own approval.
+
+Early no-media Windows CI attempts were **blocked** by a native
+`Initialization Error` dialog before the plugin constructor ran.
+Official BizHawk 2.11 MainForm code uses that caption when an audio
+backend cannot initialize. To avoid any sound-hardware requirement
+on a GitHub-hosted runner, the Stage504 launcher now writes a
+**temporary, runner-only JSON configuration** with
+`LastWrittenFrom=2.11` and `SoundOutputMethod=Dummy`, passes it
+using official `--config` and requests GDI graphics with `--gdi`.
+It deletes that file after the test, and neither edits the owner's
+normal settings nor loads real PS1 content. This workaround itself
+is not proof the in-process plugin started.
+
+The Stage504 Windows CI launches the exact SHA-256-pinned official
+`EmuHawk.exe` with **only** that external-tool argument, without a
+ROM, BIOS, disc, movie, Lua script or network input. A short,
+process-ID-scoped Win32 window enumerator looks for the plugin's
+actual window title and its **disabled** `Write private core
+witness...` button. The probe makes no clicks, saves no
+witness or screenshots, terminates the tested EmuHawk process, and
+prints only a fixed success marker. It will fail closed if the form
+never appears, EmuHawk exits, or the Save button is active without
+a PSX core.
+
+This provides an opportunity to verify real in-process
+`MainForm → ExternalToolManager → ToolManager → Form.Restart`
+interaction without putting game data in CI. It still proves
+**nothing** about real Octoshock injection, BIOS, original
+BK2 playback or MAP02: the no-media core is `NullEmulator`.
+The ability to show a GUI depends on the hosted Windows runner's
+desktop environment, so a Windows CI failure must be diagnosed
+rather than interpreted as a game or core bug.
+
 ## Owner-local build (requires a matching, unmodified BizHawk source tree)
 
 1. Use your own BizHawk **2.11** source tree and local EmuHawk build/output.
