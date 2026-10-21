@@ -49,7 +49,7 @@ class Map02ScopedCiPolicyTests(unittest.TestCase):
 
         raw = WORKFLOW.read_text(encoding="utf-8")
         step = raw.split(
-            "      - name: Attribute 380 surviving original PC imports to exact compiled game versus backend objects\n", 1)[1].split("\\n      - name:", 1)[0]
+            "      - name: Attribute 380 surviving original PC imports to exact compiled game versus backend objects\n", 1)[1].split("\n      - name:", 1)[0]
         code = step.split("          python3 - <<'PY'\n", 1)[1]
         code = code.split("\n          PY", 1)[0]
         parsed = ast.parse("\n".join(
