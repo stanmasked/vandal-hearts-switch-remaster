@@ -20,7 +20,7 @@ import stat
 from PIL import Image, ImageDraw, UnidentifiedImageError
 
 from tools.map02_private_dual_capture_rgb_repeatability import (
-    verify as verify_dual, ROLES,
+    verify as verify_dual, capture_evidence_digest, ROLES,
 )
 from tools.map02_private_reviewed_scene_candidates import (
     SCHEMA as CANDIDATE_SCHEMA, STATES as CANDIDATE_STATES,
@@ -314,6 +314,14 @@ def render(
                 _paste_frame(canvas, root, group, role, indices[role], x, cy,
                              run_number=run_number,
                              pixels_equal=matches[(group, role)])
+
+    _, planned_rows = parse_plan(private_plan)
+    evidence_after_render = capture_evidence_digest(
+        private_bk2, private_plan, log_one, root_one, log_two, root_two,
+        planned_rows,
+    )
+    if evidence_after_render != proof["source_capture_evidence_sha256"]:
+        raise ValueError("private capture evidence changed during contact-sheet rendering")
 
     # POSIX-style exclusive owner-only output; no overwriting or network.
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
