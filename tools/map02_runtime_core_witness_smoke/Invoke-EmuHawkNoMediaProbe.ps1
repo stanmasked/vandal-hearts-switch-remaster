@@ -101,14 +101,17 @@ try {
         $hasTool = [int]($diagnostic[2] -gt 0)
         $hasButton = [int]($diagnostic[3] -gt 0)
         $hasDisabledButton = [int]($diagnostic[4] -gt 0)
-        Write-Output ("VH_MAP02_REAL_EMUHAWK_NOMEDIA_DIAGNOSTIC"
-            + " same_windows_session=$sameSession"
-            + " process_window_found=$hasWindow"
-            + " visible_process_window_found=$hasVisibleWindow"
-            + " plugin_window_found=$hasTool"
-            + " save_button_found=$hasButton"
-            + " disabled_save_found=$hasDisabledButton"
-            + " real_octoshock_authenticated=0")
+        $status = @(
+            "VH_MAP02_REAL_EMUHAWK_NOMEDIA_DIAGNOSTIC"
+            "same_windows_session=$sameSession"
+            "process_window_found=$hasWindow"
+            "visible_process_window_found=$hasVisibleWindow"
+            "plugin_window_found=$hasTool"
+            "save_button_found=$hasButton"
+            "disabled_save_found=$hasDisabledButton"
+            "real_octoshock_authenticated=0"
+        ) -join ' '
+        Write-Output $status
         throw 'no-media EmuHawk tool window was not witnessed'
     }
 
