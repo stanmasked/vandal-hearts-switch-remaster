@@ -1003,6 +1003,18 @@ jobs:
                   r["shared_game_backend_imports"] +
                   r["missing_object_owner_imports"] == 380)
           assert r["missing_object_owner_imports"] == 0
+          assert (r["original_game_only_imports"], r["backend_only_imports"],
+                  r["shared_game_backend_imports"]) == (314, 26, 40)
+          assert (r["game_objects_with_remaining_imports"],
+                  r["backend_objects_with_remaining_imports"]) == (82, 12)
+          assert (r["game_object_symbol_reference_pairs"],
+                  r["backend_object_symbol_reference_pairs"]) == (1287, 84)
+          buckets = ("one", "two_to_three", "four_to_seven", "eight_or_more")
+          assert sum(r["game_only_fanout_" + key] for key in buckets) == 314
+          assert r["game_only_reference_pairs"] + r["shared_game_reference_pairs"] == r["game_object_symbol_reference_pairs"]
+          assert r["backend_only_reference_pairs"] + r["shared_backend_reference_pairs"] == r["backend_object_symbol_reference_pairs"]
+          assert 1 <= r["game_only_max_caller_objects_per_symbol"] <= 85
+          assert r["fanout_counts_distinct_source_objects_not_runtime_calls"] is True
           assert r["only_counts_and_hashes_published"] is True
           assert r["retail_asset_content_accessed"] is False
           assert r["executable_game_proven"] is False
@@ -1011,6 +1023,12 @@ jobs:
                 r["original_game_only_imports"])
           print("Backend-only:", r["backend_only_imports"],
                 "referenced by both:", r["shared_game_backend_imports"])
+          print("Game-only distinct object caller-fanout buckets:",
+                {name: r["game_only_fanout_" + name] for name in buckets})
+          print("Game-only unique object/import pairs:",
+                r["game_only_reference_pairs"])
+          print("Maximum distinct game object callers for one game-only import:",
+                r["game_only_max_caller_objects_per_symbol"])
           print("Per-source names and paths are kept private; no retail MAP02 executed.")
           PY
       - name: Fail closed on upstream rasterizer source drift
