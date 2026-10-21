@@ -64,12 +64,12 @@ class Stage311Tests(unittest.TestCase):
 
     def test_reject_unknown_alsa_function(self):
         self.path.write_text(rows().replace(",0,wait,",",0,unknown_wait,",1))
-        with self.assertRaisesRegex(ValueError,"outside"):
+        with self.assertRaisesRegex(ValueError,"not covered"):
             parse(self.path)
 
     def test_invalid_alias_rejected(self):
         self.path.write_text(rows().replace(",0,wait,",",55,wait,",1))
-        with self.assertRaisesRegex(ValueError,"outside"):
+        with self.assertRaisesRegex(ValueError,"not covered"):
             parse(self.path)
 
     def test_raw_private_link_refused(self):
