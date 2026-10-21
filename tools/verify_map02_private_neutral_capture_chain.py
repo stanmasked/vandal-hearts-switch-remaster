@@ -123,7 +123,9 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
                 raise ValueError("missing, duplicate or misplaced power-on movie source marker")
             source_preflight = True
         if line.startswith("VH_PRIVATE_NEUTRAL_START_PREFLIGHT"):
-            if (line != START_PREFLIGHT or not source_preflight
+            if not source_preflight:
+                raise ValueError("missing power-on movie source marker before live Start")
+            if (line != START_PREFLIGHT
                     or preflight or completed or observed):
                 raise ValueError("missing, duplicate or misplaced live Start anchor")
             preflight = True
