@@ -72,13 +72,16 @@ class PrivateContactSheetTests(unittest.TestCase):
         self.assertEqual(self.image_out.stat().st_mode & 0o777, 0o600)
 
     def write_candidate_report(self, *, state="requires_game_state_witness",
-                               plan_sha256=None):
+                               plan_sha256=None, count=3):
+        source_proof = self.fixture.call(count=count)
         plan_sha = plan_sha256 or hashlib.sha256(
             self.fixture.plan.read_bytes()).hexdigest()
         candidate = state == "requires_game_state_witness"
         report = {
             "schema": CANDIDATE_SCHEMA,
             "source_plan_sha256": plan_sha,
+            "source_capture_evidence_sha256":
+                source_proof["source_capture_evidence_sha256"],
             "private_review_group_count": 1,
             "review_groups_requiring_game_state_witness": 1 if candidate else 0,
             "groups": [{
@@ -108,6 +111,7 @@ class PrivateContactSheetTests(unittest.TestCase):
         result = self.call(reviewed_candidates=report)
         self.assertTrue(result["reviewed_candidate_filter_applied"])
         self.assertTrue(result["candidate_report_plan_binding_verified"])
+        self.assertTrue(result["candidate_report_capture_evidence_binding_verified"])
         self.assertEqual(result["candidate_filter_group_count"], 1)
         self.assertEqual(result["private_review_groups"], 1)
         self.assertEqual(result["paired_screenshot_positions"], 3)
@@ -136,7 +140,7 @@ class PrivateContactSheetTests(unittest.TestCase):
             for row, color in zip(second_rows, colors):
                 folder.joinpath(self.fixture.name(*row[:3])).write_bytes(
                     dual_fixtures.synthetic_png(color))
-        candidate = self.write_candidate_report()
+        candidate = self.write_candidate_report(count=6)
         report_data = json.loads(candidate.read_text(encoding="utf-8"))
         report_data["private_review_group_count"] = 2
         report_data["groups"].append({
@@ -159,9 +163,21 @@ class PrivateContactSheetTests(unittest.TestCase):
         self.assertTrue(result["candidate_report_plan_binding_verified"])
         self.assertFalse(result["map02_scene_identified"])
 
+    def test_shortlist_for_different_capture_evidence_is_rejected(self):
+        report = self.write_candidate_report()
+        self.fixture.image(1, "middle").write_bytes(
+            dual_fixtures.synthetic_png((240, 240, 240)))
+        with self.assertRaisesRegex(
+            ValueError, "does not match current private capture plan or evidence"
+        ):
+            self.call(reviewed_candidates=report)
+        self.assertFalse(self.image_out.exists())
+
     def test_shortlist_for_different_plan_is_rejected_without_output(self):
         report = self.write_candidate_report(plan_sha256="0" * 64)
-        with self.assertRaisesRegex(ValueError, "does not match current private capture plan"):
+        with self.assertRaisesRegex(
+            ValueError, "does not match current private capture plan or evidence"
+        ):
             self.call(reviewed_candidates=report)
         self.assertFalse(self.image_out.exists())
 
