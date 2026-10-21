@@ -4,6 +4,7 @@ import io
 import os
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch, Mock
@@ -64,6 +65,8 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.assertEqual(env["VH_PRIVATE_PNG_DIR"], str(self.output.resolve()))
         self.assertEqual(env["VH_PRIVATE_CAPTURE_LOG"],
                          str((self.output / "vh_private_capture.log").resolve()))
+        self.assertEqual(env["VH_PRIVATE_PROCESS_LOG"],
+                         str((self.output / "vh_emuhawk_process.log").resolve()))
         self.assertNotIn("github", str(argv).lower())
 
     def test_owner_original_files_must_not_reside_in_git_checkout(self):
@@ -95,6 +98,18 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         victim = self.root / "victim.log"
         victim.write_text("keep", encoding="ascii")
         (self.output / "vh_private_capture.log").symlink_to(victim)
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_refuses_existing_emuhawk_process_log(self):
+        (self.output / "vh_emuhawk_process.log").write_text("keep", encoding="ascii")
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_refuses_symlink_emuhawk_process_log(self):
+        victim = self.root / "process-victim.log"
+        victim.write_text("keep", encoding="ascii")
+        (self.output / "vh_emuhawk_process.log").symlink_to(victim)
         with self.assertRaises(ValueError):
             self.call()
 
@@ -152,6 +167,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         run.assert_not_called()
         self.assertIn("emulator_started=0", stream.getvalue())
         self.assertFalse((self.output / "vh_private_capture.log").exists())
+        self.assertFalse((self.output / "vh_emuhawk_process.log").exists())
         for private in (self.bk2, self.disc, self.plan, self.output):
             self.assertNotIn(str(private), stream.getvalue())
 
@@ -182,6 +198,11 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.assertTrue(logfile.is_file())
         self.assertEqual(logfile.stat().st_mode & 0o777, 0o600)
         self.assertIn("exit_success=1", logfile.read_text(encoding="ascii"))
+        process_log = self.output / "vh_emuhawk_process.log"
+        self.assertTrue(process_log.is_file())
+        self.assertEqual(process_log.stat().st_mode & 0o777, 0o600)
+        self.assertIsNotNone(c.kwargs["stdout"])
+        self.assertIs(c.kwargs["stderr"], subprocess.STDOUT)
         self.assertIn("original_ps1_authenticated=0", stream.getvalue())
         self.assertNotIn(str(self.bk2.resolve()), stream.getvalue())
 
