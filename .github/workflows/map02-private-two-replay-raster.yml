@@ -1,0 +1,47 @@
+name: MAP02 owner-private BK2 two-replay raster proof (synthetic CI)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-private-two-replay-raster.yml'
+      - 'tools/compare_map02_private_replay_rasters.py'
+      - 'tests/test_compare_map02_private_replay_rasters.py'
+      - 'docs/MAP02_PRIVATE_TWO_REPLAY_RASTER.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  invented-two-replays:
+    name: Synthetic two-run pixel replay (${{ matrix.os }} Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.9'
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: macos-15-intel
+            python: '3.11'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Install decoding dependency for fake images only
+        shell: bash
+        run: python -m pip install 'Pillow>=10,<12'
+      - name: Exercise 10 synthetic distinct-marker and decoded-pixel invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_compare_map02_private_replay_rasters.py' -v \
+            2>&1 | tee "$RUNNER_TEMP/map02-two-replay-synthetic.log"
+          grep -F 'Ran 10 tests' "$RUNNER_TEMP/map02-two-replay-synthetic.log"
+          if grep -E '^(FAILED|ERROR)' "$RUNNER_TEMP/map02-two-replay-synthetic.log"; then exit 1; fi
+          echo 'VH_MAP02_TWO_REPLAY_RASTER_PASS synthetic=10 original_bk2=0 private_png=0 ps1_emulation=0 scene_authenticated=0'
