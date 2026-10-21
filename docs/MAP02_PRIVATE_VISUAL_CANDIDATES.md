@@ -62,10 +62,16 @@ Run from an owner-local checkout:
       --image-root /private/vh-bk2/screenshots
 
 The report contains counters, an *unverified candidate* bracket and only
-booleans for PNG container CRC and SHA-256 checks. It never prints
-screenshot filenames, paths, image bytes or hashes. Valid PNG structure
-is not the same as decoded/rendered PS1 pixels; success cannot attest that
-an image depicts the claimed gameplay moment.
+booleans for PNG container CRC, bounded zlib decompression, row-size/filter
+validation and SHA-256 checks. It never prints screenshot filenames, paths,
+image bytes or hashes. The validator requires a readable PNG IDAT stream,
+checks that the decoded scanline lengths match the IHDR configuration,
+and refuses trailing or truncated compressed payloads, illegal palette
+combinations and nonconsecutive IDAT chunks. It supports normal and Adam7
+interlaced PNG scanline sizing. Decoded output is capped at 64 MiB.
+This check does **not** reconstruct pixels into RGB images, assess scene
+content, or authenticate screenshot origin. A valid PNG still cannot
+prove that it depicts the claimed gameplay moment.
 
 **Required before true MAP02 proof:** original-disc/BIOS authentication,
 genuine deterministic PS1 playback, independently calibrated
