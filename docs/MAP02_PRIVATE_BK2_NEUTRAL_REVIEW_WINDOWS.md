@@ -20,7 +20,9 @@ requested review region. Pauses at movie start and end are always
 excluded. By default the tool selects spans of **180–1800 input frames**
 and returns at most **20** windows, sorted by duration descending,
 then by earliest movie input frame; ties and ranks have **no scene
-probability meaning**.
+probability meaning**. The scanner retains no more than the configured
+number of windows in memory (hard maximum: 50), even when the complete
+movie contains thousands of eligible quiet intervals.
 
 These quiet intervals can occur during loading, a menu, an animation,
 a cinematic, a tactical battle, or inactivity. **Do not infer MAP02,
