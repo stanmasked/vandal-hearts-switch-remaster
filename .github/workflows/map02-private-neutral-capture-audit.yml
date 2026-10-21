@@ -1,0 +1,46 @@
+name: MAP02 private neutral capture chain audit (synthetic CI)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-private-neutral-capture-audit.yml'
+      - 'tools/verify_map02_private_neutral_capture_chain.py'
+      - 'tests/test_verify_map02_private_neutral_capture_chain.py'
+      - 'docs/MAP02_PRIVATE_NEUTRAL_CAPTURE_AUDIT.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  capture-chain-synthetic:
+    name: Fictional BK2-log-PNG chain (${{ matrix.os }} Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.9'
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: macos-15-intel
+            python: '3.11'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Validate 20 fabricated capture plans, Lua logs, screenshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_verify_map02_private_neutral_capture_chain.py' -v \
+            2>&1 | tee /tmp/vh-map02-private-neutral-capture-audit.log
+          grep -F 'Ran 20 tests' /tmp/vh-map02-private-neutral-capture-audit.log
+          if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-private-neutral-capture-audit.log; then
+            exit 1
+          fi
+          echo 'VH_MAP02_CAPTURE_AUDIT_PASS synthetic=20 owner_bk2=0 real_octoshock=0 map02_scene=unknown'
