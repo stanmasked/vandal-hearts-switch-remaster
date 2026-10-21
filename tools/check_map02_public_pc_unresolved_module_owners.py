@@ -497,6 +497,96 @@ def summarize_high_fanout_abs64_patch_layout(
     }
 
 
+
+def summarize_high_fanout_abs64_patch_gaps(
+        remaining, game_refs, backend_refs, game_abs64_offsets,
+        *, minimum_callers=8):
+    """Numeric gap histogram for source-sealed ABS64 data patches only.
+
+    Never join relocation offsets from different original ELF objects,
+    different data sections, or different names. Numeric histogram does not
+    identify a C structure layout or prove runtime use.
+    """
+    if (type(minimum_callers) is not int or minimum_callers < 2
+            or len(game_refs) != len(game_abs64_offsets)):
+        raise ValueError("MAP02 ABS64 gap input object count invalid")
+    remaining = set(remaining)
+    game = [set(names) & remaining for names in game_refs]
+    backend = set().union(*(set(names) & remaining for names in backend_refs))
+    game_only = (set().union(*game) if game else set()) - backend
+    wide = {name for name in game_only
+            if sum(name in refs for refs in game) >= minimum_callers}
+    bins = {"8": 0, "16": 0, "24": 0, "32": 0, "40_to_64": 0,
+            "over_64": 0, "non_multiple_8": 0}
+    counts_per_object = []
+    total = 0
+    sections = 0
+    smallest_positive_gap = None
+    singleton_sections = 0
+    for index, symbols in enumerate(game_abs64_offsets):
+        owned_count = 0
+        for name, patches in symbols.items():
+            if name not in wide:
+                continue
+            if name not in game[index]:
+                raise ValueError("MAP02 ABS64 gap name has no source import")
+            groups = {}
+            for section, offset in patches:
+                if (not section.startswith((".rela.data", ".rel.data"))
+                        or type(offset) is not int or offset < 0):
+                    raise ValueError("MAP02 ABS64 gap relocation invalid")
+                groups.setdefault(section, []).append(offset)
+                owned_count += 1
+                total += 1
+            for locations in groups.values():
+                if len(locations) != len(set(locations)):
+                    raise ValueError("MAP02 duplicate ABS64 gap offset in data section")
+                sections += 1
+                singleton_sections += len(locations) == 1
+                sorted_offsets = sorted(locations)
+                for left, right in zip(sorted_offsets, sorted_offsets[1:]):
+                    delta = right - left
+                    if delta <= 0:
+                        raise ValueError("MAP02 nonpositive ABS64 relocation gap")
+                    if smallest_positive_gap is None:
+                        smallest_positive_gap = delta
+                    else:
+                        smallest_positive_gap = min(smallest_positive_gap, delta)
+                    if delta % 8:
+                        bins["non_multiple_8"] += 1
+                    elif delta in (8, 16, 24, 32):
+                        bins[str(delta)] += 1
+                    elif delta <= 64:
+                        bins["40_to_64"] += 1
+                    else:
+                        bins["over_64"] += 1
+        if owned_count:
+            counts_per_object.append(owned_count)
+    ordered = sorted(counts_per_object, reverse=True)
+    gap_total = sum(bins.values())
+    if (gap_total != total - sections
+            or (not total and (sections or ordered or smallest_positive_gap is not None))
+            or (total > 0 and not ordered)
+            or sum(ordered) != total
+            or not 0 <= singleton_sections <= sections):
+        raise ValueError("MAP02 ABS64 gap histogram consistency failed")
+    return {
+        "high_fanout_abs64_gap_total_records": total,
+        "high_fanout_abs64_gap_source_objects": len(ordered),
+        "high_fanout_abs64_gap_source_sections": sections,
+        "high_fanout_abs64_gap_adjacent_site_pairs": gap_total,
+        **{"high_fanout_abs64_gap_" + key: value for key, value in bins.items()},
+        "high_fanout_abs64_gap_singleton_sections": singleton_sections,
+        "high_fanout_abs64_gap_largest_source_object_records":
+            ordered[0] if ordered else 0,
+        "high_fanout_abs64_gap_second_largest_source_object_records":
+            ordered[1] if len(ordered) > 1 else 0,
+        "high_fanout_abs64_gap_smallest_positive_distance_bytes":
+            smallest_positive_gap or 0,
+        "offset_gaps_do_not_identify_c_struct_or_executed_game": True,
+    }
+
+
 def read_link_report(path):
     path = Path(path)
     if path.is_symlink():
@@ -656,6 +746,20 @@ def audit_owners(upstream, overlay_bundle,
         abs64_layout = summarize_high_fanout_abs64_patch_layout(
             remaining, refs[:EXPECTED_GAME], refs[EXPECTED_GAME:],
             game_abs64_patch_maps)
+        abs64_gaps = summarize_high_fanout_abs64_patch_gaps(
+            remaining, refs[:EXPECTED_GAME], refs[EXPECTED_GAME:],
+            game_abs64_patch_maps)
+        if (abs64_gaps["high_fanout_abs64_gap_total_records"] !=
+                abs64_layout["high_fanout_abs64_data_records"]
+                or abs64_gaps["high_fanout_abs64_gap_source_objects"] !=
+                   abs64_layout["high_fanout_abs64_data_source_objects"]
+                or abs64_gaps["high_fanout_abs64_gap_source_sections"] !=
+                   abs64_layout["high_fanout_abs64_data_source_sections"]
+                or abs64_gaps["high_fanout_abs64_gap_8"] !=
+                   abs64_layout["high_fanout_abs64_data_adjacent_eight_byte_pairs"]
+                or abs64_gaps["high_fanout_abs64_gap_largest_source_object_records"] !=
+                   abs64_layout["high_fanout_abs64_data_max_records_in_one_source_object"]):
+            raise ValueError("MAP02 ABS64 spacing differs from native source patch audit")
         if (abs64_layout["high_fanout_abs64_data_records"] !=
                 relocation_provenance["high_fanout_provenance_abs64_records"]
                 or abs64_layout["high_fanout_abs64_data_symbol_names"] >
@@ -707,6 +811,7 @@ def audit_owners(upstream, overlay_bundle,
             **reloc_types,
             **relocation_provenance,
             **abs64_layout,
+            **abs64_gaps,
             "only_counts_and_hashes_published": True,
             "retail_asset_content_accessed": False,
             "executable_game_proven": False,
