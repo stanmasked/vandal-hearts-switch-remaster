@@ -48,7 +48,7 @@ jobs:
           fi
           echo "VH_MAP02_CAPTURE_PLAN_PASS synthetic_tests=${test_count} original_bk2=0 game=0 map02=unknown"
   lua-capture-mocks:
-    name: Execute private capture Lua against forty-three invented emulator scenarios
+    name: Execute private capture Lua against fifty-one invented emulator scenarios
     runs-on: ubuntu-22.04
     timeout-minutes: 12
     steps:
@@ -67,5 +67,5 @@ jobs:
           set -euo pipefail
           lua5.4 tests/test_map02_bizhawk_private_neutral_capture_mock.lua \
             2>&1 | tee /tmp/vh-map02-lua-mock.log
-          grep -F 'VH_MAP02_NEUTRAL_CAPTURE_LUA_MOCK_PASS cases=43 owner_bk2=0 actual_bizhawk=0 map02_verified=0' \
+          grep -F 'VH_MAP02_NEUTRAL_CAPTURE_LUA_MOCK_PASS cases=51 owner_bk2=0 actual_bizhawk=0 map02_verified=0' \
             /tmp/vh-map02-lua-mock.log

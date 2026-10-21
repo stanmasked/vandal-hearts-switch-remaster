@@ -14,6 +14,7 @@ local function run(option)
   scenarios = scenarios + 1
   local counter = option == "late-attach" and 80 or (option == "zero-counter" and 0 or 1)
   local lines, screenshots, saved, log_lines, exit_codes = {}, {}, {}, {}, {}
+  local callbacks = {}
   local content = BASE
   if option == "boundary" then content = content:gsub("1,before,1664,held", "1,before,1663,held") end
   if option == "bad-header" then content = content:gsub("VH_MAP02_CAPTURE_PLAN_V1", "OTHER") end
@@ -127,6 +128,21 @@ local function run(option)
   if option == "missing-filename-api" then movie.filename = nil end
   if option == "missing-savestate-api" then movie.startsfromsavestate = nil end
   if option == "missing-saveram-api" then movie.startsfromsaveram = nil end
+  event = {
+    onloadstate = function(callback, name)
+      assert(name == "vh_map02_block_runtime_state_load")
+      callbacks.state = callback
+      return option == "state-hook-refused" and "" or "fictional-state-hook"
+    end,
+    oninputpoll = function(callback, name)
+      assert(name == "vh_map02_observe_input_poll")
+      callbacks.poll = callback
+      return option == "poll-hook-refused" and "" or "fictional-poll-hook"
+    end,
+  }
+  if option == "missing-state-event" then event.onloadstate = nil end
+  if option == "missing-input-event" then event.oninputpoll = nil end
+  if option == "missing-event-table" then event = nil end
   emu = {
     getsystemid = function()
       if option == "wrong-system" then return "NES" end
@@ -136,6 +152,12 @@ local function run(option)
     framecount = function() return counter end,
     frameadvance = function()
       assert(counter < 1700, "capture observer should terminate")
+      if callbacks.poll and option ~= "no-input-polls" then callbacks.poll() end
+      if callbacks.state and
+          ((option == "state-loaded-before-first" and counter == 1663) or
+           (option == "state-loaded-after-first" and counter == 1665)) then
+        callbacks.state("fictional-savestate")
+      end
       if option == "skip-counter" and counter == 1663 then
         counter = counter + 2
       else
@@ -184,7 +206,7 @@ for _, option in ipairs({"plain", "prefixed", "boundary", "zero-counter", "spars
     assert(tonumber(candidate) == frames[i], option .. ": off-by-one movie frame")
     assert(held == (i == 2 and "neutral" or "held"), option .. ": expected button state")
   end
-  assert(lines[7] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes actual_map02=unverified")
+  assert(lines[7] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes core_input_poll_observed=yes actual_map02=unverified")
   assert(#exit_codes == 1 and exit_codes[1] == 0,
          option .. ": successful bounded capture must close EmuHawk with exit code 0")
 end
@@ -198,7 +220,9 @@ for _, option in ipairs({
   "nil-start-table", "git-root", "git-parent", "git-worktree",
   "wrong-system", "system-changed", "missing-system-api", "missing-exit-api",
   "wrong-movie", "relative-movie", "savestate-movie", "saveram-movie",
-  "missing-filename-api", "missing-savestate-api", "missing-saveram-api"
+  "missing-filename-api", "missing-savestate-api", "missing-saveram-api",
+  "missing-event-table", "missing-state-event", "state-hook-refused",
+  "poll-hook-refused", "state-loaded-before-first", "state-loaded-after-first"
 }) do
   local lines, shots, _, exit_codes = run(option)
   local rejected = false
@@ -215,6 +239,16 @@ for _, option in ipairs({
     assert(#exit_codes == 1 and exit_codes[1] == 1,
            option .. ": failed capture must terminate EmuHawk with exit code 1")
   end
+end
+do
+  local lines, shots, _, exit_codes = run("no-input-polls")
+  assert(#shots == 3 and #exit_codes == 1 and exit_codes[1] == 0)
+  assert(lines[7] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes core_input_poll_observed=no actual_map02=unverified")
+end
+do
+  local lines, shots, _, exit_codes = run("missing-input-event")
+  assert(#shots == 3 and #exit_codes == 1 and exit_codes[1] == 0)
+  assert(lines[7] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes core_input_poll_observed=no actual_map02=unverified")
 end
 old_print("VH_MAP02_NEUTRAL_CAPTURE_LUA_MOCK_PASS cases=" .. scenarios ..
           " owner_bk2=0 actual_bizhawk=0 map02_verified=0")

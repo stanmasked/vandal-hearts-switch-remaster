@@ -43,7 +43,7 @@ START_PREFLIGHT = ("VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 "
                    "ps1_input_delivery=unverified")
 COMPLETE = re.compile(
     r"VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=([0-9]+) "
-    r"movie_input_only=yes actual_map02=unverified"
+    r"movie_input_only=yes core_input_poll_observed=(yes|no) actual_map02=unverified"
 )
 PROCESS_EXIT_SUCCESS = (
     "VH_PRIVATE_BIZHAWK_LOCAL_PROCESS_EXITED exit_success=1 "
@@ -109,6 +109,7 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
     preflight = False
     source_preflight = False
     process_exit = False
+    core_poll_observed = False
     for line in lines:
         if line.startswith("VH_PRIVATE_BIZHAWK_LAUNCH_ERROR"):
             raise ValueError("private emulator launch failed before capture")
@@ -137,6 +138,7 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
                 raise ValueError("capture completion is invalid or premature")
             if int(match.group(1)) != len(planned):
                 raise ValueError("capture summary count differs")
+            core_poll_observed = match.group(2) == "yes"
             completed += 1
         elif line.startswith("VH_PRIVATE_NEUTRAL_CAPTURE"):
             match = LOG_ROW.fullmatch(line)
@@ -188,6 +190,8 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
         "capture_logs_match_each_planned_input_and_counter": True,
         "owner_log_reports_live_first_start_anchor_before_screenshots": True,
         "owner_log_reports_poweron_movie_path_match": True,
+        "owner_log_reports_input_poll_callback": core_poll_observed,
+        "savestate_free_real_replay_authenticated": False,
         "owner_launcher_reports_successful_process_exit": True,
         "all_png_crc_zlib_scanlines_pass": True,
         "distinct_screenshot_file_inodes": True,
