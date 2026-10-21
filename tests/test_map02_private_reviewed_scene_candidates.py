@@ -217,7 +217,7 @@ class ReviewShortlistTests(unittest.TestCase):
     def test_capture_plan_mutation_during_audit_fails_closed(self):
         def mutate_plan(*_args, **_kwargs):
             self.sample.plan.write_text(
-                self.sample.plan.read_text(encoding="ascii") + "# changed\\n",
+                self.sample.plan.read_text(encoding="ascii") + "# changed\n",
                 encoding="ascii",
             )
             return {1: True}
