@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Windows.Forms;
 using BizHawk.Client.Common;
 using BizHawk.Emulation.Common;
@@ -45,6 +46,26 @@ namespace VhMap02LoaderSmoke
                     throw new InvalidOperationException("official release or plugin missing");
 
                 AppDomain.CurrentDomain.AssemblyResolve += Resolve;
+                RunSmoke(plug);
+                Console.WriteLine(
+                    "VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_PASS"
+                    + " metadata=1 activation=1 missing_core_fail_closed=1"
+                    + " emulator_process_started=0 original_disc=0 bios=0 bk2=0");
+                return 0;
+            }
+            catch (Exception)
+            {
+                // Never emit external loader exception messages with local paths.
+                Console.Error.WriteLine(
+                    "VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_FAIL authenticated=0");
+                return 1;
+            }
+        }
+
+        // Defer JIT resolution of BizHawk types until AssemblyResolve is hooked.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void RunSmoke(string plug)
+        {
                 var assembly = Assembly.LoadFrom(plug);
                 if (!assembly.GetReferencedAssemblies().Any(
                         name => name.Name != null && name.Name.StartsWith("BizHawk.")))
@@ -84,19 +105,6 @@ namespace VhMap02LoaderSmoke
                             "save must be disabled without injected real PSX IEmulator");
                 }
 
-                Console.WriteLine(
-                    "VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_PASS"
-                    + " metadata=1 activation=1 missing_core_fail_closed=1"
-                    + " emulator_process_started=0 original_disc=0 bios=0 bk2=0");
-                return 0;
-            }
-            catch (Exception)
-            {
-                // Never emit external loader exception messages with local paths.
-                Console.Error.WriteLine(
-                    "VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_FAIL authenticated=0");
-                return 1;
-            }
         }
     }
 }
