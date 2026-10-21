@@ -6,6 +6,7 @@ on:
       - 'tools/preflight_map02_pcport.py'
       - 'tests/test_preflight_map02_pcport.py'
       - 'docs/MAP02_PC_PORT_PREFLIGHT.md'
+      - 'docs/BUILDING.md'
   workflow_dispatch:
 permissions:
   contents: read
