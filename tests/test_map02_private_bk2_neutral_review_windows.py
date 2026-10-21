@@ -216,5 +216,30 @@ class NeutralReviewTests(unittest.TestCase):
                 inspect_movie(link)
 
 
+    def test_archive_inside_git_checkout_or_worktree_is_refused(self):
+        for marker_kind in ("directory", "worktree-file", "symlinked-parent"):
+            with self.subTest(marker_kind=marker_kind):
+                with tempfile.TemporaryDirectory() as folder:
+                    root = Path(folder)
+                    if marker_kind == "directory":
+                        (root / ".git").mkdir()
+                        movie = root / "source.bk2"
+                    elif marker_kind == "worktree-file":
+                        (root / ".git").write_text("gitdir: ../private-worktree")
+                        movie = root / "source.bk2"
+                    else:
+                        actual = root / "checkout"
+                        actual.mkdir()
+                        (actual / ".git").mkdir()
+                        movie = actual / "source.bk2"
+                    movie.write_bytes(b"not-a-zip")
+                    if marker_kind == "symlinked-parent":
+                        alias = root / "alias"
+                        alias.symlink_to(actual, target_is_directory=True)
+                        movie = alias / "source.bk2"
+                    with self.assertRaisesRegex(ValueError, "outside Git checkout/worktree"):
+                        inspect_movie(movie)
+
+
 if __name__ == "__main__":
     unittest.main()
