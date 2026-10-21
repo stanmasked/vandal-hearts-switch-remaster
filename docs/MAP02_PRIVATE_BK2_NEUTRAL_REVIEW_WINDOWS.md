@@ -16,7 +16,9 @@ index 1661, all four analog axes neutral.
 A **controller-neutral interval** is a run of frames when no digital
 buttons are held, with at least one held-button frame immediately before
 AND immediately after the run. Both edge frames must be inside the
-requested review region. Pauses at movie start and end are always
+requested review region: the lower bound applies to the *before* screenshot
+as well as the neutral-run start, and the upper bound includes the following
+held-button frame. Pauses at movie start and end are always
 excluded. By default the tool selects spans of **180–1800 input frames**
 and returns at most **20** windows, sorted by duration descending,
 then by earliest movie input frame; ties and ranks have **no scene
