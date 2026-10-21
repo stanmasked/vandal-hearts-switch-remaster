@@ -1,14 +1,16 @@
 """Fictional raw sectors and a tiny synthetic BK2 only; no retail bytes."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 from tools.map02_private_disc_movie_preflight import (
     MAP02_BYTES, MAP02_LBA, PVD_LBA, SECTOR_BYTES, USER_DATA_BYTES,
-    EXPECTED_BIN_BYTES, EXPECTED_VOLUME_ID, inspect_pair,
+    EXPECTED_BIN_BYTES, EXPECTED_VOLUME_ID, inspect_pair, _full_image_sha256,
 )
 
 SYNC = json.dumps({"o":{"FIOConfig":{
@@ -144,6 +146,83 @@ class DiscMoviePreflightTests(unittest.TestCase):
         result = self.call(expected_map02_sha256=hashlib.sha256(b"other profile").hexdigest())
         self.assertFalse(result["map02_prs_matches_expected_profile"])
         self.assertFalse(result["media_preflight_ready_for_owner_replay"])
+
+    def test_no_private_full_image_fingerprint_is_printed_by_default(self):
+        report = self.call()
+        self.assertFalse(report["full_bin_sha256_requested"])
+        self.assertIsNone(report["full_bin_sha256_verified"])
+        self.assertTrue(report["media_preflight_ready_for_owner_replay"])
+
+    def test_full_image_digest_identity_matched_when_explicitly_requested(self):
+        synthetic_digest = hashlib.sha256(b"fictional full image").hexdigest()
+        with patch(
+            "tools.map02_private_disc_movie_preflight._full_image_sha256",
+            return_value=synthetic_digest,
+        ) as hashing:
+            report = self.call(
+                verify_full_bin_sha256=True,
+                expected_bin_sha256=synthetic_digest,
+            )
+        hashing.assert_called_once()
+        self.assertTrue(report["full_bin_sha256_requested"])
+        self.assertTrue(report["full_bin_sha256_verified"])
+        self.assertTrue(report["media_preflight_ready_for_owner_replay"])
+        self.assertNotIn(synthetic_digest, json.dumps(report))
+
+    def test_full_image_digest_mismatch_blocks_replay(self):
+        synthetic_digest = hashlib.sha256(b"fictional expected image").hexdigest()
+        with patch(
+            "tools.map02_private_disc_movie_preflight._full_image_sha256",
+            return_value=hashlib.sha256(b"fictional different image").hexdigest(),
+        ):
+            report = self.call(
+                verify_full_bin_sha256=True,
+                expected_bin_sha256=synthetic_digest,
+            )
+        self.assertTrue(report["map02_prs_matches_expected_profile"])
+        self.assertTrue(report["disc_size_matches_audited_profile"])
+        self.assertTrue(report["full_bin_sha256_requested"])
+        self.assertFalse(report["full_bin_sha256_verified"])
+        self.assertFalse(report["media_preflight_ready_for_owner_replay"])
+
+    def test_full_image_digest_on_wrong_size_fails_without_hashing(self):
+        sectors = MAP02_LBA + (MAP02_BYTES + USER_DATA_BYTES - 1) // USER_DATA_BYTES
+        with self.bin.open("r+b") as handle:
+            handle.truncate(sectors * SECTOR_BYTES)
+        with patch(
+            "tools.map02_private_disc_movie_preflight._full_image_sha256",
+        ) as hashing:
+            report = self.call(
+                verify_full_bin_sha256=True,
+                expected_bin_sha256=hashlib.sha256(b"fictional").hexdigest(),
+            )
+        hashing.assert_not_called()
+        self.assertTrue(report["full_bin_sha256_requested"])
+        self.assertFalse(report["full_bin_sha256_verified"])
+        self.assertFalse(report["media_preflight_ready_for_owner_replay"])
+
+    def test_full_image_digest_requires_valid_private_reference(self):
+        with self.assertRaisesRegex(ValueError, "private lowercase SHA-256"):
+            self.call(verify_full_bin_sha256=True)
+        with self.assertRaisesRegex(ValueError, "without verification"):
+            self.call(expected_bin_sha256="f" * 64)
+
+    def test_full_image_digest_streams_small_synthetic_file(self):
+        miniature = self.root / "nonretail-payload.bin"
+        payload = b"TEST-ONLY-BIN" * 50000
+        miniature.write_bytes(payload)
+        fd = os.open(miniature, os.O_RDONLY)
+        try:
+            with patch(
+                "tools.map02_private_disc_movie_preflight.FULL_HASH_CHUNK_BYTES",
+                513,
+            ):
+                self.assertEqual(
+                    _full_image_sha256(fd, len(payload)),
+                    hashlib.sha256(payload).hexdigest(),
+                )
+        finally:
+            os.close(fd)
 
     def test_different_volume_id_is_not_accepted(self):
         self._write_disc(volume_id="SLUS_99999")
