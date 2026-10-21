@@ -1,8 +1,35 @@
-<!-- Owner-local build template. COPY this project and CustomMainForm.cs into
-     <private BizHawk 2.11 source>/ExternalToolProjects/VhMap02CoreWitness/.
-     The upstream NET48ExternalToolForm.targets supplies actual BizHawk
-     assembly references; no binary, firmware or licensed image is committed. -->
+<!--
+  Owner-local compile modes:
+  (a) Copied into upstream ExternalToolProjects/VhMap02CoreWitness:
+      use genuine upstream targets and props.
+  (b) VH_BIZHAWK_RELEASE_ROOT=ABSOLUTE_PATH_TO_BIZHAWK_2_11:
+      compile THIS SOURCE against the official prebuilt release DLLs.
+      This does not run an emulator or use any original PS1 assets.
+-->
 <Project Sdk="Microsoft.NET.Sdk">
-  <Import Project="$(MSBuildProjectDirectory)/../NET48ExternalToolForm.targets" />
-  <Import Project="$(MSBuildProjectDirectory)/../ExtToolCommon.props" />
+  <Import Project="$(MSBuildProjectDirectory)/../NET48ExternalToolForm.targets"
+          Condition="'$(VH_BIZHAWK_RELEASE_ROOT)' == ''" />
+  <Import Project="$(MSBuildProjectDirectory)/../ExtToolCommon.props"
+          Condition="'$(VH_BIZHAWK_RELEASE_ROOT)' == ''" />
+  <PropertyGroup Condition="'$(VH_BIZHAWK_RELEASE_ROOT)' != ''">
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(VH_BIZHAWK_RELEASE_ROOT)' != ''">
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="BizHawk.Client.Common">
+      <HintPath>$(VH_BIZHAWK_RELEASE_ROOT)/dll/BizHawk.Client.Common.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BizHawk.Client.EmuHawk">
+      <HintPath>$(VH_BIZHAWK_RELEASE_ROOT)/EmuHawk.exe</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BizHawk.Emulation.Common">
+      <HintPath>$(VH_BIZHAWK_RELEASE_ROOT)/dll/BizHawk.Emulation.Common.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
 </Project>
