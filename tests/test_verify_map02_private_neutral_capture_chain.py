@@ -215,7 +215,7 @@ class CaptureAuditTests(unittest.TestCase):
     def test_launcher_error_marker_refused(self):
         with self.log.open("a") as stream:
             stream.write("VH_PRIVATE_BIZHAWK_LAUNCH_ERROR process_started=0 "
-                         "original_ps1_authenticated=0\\n")
+                         "original_ps1_authenticated=0\n")
         with self.assertRaisesRegex(ValueError, "launch failed"):
             self.call()
 
