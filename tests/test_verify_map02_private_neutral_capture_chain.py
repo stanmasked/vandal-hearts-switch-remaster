@@ -106,7 +106,7 @@ class CaptureAuditTests(unittest.TestCase):
         self.assertTrue(value["owner_log_reports_live_first_start_anchor_before_screenshots"])
         self.assertTrue(value["owner_log_reports_poweron_movie_path_match"])
         self.assertTrue(value["owner_log_reports_input_poll_callback"])
-        self.assertTrue(value["savestate_load_detection_declared_in_lua"])
+        self.assertFalse(value["savestate_free_real_replay_authenticated"])
         self.assertTrue(value["owner_launcher_reports_successful_process_exit"])
         self.assertTrue(value["all_png_crc_zlib_scanlines_pass"])
         self.assertEqual(value["screenshot_count"], 3)
