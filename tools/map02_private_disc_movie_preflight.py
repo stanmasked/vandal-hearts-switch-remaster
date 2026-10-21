@@ -171,6 +171,14 @@ def _raw_sector(fd: int, lba: int, file_size: int) -> bytes:
         raise ValueError("raw CD sector sync/mode validation failed")
     if sector[12:15] != _expected_msf(lba):
         raise ValueError("raw CD sector MSF address does not match expected LBA")
+    # ISO9660 PVD and MAP02 game resource use 2048-byte Mode 2 Form 1
+    # user data at +24. In a real CD-XA sector the four-byte subheader
+    # must occur twice. Form 2 instead contains a different payload
+    # layout and must not be interpreted as 2048-byte Form 1 data.
+    if sector[16:20] != sector[20:24]:
+        raise ValueError("raw CD-XA repeated subheader mismatch")
+    if sector[18] & 0x20:
+        raise ValueError("raw CD-XA Form 2 sector is not Mode 2 Form 1")
     return sector
 
 
