@@ -71,7 +71,22 @@ def observe(source,alsa_csv,tag_csv,phase_csv,libc_csv,meta_csv,ready):
                 try:
                     for _ in range(260):
                         now=time.monotonic_ns()
-                        count,rows=snapshot(mm)
+                        # Original Stage305 userspace counters are individual
+                        # relaxed atomics, not an atomic group snapshot. If a
+                        # wrapper increments total before its return category,
+                        # one read can observe impossible intermediate sums.
+                        # The reader retries genuine shared mmap values; it
+                        # does NOT synthesize, clamp or patch counters.
+                        for attempt in range(32):
+                            try:
+                                count,rows=snapshot(mm)
+                                break
+                            except ValueError as ex:
+                                if "Counter categories exceed call count" not in str(ex):
+                                    raise
+                                if attempt==31:
+                                    raise
+                                time.sleep(0.001)
                         marks=[struct.unpack_from("<Q",mm,CPAL_MARKER_OFFSET+8*i)[0]
                                for i in range(min(count,SLOTS))]
                         aw.writerow(("P",now,-1,"sample",count,0,0,0,0,0))
