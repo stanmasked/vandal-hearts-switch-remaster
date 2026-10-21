@@ -43,6 +43,7 @@ class IsolatedCandidateTests(unittest.TestCase):
         git(root, "add", "original.txt")
         git(root, "commit", "-qm", "base")
         main = git(root, "rev-parse", "HEAD")
+        git(root, "update-ref", "refs/remotes/origin/main", main)
         commits = []
         for n in NUMBERS:
             (root / f"scene_{n}.txt").write_text(f"sample {n}\n",
