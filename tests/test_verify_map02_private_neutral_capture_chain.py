@@ -1,0 +1,233 @@
+"""Synthetic-only private capture-chain checks. No game, movie or real PNGs."""
+import json
+import os
+from pathlib import Path
+import struct
+import tempfile
+import unittest
+from unittest.mock import patch
+import zlib
+
+from tools.verify_map02_private_neutral_capture_chain import (
+    parse_plan, verify,
+)
+
+LINES = [
+    "VH_MAP02_CAPTURE_PLAN_V1",
+    "movie_frames=933949",
+    "capture_count=3",
+    "1,before,3000,held",
+    "1,middle,3250,neutral",
+    "1,after,3500,held",
+]
+PICKS = ((1, "before", 3000, "held"),
+         (1, "middle", 3250, "neutral"),
+         (1, "after", 3500, "held"))
+
+
+def chunk(kind, content):
+    return (struct.pack(">I", len(content)) + kind + content +
+            struct.pack(">I", zlib.crc32(kind + content) & 0xffffffff))
+
+
+def invented_png(value):
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(b"\x00" + bytes((value, 7, 11))))
+            + chunk(b"IEND", b""))
+
+
+def log_row(group, role, index, held):
+    return (
+        "VH_PRIVATE_NEUTRAL_CAPTURE window=%d role=%s counter=%d "
+        "candidate_input=%d expected_buttons=%s png=written "
+        "display_offset=unverified" % (group, role, index + 1, index, held)
+    )
+
+
+class CaptureAuditTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.base = Path(temp.name)
+        self.source = self.base / "invented.bk2"
+        self.plan = self.base / "plan-private.txt"
+        self.log = self.base / "console-private.txt"
+        self.images = self.base / "private-png"
+        self.images.mkdir()
+        self.plan.write_text("\n".join(LINES) + "\n", encoding="ascii")
+        self.records = list(PICKS)
+        self.write_log()
+        for i, (group, role, index, _) in enumerate(PICKS):
+            (self.images / ("vh_review_w%02d_%s_counter_%07d.png" %
+                            (group, role, index + 1))).write_bytes(
+                                invented_png(i + 1))
+
+    def write_log(self, *, complete=True):
+        data = ["unrelated pretend emulator console text"]
+        data.extend(log_row(*r) for r in self.records)
+        if complete:
+            data.append("VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=%d "
+                        "movie_input_only=yes actual_map02=unverified" %
+                        len(self.records))
+        self.log.write_text("\n".join(data) + "\n", encoding="utf-8")
+
+    def call(self, *, expected=None, **kwargs):
+        with patch(
+            "tools.verify_map02_private_neutral_capture_chain.plan_lines",
+            return_value=LINES if expected is None else expected,
+        ) as mock_source:
+            result = verify(
+                self.source,
+                kwargs.get("plan", self.plan),
+                kwargs.get("log", self.log),
+                kwargs.get("pictures", self.images),
+                minimum=240, maximum=1200, after=1800, before=900000,
+            )
+        self.assertEqual(mock_source.call_args.kwargs, {
+            "limit": 1, "minimum": 240, "maximum": 1200,
+            "after": 1800, "before": 900000,
+        })
+        self.assertEqual(mock_source.call_args.args[0], self.source)
+        return result
+
+    def test_complete_synthetic_chain_is_only_metadata_integrity(self):
+        value = self.call()
+        self.assertTrue(value["private_plan_rebuilt_from_direct_bk2"])
+        self.assertTrue(value["capture_logs_match_each_planned_input_and_counter"])
+        self.assertTrue(value["all_png_crc_zlib_scanlines_pass"])
+        self.assertEqual(value["screenshot_count"], 3)
+        for name in ("movie_input_to_actual_ps1_delivery_verified",
+                     "real_bizhawk_execution_authenticated",
+                     "actual_displayed_frame_offset_verified",
+                     "image_scene_identity_verified", "map02_frame_identified",
+                     "source_native_gpu_vram_verified", "private_input_or_png_published"):
+            self.assertFalse(value[name])
+        self.assertNotIn(str(self.base), json.dumps(value))
+
+    def test_direct_source_plan_mismatch_rejected(self):
+        with self.assertRaises(ValueError):
+            self.call(expected=LINES[:-1] + ["1,after,3501,held"])
+
+    def test_modified_plan_with_unchanged_source_rejected(self):
+        self.plan.write_text(self.plan.read_text().replace(
+            "1,middle,3250,neutral", "1,middle,3251,neutral"))
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_shifted_emu_counter_in_console_refused(self):
+        self.log.write_text(self.log.read_text().replace(
+            "counter=3251 candidate_input=3250",
+            "counter=3252 candidate_input=3250"))
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_recorded_png_role_swapped_refused(self):
+        self.records[1] = (1, "after", 3250, "neutral")
+        self.write_log()
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_missing_console_marker_refused(self):
+        self.records.pop()
+        self.write_log()
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_capture_probes_reported_error_refused(self):
+        with self.log.open("a") as f:
+            f.write("VH_PRIVATE_NEUTRAL_CAPTURE_ERROR movie_playback_left_readonly\n")
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_missing_completion_refused(self):
+        self.write_log(complete=False)
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_duplicate_completion_refused(self):
+        with self.log.open("a") as f:
+            f.write("VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 "
+                    "movie_input_only=yes actual_map02=unverified\n")
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_late_capture_after_completion_refused(self):
+        with self.log.open("a") as f:
+            f.write(log_row(*PICKS[0]) + "\n")
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_altered_png_crc_refused(self):
+        path = self.images / "vh_review_w01_middle_counter_0003251.png"
+        data = bytearray(path.read_bytes())
+        data[20] ^= 1
+        path.write_bytes(data)
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_png_with_valid_crc_but_bad_zlib_refused(self):
+        path = self.images / "vh_review_w01_middle_counter_0003251.png"
+        path.write_bytes(
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", b"not-a-zlib-stream")
+            + chunk(b"IEND", b""))
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_missing_png_refused(self):
+        (self.images / "vh_review_w01_after_counter_0003501.png").unlink()
+        with self.assertRaises((ValueError, OSError)):
+            self.call()
+
+    def test_hardlinked_image_reuse_refused(self):
+        p = self.images / "vh_review_w01_after_counter_0003501.png"
+        other = self.images / "vh_review_w01_before_counter_0003001.png"
+        p.unlink()
+        os.link(other, p)
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_symlink_png_refused(self):
+        p = self.images / "vh_review_w01_after_counter_0003501.png"
+        other = self.images / "vh_review_w01_before_counter_0003001.png"
+        p.unlink()
+        p.symlink_to(other)
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_private_plan_symlink_refused(self):
+        other = self.base / "plan-other"
+        other.write_bytes(self.plan.read_bytes())
+        self.plan.unlink()
+        self.plan.symlink_to(other)
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_plan_without_final_newline_refused(self):
+        self.plan.write_text("\n".join(LINES), encoding="ascii")
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_plan_missing_group_role_refused(self):
+        self.plan.write_text("\n".join(LINES[:-1]) + "\n")
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_plan_reordered_rows_refused(self):
+        self.plan.write_text("\n".join(
+            LINES[:4] + [LINES[5], LINES[4]]
+        ) + "\n")
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_unknown_plan_version_refused(self):
+        self.plan.write_text(self.plan.read_text().replace(
+            "VH_MAP02_CAPTURE_PLAN_V1", "VH_MAP02_CAPTURE_PLAN_V2"))
+        with self.assertRaises(ValueError):
+            self.call()
+
+
+if __name__ == "__main__":
+    unittest.main()
