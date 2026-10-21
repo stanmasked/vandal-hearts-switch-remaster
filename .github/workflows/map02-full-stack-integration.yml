@@ -10,11 +10,13 @@ on:
       - 'tools/audit_map02_upstream_ci.py'
       - 'tools/rehearse_map02_full_stack.py'
       - 'tools/map02_integration_candidate.py'
+      - 'tools/map02_final_ref_lock.py'
       - 'tests/test_map02_full_stack_audit.py'
       - 'tests/test_map02_live_pr_metadata.py'
       - 'tests/test_map02_upstream_ci.py'
       - 'tests/test_map02_virtual_merge.py'
       - 'tests/test_map02_integration_candidate.py'
+      - 'tests/test_map02_final_ref_lock.py'
   workflow_dispatch:
 
 permissions:
@@ -45,6 +47,8 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_map02_virtual_merge.py' -v
           python3 -m py_compile tools/map02_integration_candidate.py tests/test_map02_integration_candidate.py
           python3 -m unittest discover -s tests -p 'test_map02_integration_candidate.py' -v
+          python3 -m py_compile tools/map02_final_ref_lock.py tests/test_map02_final_ref_lock.py
+          python3 -m unittest discover -s tests -p 'test_map02_final_ref_lock.py' -v
       - name: Compare all 26 immutable PR refs and live GitHub Draft metadata
         shell: bash
         env:
@@ -143,6 +147,34 @@ jobs:
           assert c["pr_count"] == 26 and len(c["steps"]) == 26
           assert c["isolated_candidate_tree_sha"] == c["source_tree_sha"]
           assert c["separate_nro_and_nexium_evidence_required"] is True
+          PY
+      - name: Recheck live remote main and every pinned PR after candidate creation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 tools/map02_final_ref_lock.py \
+            --repo . --manifest data/map02_full_stack_snapshot.json \
+            --audit build/map02-full-stack-audit/report.json \
+            --virtual build/map02-full-stack-audit/virtual-merge.json \
+            --candidate build/map02-full-stack-audit/integration-candidate.json \
+            --report build/map02-full-stack-audit/final-ref-check.json \
+            | tee build/map02-full-stack-audit/final-ref-check.log
+          grep -F 'VH_MAP02_FINAL_REF_LOCK_PASS prs=26 upstream=25 main_unchanged=1 candidate_intact=1 merge=0' build/map02-full-stack-audit/final-ref-check.log
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          seal = json.loads(Path("build/map02-full-stack-audit/final-ref-check.json").read_text())
+          candidate = json.loads(Path("build/map02-full-stack-audit/integration-candidate.json").read_text())
+          assert seal["source_head_sha"] == candidate["source_head_sha"]
+          assert seal["source_tree_sha"] == candidate["source_tree_sha"]
+          assert seal["candidate_receipt_sha256"] == candidate["receipt_sha256"]
+          assert seal["fresh_live_prs"] == 26 and seal["fresh_upstream_ci"] == 25
+          assert seal["main_merged"] is False
+          assert seal["branch_mutations"] is False
+          assert seal["time_of_check_only"] is True
+          assert seal["integration_authorized"] is False
           PY
       - name: Save the read-only integration evidence
         if: always()
