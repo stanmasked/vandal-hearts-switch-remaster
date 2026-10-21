@@ -29,7 +29,7 @@ filtering; a report for another plan, an owner-readable-by-others file, or an
 empty candidate set is rejected. For example, repeat the same six source
 arguments and use:
 
-    --reviewed-candidates /private/vh-map02-reviewed-candidates.json \\
+    --reviewed-candidates /private/vh-map02-reviewed-candidates.json \
     --owner-private-output /private/vh-map02-shortlisted-contact-sheet.png
 
 This is a convenience for prioritizing review, **not** an independent
