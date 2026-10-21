@@ -107,6 +107,12 @@ class NeutralReviewTests(unittest.TestCase):
         self.assertEqual(
             self.collect([(), (), ("Circle",)], after=1665), [])
 
+    def test_after_bound_applies_to_earliest_suggested_capture_frame(self):
+        # The neutral run starts at 1664, but its "before" screenshot is
+        # input frame 1663. A requested lower bound of 1664 must reject it.
+        self.assertEqual(
+            self.collect([(), (), (), ("Circle",)], after=1664), [])
+
     def test_ranking_uses_duration_not_scene_probability(self):
         points = self.collect([
             (), (), ("Circle",),
