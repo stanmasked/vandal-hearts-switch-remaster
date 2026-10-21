@@ -38,7 +38,8 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
             path.write_text("synthetic-only")
         self.args = (self.program, self.disc, self.movie, self.workspace)
 
-    def run_mocked(self, *, processes=None, match=True, digest=None):
+    def run_mocked(self, *, processes=None, match=True, digest=None,
+                   emulator_timeout_seconds=None):
         subprocess_mock = (processes if processes is not None else [
             Mock(returncode=0), Mock(returncode=0),
         ])
@@ -61,7 +62,10 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
             return_value=pair,
         ) as comparison:
             if digest is None:
-                report = capture_twice(*self.args, start=True)
+                report = capture_twice(
+                    *self.args, start=True,
+                    emulator_timeout_seconds=emulator_timeout_seconds,
+                )
             else:
                 with patch(
                     "tools.map02_private_two_replay_runner.read_private_full_bin_sha256",
@@ -69,6 +73,7 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
                 ) as reference:
                     report = capture_twice(
                         *self.args, start=True, expected_digest_file=digest,
+                        emulator_timeout_seconds=emulator_timeout_seconds,
                     )
                     reference.assert_called_once_with(digest)
         return report, media, planning, process, chain, comparison
@@ -100,6 +105,7 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         self.assertTrue(report["media_preflight_passed"])
         self.assertEqual(report["private_capture_plan_rows_checked"], 3)
         self.assertFalse(report["full_bin_sha256_checked"])
+        self.assertEqual(report["emulator_timeout_seconds"], 28800)
         self.assertEqual(report["emulator_processes_started"], 0)
         self.assertFalse((self.workspace / PLAN_NAME).exists())
 
@@ -204,6 +210,34 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
             process.call_args_list[0].args[0][-2],
             process.call_args_list[1].args[0][-2],
         )
+
+    def test_custom_timeout_forwarded_to_both_emulator_processes(self):
+        report, media, plan, process, chain, paired = self.run_mocked(
+            emulator_timeout_seconds=9600,
+        )
+        self.assertEqual(report["emulator_timeout_seconds"], 9600)
+        self.assertEqual(process.call_count, 2)
+        for c in process.call_args_list:
+            self.assertEqual(
+                c.args[0][-3:],
+                ["--emulator-timeout-seconds", "9600", "--launch"],
+            )
+            self.assertFalse(c.kwargs["shell"])
+
+    def test_invalid_optional_timeout_rejected_before_private_processing(self):
+        for bad in (0, 299, 86401, -1, True, "abc"):
+            with self.subTest(seconds=bad), patch(
+                "tools.map02_private_two_replay_runner.inspect_pair",
+            ) as inspector, patch(
+                "tools.map02_private_two_replay_runner.subprocess.run",
+            ) as process:
+                with self.assertRaisesRegex(ValueError, "timeout seconds"):
+                    capture_twice(
+                        *self.args, start=True, emulator_timeout_seconds=bad,
+                    )
+                inspector.assert_not_called()
+                process.assert_not_called()
+                self.assertEqual(list(self.workspace.iterdir()), [])
 
     def test_first_process_failure_stops_before_second(self):
         with patch(
