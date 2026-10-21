@@ -128,6 +128,28 @@ class NeutralReviewTests(unittest.TestCase):
         ], limit=1)
         self.assertEqual(len(points), 1)
 
+    def test_bounded_candidate_memory_even_with_many_pauses(self):
+        c = NeutralReviewCollector(minimum=2, maximum=100, limit=3)
+        for i in range(1664):
+            c.push(i, frozenset({"Start"}) if i >= 1661 else frozenset())
+        index = 1664
+        for _ in range(250):
+            for buttons in ((), (), ("Circle",)):
+                c.push(index, frozenset(buttons))
+                index += 1
+            self.assertLessEqual(len(c._windows), 3)
+        self.assertEqual(len(c.ranked()), 3)
+        first_frames = [w["first_neutral_input_frame_zero_based"] for w in c.ranked()]
+        self.assertEqual(first_frames, [1664, 1667, 1670])
+
+    def test_late_longer_interval_replaces_earliest_short_one(self):
+        points = self.collect([
+            (), (), ("Circle",),
+            (), (), (), (), ("Up",),
+        ], limit=1)
+        self.assertEqual(len(points), 1)
+        self.assertEqual(points[0]["neutral_input_frames"], 4)
+
     def test_contiguous_frames_required(self):
         collector = NeutralReviewCollector(minimum=2)
         collector.push(0, frozenset())
