@@ -207,6 +207,23 @@ class PrivateContactSheetTests(unittest.TestCase):
             self.call(reviewed_candidates=report)
         self.assertFalse(self.image_out.exists())
 
+    def test_capture_evidence_mutation_during_render_fails_before_output(self):
+        report = self.write_candidate_report()
+
+        def mutate_source(*_args, **_kwargs):
+            self.fixture.image(1, "middle").write_bytes(
+                dual_fixtures.synthetic_png((240, 240, 240)))
+
+        with patch(
+            "tools.map02_private_owner_rgb_contact_sheet._paste_frame",
+            side_effect=mutate_source,
+        ):
+            with self.assertRaisesRegex(
+                ValueError, "changed during contact-sheet rendering"
+            ):
+                self.call(reviewed_candidates=report)
+        self.assertFalse(self.image_out.exists())
+
     def test_candidate_report_must_be_owner_private(self):
         report = self.write_candidate_report()
         report.chmod(0o644)
