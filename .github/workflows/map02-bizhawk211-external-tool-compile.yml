@@ -93,8 +93,15 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $root = "$env:VH_BIZHAWK_RELEASE_ROOT"
           $plugin = Join-Path $root 'ExternalTools/VhMap02CoreWitness.dll'
-          & tools/map02_runtime_core_witness_smoke/Invoke-EmuHawkNoMediaProbe.ps1 -BizHawkRoot $root -PluginFile $plugin
-          if ($LASTEXITCODE -ne 0) { throw 'real no-media EmuHawk startup probe failed' }
+          $lines = @( & tools/map02_runtime_core_witness_smoke/Invoke-EmuHawkNoMediaProbe.ps1 -BizHawkRoot $root -PluginFile $plugin )
+          # A PowerShell script is not a native process: $LASTEXITCODE here
+          # belongs to the last external executable launched *within it*.
+          # Require one exact redacted genuine EmuHawk window observation.
+          $expected = 'VH_MAP02_REAL_EMUHAWK_NOMEDIA_PLUGIN_UI_PASS genuine_process=1 actual_tool_window=1 save_disabled_no_psx=1 rom=0 bios=0 bk2=0 png=0 active_octoshock=unverified'
+          if (@($lines | Where-Object { $_ -ceq $expected }).Count -ne 1) {
+            throw 'no-media EmuHawk core witness UI observation not confirmed'
+          }
+          Write-Output $expected
       - name: Publish only the compiled experimental witness DLL (no original assets)
         uses: actions/upload-artifact@v4
         with:
