@@ -10,6 +10,7 @@ from tools.check_map02_public_pc_unresolved_module_owners import (
     summarize_game_only_fanout, read_link_report,
     parse_readelf_global_undefined_types, summarize_high_fanout_elf_types,
     parse_readelf_relocation_types, summarize_high_fanout_relocations,
+    summarize_high_fanout_relocation_provenance,
 )
 from tools.check_map02_public_reloc_link import _undefined_symbol_names
 
@@ -214,6 +215,56 @@ class ModuleOwnerTests(unittest.TestCase):
             summarize_high_fanout_relocations(
                 {"a"}, [{"a"} for _ in range(8)], [],
                 [{} for _ in range(7)])
+
+    def test_native_relocation_class_and_section_provenance_buckets(self):
+        symbols = {"pc", "abs", "got", "misc", "wide", "shared"}
+        game = [set(symbols) for _ in range(8)]
+        backend = [{"shared"}]
+        relocation_maps = [{
+            "pc": [("R_X86_64_PC32", ".rela.text")],
+            "abs": [("R_X86_64_32", ".rela.rodata")],
+            "got": [("R_X86_64_REX_GOTPCRELX", ".rela.data.rel.ro")],
+            "misc": [("R_X86_64_UNKNOWN_TEST", ".rela.eh_frame")],
+            "wide": ([
+                ("R_X86_64_64", ".rela.text"),
+                ("R_X86_64_32S", ".rela.other"),
+                ("R_X86_64_PLT32", ".rela.text"),
+            ] if i == 0 else [("R_X86_64_PC32", ".rela.text")]),
+            "shared": [("R_X86_64_32S", ".rela.text")],
+        } for i in range(8)]
+        result = summarize_high_fanout_relocation_provenance(
+            symbols, game, backend, relocation_maps)
+        self.assertEqual(result["high_fanout_provenance_imports"], 5)
+        self.assertEqual(result["high_fanout_provenance_pc32_records"], 15)
+        self.assertEqual(result["high_fanout_provenance_plt32_records"], 1)
+        self.assertEqual(result["high_fanout_provenance_abs32_records"], 8)
+        self.assertEqual(result["high_fanout_provenance_abs32s_records"], 1)
+        self.assertEqual(result["high_fanout_provenance_abs64_records"], 1)
+        self.assertEqual(result["high_fanout_provenance_gotpcrel_records"], 8)
+        self.assertEqual(result["high_fanout_provenance_other_records"], 8)
+        self.assertEqual(result["high_fanout_provenance_total_records"], 42)
+        self.assertEqual(result["high_fanout_provenance_section_text_records"], 17)
+        self.assertEqual(result["high_fanout_provenance_section_rodata_records"], 8)
+        self.assertEqual(result["high_fanout_provenance_section_data_records"], 8)
+        self.assertEqual(result["high_fanout_provenance_section_unwind_records"], 8)
+        self.assertEqual(result["high_fanout_provenance_section_other_records"], 1)
+        self.assertEqual(result["high_fanout_provenance_any_non_pc32_plt32_imports"], 4)
+        self.assertEqual(result["high_fanout_provenance_both_text_nontext_imports"], 1)
+        self.assertEqual(result["high_fanout_provenance_nontext_only_imports"], 3)
+        self.assertTrue(result["source_section_and_relocation_type_do_not_prove_runtime_abi"])
+
+    def test_provenance_no_records_do_not_invent_calls(self):
+        refs = [{"unresolved"} for _ in range(8)]
+        got = summarize_high_fanout_relocation_provenance(
+            {"unresolved"}, refs, [], [{} for _ in range(8)])
+        self.assertEqual(got["high_fanout_provenance_imports"], 1)
+        self.assertEqual(got["high_fanout_provenance_without_relocation_records"], 1)
+        self.assertEqual(got["high_fanout_provenance_total_records"], 0)
+
+    def test_provenance_source_object_count_mismatch_fails(self):
+        with self.assertRaisesRegex(ValueError, "inventory invalid"):
+            summarize_high_fanout_relocation_provenance(
+                {"a"}, [{"a"} for _ in range(8)], [], [{}])
 
     def test_unattributed_name_not_silently_counted_as_owned(self):
         r = summarize_owner_groups(
