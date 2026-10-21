@@ -11,7 +11,7 @@ local log_handle = nil
 local function emit(line)
   print(line)
   if log_handle then
-    log_handle:write(line, "\\n")
+    log_handle:write(line, "\n")
     log_handle:flush()
   end
 end
