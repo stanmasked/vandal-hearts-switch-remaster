@@ -38,7 +38,8 @@ namespace VhMap02CoreWitness
             _save = new Button
             {
                 Left = 12, Top = 79, Width = 245, Height = 30,
-                Text = "Write private core witness..."
+                Text = "Write private core witness...",
+                Enabled = false // fail closed before BizHawk injects a real core
             };
             _save.Click += SaveWitness;
             Controls.Add(_summary);
@@ -52,13 +53,13 @@ namespace VhMap02CoreWitness
         private void RefreshStatus()
         {
             var core = Emulator;
-            if (core == null || core.SystemId != "PSX")
+            if (core == null || core.SystemId != "PSX" || core.Frame < 0)
             {
                 _summary.Text = "No loaded PSX core; capture disabled.";
                 _save.Enabled = false;
                 return;
             }
-            var loadedName = core.Attributes().CoreName;
+            var loadedName = core.Attributes()?.CoreName;
             if (loadedName != "Octoshock")
             {
                 _summary.Text = "Actual loaded PSX core is not Octoshock.";
@@ -90,7 +91,7 @@ namespace VhMap02CoreWitness
             // A recorded BK2 Core header or configured preferred core is NOT
             // accepted as the identity: sample the currently injected core.
             if (actualCore == null || actualCore.SystemId != "PSX"
-                || actualCore.Attributes().CoreName != "Octoshock"
+                || actualCore.Attributes()?.CoreName != "Octoshock"
                 || actualCore.Frame < 0) throw new InvalidOperationException();
 
             using (var process = Process.GetCurrentProcess())
