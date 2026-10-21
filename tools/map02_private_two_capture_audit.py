@@ -73,7 +73,7 @@ def audit_pair(movie: Path, plan: Path, first: Path, second: Path, *,
     # fallback policy. Configuration is NOT proof of the actively loaded core.
     fallback_a = a.get("reported_psx_core_fallback_configuration")
     fallback_b = b.get("reported_psx_core_fallback_configuration")
-    if fallback_a not in ("allowed", "blocked", "unverified") or fallback_a != fallback_b:
+    if fallback_a != "blocked" or fallback_b != "blocked":
         raise ValueError("two capture attempts report different PSX core fallback configuration")
     # Two apparently identical frames may still be reached with different
     # cumulative core lag histories. Enforce equality when both local APIs
@@ -141,6 +141,7 @@ def audit_pair(movie: Path, plan: Path, first: Path, second: Path, *,
         "two_private_capture_chains_passed": True,
         "same_reported_bizhawk_runtime_profile": True,
         "same_reported_psx_core_fallback_configuration": True,
+        "both_runs_reported_psx_core_fallback_disabled": True,
         "octoshock_core_preference_is_not_active_core_proof": True,
         "same_reported_psx_lag_timeline": lag_comparable,
         "psx_lag_counter_available_in_both": lag_comparable,
