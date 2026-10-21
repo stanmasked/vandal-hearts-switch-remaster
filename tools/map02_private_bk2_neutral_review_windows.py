@@ -60,7 +60,7 @@ class NeutralReviewCollector:
             begin, end = self._neutral_begin, index
             span = end - begin
             if (self.minimum <= span <= self.maximum
-                    and begin >= self.after
+                    and begin - 1 >= self.after
                     and end < self.before):
                 candidate = {
                     "first_neutral_input_frame_zero_based": begin,
