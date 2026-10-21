@@ -7,6 +7,8 @@ on:
       - 'tests/test_map02_private_bizhawk_poweron_launch.py'
       - 'tools/map02_private_two_capture_audit.py'
       - 'tests/test_map02_private_two_capture_audit.py'
+      - 'tools/map02_private_png_pixels.py'
+      - 'tests/test_map02_private_png_pixels.py'
       - 'docs/MAP02_PRIVATE_BIZHAWK_POWERON_LAUNCH.md'
   workflow_dispatch:
 permissions:
@@ -62,3 +64,18 @@ jobs:
           fi
           test -n "$test_count"
           echo "VH_MAP02_TWO_PRIVATE_CAPTURES_SYNTHETIC_PASS tests=${test_count} original_bk2=0 actual_bizhawk=0 real_ps1=0"
+
+      - name: Reconstruct invented PNG RGB and RGBA pixels across filter methods
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_map02_private_png_pixels.py' -v \
+            2>&1 | tee /tmp/map02-private-png-pixels.log
+          summary="$(grep -E 'Ran [1-9][0-9]* tests' /tmp/map02-private-png-pixels.log | tail -n 1)"
+          test_count="$(printf '%s\n' "$summary" | sed -E 's/.*Ran ([0-9]+) tests.*/\1/')"
+          if grep -E '^(FAILED|ERROR)' /tmp/map02-private-png-pixels.log; then
+            exit 1
+          fi
+          test -n "$test_count"
+          echo "VH_MAP02_PRIVATE_PNG_PIXEL_NORMALIZATION_PASS tests=${test_count} original_png=0 original_bk2=0 ps1=unverified"
