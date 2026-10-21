@@ -66,8 +66,12 @@ jobs:
           assert r["result"]=="REAL_STAGE305_PAIR_POST_INPUT_ALSA_SNAPSHOT_DELTAS_REPARSED"
           assert r["original_source_github_actions_run_id"]==39558740492
           assert [p["requested_pulse_hint_ms"] for p in r["trials"]]==[21,22]
-          assert all(p["full_original_stage305_real_guest_elf_nro_cpal_pulse_audit_reparsed"]
+          assert all(p["retained_raw_cpal_P_L_and_alsa_reparsed"]
+                     and p["retained_pulse_event_csv_sha_rechecked"]
+                     and p["unuploaded_private_pulse_pcm_filelogger_not_reparsed"]
+                     and p["prior_stage305_pulse_pcm_filelogger_receipts_cross_checked"]
                      for p in r["trials"])
+          assert r["raw_Pulse_snapshots_virtual_PCM_and_private_FileLogger_were_not_uploaded"] is True
           for p in r["trials"]:
               print("Source hint",p["requested_pulse_hint_ms"],
                     "CPAL",p["actual_guest_CPAL_post_input_entries"],
