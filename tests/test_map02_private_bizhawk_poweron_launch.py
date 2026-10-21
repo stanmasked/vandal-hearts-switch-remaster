@@ -262,7 +262,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                     "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
                     return_value={"media_preflight_ready_for_owner_replay": True},
                 ):
-                with patch("tools.map02_private_bizhawk_poweron_launch.subprocess.run") as run:
+                with patch("tools.map02_private_bizhawk_poweron_launch.run_owned_process") as run:
                     stream = io.StringIO()
                     with contextlib.redirect_stdout(stream):
                         result = main()
@@ -286,7 +286,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                     "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
                     return_value={"media_preflight_ready_for_owner_replay": True},
                 ):
-                with patch("tools.map02_private_bizhawk_poweron_launch.subprocess.run",
+                with patch("tools.map02_private_bizhawk_poweron_launch.run_owned_process",
                            return_value=Mock(returncode=0)) as run:
                     stream = io.StringIO()
                     with contextlib.redirect_stdout(stream):
@@ -294,7 +294,6 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual(run.call_count, 1)
         c = run.call_args
-        self.assertFalse(c.kwargs["shell"])
         self.assertEqual(c.kwargs["timeout"], 28800)
         self.assertEqual(c.args[0][1], "--movie=" + str(self.bk2.resolve()))
         self.assertEqual(c.args[0][2], "--lua=" + str(self.lua.resolve()))
@@ -309,7 +308,6 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.assertTrue(process_log.is_file())
         self.assertEqual(process_log.stat().st_mode & 0o777, 0o600)
         self.assertIsNotNone(c.kwargs["stdout"])
-        self.assertIs(c.kwargs["stderr"], subprocess.STDOUT)
         self.assertIn("original_ps1_authenticated=0", stream.getvalue())
         self.assertNotIn(str(self.bk2.resolve()), stream.getvalue())
 
@@ -327,7 +325,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
             "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
             return_value={"media_preflight_ready_for_owner_replay": True},
         ), patch(
-            "tools.map02_private_bizhawk_poweron_launch.subprocess.run",
+            "tools.map02_private_bizhawk_poweron_launch.run_owned_process",
             return_value=Mock(returncode=0),
         ) as runner:
             with contextlib.redirect_stdout(io.StringIO()):
@@ -347,7 +345,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                 with patch.object(sys, "argv", args), patch(
                     "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
                 ) as inspect, patch(
-                    "tools.map02_private_bizhawk_poweron_launch.subprocess.run",
+                    "tools.map02_private_bizhawk_poweron_launch.run_owned_process",
                 ) as runner, contextlib.redirect_stderr(io.StringIO()):
                     with self.assertRaises(SystemExit) as error:
                         main()
@@ -374,7 +372,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
             "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
             return_value={"media_preflight_ready_for_owner_replay": True},
         ), patch(
-            "tools.map02_private_bizhawk_poweron_launch.subprocess.run",
+            "tools.map02_private_bizhawk_poweron_launch.run_owned_process",
             side_effect=timeout_error,
         ) as runner:
             stdout = io.StringIO()
@@ -404,7 +402,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                     "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
                     return_value={"media_preflight_ready_for_owner_replay": True},
                 ):
-                with patch("tools.map02_private_bizhawk_poweron_launch.subprocess.run",
+                with patch("tools.map02_private_bizhawk_poweron_launch.run_owned_process",
                            side_effect=OSError("synthetic executable failure")):
                     stream = io.StringIO()
                     with contextlib.redirect_stdout(stream):
@@ -427,7 +425,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                     "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
                     return_value={"media_preflight_ready_for_owner_replay": True},
                 ):
-                with patch("tools.map02_private_bizhawk_poweron_launch.subprocess.run",
+                with patch("tools.map02_private_bizhawk_poweron_launch.run_owned_process",
                            return_value=Mock(returncode=9)):
                     with contextlib.redirect_stdout(io.StringIO()):
                         status = main()
