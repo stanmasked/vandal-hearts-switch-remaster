@@ -20,6 +20,7 @@
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <poll.h>
+#include <pthread.h>
 #include <signal.h>
 #include <sys/epoll.h>
 #include <time.h>
@@ -453,13 +454,30 @@ static void vh_poll_event_return(int alias,const struct pollfd *fds,nfds_t nfds,
   __atomic_store_n(&s->poll_event_state[alias],((uint64_t)code)<<8,
                    __ATOMIC_RELAXED);
 }
+/* POSIX poll is a cancellation point. If its caller is canceled while
+ * blocked, normal return bookkeeping never executes. Clear only the active
+ * request byte and preserve the last completed return byte. The unmatched
+ * libc entry/return counters remain evidence of an interrupted call. */
+static void vh_poll_event_cancel_cleanup(void *opaque) {
+  const int alias=*(const int *)opaque;
+  struct vh_shared *s=vh;
+  if (!s || alias<0 || alias>=VH_SLOTS) return;
+  __atomic_fetch_and(&s->poll_event_state[alias], ~UINT64_C(0xff),
+                     __ATOMIC_RELAXED);
+}
+
 int poll(struct pollfd *fds,nfds_t nfds,int timeout) {
   ASSERT_RESOLVED(real_poll);
   int alias=vh_libc_begin(0);
   vh_poll_arguments(alias,nfds,timeout);
+  int rc;
+  /* Register before publishing an active request. Keep cleanup installed
+   * until the atomic active/last-return transition has completed. */
+  pthread_cleanup_push(vh_poll_event_cancel_cleanup, &alias);
   vh_poll_event_entry(alias,fds,nfds);
-  int rc=real_poll(fds,nfds,timeout);
+  rc=real_poll(fds,nfds,timeout);
   vh_poll_event_return(alias,fds,nfds,rc);
+  pthread_cleanup_pop(0);
   vh_poll_return(alias,rc);
   vh_libc_finish(alias,0,rc);
   return rc;
