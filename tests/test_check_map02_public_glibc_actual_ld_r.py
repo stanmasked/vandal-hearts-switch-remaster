@@ -31,8 +31,8 @@ class RealGlibcGroupedLinkTests(unittest.TestCase):
             # member also exports a weak orig_libc that must be attributed.
             libc_member = self.compile(
                 "libc-weak-member",
-                "int orig_both(void){return 2;}\\n"
-                "__attribute__((weak)) int orig_libc(void){return 1;}\\n")
+                "int orig_both(void){return 2;}\n"
+                "__attribute__((weak)) int orig_libc(void){return 1;}\n")
             self.libc = self.archive("libc-with-weak-member.a", libc_member)
         census = audit_glibc_static_coverage(
             self.orig_manifest, self.original, self.sdl_manifest,
