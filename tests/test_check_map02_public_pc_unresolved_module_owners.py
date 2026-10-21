@@ -80,14 +80,14 @@ class ModuleOwnerTests(unittest.TestCase):
 
     def test_strict_readelf_global_undefined_types_from_real_nm_style_rows(self):
         example = (
-            "Symbol table '.symtab' contains 8 entries:\\n"
-            "  Num:    Value          Size Type    Bind   Vis      Ndx Name\\n"
-            "    1: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND method\\n"
-            "    2: 0000000000000000     0 OBJECT  GLOBAL DEFAULT  UND buffer\\n"
-            "    3: 0000000000000000     0 NOTYPE  GLOBAL DEFAULT  UND unknown\\n"
-            "    4: 0000000000000000     0 FUNC    WEAK   DEFAULT  UND weak_only\\n"
-            "    5: 0000000000000000    11 FUNC    GLOBAL DEFAULT    1 defined\\n"
-        ).replace("\\\\n", "\\n")
+            "Symbol table '.symtab' contains 8 entries:\n"
+            "  Num:    Value          Size Type    Bind   Vis      Ndx Name\n"
+            "    1: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND method\n"
+            "    2: 0000000000000000     0 OBJECT  GLOBAL DEFAULT  UND buffer\n"
+            "    3: 0000000000000000     0 NOTYPE  GLOBAL DEFAULT  UND unknown\n"
+            "    4: 0000000000000000     0 FUNC    WEAK   DEFAULT  UND weak_only\n"
+            "    5: 0000000000000000    11 FUNC    GLOBAL DEFAULT    1 defined\n"
+        ).replace("\\\n", "\n")
         classes = parse_readelf_global_undefined_types(example)
         self.assertEqual(classes, {
             "method": {"FUNC"}, "buffer": {"OBJECT"},
@@ -128,9 +128,9 @@ class ModuleOwnerTests(unittest.TestCase):
             source = root / "caller.c"
             obj = root / "caller.o"
             source.write_text(
-                "extern int external_global;\\n"
-                "extern int external_function(void);\\n"
-                "int call(void) { return external_global + external_function(); }\\n"
+                "extern int external_global;\n"
+                "extern int external_function(void);\n"
+                "int call(void) { return external_global + external_function(); }\n"
             )
             subprocess.run(
                 ["cc", "-c", str(source), "-o", str(obj)],
