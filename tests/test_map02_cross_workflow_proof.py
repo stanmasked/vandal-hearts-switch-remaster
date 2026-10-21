@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import map02_cross_workflow_proof as proof
 from map02_integration_candidate import digest
+from audit_map02_stack import AuditError
 
 
 class CrossWorkflowTests(unittest.TestCase):
@@ -124,12 +125,12 @@ class CrossWorkflowTests(unittest.TestCase):
 
     def test_rejects_swapped_source_commit(self):
         self.bundle["source_commit"] = "f" * 40
-        with self.assertRaisesRegex(ValueError, "not bound"):
+        with self.assertRaisesRegex(AuditError, "not bound"):
             self.validate()
 
     def test_rejects_swapped_tree(self):
         self.bundle["source_tree"] = "f" * 40
-        with self.assertRaisesRegex(ValueError, "not bound"):
+        with self.assertRaisesRegex(AuditError, "not bound"):
             self.validate()
 
     def test_rejects_tampered_candidate(self):
