@@ -316,6 +316,30 @@ def inspect_pair(cue_path: Path, movie_path: Path, *,
     }
 
 
+def read_private_full_bin_sha256(path: Path) -> str:
+    """Load a private pinned digest without exposing it in CLI or JSON output."""
+    private_ref = _resolve_private_file(path)
+    if os.name != "nt":
+        info = private_ref.stat()
+        if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o077:
+            raise ValueError("full-BIN digest reference must be user-private")
+    fd, before = _open_stable(private_ref)
+    try:
+        if before.st_size not in (64, 65):
+            raise ValueError("private full-BIN digest must be exactly 64 hex digits")
+        raw = _read_at(fd, 0, before.st_size)
+        _assert_stable(fd, private_ref, before)
+    finally:
+        os.close(fd)
+    try:
+        reference = raw.decode("ascii").strip()
+    except UnicodeError as exc:
+        raise ValueError("private full-BIN digest is not ASCII") from exc
+    if not re.fullmatch(r"[0-9a-f]{64}", reference):
+        raise ValueError("private full-BIN digest must be lowercase SHA-256")
+    return reference
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("owner_private_cue", type=Path)
@@ -326,22 +350,10 @@ def main() -> int:
     )
     args = parser.parse_args()
     try:
-        expected_digest = None
-        if args.private_full_bin_sha256_file is not None:
-            private_ref = _resolve_private_file(args.private_full_bin_sha256_file)
-            if os.name != "nt":
-                info = private_ref.stat()
-                if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o077:
-                    raise ValueError("full-BIN digest reference must be user-private")
-            fd, before = _open_stable(private_ref)
-            try:
-                if before.st_size not in (64, 65):
-                    raise ValueError("private full-BIN digest must be exactly 64 hex digits")
-                raw = _read_at(fd, 0, before.st_size)
-                _assert_stable(fd, private_ref, before)
-            finally:
-                os.close(fd)
-            expected_digest = raw.decode("ascii").strip()
+        expected_digest = (
+            read_private_full_bin_sha256(args.private_full_bin_sha256_file)
+            if args.private_full_bin_sha256_file is not None else None
+        )
         report = inspect_pair(
             args.owner_private_cue, args.owner_private_bk2,
             verify_full_bin_sha256=expected_digest is not None,
