@@ -70,6 +70,7 @@ class Map02ScopedCiPolicyTests(unittest.TestCase):
             if isinstance(node, ast.Assert)
             and isinstance(node.test, ast.Compare)
             and report_key(node.test.left) == "high_fanout_abs64_data_records"
+            and len(node.test.comparators) == 2
         ]
         self.assertEqual(len(checks), 1)
         self.assertEqual(
