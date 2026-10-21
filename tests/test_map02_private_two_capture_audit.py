@@ -85,14 +85,18 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "separate private directories"):
             self.call(second=self.first)
 
-    def test_cross_run_hardlink_rejected(self):
-        # Cross-platform synthetic inode collision without relying on link
-        # support on the host filesystem.
+    def test_capture_mutated_during_comparison_is_rejected(self):
+        from tools.verify_map02_private_visual_candidates import read_png_private
+        def mutate_after_read(root, filename):
+            original = read_png_private(root, filename)
+            if root == self.second and filename == self.names[0]:
+                (root / filename).write_bytes(original + b"changed")
+            return original
         with patch(
-            "tools.map02_private_two_capture_audit.os.stat",
-            side_effect=ValueError("injected simulated cross-run collision"),
+            "tools.map02_private_two_capture_audit.read_png_private",
+            side_effect=mutate_after_read,
         ):
-            with self.assertRaises(ValueError):
+            with self.assertRaisesRegex(ValueError, "replaced or changed"):
                 self.call()
 
     def test_cross_run_actual_hardlink_rejected_where_supported(self):
