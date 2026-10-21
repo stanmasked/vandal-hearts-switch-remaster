@@ -33,6 +33,33 @@ public static class VhNoMediaWindows {
         return text.ToString();
     }
 
+    // Classify only the process-owned native modal on a game-free,
+    // short-lived public CI runner. Never reveal arbitrary message text,
+    // paths, account names, hashes, resource IDs or private media.
+    public static string ClassifyVisibleNativeModal(int pid) {
+        string result = "none";
+        EnumWindows((window, param) => {
+            uint owner;
+            GetWindowThreadProcessId(window, out owner);
+            if (owner != (uint)pid || !IsWindowVisible(window)) return true;
+            var cls = new StringBuilder(40);
+            GetClassName(window, cls, cls.Capacity);
+            if (cls.ToString() != "#32770") return true;
+            string label = Title(window);
+            if (label.Length > 0 && label.Length <= 65) {
+                bool basic = true;
+                foreach (char c in label) {
+                    if (!(char.IsLetterOrDigit(c) || c == ' ' || c == '.' || c == '!' || c == '?'
+                        || c == '-' || c == '(' || c == ')')) { basic = false; break; }
+                }
+                if (basic) result = label.Replace(' ', '_');
+                else result = "unsafe_caption_redacted";
+            } else result = "empty_or_long_caption";
+            return false;
+        }, IntPtr.Zero);
+        return result;
+    }
+
     // Approve only the exact trust dialog for the experimental DLL
     // freshly compiled from this PR against a SHA256-pinned BizHawk release.
     // No general dialogs, warning prompts, or other EXEs are confirmed.
@@ -158,6 +185,7 @@ try {
         $hasTrustPrompt = [int]($diagnostic[5] -gt 0)
         $hasMainWindow = [int]($diagnostic[6] -gt 0)
         $hasNativeModal = [int]($diagnostic[7] -gt 0)
+        $nativeModalCaptionClass = [VhNoMediaWindows]::ClassifyVisibleNativeModal($hosted.Id)
         $phases = if (Test-Path -LiteralPath $canary -PathType Leaf) {
             @(Get-Content -LiteralPath $canary -ErrorAction SilentlyContinue)
         } else { @() }
@@ -176,6 +204,7 @@ try {
             "tool_trust_prompt_seen=$hasTrustPrompt"
             "bizhawk_main_window_seen=$hasMainWindow"
             "native_modal_dialog_seen=$hasNativeModal"
+            "native_modal_caption_class=$nativeModalCaptionClass"
             "own_tool_trust_confirmed=$([int]$ownPromptApproved)"
             "real_octoshock_authenticated=0"
         ) -join ' '
