@@ -1,0 +1,48 @@
+name: MAP02 private PNG pixel stream validation (synthetic CI)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-private-png-idat.yml'
+      - 'tools/map02_private_png_idat.py'
+      - 'tools/verify_map02_private_visual_candidates.py'
+      - 'tests/test_map02_private_png_idat.py'
+      - 'tests/test_verify_map02_private_visual_candidates.py'
+      - 'docs/MAP02_PRIVATE_VISUAL_CANDIDATES.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bounded-idat:
+    name: Synthetic PNG IDAT scanlines (${{ matrix.os }} Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.9'
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: macos-15-intel
+            python: '3.11'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Execute invented pixel-stream cases, never owner game or screenshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_map02_private_png_idat.py' -v \
+            2>&1 | tee /tmp/vh-map02-png-idat-tests.log
+          grep -F 'Ran 17 tests' /tmp/vh-map02-png-idat-tests.log
+          if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-png-idat-tests.log; then
+            exit 1
+          fi
+          echo 'VH_MAP02_PRIVATE_PNG_IDAT_PASS synthetic=17 owner_png=0 original_ps1_disc=0 map02_identified=0'
