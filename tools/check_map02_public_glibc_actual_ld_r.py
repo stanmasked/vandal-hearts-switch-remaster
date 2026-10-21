@@ -82,6 +82,13 @@ def _archive_binding_classes(path):
         os.close(opened[0])
 
 
+
+def _reject_strong_to_weak_undefined(before_strong, final_weak):
+    """An unresolved weak reference is not a completed strong resolution."""
+    if set(before_strong) & set(final_weak):
+        raise ValueError("MAP02 strong import remains weak-undefined after native link")
+
+
 def audit_glibc_real_link(original_manifest, original_elf,
                           after_sdl_manifest, after_sdl_elf, four_group_elf,
                           copied_native_libc, copied_native_libm,
@@ -171,7 +178,8 @@ def audit_glibc_real_link(original_manifest, original_elf,
         linked = _open_owned(root / "linked" / OUTPUT, require_private=True)
         try:
             _check_abi(linked)
-            final_strong, _ = _unresolved(linked)
+            final_strong, final_weak = _unresolved(linked)
+            _reject_strong_to_weak_undefined(before_strong, final_weak)
             after = set(final_strong)
             _confirm_owned(linked)
         finally:
@@ -241,7 +249,9 @@ def audit_glibc_real_link(original_manifest, original_elf,
             "four_archive_new_resolved_by_real_glibc_ld_r": len(system_new - system_left),
             "four_archive_new_remaining_after_real_glibc_ld_r": len(system_left),
             "glibc_new_strong_undefined": len(introduced),
+            "strong_input_still_weak_undefined": 0,
             "final_strong_undefined": len(after),
+            "final_weak_undefined": len(final_weak),
             "actual_native_grouped_ld_r_executed": True,
             "final_product_is_elf_rel_only": True,
             "fully_linked_game_executable": False,
