@@ -149,7 +149,7 @@ class DiscMoviePreflightTests(unittest.TestCase):
         target = MAP02_LBA + 2
         with self.bin.open("r+b") as handle:
             handle.seek(target * SECTOR_BYTES + 20)
-            handle.write(b"\\x01")
+            handle.write(b"\x01")
         with self.assertRaisesRegex(ValueError, "repeated subheader mismatch"):
             self.call()
 
@@ -160,7 +160,7 @@ class DiscMoviePreflightTests(unittest.TestCase):
         with self.bin.open("r+b") as handle:
             for offset in (18, 22):
                 handle.seek(target * SECTOR_BYTES + offset)
-                handle.write(b"\\x20")
+                handle.write(b"\x20")
         with self.assertRaisesRegex(ValueError, "Form 2 sector"):
             self.call()
 
