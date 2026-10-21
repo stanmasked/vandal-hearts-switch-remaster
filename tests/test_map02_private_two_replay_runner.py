@@ -89,7 +89,9 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
                         *self.args, start=True, expected_digest_file=digest,
                         emulator_timeout_seconds=emulator_timeout_seconds,
                     )
-                    reference.assert_called_once_with(digest)
+                    self.assertGreaterEqual(reference.call_count, 2)
+                    for call in reference.call_args_list:
+                        self.assertEqual(call.args, (digest,))
         return report, media, planning, process, chain, comparison
 
     def _write_plan(self, movie, path, **kwargs):
@@ -184,12 +186,15 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
             report = capture_twice(
                 *self.args, expected_digest_file=private_ref,
             )
-        loader.assert_called_once_with(private_ref)
+        self.assertGreaterEqual(loader.call_count, 2)
+        for call in loader.call_args_list:
+            self.assertEqual(call.args, (private_ref,))
         media.assert_called_once_with(
             self.disc, self.movie,
             verify_full_bin_sha256=True, expected_bin_sha256="f" * 64,
         )
         self.assertTrue(report["full_bin_sha256_checked"])
+        self.assertTrue(report["full_bin_reference_stable_during_preflight"])
         process.assert_not_called()
 
     def test_two_separate_emulator_subprocesses_and_independent_audits(self):
@@ -257,6 +262,84 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
                 inspector.assert_not_called()
                 process.assert_not_called()
                 self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def _private_reference(self):
+        reference = self.root / "fictional-private-full-bin.sha256"
+        reference.write_text("a" * 64, encoding="ascii")
+        if os.name != "nt":
+            reference.chmod(0o600)
+        return reference
+
+    def test_reference_mutated_during_preflight_blocks_planning(self):
+        reference = self._private_reference()
+        def swap_reference(*args, **kwargs):
+            reference.write_text("b" * 64, encoding="ascii")
+            return {"media_preflight_ready_for_owner_replay": True}
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            side_effect=swap_reference,
+        ), patch(
+            "tools.map02_private_two_replay_runner.write_private_plan",
+        ) as planning, patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+        ) as launched:
+            with self.assertRaisesRegex(ValueError, "digest reference changed"):
+                capture_twice(*self.args, expected_digest_file=reference, start=True)
+        planning.assert_not_called()
+        launched.assert_not_called()
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_reference_mutated_during_first_process_blocks_second(self):
+        reference = self._private_reference()
+        def alter_reference(*args, **kwargs):
+            reference.write_text("b" * 64, encoding="ascii")
+            return Mock(returncode=0)
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_two_replay_runner.write_private_plan",
+            side_effect=self._write_plan,
+        ), patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+            side_effect=alter_reference,
+        ) as launched, patch(
+            "tools.map02_private_two_replay_runner.verify",
+        ) as auditing:
+            with self.assertRaisesRegex(ValueError, "digest reference changed"):
+                capture_twice(*self.args, expected_digest_file=reference, start=True)
+        launched.assert_called_once()
+        auditing.assert_not_called()
+        self.assertFalse((self.workspace / RUN_NAMES[1]).exists())
+
+    def test_reference_mutated_during_second_process_blocks_comparison(self):
+        reference = self._private_reference()
+        attempts = [0]
+        def alter_on_second(*args, **kwargs):
+            attempts[0] += 1
+            if attempts[0] == 2:
+                reference.write_text("b" * 64, encoding="ascii")
+            return Mock(returncode=0)
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_two_replay_runner.write_private_plan",
+            side_effect=self._write_plan,
+        ), patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+            side_effect=alter_on_second,
+        ) as launched, patch(
+            "tools.map02_private_two_replay_runner.verify",
+            return_value={"screenshot_count": 3},
+        ) as auditing, patch(
+            "tools.map02_private_two_replay_runner.audit_pair",
+        ) as comparison:
+            with self.assertRaisesRegex(ValueError, "digest reference changed"):
+                capture_twice(*self.args, expected_digest_file=reference, start=True)
+        self.assertEqual(launched.call_count, 2)
+        auditing.assert_called_once()
+        comparison.assert_not_called()
 
     def test_disc_cue_mutated_during_first_process_blocks_second(self):
         def changed_cue(*args, **kwargs):
