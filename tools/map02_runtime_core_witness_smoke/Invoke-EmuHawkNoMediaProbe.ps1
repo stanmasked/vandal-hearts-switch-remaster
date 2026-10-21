@@ -24,11 +24,46 @@ public static class VhNoMediaWindows {
     private static extern bool IsWindowEnabled(IntPtr hwnd);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsWindowVisible(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern IntPtr GetDlgItem(IntPtr hwnd, int id);
+    [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
 
     private static string Title(IntPtr hwnd) {
         var text = new StringBuilder(320);
         GetWindowText(hwnd, text, text.Capacity);
         return text.ToString();
+    }
+
+    // Approve only the exact trust dialog for the experimental DLL
+    // freshly compiled from this PR against a SHA256-pinned BizHawk release.
+    // No general dialogs, warning prompts, or other EXEs are confirmed.
+    public static bool ApproveOnlyKnownToolTrustPrompt(int pid) {
+        bool approved = false;
+        EnumWindows((window, param) => {
+            uint owner;
+            GetWindowThreadProcessId(window, out owner);
+            if (owner != (uint)pid || !IsWindowVisible(window)
+                || Title(window) != "Confirm loading") return true;
+            var classname = new StringBuilder(40);
+            GetClassName(window, classname, classname.Capacity);
+            if (classname.ToString() != "#32770") return true;
+            bool expectedText = false;
+            EnumChildWindows(window, (child, arg) => {
+                var text = Title(child);
+                if (text.Contains("Are you sure want to load this external tool?")
+                    && text.Contains("Accept ONLY if you trust the source"))
+                    expectedText = true;
+                return true;
+            }, IntPtr.Zero);
+            if (!expectedText) return true;
+            var yes = GetDlgItem(window, 6); // MessageBox IDYES
+            if (yes == IntPtr.Zero) return true;
+            var label = Title(yes);
+            if (label != "&Yes" && label != "Yes") return true;
+            SendMessage(yes, 0xF5U, IntPtr.Zero, IntPtr.Zero); // BM_CLICK
+            approved = true;
+            return false;
+        }, IntPtr.Zero);
+        return approved;
     }
 
     // Bounded aggregate, never a process ID, handle, private path or title.
@@ -82,9 +117,13 @@ $hosted = Start-Process -FilePath $emulator -WorkingDirectory $root `
 try {
     $observed = $false
     $diagnostic = @(0, 0, 0, 0, 0)
-    for ($i=0; $i -lt 50; $i++) {
+    $ownPromptApproved = $false
+    for ($i=0; $i -lt 60; $i++) {
         $hosted.Refresh()
         if ($hosted.HasExited) { throw 'no-media EmuHawk exited before tool appeared' }
+        if (-not $ownPromptApproved) {
+            $ownPromptApproved = [VhNoMediaWindows]::ApproveOnlyKnownToolTrustPrompt($hosted.Id)
+        }
         $diagnostic = [VhNoMediaWindows]::Probe($hosted.Id)
         if ($diagnostic[2] -eq 1 -and $diagnostic[3] -eq 1 -and $diagnostic[4] -eq 1) {
             $observed = $true
@@ -109,6 +148,7 @@ try {
             "plugin_window_found=$hasTool"
             "save_button_found=$hasButton"
             "disabled_save_found=$hasDisabledButton"
+            "own_tool_trust_confirmed=$([int]$ownPromptApproved)"
             "real_octoshock_authenticated=0"
         ) -join ' '
         Write-Output $status
