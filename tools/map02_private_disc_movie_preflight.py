@@ -140,6 +140,23 @@ def _parse_cue(cue_text: str) -> str:
     return name
 
 
+def _bcd(number: int) -> int:
+    if not 0 <= number <= 99:
+        raise ValueError("CD sector MSF component out of range")
+    return ((number // 10) << 4) | number % 10
+
+
+def _expected_msf(lba: int) -> bytes:
+    # Raw PS1 CD track sectors encode absolute MM:SS:FF after 150 pregap
+    # sectors. A copied payload at another LBA is not the expected sector.
+    frames = lba + 150
+    return bytes((
+        _bcd(frames // (75 * 60)),
+        _bcd((frames // 75) % 60),
+        _bcd(frames % 75),
+    ))
+
+
 def _raw_sector(fd: int, lba: int, file_size: int) -> bytes:
     offset = lba * SECTOR_BYTES
     if offset + SECTOR_BYTES > file_size:
@@ -149,6 +166,8 @@ def _raw_sector(fd: int, lba: int, file_size: int) -> bytes:
             or sector[:12] != b"\x00" + b"\xff" * 10 + b"\x00"
             or sector[15] != 2):
         raise ValueError("raw CD sector sync/mode validation failed")
+    if sector[12:15] != _expected_msf(lba):
+        raise ValueError("raw CD sector MSF address does not match expected LBA")
     return sector
 
 
