@@ -8,6 +8,7 @@ actual independent cold boots nor MAP02 identity is authenticated here.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -21,7 +22,7 @@ from tools.map02_private_bizhawk_poweron_launch import (
     MIN_EMULATOR_TIMEOUT_SECONDS, MAX_EMULATOR_TIMEOUT_SECONDS,
 )
 from tools.map02_private_disc_movie_preflight import (
-    inspect_pair, read_private_full_bin_sha256,
+    _assert_stable, _open_stable, inspect_pair, read_private_full_bin_sha256,
 )
 from tools.map02_private_two_capture_audit import _private_root, audit_pair
 from tools.verify_map02_private_neutral_capture_chain import verify
@@ -30,6 +31,38 @@ from tools.verify_map02_private_neutral_capture_chain import verify
 SCHEMA = "vh.map02.private-two-sequential-replays.v1"
 PLAN_NAME = "vh-map02-review-plan.txt"
 RUN_NAMES = ("vh-map02-cold-01", "vh-map02-cold-02")
+MAX_PRIVATE_MOVIE_BYTES = 8 * 1024 * 1024
+MOVIE_DIGEST_BLOCK_BYTES = 1024 * 1024
+
+
+def _private_movie_identity(path: Path) -> bytes:
+    """Fingerprint one bounded owner-local BK2; never print the digest.
+
+    Both the open file descriptor and the pathname are checked before and
+    after the read. The return value only exists in the local process.
+    """
+    source = Path(path)
+    fd, before = _open_stable(source)
+    try:
+        if not 0 < before.st_size <= MAX_PRIVATE_MOVIE_BYTES:
+            raise ValueError("owner-private BK2 identity outside bounded size")
+        result = hashlib.sha256()
+        remaining = before.st_size
+        while remaining:
+            block = os.read(fd, min(MOVIE_DIGEST_BLOCK_BYTES, remaining))
+            if not block:
+                raise ValueError("owner-private BK2 changed during read")
+            result.update(block)
+            remaining -= len(block)
+        _assert_stable(fd, source, before)
+        return result.digest()
+    finally:
+        os.close(fd)
+
+
+def _require_movie_unchanged(path: Path, original_digest: bytes) -> None:
+    if _private_movie_identity(path) != original_digest:
+        raise ValueError("owner-private BK2 changed between capture attempts")
 
 
 def _no_existing_outputs(workspace: Path) -> None:
@@ -79,6 +112,10 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             or not SCRIPT.is_absolute() or not SCRIPT.is_file()):
         raise ValueError("absolute EmuHawk executable and capture Lua are required")
 
+    # Pin the BK2 bytes before any preflight, capture plan, emulator
+    # process or independent audit. Merely re-parsing a changed archive later
+    # would not prove that both sessions used the same exact input movie.
+    movie_identity = _private_movie_identity(private_bk2)
     # Dry-run must genuinely inspect the source movie/disc rather than
     # reporting a misleading success based on just an empty workspace.
     # No output file or emulator process is created without --launch-two.
@@ -91,14 +128,17 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     )
     if not profile["media_preflight_ready_for_owner_replay"]:
         raise ValueError("owner-private original media preflight failed")
+    _require_movie_unchanged(private_bk2, movie_identity)
     if not start:
         candidate = plan_lines(private_bk2, limit=max_windows)
         if len(candidate) < 6 or (len(candidate) - 3) % 3:
             raise ValueError("private BK2 candidate capture plan is malformed")
+        _require_movie_unchanged(private_bk2, movie_identity)
         return {
             "schema": SCHEMA,
             "explicit_launch_requested": False,
             "media_preflight_passed": True,
+            "owner_bk2_stable_during_preflight": True,
             "private_capture_plan_rows_checked": len(candidate) - 3,
             "full_bin_sha256_checked": digest is not None,
             "emulator_timeout_seconds": (
@@ -118,8 +158,10 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     )
     if count < 3 or count % 3:
         raise ValueError("private capture plan contains invalid number of frames")
+    _require_movie_unchanged(private_bk2, movie_identity)
 
     for name in RUN_NAMES:
+        _require_movie_unchanged(private_bk2, movie_identity)
         output = workspace / name
         _capture_dir(output)
         argv = [
@@ -139,20 +181,24 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             argv, check=False, shell=False,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
+        _require_movie_unchanged(private_bk2, movie_identity)
         if process.returncode != 0:
             raise ValueError("one private emulator capture process failed")
         # Reject an emulator that returned zero without the exact expected
         # Lua markers and structurally intact PNGs before starting the next.
         verify(private_bk2, plan, output / "vh_private_capture.log", output)
+        _require_movie_unchanged(private_bk2, movie_identity)
 
     paired = audit_pair(
         private_bk2, plan, workspace / RUN_NAMES[0], workspace / RUN_NAMES[1],
     )
+    _require_movie_unchanged(private_bk2, movie_identity)
     return {
         "schema": SCHEMA,
         "explicit_launch_requested": True,
         "emulator_processes_started": 2,
         "capture_attempts_audited": 2,
+        "same_bk2_bytes_across_capture_attempts": True,
         "emulator_timeout_seconds": (
             emulator_timeout_seconds
             if emulator_timeout_seconds is not None
