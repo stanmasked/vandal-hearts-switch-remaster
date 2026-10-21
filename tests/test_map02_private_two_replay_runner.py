@@ -79,14 +79,96 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         self.assertEqual(kwargs["limit"], 4)
         return 3
 
-    def test_default_is_no_launch_no_artifacts(self):
+    def test_default_validates_real_media_and_plan_without_outputs(self):
         with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ) as media, patch(
+            "tools.map02_private_two_replay_runner.plan_lines",
+            return_value=["fictional-header", "fictional-length",
+                          "fictional-count", "frame1", "frame2", "frame3"],
+        ) as plan, patch(
             "tools.map02_private_two_replay_runner.subprocess.run",
-        ) as process:
+        ) as process, patch(
+            "tools.map02_private_two_replay_runner.write_private_plan",
+        ) as writer:
             report = capture_twice(*self.args)
+        media.assert_called_once()
+        plan.assert_called_once_with(self.movie, limit=4)
         process.assert_not_called()
+        writer.assert_not_called()
+        self.assertTrue(report["media_preflight_passed"])
+        self.assertEqual(report["private_capture_plan_rows_checked"], 3)
+        self.assertFalse(report["full_bin_sha256_checked"])
         self.assertEqual(report["emulator_processes_started"], 0)
         self.assertFalse((self.workspace / PLAN_NAME).exists())
+
+    def test_dry_run_rejects_media_mismatch_without_outputs(self):
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": False},
+        ) as media, patch(
+            "tools.map02_private_two_replay_runner.plan_lines",
+        ) as plan, patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+        ) as process:
+            with self.assertRaisesRegex(ValueError, "media preflight failed"):
+                capture_twice(*self.args)
+        media.assert_called_once()
+        plan.assert_not_called()
+        process.assert_not_called()
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_dry_run_rejects_invalid_movie_plan_without_outputs(self):
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_two_replay_runner.plan_lines",
+            side_effect=ValueError("no suitable movie windows"),
+        ), patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+        ) as process:
+            with self.assertRaisesRegex(ValueError, "no suitable movie windows"):
+                capture_twice(*self.args)
+        process.assert_not_called()
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_dry_run_rejects_missing_emulator_before_reading_movie(self):
+        self.program.unlink()
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+        ) as media:
+            with self.assertRaisesRegex(ValueError, "absolute EmuHawk executable"):
+                capture_twice(*self.args)
+        media.assert_not_called()
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_dry_run_checks_private_reference_when_requested(self):
+        private_ref = self.root / "fictional-private-digest.sha256"
+        private_ref.write_text("f" * 64, encoding="ascii")
+        with patch(
+            "tools.map02_private_two_replay_runner.read_private_full_bin_sha256",
+            return_value="f" * 64,
+        ) as loader, patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ) as media, patch(
+            "tools.map02_private_two_replay_runner.plan_lines",
+            return_value=["h", "l", "c", "a", "b", "c"],
+        ), patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+        ) as process:
+            report = capture_twice(
+                *self.args, expected_digest_file=private_ref,
+            )
+        loader.assert_called_once_with(private_ref)
+        media.assert_called_once_with(
+            self.disc, self.movie,
+            verify_full_bin_sha256=True, expected_bin_sha256="f" * 64,
+        )
+        self.assertTrue(report["full_bin_sha256_checked"])
+        process.assert_not_called()
 
     def test_two_separate_emulator_subprocesses_and_independent_audits(self):
         result, media, planning, process, chain, paired = self.run_mocked()
@@ -213,15 +295,25 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "1..10"):
             capture_twice(*self.args, max_windows=0)
 
-    def test_main_no_optin_prints_redacted_no_launch(self):
+    def test_main_no_optin_prints_redacted_validated_no_launch(self):
         command = ["test", *(str(item) for item in self.args)]
-        with patch.object(sys, "argv", command):
+        with patch.object(sys, "argv", command), patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_two_replay_runner.plan_lines",
+            return_value=["h", "l", "c", "a", "b", "c"],
+        ), patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+        ) as process:
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 result = main()
         self.assertEqual(result, 0)
+        self.assertIn('"media_preflight_passed": true', output.getvalue())
         self.assertIn('"emulator_processes_started": 0', output.getvalue())
         self.assertNotIn(str(self.root), output.getvalue())
+        process.assert_not_called()
 
     def test_review_mismatch_is_not_reported_as_success(self):
         report, *_ = self.run_mocked(match=False)
