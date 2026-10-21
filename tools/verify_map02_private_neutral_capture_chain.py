@@ -128,7 +128,7 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
             group, role, index + 1,
         )
         path = root / filename
-        file_stat = path.stat(follow_symlinks=False)
+        file_stat = os.stat(path, follow_symlinks=False)
         if not stat.S_ISREG(file_stat.st_mode):
             raise ValueError("private capture is not regular")
         inode = (file_stat.st_dev, file_stat.st_ino)
