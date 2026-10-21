@@ -249,6 +249,21 @@ class ReviewShortlistTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "changed during audit"):
                 self.call()
 
+    def test_capture_evidence_mutation_during_human_review_fails_closed(self):
+        def mutate_evidence(*_args, **_kwargs):
+            self.sample.image(1, "middle").write_bytes(
+                fake.synthetic_png((240, 240, 240)))
+            return {1: True}
+
+        with patch(
+            "tools.map02_private_reviewed_scene_candidates._intra_group_visual_changes",
+            side_effect=mutate_evidence,
+        ):
+            with self.assertRaisesRegex(
+                ValueError, "changed during manual review"
+            ):
+                self.call()
+
     def test_private_json_output_is_owner_only_and_cannot_be_overwritten(self):
         report = self.call()
         write_private_new(
