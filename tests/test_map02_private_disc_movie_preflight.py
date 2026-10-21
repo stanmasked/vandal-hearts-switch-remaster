@@ -409,7 +409,6 @@ class DiscMoviePreflightTests(unittest.TestCase):
                 write_movie(self.movie, extra_members={member: b"fictional state"})
                 with self.assertRaisesRegex(ValueError, "unexpected|member"):
                     self.call()
-                self.assertNotIn("fictional state", json.dumps({"safe": True}))
 
     def test_missing_save_anchor_header_keeps_static_gate_open(self):
         write_movie(self.movie, header_extra="Author SyntheticTester\n")
