@@ -80,8 +80,11 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
         if (root / filename).exists() or (root / filename).is_symlink():
             raise ValueError("planned PNG filename already exists: no overwrite")
     log_path = root / "vh_private_capture.log"
+    process_log_path = root / "vh_emuhawk_process.log"
     if log_path.exists() or log_path.is_symlink():
         raise ValueError("private capture log already exists: no overwrite")
+    if process_log_path.exists() or process_log_path.is_symlink():
+        raise ValueError("private EmuHawk process log already exists: no overwrite")
 
     args = [
         str(executable),
@@ -93,6 +96,7 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
     env["VH_PRIVATE_CAPTURE_PLAN"] = str(plan)
     env["VH_PRIVATE_PNG_DIR"] = str(root)
     env["VH_PRIVATE_CAPTURE_LOG"] = str(log_path)
+    env["VH_PRIVATE_PROCESS_LOG"] = str(process_log_path)
     return args, env, len(positions)
 
 
@@ -141,18 +145,38 @@ def main() -> int:
     # permissions and exclusive creation. Lua appends only sanitized marker
     # lines; the owner can feed this file directly to the private auditor.
     log_path = Path(env["VH_PRIVATE_CAPTURE_LOG"])
+    process_log_path = Path(env["VH_PRIVATE_PROCESS_LOG"])
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
+    created = []
     try:
-        fd = os.open(log_path, flags, 0o600)
-        os.close(fd)
+        for private_log in (log_path, process_log_path):
+            fd = os.open(private_log, flags, 0o600)
+            os.close(fd)
+            created.append(private_log)
     except OSError:
-        parser.error("private capture log could not be created safely")
-    # No shell, no echo of arguments, no upload of private output.
-    # EmuHawk startup/core/firmware and actual PNGs still require audit.
+        for private_log in created:
+            try:
+                private_log.unlink()
+            except OSError:
+                pass
+        parser.error("private logs could not be created safely")
+    # BizHawk logs parsed command-line arguments (including absolute private
+    # paths) to stderr. Redirect both streams to a separate mode-0600 local
+    # file, never the terminal or CI. Keep the structured Lua audit log apart.
     try:
-        result = subprocess.run(command, env=env, shell=False, check=False)
+        process_flags = os.O_WRONLY | os.O_APPEND
+        if hasattr(os, "O_NOFOLLOW"):
+            process_flags |= os.O_NOFOLLOW
+        process_fd = os.open(process_log_path, process_flags)
+        if not stat.S_ISREG(os.fstat(process_fd).st_mode):
+            os.close(process_fd)
+            raise OSError("private process log is not regular")
+        with os.fdopen(process_fd, "ab") as private_output:
+            result = subprocess.run(
+                command, env=env, shell=False, check=False,
+                stdout=private_output, stderr=subprocess.STDOUT)
     except OSError:
         try:
             _append_private_log(log_path,
