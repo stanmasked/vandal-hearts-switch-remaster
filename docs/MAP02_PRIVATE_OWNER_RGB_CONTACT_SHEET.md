@@ -50,11 +50,13 @@ UNVERIFIED / NOT MAP02 PROOF.
 Optionally, pass the owner-private v3 shortlist created by
 Draft #445 using `--reviewed-candidates /private/vh-map02-reviewed-candidates.json`.
 The report must be an owner-only regular file outside Git and its
-`source_plan_sha256` must match the exact canonical capture-plan bytes being
-revalidated in this run. The renderer then shows only groups marked
-`requires_game_state_witness`; stale/malformed reports and reports with no
-eligible groups fail closed. The source audit still checks all supplied frames
-before filtering. The sheet remains an unverified human-review aid, not proof.
+`source_plan_sha256` must match the exact canonical capture-plan bytes and
+`source_capture_evidence_sha256` must match the aggregate digest of the exact
+BK2, plan, both logs and planned PNG bytes revalidated in this run. The renderer
+then shows only groups marked `requires_game_state_witness`; stale/malformed
+reports and reports with no eligible groups fail closed. The source audit still
+checks all supplied frames before filtering. The sheet remains an unverified
+human-review aid, not proof.
 
 **The output contains actual screenshot copies and private frame
 coordinates.** Never upload the output PNG to GitHub, a GitHub issue,
