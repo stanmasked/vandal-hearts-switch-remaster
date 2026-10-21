@@ -69,7 +69,7 @@ attempt to read/write BIOS, BIN, BK2 or PNG content.
 
 The filenames above are illustrative; the External Tool creates random
 filenames. The verifier enforces a fixed, LF-only, ASCII schema and checks
-for the literal `source=IEmulator.Attributes.CoreName` semantics, PSX,
+for the literal `core_source=IEmulator.Attributes.CoreName` semantics, PSX,
 Octoshock, reasonable frame/process identifiers, two **distinct**
 `(PID, UTC process start time)` pairs, no unsupported fields, bounded
 size, source stability, regular files, no symlinks and no Git checkout.
