@@ -55,8 +55,9 @@ The report must be an owner-only regular file outside Git and its
 BK2, plan, both logs and planned PNG bytes revalidated in this run. The renderer
 then shows only groups marked `requires_game_state_witness`; stale/malformed
 reports and reports with no eligible groups fail closed. The source audit still
-checks all supplied frames before filtering. The sheet remains an unverified
-human-review aid, not proof.
+checks all supplied frames before filtering, and the aggregate digest is checked
+again after drawing the sheet; any changed source file aborts before the PNG is
+saved. The sheet remains an unverified human-review aid, not proof.
 
 **The output contains actual screenshot copies and private frame
 coordinates.** Never upload the output PNG to GitHub, a GitHub issue,
