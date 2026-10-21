@@ -22,7 +22,10 @@ SCHEMA="vh-map02-stage303-real-strace-sanitized-alsa-syscall-audit/v1"
 HOST_SHA="fb154cbd581826a4f217485eff338badf0ea14c28a82bff258e7baf32c84153a"
 NRO_SHA="371c9fd9f1f41ad87cbb5f7f96a3e5e9d56878f8cfff2bf7fea2c17120c2611b"
 ALLOWED={"ioctl","poll","ppoll","epoll_wait","epoll_pwait","sendmsg","recvmsg"}
-TRACE_RE=re.compile(r"^(?:\[pid +\d+\] +)?(\d{10}\.\d{6,9}) +"
+# strace -f can prefix Linux TIDs before or after the -ttt time,
+# depending on version. We accept a bounded gap before the syscall and
+# never parse/export the PID or untrusted syscall argument values.
+TRACE_RE=re.compile(r"(?<!\d)(\d{10}\.\d{1,9})(?!\d)[^\n]{0,100}?\b"
                     r"(ioctl|poll|ppoll|epoll_wait|epoll_pwait|sendmsg|recvmsg)\(")
 ERR_RE=re.compile(r"= -1 ([A-Z][A-Z0-9_]+)(?: |$)")
 PCM_RE=re.compile(r"\bSNDRV_PCM_IOCTL_[A-Z0-9_]+")
@@ -70,7 +73,7 @@ def parse_raw_strace(rawpath,old_clock,new_clock,first_input_ns,last_marker_ns):
         for line in f:
             total+=1
             require(total<=MAX_LINES,"Trace exceeds bounded source line maximum")
-            m=TRACE_RE.match(line)
+            m=TRACE_RE.search(line)
             if not m:
                 omitted+=1
                 continue
