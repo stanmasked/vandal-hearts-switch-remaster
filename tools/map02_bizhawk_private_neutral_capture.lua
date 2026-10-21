@@ -21,6 +21,27 @@ local root = os.getenv("VH_PRIVATE_PNG_DIR")
 if not absolute_private_path(plan_file) or not absolute_private_path(root) then
   return fail("absolute_private_paths_required")
 end
+-- Best-effort Git checkout guard for environments without LuaFileSystem.
+-- Stop BEFORE writing any owner-private screenshot to a public checkout.
+-- A later Python auditor independently resolves paths and repeats this check.
+local function capture_root_in_git_checkout(path)
+  local location = path:gsub("\\", "/"):gsub("/+$", "")
+  if location:find("/.git/", 1, true) or location:match("/%.git$") then
+    return true
+  end
+  while location and #location >= 2 do
+    local marker = io.open(location .. "/.git/HEAD", "rb")
+    if marker then marker:close(); return true end
+    -- Worktrees use a .git *file* instead of a .git directory.
+    local pointer = io.open(location .. "/.git", "rb")
+    if pointer then pointer:close(); return true end
+    location = location:match("^(.*)/[^/]+$")
+  end
+  return false
+end
+if capture_root_in_git_checkout(root) then
+  return fail("private_png_dir_inside_git_checkout")
+end
 local fp = io.open(plan_file, "rb")
 if not fp then return fail("private_plan_unavailable") end
 local body = fp:read(8193)
