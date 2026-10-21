@@ -112,6 +112,32 @@ class PrivateContactSheetTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "directory must be real"):
             self.call(alias / "private.png")
 
+    def test_allows_canonicalized_system_path_ancestor(self):
+        # Emulates macOS's /var -> /private/var without trusting a direct
+        # symlink destination directory.
+        actual = self.fixture.root / "private-var"
+        inner = actual / "tmp"
+        inner.mkdir(parents=True)
+        alias = self.fixture.root / "var"
+        alias.symlink_to(actual, target_is_directory=True)
+        destination = alias / "tmp" / "private-review.png"
+        result = self.call(destination)
+        self.assertEqual(result["private_review_groups"], 1)
+        self.assertTrue(destination.exists())
+
+    def test_canonicalized_ancestor_must_not_hide_git_checkout(self):
+        actual = self.fixture.root / "hidden-repo"
+        actual.mkdir()
+        (actual / ".git").mkdir()
+        nested = actual / "tmp"
+        nested.mkdir()
+        alias = self.fixture.root / "linked-repo"
+        alias.symlink_to(actual, target_is_directory=True)
+        destination = alias / "tmp" / "private-review.png"
+        with self.assertRaisesRegex(ValueError, "inside a Git checkout"):
+            self.call(destination)
+        self.assertFalse(destination.exists())
+
     def test_refuses_relative_output(self):
         with self.assertRaisesRegex(ValueError, "absolute private"):
             self.call(Path("private-contact-sheet.png"))
