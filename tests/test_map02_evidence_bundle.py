@@ -25,6 +25,11 @@ TREE = "b" * 40
 
 def prepare(folder: Path) -> None:
     fixtures(folder)
+    # The shared mock-image generator also writes reference-only PNG names;
+    # remove those helpers before testing an exact real-artifact file set.
+    for path in folder.iterdir():
+        if path.name not in bundle.EXPECTED:
+            path.unlink()
     (folder / bundle.NRO_NAME).write_bytes(b"NRO0 synthetic no retail game bytes")
     receipt = make_receipt(folder / bundle.NRO_NAME, SOURCE, TREE)
     (folder / "build-receipt.json").write_text(
