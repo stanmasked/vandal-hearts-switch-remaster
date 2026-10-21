@@ -20,7 +20,7 @@ SCHEMA = "vh.map02.private-link-provider-coverage.v1"
 MANIFEST_SCHEMA = "vh.map02.private-undefined-symbol-manifest.v1"
 MAX_MANIFEST_BYTES = 4 * 1024 * 1024
 MAX_CANDIDATE_BYTES = 256 * 1024 * 1024
-STRONG_KINDS = frozenset("TDBRGSAI")
+STRONG_KINDS = frozenset("TDBRGSAIi")  # GNU ELF IFUNC (`i`) may be a strong export
 
 
 def _sha_names(names):
