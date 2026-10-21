@@ -117,6 +117,11 @@ end
 if movie.length() ~= EXPECTED_LENGTH or movie.getreadonly() ~= true then
   return fail("wrong_movie_length_or_readonly")
 end
+-- The owner-local launcher needs EmuHawk to exit as soon as the bounded
+-- captures finish, rather than playing the rest of this long BK2 movie.
+if type(client) ~= "table" or type(client.exitCode) ~= "function" then
+  return fail("emuhawk_exit_code_api_unavailable")
+end
 -- Fail closed on a late Lua attachment, manual seek, or a savestate loaded
 -- after startup. This still cannot prove an authentic PS1 power-on.
 local first_counter = emu.framecount()
@@ -215,6 +220,9 @@ while true do
       emit(string.format(
         "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=%d movie_input_only=yes actual_map02=unverified", #captures))
       if log_handle then log_handle:close(); log_handle = nil end
+      -- Close the emulator with an explicit successful process status.
+      -- Python then appends the process-exit marker required by the auditor.
+      client.exitCode(0)
       return
     end
   end
