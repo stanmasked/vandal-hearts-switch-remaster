@@ -158,7 +158,9 @@ class StartAnchorCSVTests(unittest.TestCase):
 
     def test_missing_private_csv_refused(self):
         self.events.unlink()
-        with self.assertRaises(OSError):
+        # The privacy wrapper deliberately normalizes missing/nonregular input
+        # into ValueError without exposing an owner-local path.
+        with self.assertRaises(ValueError):
             self.call()
 
     def test_symlinked_private_source_csv_refused(self):
