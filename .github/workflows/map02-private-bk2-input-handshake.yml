@@ -1,0 +1,47 @@
+name: MAP02 private BK2 movie-input handshake (synthetic CI)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-private-bk2-input-handshake.yml'
+      - 'tools/map02_bizhawk_private_input_handshake.lua'
+      - 'tools/verify_map02_private_bk2_input_handshake.py'
+      - 'tests/test_verify_map02_private_bk2_input_handshake.py'
+      - 'docs/MAP02_PRIVATE_BK2_INPUT_HANDSHAKE.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  invented-controller-input:
+    name: Synthetic input handshake (${{ matrix.os }} Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.9'
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: macos-15-intel
+            python: '3.11'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Run invented movie controller-mask and index tests only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_verify_map02_private_bk2_input_handshake.py' -v \
+            2>&1 | tee /tmp/vh-private-input-handshake.log
+          grep -F 'Ran 14 tests' /tmp/vh-private-input-handshake.log
+          if grep -E '^(FAILED|ERROR)' /tmp/vh-private-input-handshake.log; then
+            exit 1
+          fi
+          echo "VH_MAP02_BK2_INPUT_HANDSHAKE_PASS synthetic=14 original_movie=0 actual_bizhawk=0 map02_frame=unknown"
