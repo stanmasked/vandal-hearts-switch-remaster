@@ -1,6 +1,7 @@
 """Invented PNGs only: review image renderer never reads owner BK2 in CI."""
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -15,6 +16,7 @@ import test_map02_private_dual_capture_rgb_repeatability as dual_fixtures
 from tools.map02_private_owner_rgb_contact_sheet import (
     SCHEMA, MAX_SHEET_PIXELS, _checked_groups, _output_path_safely_uncreated, render,
 )
+from tools.map02_private_reviewed_scene_candidates import SCHEMA as CANDIDATE_SCHEMA
 
 
 class PrivateContactSheetTests(unittest.TestCase):
@@ -26,7 +28,7 @@ class PrivateContactSheetTests(unittest.TestCase):
         self.fixture = fixture
         self.image_out = fixture.root / "owner-only-contact-sheet.png"
 
-    def call(self, output=None, *, count=3):
+    def call(self, output=None, *, count=3, reviewed_candidates=None):
         f = self.fixture
         with patch(
             "tools.map02_private_dual_capture_rgb_repeatability.verify_chain",
@@ -37,6 +39,7 @@ class PrivateContactSheetTests(unittest.TestCase):
                 f.logs[1], f.folders[1],
                 output if output is not None else self.image_out,
                 minimum=200, maximum=1000,
+                reviewed_candidates=reviewed_candidates,
             )
         self.assertEqual(audit.call_count, 2)
         return result
@@ -67,6 +70,65 @@ class PrivateContactSheetTests(unittest.TestCase):
             self.assertGreaterEqual(screenshot.height, 400)
             screenshot.verify()
         self.assertEqual(self.image_out.stat().st_mode & 0o777, 0o600)
+
+    def write_candidate_report(self, *, state="requires_game_state_witness",
+                               plan_sha256=None):
+        plan_sha = plan_sha256 or hashlib.sha256(
+            self.fixture.plan.read_bytes()).hexdigest()
+        candidate = state == "requires_game_state_witness"
+        report = {
+            "schema": CANDIDATE_SCHEMA,
+            "source_plan_sha256": plan_sha,
+            "private_review_group_count": 1,
+            "review_groups_requiring_game_state_witness": 1 if candidate else 0,
+            "groups": [{
+                "review_group": 1,
+                "state": state,
+                "all_three_positions_exact_rgb_equal_across_supplied_sets": candidate,
+                "manual_transition_pattern": candidate,
+                "intra_group_visual_change_confirmed": candidate,
+                "actual_map02_scene_authenticated": False,
+            }],
+            "actual_map02_start_authenticated": False,
+            "original_ps1_game_authenticated": False,
+            "game_state_or_gpu_vram_witness_available": False,
+            "private_bk2_images_labels_or_frame_coordinates_uploaded": False,
+        }
+        path = self.fixture.root / "owner-private-reviewed-candidates.json"
+        path.write_text(json.dumps(report), encoding="utf-8")
+        path.chmod(0o600)
+        return path
+
+    def test_plan_bound_shortlist_filters_sheet_and_marks_limits(self):
+        report = self.write_candidate_report()
+        result = self.call(reviewed_candidates=report)
+        self.assertTrue(result["reviewed_candidate_filter_applied"])
+        self.assertTrue(result["candidate_report_plan_binding_verified"])
+        self.assertEqual(result["candidate_filter_group_count"], 1)
+        self.assertEqual(result["private_review_groups"], 1)
+        self.assertEqual(result["paired_screenshot_positions"], 3)
+        self.assertEqual(result["source_audited_screenshot_positions"], 3)
+        self.assertFalse(result["map02_scene_identified"])
+        self.assertEqual(self.image_out.stat().st_mode & 0o777, 0o600)
+
+    def test_shortlist_for_different_plan_is_rejected_without_output(self):
+        report = self.write_candidate_report(plan_sha256="0" * 64)
+        with self.assertRaisesRegex(ValueError, "does not match current private capture plan"):
+            self.call(reviewed_candidates=report)
+        self.assertFalse(self.image_out.exists())
+
+    def test_empty_candidate_shortlist_is_rejected_without_output(self):
+        report = self.write_candidate_report(state="not_candidate_in_selected_frames")
+        with self.assertRaisesRegex(ValueError, "no eligible groups"):
+            self.call(reviewed_candidates=report)
+        self.assertFalse(self.image_out.exists())
+
+    def test_candidate_report_must_be_owner_private(self):
+        report = self.write_candidate_report()
+        report.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "owner-only regular JSON"):
+            self.call(reviewed_candidates=report)
+        self.assertFalse(self.image_out.exists())
 
     def test_disagreement_remains_reviewable_not_scene_proof(self):
         f = self.fixture
