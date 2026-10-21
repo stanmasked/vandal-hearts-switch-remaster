@@ -14,6 +14,7 @@ local function run(option)
   local counter = 1
   local lines, screenshots, saved = {}, {}, {}
   local content = BASE
+  if option == "boundary" then content = content:gsub("1,before,1664,held", "1,before,1663,held") end
   if option == "bad-header" then content = content:gsub("VH_MAP02_CAPTURE_PLAN_V1", "OTHER") end
   if option == "bad-count" then content = content:gsub("capture_count=3", "capture_count=4") end
   if option == "duplicate-index" then content = content:gsub("1,middle,1666", "1,middle,1664") end
@@ -58,7 +59,7 @@ local function run(option)
     end,
     getinput = function(idx, port)
       assert(port == 1)
-      assert(idx == 1664 or idx == 1666 or idx == 1669)
+      assert(idx == 1663 or idx == 1664 or idx == 1666 or idx == 1669)
       local pressed = (idx ~= 1666)
       if option == "neutral-mismatch" then pressed = not pressed end
       local key = option == "prefixed" and "P1 Up" or "Up"
@@ -93,11 +94,11 @@ local function run(option)
   return lines, screenshots
 end
 
-for _, option in ipairs({"plain", "prefixed"}) do
+for _, option in ipairs({"plain", "prefixed", "boundary"}) do
   local lines, shots = run(option)
   assert(#shots == 3, option .. ": expected three screenshot calls")
   assert(#lines == 4, option .. ": three capture lines and summary")
-  local frames = {1664, 1666, 1669}
+  local frames = {option == "boundary" and 1663 or 1664, 1666, 1669}
   local roles = {"before", "middle", "after"}
   for i = 1, 3 do
     local group, role, counter, candidate, held = lines[i]:match(
