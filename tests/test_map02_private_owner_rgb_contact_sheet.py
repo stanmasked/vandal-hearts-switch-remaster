@@ -137,6 +137,16 @@ class PrivateContactSheetTests(unittest.TestCase):
             self.call(reviewed_candidates=report)
         self.assertFalse(self.image_out.exists())
 
+    def test_candidate_report_rejects_non_string_state_without_output(self):
+        report = self.write_candidate_report()
+        payload = json.loads(report.read_text(encoding="utf-8"))
+        payload["groups"][0]["state"] = []
+        report.write_text(json.dumps(payload), encoding="utf-8")
+        report.chmod(0o600)
+        with self.assertRaisesRegex(ValueError, "groups do not match capture plan"):
+            self.call(reviewed_candidates=report)
+        self.assertFalse(self.image_out.exists())
+
     def test_candidate_report_must_be_owner_private(self):
         report = self.write_candidate_report()
         report.chmod(0o644)
