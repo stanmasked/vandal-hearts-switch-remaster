@@ -232,7 +232,11 @@ class ReviewShortlistTests(unittest.TestCase):
             source["source_capture_evidence_sha256"],
         )
         self.assertNotIn(str(self.sample.root), json.dumps(report))
-        self.assertNotIn("3000", json.dumps(report))
+        public_fields = {
+            key: value for key, value in report.items()
+            if key not in {"source_plan_sha256", "source_capture_evidence_sha256"}
+        }
+        self.assertNotIn("3000", json.dumps(public_fields))
 
     def test_capture_plan_mutation_during_audit_fails_closed(self):
         def mutate_plan(*_args, **_kwargs):
