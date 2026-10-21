@@ -121,8 +121,8 @@ class DiscMoviePreflightTests(unittest.TestCase):
 
     def test_cue_path_traversal_is_rejected(self):
         self.cue.write_text(
-            'FILE "../fictional.bin" BINARY\\n'
-            'TRACK 01 MODE2/2352\\nINDEX 01 00:00:00\\n',
+            'FILE "../fictional.bin" BINARY\n'
+            'TRACK 01 MODE2/2352\nINDEX 01 00:00:00\n',
             encoding="ascii",
         )
         with self.assertRaisesRegex(ValueError, "sibling BIN"):
