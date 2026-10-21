@@ -89,6 +89,10 @@ class PrivateContactSheetTests(unittest.TestCase):
                 "intra_group_visual_change_confirmed": candidate,
                 "actual_map02_scene_authenticated": False,
             }],
+            "source_capture_chains_revalidated": True,
+            "two_capture_sets_independently_authenticated": False,
+            "independent_human_reviewers_authenticated": False,
+            "input_to_video_alignment_verified": False,
             "actual_map02_start_authenticated": False,
             "original_ps1_game_authenticated": False,
             "game_state_or_gpu_vram_witness_available": False,
@@ -120,6 +124,16 @@ class PrivateContactSheetTests(unittest.TestCase):
     def test_empty_candidate_shortlist_is_rejected_without_output(self):
         report = self.write_candidate_report(state="not_candidate_in_selected_frames")
         with self.assertRaisesRegex(ValueError, "no eligible groups"):
+            self.call(reviewed_candidates=report)
+        self.assertFalse(self.image_out.exists())
+
+    def test_candidate_report_overclaiming_emulator_provenance_is_rejected(self):
+        report = self.write_candidate_report()
+        payload = json.loads(report.read_text(encoding="utf-8"))
+        payload["two_capture_sets_independently_authenticated"] = True
+        report.write_text(json.dumps(payload), encoding="utf-8")
+        report.chmod(0o600)
+        with self.assertRaisesRegex(ValueError, "overclaims provenance"):
             self.call(reviewed_candidates=report)
         self.assertFalse(self.image_out.exists())
 
