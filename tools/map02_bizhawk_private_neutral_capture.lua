@@ -153,6 +153,26 @@ if type(movie.startsfromsavestate) ~= "function"
   return fail("movie_not_poweron_anchored")
 end
 emit("VH_PRIVATE_NEUTRAL_MOVIE_SOURCE_PREFLIGHT source=poweron filename=matched core_identity=unverified")
+-- Capture the BizHawk frontend version and PSX display standard LIVE, rather
+-- than inferring them from owner-supplied BK2 metadata. These are reported
+-- by Lua and do NOT identify the active Octoshock/Nymashock core or BIOS.
+if type(client) ~= "table" or type(client.getversion) ~= "function"
+    or type(emu.getdisplaytype) ~= "function" then
+  return fail("runtime_profile_api_unavailable")
+end
+local runtime_version = client.getversion()
+if type(runtime_version) ~= "string" or #runtime_version > 24
+    or not (runtime_version:match("^%d+%.%d+$")
+            or runtime_version:match("^%d+%.%d+%.%d+$")) then
+  return fail("runtime_version_unrecognized")
+end
+local runtime_display = emu.getdisplaytype()
+if runtime_display ~= "NTSC" and runtime_display ~= "PAL" then
+  return fail("psx_display_standard_unrecognized")
+end
+emit("VH_PRIVATE_NEUTRAL_RUNTIME_PREFLIGHT bizhawk_version=" ..
+     runtime_version .. " display=" .. runtime_display ..
+     " active_core=unverified")
 -- The owner-local launcher needs EmuHawk to exit as soon as the bounded
 -- captures finish, rather than playing the rest of this long BK2 movie.
 if type(client) ~= "table" or type(client.exitCode) ~= "function" then
@@ -224,6 +244,9 @@ local current, previous_counter = 1, nil
 local first_start_off_seen, first_start_on_seen = false, false
 while true do
   if state_loaded then return fail("savestate_loaded_during_replay") end
+  if emu.getdisplaytype() ~= runtime_display then
+    return fail("psx_display_standard_changed_during_replay")
+  end
   if type(emu.getsystemid) ~= "function" or emu.getsystemid() ~= "PSX" then
     return fail("emulated_system_changed")
   end

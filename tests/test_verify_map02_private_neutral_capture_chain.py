@@ -67,6 +67,8 @@ class CaptureAuditTests(unittest.TestCase):
         data = ["unrelated pretend emulator console text",
                 "VH_PRIVATE_NEUTRAL_MOVIE_SOURCE_PREFLIGHT "
                 "source=poweron filename=matched core_identity=unverified",
+                "VH_PRIVATE_NEUTRAL_RUNTIME_PREFLIGHT "
+                "bizhawk_version=2.11 display=NTSC active_core=unverified",
                 "VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 "
                 "candidate_input=1661 first_start_pressed=yes "
                 "ps1_input_delivery=unverified"]
@@ -106,6 +108,9 @@ class CaptureAuditTests(unittest.TestCase):
         self.assertTrue(value["owner_log_reports_live_first_start_anchor_before_screenshots"])
         self.assertTrue(value["owner_log_reports_poweron_movie_path_match"])
         self.assertTrue(value["owner_log_reports_input_poll_callback"])
+        self.assertEqual(value["reported_bizhawk_version"], "2.11")
+        self.assertEqual(value["reported_psx_display_standard"], "NTSC")
+        self.assertFalse(value["active_octoshock_core_verified"])
         self.assertFalse(value["savestate_free_real_replay_authenticated"])
         self.assertTrue(value["owner_launcher_reports_successful_process_exit"])
         self.assertTrue(value["all_png_crc_zlib_scanlines_pass"])
@@ -138,13 +143,74 @@ class CaptureAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "completion"):
             self.call()
 
+    def test_missing_live_runtime_profile_is_rejected(self):
+        original = self.log.read_text(encoding="utf-8")
+        self.log.write_text("\n".join(
+            line for line in original.splitlines()
+            if not line.startswith("VH_PRIVATE_NEUTRAL_RUNTIME_PREFLIGHT")
+        ) + "\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "runtime profile"):
+            self.call()
+
+    def test_duplicate_live_runtime_profile_is_rejected(self):
+        with self.log.open("a", encoding="utf-8") as stream:
+            stream.write("VH_PRIVATE_NEUTRAL_RUNTIME_PREFLIGHT "
+                         "bizhawk_version=2.11 display=NTSC active_core=unverified\n")
+        with self.assertRaisesRegex(ValueError, "runtime profile"):
+            self.call()
+
+    def test_reordered_runtime_profile_is_rejected(self):
+        source = self.log.read_text(encoding="utf-8")
+        profile = ("VH_PRIVATE_NEUTRAL_RUNTIME_PREFLIGHT "
+                   "bizhawk_version=2.11 display=NTSC active_core=unverified\n")
+        source = source.replace(profile, "")
+        source = source.replace(
+            "VH_PRIVATE_NEUTRAL_START_PREFLIGHT",
+            profile + "VH_PRIVATE_NEUTRAL_START_PREFLIGHT",
+        )
+        # A valid marker must appear after movie source, before Start:
+        # force a profile before the recorded movie source instead.
+        source = source.replace(profile, "")
+        source = profile + source
+        self.log.write_text(source, encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "runtime profile"):
+            self.call()
+
+    def test_invalid_runtime_profile_values_are_rejected(self):
+        original = self.log.read_text(encoding="utf-8")
+        for mutation in (
+            "bizhawk_version=2.11\tPRIVATE",
+            "bizhawk_version=2.11-invalid",
+            "bizhawk_version=2.11 display=UNKNOWN",
+            "bizhawk_version=2.11 display=PAL active_core=Octoshock",
+        ):
+            with self.subTest(mutation=mutation):
+                changed = original.replace(
+                    "bizhawk_version=2.11 display=NTSC active_core=unverified",
+                    mutation,
+                )
+                self.log.write_text(changed, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "runtime profile"):
+                    self.call()
+
+    def test_pal_display_is_accepted_without_octoshock_claim(self):
+        source = self.log.read_text(encoding="utf-8")
+        self.log.write_text(source.replace(
+            "bizhawk_version=2.11 display=NTSC",
+            "bizhawk_version=2.11.1 display=PAL",
+        ), encoding="utf-8")
+        report = self.call()
+        self.assertEqual(report["reported_bizhawk_version"], "2.11.1")
+        self.assertEqual(report["reported_psx_display_standard"], "PAL")
+        self.assertFalse(report["active_octoshock_core_verified"])
+
     def test_missing_poweron_movie_source_marker_refused(self):
         text = self.log.read_text()
         self.log.write_text("\n".join(
             line for line in text.splitlines()
             if not line.startswith("VH_PRIVATE_NEUTRAL_MOVIE_SOURCE_PREFLIGHT")
         ) + "\n")
-        with self.assertRaisesRegex(ValueError, "movie"):
+        with self.assertRaisesRegex(ValueError, "runtime profile|movie"):
             self.call()
 
     def test_wrong_movie_source_marker_refused(self):
@@ -174,7 +240,7 @@ class CaptureAuditTests(unittest.TestCase):
                   "ps1_input_delivery=unverified")
         text = text.replace(anchor + "\n", anchor + "\n" + marker + "\n")
         self.log.write_text(text)
-        with self.assertRaisesRegex(ValueError, "power-on movie source"):
+        with self.assertRaisesRegex(ValueError, "runtime profile|power-on movie source"):
             self.call()
 
     def test_missing_live_start_preflight_refused(self):

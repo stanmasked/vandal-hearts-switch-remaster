@@ -63,6 +63,12 @@ def audit_pair(movie: Path, plan: Path, first: Path, second: Path, *,
                second_root, **parameters)
     if a["screenshot_count"] != b["screenshot_count"]:
         raise ValueError("independent capture screenshot counts differ")
+    # A different BizHawk frontend version or PSX TV standard means the two
+    # screenshot sets are not directly comparable as one runtime profile.
+    # These are self-reported Lua values, not independent core/BIOS proof.
+    for field in ("reported_bizhawk_version", "reported_psx_display_standard"):
+        if field not in a or field not in b or a[field] != b[field]:
+            raise ValueError("two capture attempts report different emulator runtime profiles")
     _, rows = parse_plan(plan)
     if len(rows) != a["screenshot_count"]:
         raise ValueError("private plan/capture screenshot count mismatch")
@@ -117,6 +123,8 @@ def audit_pair(movie: Path, plan: Path, first: Path, second: Path, *,
     return {
         "schema": SCHEMA,
         "two_private_capture_chains_passed": True,
+        "same_reported_bizhawk_runtime_profile": True,
+        "octoshock_core_identity_authenticated": False,
         "distinct_capture_directories": True,
         "cross_run_png_inodes_distinct": True,
         "screenshot_pairs_checked": len(rows),

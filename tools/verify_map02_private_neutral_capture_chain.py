@@ -38,6 +38,13 @@ MOVIE_SOURCE_PREFLIGHT = (
     "VH_PRIVATE_NEUTRAL_MOVIE_SOURCE_PREFLIGHT "
     "source=poweron filename=matched core_identity=unverified"
 )
+# Values come from client.getversion()/emu.getdisplaytype() during Lua capture.
+# Neither API exposes the identity of the active PSX core or verifies its BIOS.
+RUNTIME_PREFLIGHT = re.compile(
+    r"VH_PRIVATE_NEUTRAL_RUNTIME_PREFLIGHT "
+    r"bizhawk_version=([0-9]{1,3}\.[0-9]{1,3}(?:\.[0-9]{1,3})?) "
+    r"display=(NTSC|PAL) active_core=unverified"
+)
 START_PREFLIGHT = ("VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 "
                    "candidate_input=1661 first_start_pressed=yes "
                    "ps1_input_delivery=unverified")
@@ -108,6 +115,7 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
     completed = 0
     preflight = False
     source_preflight = False
+    runtime_profile = None
     process_exit = False
     core_poll_observed = False
     for line in lines:
@@ -123,9 +131,16 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
                     or preflight or completed or observed):
                 raise ValueError("missing, duplicate or misplaced power-on movie source marker")
             source_preflight = True
+        if line.startswith("VH_PRIVATE_NEUTRAL_RUNTIME_PREFLIGHT"):
+            match = RUNTIME_PREFLIGHT.fullmatch(line)
+            if (match is None or runtime_profile is not None
+                    or not source_preflight or preflight or completed or observed
+                    or process_exit):
+                raise ValueError("malformed, duplicate or misplaced runtime profile")
+            runtime_profile = match.groups()
         if line.startswith("VH_PRIVATE_NEUTRAL_START_PREFLIGHT"):
-            if not source_preflight:
-                raise ValueError("missing power-on movie source marker before live Start")
+            if not source_preflight or runtime_profile is None:
+                raise ValueError("missing source or runtime profile before live Start")
             if (line != START_PREFLIGHT
                     or preflight or completed or observed):
                 raise ValueError("missing, duplicate or misplaced live Start anchor")
@@ -150,7 +165,8 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
                     or int(counter) != int(candidate) + 1):
                 raise ValueError("log counter, role or source frame differs")
             observed.append(item)
-    if (not source_preflight or not preflight or completed != 1 or not process_exit
+    if (not source_preflight or runtime_profile is None
+            or not preflight or completed != 1 or not process_exit
             or len(observed) != len(planned)):
         raise ValueError("capture log missing Start anchor, successful process exit or completion")
 
@@ -191,6 +207,9 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
         "owner_log_reports_live_first_start_anchor_before_screenshots": True,
         "owner_log_reports_poweron_movie_path_match": True,
         "owner_log_reports_input_poll_callback": core_poll_observed,
+        "reported_bizhawk_version": runtime_profile[0],
+        "reported_psx_display_standard": runtime_profile[1],
+        "active_octoshock_core_verified": False,
         "savestate_free_real_replay_authenticated": False,
         "owner_launcher_reports_successful_process_exit": True,
         "all_png_crc_zlib_scanlines_pass": True,
