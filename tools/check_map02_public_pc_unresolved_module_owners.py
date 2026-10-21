@@ -520,7 +520,10 @@ def summarize_high_fanout_abs64_patch_gaps(
             "over_64": 0, "non_multiple_8": 0}
     counts_per_object = []
     total = 0
-    sections = 0
+    # Count physical (object, section) pairs separately from the per-symbol
+    # groups whose internal gaps are measured independently.
+    source_sections = set()
+    section_groups = 0
     smallest_positive_gap = None
     singleton_sections = 0
     for index, symbols in enumerate(game_abs64_offsets):
@@ -541,7 +544,8 @@ def summarize_high_fanout_abs64_patch_gaps(
             for locations in groups.values():
                 if len(locations) != len(set(locations)):
                     raise ValueError("MAP02 duplicate ABS64 gap offset in data section")
-                sections += 1
+                source_sections.add((index, section))
+                section_groups += 1
                 singleton_sections += len(locations) == 1
                 sorted_offsets = sorted(locations)
                 for left, right in zip(sorted_offsets, sorted_offsets[1:]):
@@ -564,16 +568,17 @@ def summarize_high_fanout_abs64_patch_gaps(
             counts_per_object.append(owned_count)
     ordered = sorted(counts_per_object, reverse=True)
     gap_total = sum(bins.values())
-    if (gap_total != total - sections
-            or (not total and (sections or ordered or smallest_positive_gap is not None))
+    if (gap_total != total - section_groups
+            or (not total and (section_groups or source_sections or ordered
+                               or smallest_positive_gap is not None))
             or (total > 0 and not ordered)
             or sum(ordered) != total
-            or not 0 <= singleton_sections <= sections):
+            or not 0 <= singleton_sections <= section_groups):
         raise ValueError("MAP02 ABS64 gap histogram consistency failed")
     return {
         "high_fanout_abs64_gap_total_records": total,
         "high_fanout_abs64_gap_source_objects": len(ordered),
-        "high_fanout_abs64_gap_source_sections": sections,
+        "high_fanout_abs64_gap_source_sections": len(source_sections),
         "high_fanout_abs64_gap_adjacent_site_pairs": gap_total,
         **{"high_fanout_abs64_gap_" + key: value for key, value in bins.items()},
         "high_fanout_abs64_gap_singleton_sections": singleton_sections,
