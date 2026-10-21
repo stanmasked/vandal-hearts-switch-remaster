@@ -335,6 +335,20 @@ class ModuleOwnerTests(unittest.TestCase):
             summary["high_fanout_abs64_addend_records_with_reused_values"], 4)
         self.assertEqual(
             summary["high_fanout_abs64_addend_max_records_sharing_one_value"], 2)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_values_repeated_within_source_object"], 1)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_records_reused_within_source_object"], 2)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_values_shared_across_source_objects"], 1)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_records_with_cross_object_shared_values"], 2)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_max_records_same_value_in_one_object"], 2)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_min_distinct_values_per_source_object"], 2)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_max_distinct_values_per_source_object"], 3)
 
     def test_addend_missing_original_relocation_witness_is_rejected(self):
         game = [{"one"} for _ in range(8)]
