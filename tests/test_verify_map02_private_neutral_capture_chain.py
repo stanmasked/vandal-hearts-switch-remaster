@@ -231,6 +231,30 @@ class CaptureAuditTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.call()
 
+    def test_capture_root_inside_git_checkout_refused(self):
+        (self.base / ".git").mkdir()
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_capture_root_under_worktree_git_file_refused(self):
+        (self.base / ".git").write_text("gitdir: /other/worktree", encoding="ascii")
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_capture_root_under_symlinked_git_parent_refused(self):
+        # The root itself is real, but a parent folder is a symbolic link.
+        with tempfile.TemporaryDirectory() as outer:
+            actual = Path(outer)
+            (actual / ".git").mkdir()
+            links = self.base / "alias"
+            links.symlink_to(actual, target_is_directory=True)
+            real_pictures = actual / "capture"
+            real_pictures.mkdir()
+            for f in self.images.glob("*.png"):
+                (real_pictures / f.name).write_bytes(f.read_bytes())
+            with self.assertRaises(ValueError):
+                self.call(pictures=links / "capture")
+
     def test_private_plan_symlink_refused(self):
         other = self.base / "plan-other"
         other.write_bytes(self.plan.read_bytes())
