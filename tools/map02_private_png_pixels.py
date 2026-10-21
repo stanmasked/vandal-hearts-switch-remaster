@@ -31,11 +31,14 @@ def _paeth(left: int, upper: int, upper_left: int) -> int:
 
 
 def private_normalized_pixel_sha256(png: bytes) -> bytes | None:
-    """Digest reconstructed 8-bit RGB/RGBA pixel bytes, or None if unsupported.
+    """Digest canonical RGBA samples, or None if visual semantics are unclear.
 
-    Filtered scanline bytes, IDAT compression and ancillary PNG metadata are
-    ignored; width/height/channel count are included in the private digest.
-    Raises ValueError for invalid PNGs. Returned digest is never printed.
+    Expand ordinary RGB samples with opaque alpha, so an RGB PNG matches an
+    otherwise identical RGBA PNG. Ignore PNG filtering and innocuous text
+    metadata, but do not silently ignore tRNS transparency, color profiles,
+    gamma or significant-bits metadata; those formats require manual review.
+    This is sample equality, NOT a color-managed display/pixel render proof.
+    Raises ValueError for invalid PNGs. Digest is never printed.
     """
     width, height = png_header_and_crc(png)
     verify_idat_scanlines(png)
@@ -44,6 +47,7 @@ def private_normalized_pixel_sha256(png: bytes) -> bytes | None:
     end = 8
     idat = []
     pixel_channels = None
+    color_semantics_unsupported = False
     while end < len(png):
         length = struct.unpack_from(">I", png, end)[0]
         kind = png[end + 4:end + 8]
@@ -55,11 +59,17 @@ def private_normalized_pixel_sha256(png: bytes) -> bytes | None:
                 raise ValueError("PNG dimensions inconsistent")
             if depth == 8 and interlace == 0 and color in (2, 6):
                 pixel_channels = 3 if color == 2 else 4
+        elif kind in (b"tRNS", b"gAMA", b"cHRM", b"sRGB",
+                      b"iCCP", b"sBIT", b"cICP"):
+            # PNG tRNS affects opacity. Gamma/chromaticity/ICC/sBIT (and
+            # newer color metadata) may affect a viewer's interpretation.
+            # We compare only unambiguous RGB/RGBA samples without those.
+            color_semantics_unsupported = True
         elif kind == b"IDAT":
             idat.append(data)
         elif kind == b"IEND":
             break
-    if pixel_channels is None:
+    if pixel_channels is None or color_semantics_unsupported:
         return None
     stride = width * pixel_channels
     expanded_size = height * (stride + 1)
@@ -75,7 +85,10 @@ def private_normalized_pixel_sha256(png: bytes) -> bytes | None:
         raise ValueError("PNG expanded data malformed")
 
     result = hashlib.sha256()
-    result.update(struct.pack(">IIB", width, height, pixel_channels))
+    # Both color type 2 (RGB) and type 6 (RGBA) hash the same canonical
+    # sample space; retain dimensions to avoid cross-size collisions.
+    result.update(b"VH_RGBA_SAMPLES_V1")
+    result.update(struct.pack(">IIB", width, height, 4))
     prior = bytearray(stride)
     offset = 0
     for _ in range(height):
@@ -101,6 +114,15 @@ def private_normalized_pixel_sha256(png: bytes) -> bytes | None:
             else:
                 raise ValueError("PNG scanline filter is invalid")
             row[i] = (value + predictor) & 0xff
-        result.update(row)
+        if pixel_channels == 4:
+            result.update(row)
+        else:
+            opaque_rgba = bytearray(width * 4)
+            for x in range(width):
+                source = x * 3
+                dest = x * 4
+                opaque_rgba[dest:dest + 3] = row[source:source + 3]
+                opaque_rgba[dest + 3] = 255
+            result.update(opaque_rgba)
         prior = row
     return result.digest()
