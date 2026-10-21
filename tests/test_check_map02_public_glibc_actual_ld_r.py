@@ -37,7 +37,8 @@ class RealGlibcGroupedLinkTests(unittest.TestCase):
 
     def probe(self, folder="real-ld-r", **kwargs):
         return audit_glibc_real_link(
-            self.orig_manifest, self.sdl_manifest, self.four_elf,
+            self.orig_manifest, self.original,
+            self.sdl_manifest, self.sdl_elf, self.four_elf,
             self.root / "provider-census/glibc-system-libc-static.a",
             self.root / "provider-census/glibc-system-libm-static.a",
             self.census_json, self.root / folder,
@@ -76,7 +77,8 @@ class RealGlibcGroupedLinkTests(unittest.TestCase):
         self.build_case()
         with self.assertRaisesRegex(ValueError, "original origin baseline invalid"):
             audit_glibc_real_link(
-                self.orig_manifest, self.sdl_manifest, self.four_elf,
+                self.orig_manifest, self.original,
+            self.sdl_manifest, self.sdl_elf, self.four_elf,
                 self.root / "provider-census/glibc-system-libc-static.a",
                 self.root / "provider-census/glibc-system-libm-static.a",
                 self.census_json, self.root / "bad-baseline",
