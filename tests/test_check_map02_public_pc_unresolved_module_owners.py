@@ -9,6 +9,7 @@ from tools.check_map02_public_pc_unresolved_module_owners import (
     SCHEMA, LINK_SCHEMA, summarize_owner_groups,
     summarize_game_only_fanout, read_link_report,
     parse_readelf_global_undefined_types, summarize_high_fanout_elf_types,
+    parse_readelf_relocation_types, summarize_high_fanout_relocations,
 )
 from tools.check_map02_public_reloc_link import _undefined_symbol_names
 
@@ -146,6 +147,73 @@ class ModuleOwnerTests(unittest.TestCase):
             self.assertIn("external_global", strong)
             self.assertIn("external_function", strong)
             self.assertTrue(set(strong).issubset(types))
+
+    def test_high_fanout_relocation_kind_presence_is_disjoint(self):
+        game = [{"plt", "pc", "both", "other", "none", "shared"}
+                for _ in range(8)]
+        game[0].add("rare")
+        kinds = [{
+            "plt": [("R_X86_64_PLT32", ".rela.text")],
+            "pc": [("R_X86_64_PC32", ".rela.text")],
+            "both": ([("R_X86_64_PLT32", ".rela.text")] if i < 4
+                     else [("R_X86_64_PC32", ".rela.text")]),
+            "other": [("R_X86_64_GOTPCREL", ".rela.data")],
+            "shared": [("R_X86_64_PLT32", ".rela.text")],
+        } for i in range(8)]
+        result = summarize_high_fanout_relocations(
+            {"plt", "pc", "both", "other", "none", "shared", "rare"},
+            game, [{"shared"}], kinds)
+        self.assertEqual(result["high_fanout_game_only_imports_with_relocation_check"], 5)
+        self.assertEqual(result["high_fanout_reloc_plt32_only"], 1)
+        self.assertEqual(result["high_fanout_reloc_pc32_only"], 1)
+        self.assertEqual(result["high_fanout_reloc_plt32_and_pc32"], 1)
+        self.assertEqual(result["high_fanout_reloc_other_or_mixed"], 1)
+        self.assertEqual(result["high_fanout_reloc_no_relocation_record"], 1)
+        self.assertEqual(result["high_fanout_only_nontext_relocation_names"], 1)
+        self.assertEqual(result["high_fanout_reloc_plt32_records"], 12)
+        self.assertEqual(result["high_fanout_reloc_pc32_records"], 12)
+        self.assertEqual(result["high_fanout_reloc_other_records"], 8)
+        self.assertTrue(result["relocation_types_do_not_prove_function_or_data_semantics"])
+
+    def test_parse_readelf_relocation_rows_with_addend(self):
+        table = (
+            "Relocation section '.rela.text' at offset 0x1a0 contains 2 entries:\n"
+            "    Offset             Info             Type               Symbol's Value  Symbol's Name + Addend\n"
+            "000000000000001b  0000000500000004 R_X86_64_PLT32         0000000000000000 ext_func - 4\n"
+            "0000000000000021  0000000400000002 R_X86_64_PC32          0000000000000000 ext_data - 4\n"
+            "Relocation section '.rela.eh_frame' at offset 0x230 contains 1 entry:\n"
+            "0000000000000020  0000000200000002 R_X86_64_PC32          0000000000000000 .text + 0\n"
+        )
+        output = parse_readelf_relocation_types(table)
+        self.assertEqual(output["ext_func"], [("R_X86_64_PLT32", ".rela.text")])
+        self.assertEqual(output["ext_data"], [("R_X86_64_PC32", ".rela.text")])
+        self.assertEqual(output[".text"], [("R_X86_64_PC32", ".rela.eh_frame")])
+
+    def test_native_cc_readelf_relocation_rows_for_function_and_data(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            src, obj = root / "reloc.c", root / "reloc.o"
+            src.write_text(
+                "extern int ext_func(int);\n"
+                "extern int ext_var;\n"
+                "int use(int x){return ext_func(x) + ext_var;}\n")
+            subprocess.run(["cc", "-c", "-O0", "-fno-pie", "-o",
+                            str(obj), str(src)],
+                           capture_output=True, check=True, timeout=30)
+            report = subprocess.run(
+                ["readelf", "-rW", str(obj)], capture_output=True,
+                text=True, check=True, timeout=30)
+            kinds = parse_readelf_relocation_types(report.stdout)
+            self.assertTrue(any(t == "R_X86_64_PLT32"
+                                for t, _ in kinds["ext_func"]))
+            self.assertTrue(any(t == "R_X86_64_PC32"
+                                for t, _ in kinds["ext_var"]))
+
+    def test_relocation_evidence_disallows_forged_source_inventory(self):
+        with self.assertRaisesRegex(ValueError, "inventory invalid"):
+            summarize_high_fanout_relocations(
+                {"a"}, [{"a"} for _ in range(8)], [],
+                [{} for _ in range(7)])
 
     def test_unattributed_name_not_silently_counted_as_owned(self):
         r = summarize_owner_groups(
