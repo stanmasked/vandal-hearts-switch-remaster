@@ -1,0 +1,22 @@
+# MAP02 Stage308 — opt-in direct CPAL / ALSA thread-local identity tagging
+
+**Research-only / Draft / DO NOT MERGE.** Stacked after confirmed [Stage307 PR #405](https://github.com/stanmasked/vandal-hearts-switch-remaster/pull/405). The completed [Stage307 Actions #39587269884](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39587269884) established **co-activity, not ownership**: real 22ms guest CPAL counter increased 2244 while a low-rate anonymous ALSA thread made 2244 `snd_pcm_writei` calls across 119/119 aligned 200ms bins; at 21ms the high-rate ALSA thread continued but CPAL did not advance.
+
+## Source-level plan for direct identity proof
+
+The old Stage298 NeXium executable SHA-256 `fb154cbd581826a4f217485eff338badf0ea14c28a82bff258e7baf32c84153a` is **left untouched** as the historical control. Its CPAL P/L reporter exposes cumulative entries, but **does not expose CPAL callback thread identity**. Matching 200ms counts cannot prove the ownership of any ALSA thread.
+
+To obtain a direct correspondence requires **an entirely new opt-in experimental NeXium ELF** built from frozen NeXium upstream `nexium-emu/nexium` revision `089562567a0a8760dfdd8420e1f57c35159a9219`. The proposed Stage308 research-only patch applies AFTER the same original Stage274, Stage286, Stage298 source overlays and patches **only** `upstream/nexium-runner/src/audio.rs` within GitHub Actions. It resolves `vh_map02_stage308_cpal_callback_mark` once on the **non-realtime stream build path** using `dlsym(RTLD_DEFAULT)` iff `VH_MAP02_STAGE308_CALLBACK_TAG=1`. In both F32 and I16 CPAL callbacks it performs only an atomic pointer load and a direct no-argument shim call; no syscall, thread ID extraction, clock call, logging, filesystem I/O, dynamic symbol lookup, lock or allocation inside the callback. The entire telemetry stays experimental and opt-in.
+
+The new C shim is based on the source-reviewed Stage305 ALSA `LD_PRELOAD` userspace interposer but extends its **private same-process mmap** with 64 anonymous callback counters at exact byte offset 32768. Both the CPAL marker and the nine original `snd_pcm_*` wrappers share **the exact same process-local thread-local alias allocator**. Thus an ALSA alias with a positive CPAL marker becomes directly attributable to **the same native execution thread within that process**, not solely correlated by time. No PID, Linux TID, thread name, raw pointer, audio sample or call arguments are exported. An alias value from one CI runner or process MUST NEVER be identified with the same numeric alias in another run.
+
+## What is validated in Stage308
+
+1. Exact source-anchored patch rejects any missing/ambiguous callback anchors and keeps both pre-existing CPAL P/L reporter schemas, both entry/return counters, and no accidental `stream.pause()`.
+2. The new C library passes `gcc -Wall -Wextra -Werror` and asserts at compile time that callback counters fit in the preexisting 65536-byte private mmap.
+3. A **synthetic, non-licensed two-thread ALSA `null` test** runs with and without `LD_PRELOAD`; identical returned results are required. One thread invokes the marker 7 times while making 10 ALSA `prepare` calls; another thread makes 15 ALSA `prepare` calls with no marker. The private shared-memory audit must prove exactly one TLS alias owns (7 marker callbacks, 10 ALSA preparations) and the other owns (0 markers, 15 ALSA preparations). No real NeXium process or original game ROM/audio is involved in this synthetic test.
+4. CI applies original source overlays against the same exact pinned NeXium upstream SHA and parses the *experimental source* with `rustfmt`. This is **source and synthetic behavior validation, NOT a Rust type-check, compiled NeXium ELF, guest boot, or actual CPAL runtime identity observation**.
+
+A **separate actual experimental NeXium build and ROM-free guest run** must occur before real direct ownership can be claimed. The Stage308 source gate intentionally does NOT assert real NeXium execution success or an ALSA backend root cause. This additional host instrumentation also perturbs the callback by an atomic counter and an extra function call, so it cannot exclude instrumentation-caused scheduling changes or prove the 21ms/22ms latency boundary.
+
+No changes to main, physical Switch game, preexisting executable, ROM-free NRO, original PS1 audio or NeXium upstream repository. The Stage308 PR remains Draft until the stage is source/synthetic verified. **No production audio repair or device DAC proof.**
