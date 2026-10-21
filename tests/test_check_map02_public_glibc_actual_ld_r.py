@@ -4,7 +4,9 @@ from pathlib import Path
 import unittest
 
 from tools.check_map02_public_glibc_pc_provider_census import audit_glibc_static_coverage
-from tools.check_map02_public_glibc_actual_ld_r import audit_glibc_real_link, SCHEMA
+from tools.check_map02_public_glibc_actual_ld_r import (
+    audit_glibc_real_link, _reject_strong_to_weak_undefined, SCHEMA,
+)
 from tests.test_check_map02_public_glibc_pc_provider_census import (
     OriginalPCGLibCProviderCensusTests as Fixture,
 )
@@ -74,6 +76,7 @@ class RealGlibcGroupedLinkTests(unittest.TestCase):
         self.assertTrue(result["actual_native_grouped_ld_r_executed"])
         self.assertFalse(result["fully_linked_game_executable"])
         self.assertFalse(result["authentic_map02_execution_proven"])
+        self.assertEqual(result["strong_input_still_weak_undefined"], 0)
         self.assertFalse(result["private_symbol_names_disclosed"])
         for sensitive in ("orig_libc", "orig_libm", "orig_both",
                           "orig_uncovered", str(self.root)):
@@ -89,6 +92,11 @@ class RealGlibcGroupedLinkTests(unittest.TestCase):
         self.assertEqual(result["original_pc_weak_only_still_undefined"], 0)
         self.assertEqual(result["original_pc_no_export_candidate"], 1)
         self.assertEqual(result["original_pc_resolved_by_real_glibc_ld_r"], 3)
+
+    def test_strong_to_weak_undefined_is_not_resolved(self):
+        with self.assertRaisesRegex(ValueError, "remains weak-undefined"):
+            _reject_strong_to_weak_undefined({"still_ref"}, {"still_ref"})
+        _reject_strong_to_weak_undefined({"actually_resolved"}, {"other_weak"})
 
     def test_report_source_sha_mismatch_fails_before_link(self):
         self.build_case()
