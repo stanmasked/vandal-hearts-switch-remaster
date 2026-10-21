@@ -32,12 +32,12 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           architecture: x64
-      - name: Exercise 24 fabricated source-and-human-label scenarios
+      - name: Exercise 25 fabricated source-and-human-label scenarios
         shell: bash
         run: |
           set -euo pipefail
           python -m unittest discover -s tests -p 'test_map02_private_reviewed_scene_candidates.py' -v \
             2>&1 | tee "$RUNNER_TEMP/map02-reviewed-candidate-shortlist.log"
-          grep -F 'Ran 24 tests' "$RUNNER_TEMP/map02-reviewed-candidate-shortlist.log"
+          grep -F 'Ran 25 tests' "$RUNNER_TEMP/map02-reviewed-candidate-shortlist.log"
           if grep -E '^(FAILED|ERROR)' "$RUNNER_TEMP/map02-reviewed-candidate-shortlist.log"; then exit 1; fi
-          echo 'VH_MAP02_PRIVATE_SHORTLIST_PASS synthetic=24 original_bk2=0 real_ps1=0 scene_authenticated=0'
+          echo 'VH_MAP02_PRIVATE_SHORTLIST_PASS synthetic=25 original_bk2=0 real_ps1=0 scene_authenticated=0'
