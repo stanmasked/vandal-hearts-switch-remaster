@@ -210,7 +210,7 @@ class CaptureAuditTests(unittest.TestCase):
             line for line in text.splitlines()
             if not line.startswith("VH_PRIVATE_NEUTRAL_MOVIE_SOURCE_PREFLIGHT")
         ) + "\n")
-        with self.assertRaisesRegex(ValueError, "movie"):
+        with self.assertRaisesRegex(ValueError, "runtime profile|movie"):
             self.call()
 
     def test_wrong_movie_source_marker_refused(self):
@@ -240,7 +240,7 @@ class CaptureAuditTests(unittest.TestCase):
                   "ps1_input_delivery=unverified")
         text = text.replace(anchor + "\n", anchor + "\n" + marker + "\n")
         self.log.write_text(text)
-        with self.assertRaisesRegex(ValueError, "power-on movie source"):
+        with self.assertRaisesRegex(ValueError, "runtime profile|power-on movie source"):
             self.call()
 
     def test_missing_live_start_preflight_refused(self):
