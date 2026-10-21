@@ -54,7 +54,11 @@ def run(output):
     except (OSError,ValueError):
         paranoid=None
     tracing_path=Path("/sys/kernel/tracing/uprobe_events")
-    usable=tracing_path.exists() and os.access(tracing_path,os.W_OK)
+    try:
+        usable=tracing_path.exists() and os.access(tracing_path,os.W_OK)
+    except PermissionError:
+        # An unprivileged Actions runner may not even stat tracefs.
+        usable=False
     result={"schema":SCHEMA,
             "result":"REAL_RUNNER_ALSA_SYMBOL_EXPORTS_SOURCE_VERIFIED",
             "libasound":library,
