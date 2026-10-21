@@ -42,12 +42,16 @@ def _output_path_safely_uncreated(path: Path) -> Path:
     if destination.exists() or destination.is_symlink():
         raise ValueError("refusing to overwrite or follow an existing private output")
     parent = destination.parent
-    if (not parent.is_dir() or parent.is_symlink()
-            or parent.resolve(strict=True) != parent):
+    # macOS /var is canonically /private/var. Allow that standard ancestor
+    # mapping while still rejecting a symlink as the *named output directory*
+    # and checking Git roots on both the lexical and resolved ancestry.
+    if not parent.is_dir() or parent.is_symlink():
         raise ValueError("private output directory must be real and not symlinked")
+    resolved_parent = parent.resolve(strict=True)
     if any(
         p.name == ".git" or (p / ".git").exists()
-        for p in (parent, *parent.parents)
+        for root in (parent, resolved_parent)
+        for p in (root, *root.parents)
     ):
         raise ValueError("private screenshots cannot be written inside a Git checkout")
     return destination
