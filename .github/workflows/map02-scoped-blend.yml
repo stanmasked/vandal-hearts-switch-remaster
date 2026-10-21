@@ -97,6 +97,8 @@ on:
       - 'tests/test_check_map02_public_four_archive_import_origin.py'
       - 'tools/check_map02_public_glibc_pc_provider_census.py'
       - 'tests/test_check_map02_public_glibc_pc_provider_census.py'
+      - 'tools/check_map02_public_glibc_actual_ld_r.py'
+      - 'tests/test_check_map02_public_glibc_actual_ld_r.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -256,6 +258,8 @@ on:
       - 'tests/test_check_map02_public_four_archive_import_origin.py'
       - 'tools/check_map02_public_glibc_pc_provider_census.py'
       - 'tests/test_check_map02_public_glibc_pc_provider_census.py'
+      - 'tools/check_map02_public_glibc_actual_ld_r.py'
+      - 'tests/test_check_map02_public_glibc_actual_ld_r.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -353,6 +357,7 @@ jobs:
             tests.test_check_map02_public_four_archive_group \
             tests.test_check_map02_public_four_archive_import_origin \
             tests.test_check_map02_public_glibc_pc_provider_census \
+            tests.test_check_map02_public_glibc_actual_ld_r \
             tests.test_check_map02_private_archive_strategy_compare \
             tests.test_verify_map02_private_archive_comparison \
             tests.test_run_map02_private_link_gap_audit
@@ -889,6 +894,52 @@ jobs:
           assert result["authentic_map02_execution_proven"] is False
           print("Real glibc libc/libm ordinary-archive export census of 493 original PC imports done.")
           print("No glibc link, gameplay, or Switch execution is implied.")
+          PY
+      - name: Experimental genuine grouped GNU libc and libm relocatable link
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m tools.check_map02_public_glibc_actual_ld_r \
+            "${RUNNER_TEMP}/map02-public-code-reloc/map02-unresolved-symbols.private.json" \
+            "${RUNNER_TEMP}/map02-public-code-reloc/map02-public-original-cd-gpu-reloc.o" \
+            "${RUNNER_TEMP}/map02-real-x11-native-provider/after-sdl2-unresolved.private.json" \
+            "${RUNNER_TEMP}/map02-real-sdl2-native-provider/linked/map02-private-candidate-linked.o" \
+            "${RUNNER_TEMP}/map02-real-four-archive-group/linked/map02-private-candidate-linked.o" \
+            "${RUNNER_TEMP}/map02-glibc-static-original-pc-census/glibc-system-libc-static.a" \
+            "${RUNNER_TEMP}/map02-glibc-static-original-pc-census/glibc-system-libm-static.a" \
+            "${RUNNER_TEMP}/map02-glibc-original-pc-census-aggregate.json" \
+            "${RUNNER_TEMP}/map02-real-glibc-grouped-ld-r" \
+            | tee "${RUNNER_TEMP}/map02-real-glibc-grouped-ld-r-aggregate.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          census = json.loads((root / "map02-glibc-original-pc-census-aggregate.json").read_text())
+          result = json.loads((root / "map02-real-glibc-grouped-ld-r-aggregate.json").read_text())
+          assert result["input_four_elf_sha256"] == census["four_group_public_elf_sha256"]
+          assert result["libc_archive_sha256"] == census["copied_native_libc_archive_sha256"]
+          assert result["libm_archive_sha256"] == census["copied_native_libm_archive_sha256"]
+          assert result["initial_four_group_undefined"] == 983
+          assert result["initial_original_pc_undefined"] == 493
+          assert (result["original_pc_resolved_by_real_glibc_ld_r"] +
+                  result["original_pc_remaining_after_real_glibc_ld_r"] == 493)
+          assert (result["original_pc_remaining_after_real_glibc_ld_r"] +
+                  result["sdl2_survivors_remaining_after_real_glibc_ld_r"] +
+                  result["four_archive_new_remaining_after_real_glibc_ld_r"] +
+                  result["glibc_new_strong_undefined"] ==
+                  result["final_strong_undefined"])
+          assert result["actual_native_grouped_ld_r_executed"] is True
+          assert result["final_product_is_elf_rel_only"] is True
+          assert result["fully_linked_game_executable"] is False
+          assert result["authentic_map02_execution_proven"] is False
+          assert result["switch_game_proven"] is False
+          assert result["private_symbol_names_disclosed"] is False
+          print("Original PC imports actually resolved by native libc/libm:",
+                result["original_pc_resolved_by_real_glibc_ld_r"])
+          print("Original PC imports remaining:",
+                result["original_pc_remaining_after_real_glibc_ld_r"])
+          print("This is only an ELF ET_REL, never a complete playable game.")
           PY
       - name: Fail closed on upstream rasterizer source drift
         run: |
