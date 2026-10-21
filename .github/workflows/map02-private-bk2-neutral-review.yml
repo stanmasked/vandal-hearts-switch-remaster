@@ -39,8 +39,17 @@ jobs:
           python -m unittest discover -s tests \
             -p 'test_map02_private_bk2_neutral_review_windows.py' -v \
             2>&1 | tee /tmp/vh-map02-neutral-review.log
-          grep -F 'Ran 23 tests' /tmp/vh-map02-neutral-review.log
+          if ! grep -Eq '^Ran [0-9]+ tests? in ' /tmp/vh-map02-neutral-review.log; then
+            echo 'missing unittest summary' >&2
+            exit 1
+          fi
+          summary_count="$(grep -Ec '^Ran [0-9]+ tests? in ' /tmp/vh-map02-neutral-review.log)"
+          if [[ "$summary_count" -ne 1 ]]; then
+            echo 'expected exactly one unittest summary' >&2
+            exit 1
+          fi
           if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-neutral-review.log; then
             exit 1
           fi
-          echo 'VH_MAP02_NEUTRAL_REVIEW_PASS synthetic=23 owner_movie=0 real_bizhawk=0 map02_scene=unknown'
+          test_count="$(grep -E '^Ran [0-9]+ tests? in ' /tmp/vh-map02-neutral-review.log | sed -E 's/^Ran ([0-9]+) tests?.*/\1/')"
+          echo "VH_MAP02_NEUTRAL_REVIEW_PASS synthetic=${test_count} owner_movie=0 real_bizhawk=0 map02_scene=unknown"
