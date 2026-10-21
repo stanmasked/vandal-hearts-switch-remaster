@@ -41,9 +41,11 @@ def raw_sector(user, lba):
 
 
 def write_movie(path, *, game="Vandal Hearts (USA)", core="Octoshock",
-                sync=SYNC, frames=3, log_override=None):
+                sync=SYNC, frames=3, log_override=None,
+                header_extra="", extra_members=None):
     header = ("MovieVersion SyntheticCIOnly\nPlatform PSX\n"
-              + "GameName " + game + "\nCore " + core + "\n")
+              + "GameName " + game + "\nCore " + core + "\n"
+              + header_extra)
     keys = (["#Disc Select", "Open", "Close", "Reset", "#" + AXES[0]]
             + list(AXES[1:]) + ["P1 " + name for name in BUTTONS] + [""])
     neutral = "|1,...|128,128,128,128," + "." * len(BUTTONS) + "|"
@@ -53,6 +55,8 @@ def write_movie(path, *, game="Vandal Hearts (USA)", core="Octoshock",
         archive.writestr("Header.txt", header)
         archive.writestr("SyncSettings.json", sync)
         archive.writestr("Input Log.txt", log_override if log_override is not None else log)
+        for member, payload in (extra_members or {}).items():
+            archive.writestr(member, payload)
 
 
 class DiscMoviePreflightTests(unittest.TestCase):
@@ -110,6 +114,7 @@ class DiscMoviePreflightTests(unittest.TestCase):
         self.assertTrue(result["movie_header_matches_vandal_hearts_usa_psx_octoshock"])
         self.assertTrue(result["movie_sync_matches_one_controller_no_cards"])
         self.assertTrue(result["movie_input_log_matches_expected_frame_count"])
+        self.assertTrue(result["movie_has_no_declared_save_anchor"])
         self.assertTrue(result["media_preflight_ready_for_owner_replay"])
         self.assertFalse(result["exact_disc_movie_compatibility_verified"])
         self.assertFalse(result["actual_octoshock_playback_verified"])
@@ -377,6 +382,41 @@ class DiscMoviePreflightTests(unittest.TestCase):
             self.call(expected_movie_frames=0)
         with self.assertRaisesRegex(ValueError, "frame count"):
             self.call(expected_movie_frames=1500001)
+
+    def test_save_anchored_movie_header_is_not_playback_ready(self):
+        # BizHawk's StartsFromSavestate is presence-based, not a reliable
+        # boolean value. Both "True" and "False" must be refused.
+        for property_line in (
+            "StartsFromSavestate True\n",
+            "StartsFromSavestate False\n",
+            "StartsFromSaveRam False\n",
+            "StartsFromSaveram True\n",
+        ):
+            with self.subTest(property_line=property_line):
+                write_movie(self.movie, header_extra=property_line)
+                result = self.call()
+                self.assertTrue(result["movie_header_matches_vandal_hearts_usa_psx_octoshock"])
+                self.assertTrue(result["movie_sync_matches_one_controller_no_cards"])
+                self.assertTrue(result["movie_input_log_matches_expected_frame_count"])
+                self.assertFalse(result["movie_has_no_declared_save_anchor"])
+                self.assertFalse(result["media_preflight_ready_for_owner_replay"])
+                self.assertNotIn(property_line.strip(), json.dumps(result))
+
+    def test_save_anchor_zip_members_rejected_even_if_header_omits_flag(self):
+        # The payload's presence matters regardless of the written header.
+        for member in ("CoreState", "SaveRam", "SaveRAM"):
+            with self.subTest(member=member):
+                write_movie(self.movie, extra_members={member: b"fictional state"})
+                with self.assertRaisesRegex(ValueError, "unexpected|member"):
+                    self.call()
+                self.assertNotIn("fictional state", json.dumps({"safe": True}))
+
+    def test_missing_save_anchor_header_keeps_static_gate_open(self):
+        write_movie(self.movie, header_extra="Author SyntheticTester\n")
+        result = self.call()
+        self.assertTrue(result["movie_has_no_declared_save_anchor"])
+        self.assertTrue(result["media_preflight_ready_for_owner_replay"])
+        self.assertFalse(result["actual_octoshock_playback_verified"])
 
     def test_wrong_movie_game_header_returns_not_ready(self):
         write_movie(self.movie, game="Vandal Hearts (Japan)")
