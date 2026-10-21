@@ -1014,6 +1014,13 @@ jobs:
           assert r["game_only_reference_pairs"] + r["shared_game_reference_pairs"] == r["game_object_symbol_reference_pairs"]
           assert r["backend_only_reference_pairs"] + r["shared_backend_reference_pairs"] == r["backend_object_symbol_reference_pairs"]
           assert 1 <= r["game_only_max_caller_objects_per_symbol"] <= 85
+          type_buckets = ("function_marker", "object_marker",
+                          "mixed_function_object", "notype_only",
+                          "other_or_unknown")
+          assert r["high_fanout_game_only_imports"] == r["game_only_fanout_eight_or_more"] == 33
+          assert sum(r["high_fanout_elf_" + kind] for kind in type_buckets) == 33
+          assert 0 <= r["high_fanout_with_any_notype_declaration"] <= 33
+          assert r["elf_symbol_type_is_not_proof_of_abi_or_runtime_calls"] is True
           assert r["fanout_counts_distinct_source_objects_not_runtime_calls"] is True
           assert r["only_counts_and_hashes_published"] is True
           assert r["retail_asset_content_accessed"] is False
@@ -1029,6 +1036,10 @@ jobs:
                 r["game_only_reference_pairs"])
           print("Maximum distinct game object callers for one game-only import:",
                 r["game_only_max_caller_objects_per_symbol"])
+          print("High-fanout ELF global undefined type markers:",
+                {kind: r["high_fanout_elf_" + kind] for kind in type_buckets})
+          print("Wide imports with any native NOTYPE marker:",
+                r["high_fanout_with_any_notype_declaration"])
           print("Per-source names and paths are kept private; no retail MAP02 executed.")
           PY
       - name: Fail closed on upstream rasterizer source drift
