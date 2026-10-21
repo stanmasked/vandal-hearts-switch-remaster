@@ -92,7 +92,7 @@ local function run(option)
     end,
   }
   emu = {
-    getsystemid = option == "missing-system-api" and nil or function()
+    getsystemid = function()
       if option == "wrong-system" then return "NES" end
       if option == "system-changed" and counter >= 1664 then return "N64" end
       return "PSX"
@@ -107,6 +107,7 @@ local function run(option)
       end
     end,
   }
+  if option == "missing-system-api" then emu.getsystemid = nil end
   client = {
     screenshot = function(path)
       assert(path:sub(1, #ROOT) == ROOT and path:match("%.png$"),
