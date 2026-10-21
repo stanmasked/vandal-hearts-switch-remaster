@@ -62,6 +62,8 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         ])
         self.assertEqual(env["VH_PRIVATE_CAPTURE_PLAN"], str(self.plan.resolve()))
         self.assertEqual(env["VH_PRIVATE_PNG_DIR"], str(self.output.resolve()))
+        self.assertEqual(env["VH_PRIVATE_CAPTURE_LOG"],
+                         str((self.output / "vh_private_capture.log").resolve()))
         self.assertNotIn("github", str(argv).lower())
 
     def test_owner_original_files_must_not_reside_in_git_checkout(self):
@@ -83,6 +85,18 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         rows = ROWS[:-1] + ["1,after,3502,held"]
         with self.assertRaises(ValueError):
             self.call(source_rows=rows)
+
+    def test_refuses_existing_capture_log(self):
+        (self.output / "vh_private_capture.log").write_text("keep", encoding="ascii")
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_refuses_symlink_capture_log(self):
+        victim = self.root / "victim.log"
+        victim.write_text("keep", encoding="ascii")
+        (self.output / "vh_private_capture.log").symlink_to(victim)
+        with self.assertRaises(ValueError):
+            self.call()
 
     def test_refuses_already_existing_screenshot_output(self):
         (self.output / "vh_review_w01_middle_counter_0003251.png").write_bytes(b"old")
@@ -137,6 +151,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.assertEqual(result, 0)
         run.assert_not_called()
         self.assertIn("emulator_started=0", stream.getvalue())
+        self.assertFalse((self.output / "vh_private_capture.log").exists())
         for private in (self.bk2, self.disc, self.plan, self.output):
             self.assertNotIn(str(private), stream.getvalue())
 
@@ -161,7 +176,33 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.assertEqual(c.args[0][1], "--movie=" + str(self.bk2.resolve()))
         self.assertEqual(c.args[0][2], "--lua=" + str(self.lua.resolve()))
         self.assertEqual(c.kwargs["env"]["VH_PRIVATE_CAPTURE_PLAN"], str(self.plan.resolve()))
+        self.assertEqual(c.kwargs["env"]["VH_PRIVATE_CAPTURE_LOG"],
+                         str((self.output / "vh_private_capture.log").resolve()))
+        logfile = self.output / "vh_private_capture.log"
+        self.assertTrue(logfile.is_file())
+        self.assertEqual(logfile.stat().st_mode & 0o777, 0o600)
+        self.assertIn("exit_success=1", logfile.read_text(encoding="ascii"))
         self.assertIn("original_ps1_authenticated=0", stream.getvalue())
+        self.assertNotIn(str(self.bk2.resolve()), stream.getvalue())
+
+    def test_emuhawk_start_failure_is_logged_without_private_paths(self):
+        args = [
+            "program", str(self.program.resolve()), str(self.disc.resolve()), str(self.bk2.resolve()),
+            str(self.plan.resolve()), str(self.output.resolve()), "--capture-lua", str(self.lua.resolve()),
+            "--launch",
+        ]
+        with patch.object(sys, "argv", args):
+            with patch("tools.map02_private_bizhawk_poweron_launch.plan_lines",
+                       return_value=ROWS):
+                with patch("tools.map02_private_bizhawk_poweron_launch.subprocess.run",
+                           side_effect=OSError("synthetic executable failure")):
+                    stream = io.StringIO()
+                    with contextlib.redirect_stdout(stream):
+                        status = main()
+        self.assertEqual(status, 1)
+        logfile = self.output / "vh_private_capture.log"
+        self.assertIn("VH_PRIVATE_BIZHAWK_LAUNCH_ERROR process_started=0",
+                      logfile.read_text(encoding="ascii"))
         self.assertNotIn(str(self.bk2.resolve()), stream.getvalue())
 
     def test_nonzero_emulator_exit_is_not_reported_successful(self):
