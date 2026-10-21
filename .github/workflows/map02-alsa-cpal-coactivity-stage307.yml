@@ -1,0 +1,95 @@
+name: MAP02 Stage307 source-aligned ALSA CPAL timebin comparison
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-alsa-cpal-coactivity-stage307.yml'
+      - 'tools/audit_map02_alsa_cpal_coactivity_stage307.py'
+      - 'tests/test_audit_map02_alsa_cpal_coactivity_stage307.py'
+      - 'docs/MAP02_ALSA_CPAL_COACTIVITY_STAGE307.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+env:
+  STAGE306_PARENT: '8bbc0578d539fa04ee77da3e21416928ee125c55'
+  SOURCE_STAGE305_RUN: '39558740492'
+  SOURCE_STAGE306_RUN: '39561307115'
+jobs:
+  independent-source-aligned-cpal-alsa:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Source scope, inherited audit tests and synthetic coactivity falsifications
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,subprocess
+          changed=set(subprocess.check_output(["git","diff","--name-only",
+                            os.environ["STAGE306_PARENT"],"HEAD"],text=True).splitlines())
+          allowed={
+              ".github/workflows/map02-alsa-cpal-coactivity-stage307.yml",
+              "tools/audit_map02_alsa_cpal_coactivity_stage307.py",
+              "tests/test_audit_map02_alsa_cpal_coactivity_stage307.py",
+              "docs/MAP02_ALSA_CPAL_COACTIVITY_STAGE307.md"}
+          assert changed and changed<=allowed,sorted(changed-allowed)
+          PY
+          python3 -m unittest discover -s tests -p 'test_audit_map02_alsa_cpal_coactivity_stage307.py' -v
+          python3 -m unittest discover -s tests -p 'test_audit_map02_alsa_guest_window_stage306.py' -v
+          python3 -m unittest discover -s tests -p 'test_audit_map02_alsa_userspace_stage305.py' -v
+          python3 -m py_compile tools/audit_map02_alsa_cpal_coactivity_stage307.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-stage305-real-userspace-alsa-hint21-evidence
+          run-id: ${{ env.SOURCE_STAGE305_RUN }}
+          github-token: ${{ github.token }}
+          path: source/map02-stage305-real-userspace-alsa-hint21-evidence
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-stage305-real-userspace-alsa-hint22-evidence
+          run-id: ${{ env.SOURCE_STAGE305_RUN }}
+          github-token: ${{ github.token }}
+          path: source/map02-stage305-real-userspace-alsa-hint22-evidence
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-stage306-real-source-bound-alsa-guest-window-comparison
+          run-id: ${{ env.SOURCE_STAGE306_RUN }}
+          github-token: ${{ github.token }}
+          path: prior
+      - name: Revalidate Stage306 original receipt then align CPAL and ALSA cumulative snapshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_map02_alsa_cpal_coactivity_stage307.py \
+            --source source \
+            --stage306-receipt prior/stage306-real-stage305-alsa-guest-window.json \
+            --output result/stage307-source-aligned-cpal-alsa-coactivity.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("result/stage307-source-aligned-cpal-alsa-coactivity.json").read_text())
+          assert r["result"]=="REAL_STAGE307_CPAL_ALSA_200MS_SOURCE_ALIGNED_COACTIVITY"
+          assert [t["requested_pulse_hint_ms"] for t in r["trials"]]==[21,22]
+          assert r["prior_stage306_replay_identical_to_GitHub_verified_receipt"]
+          assert r["no_permanent_audio_deadlock_or_production_audio_fix_proven"] is True
+          for trial in r["trials"]:
+              print("Real hint",trial["requested_pulse_hint_ms"],
+                    "source guest CPAL entries",trial["host_cpal_guest_interval_entry_delta"],
+                    "200ms source bins",trial["compared_consecutive_200ms_sampling_intervals"])
+              for alias in trial["tls_alias_coactivity"]:
+                  print("  anonymous TLS alias",alias["anonymous_alias"],
+                        "CPAL/ALSA coactive bins",alias["bins_both_cpal_and_alsa_writei_increment"],
+                        "ALSA writei count",alias["alsa_writei_return_total_delta"],
+                        "CPAL count",alias["host_cpal_callback_entry_delta"])
+          PY
+      - name: Upload only anonymous aggregate counts, not original raw ALSA or Pulse logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage307-real-cpal-alsa-source-timebin-coactivity
+          path: result/stage307-source-aligned-cpal-alsa-coactivity.json
+          if-no-files-found: warn
