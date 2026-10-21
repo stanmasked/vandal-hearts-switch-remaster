@@ -29,6 +29,16 @@ DEFAULT_LIMIT = 20
 MAX_LIMIT = 50
 
 
+def _reject_git_checkout(path: Path) -> Path:
+    """Resolve a source path and refuse Git checkouts and worktrees."""
+    real = Path(path).resolve(strict=True)
+    for parent in (real, *real.parents):
+        marker = parent / ".git"
+        if marker.exists() or marker.is_symlink():
+            raise ValueError("owner-private BK2 must be outside Git checkout/worktree")
+    return real
+
+
 class NeutralReviewCollector:
     """Bounded candidate points with a button-held frame at BOTH edges."""
 
