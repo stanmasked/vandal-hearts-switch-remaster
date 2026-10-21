@@ -26,19 +26,51 @@ from tools.map02_private_human_review_ledger import (
     MAX_REVIEW_BYTES, write_private_new,
 )
 from tools.validate_map02_private_replay_markers import _read_regular
+from tools.verify_map02_private_neutral_capture_chain import parse_plan
+from tools.verify_map02_private_visual_candidates import read_png_private
+from tools.map02_private_png_visual_diff import decode_private_rgb8
 
-SCHEMA = "vh.map02.private-reviewed-scene-candidates.v1"
+SCHEMA = "vh.map02.private-reviewed-scene-candidates.v2"
 STATES = frozenset((
     "requires_pixel_replay",
     "awaiting_manual_classification",
     "human_labels_disagree",
     "requires_game_state_witness",
+    "no_observed_intra_group_pixel_change",
     "not_candidate_in_selected_frames",
 ))
 
 
+def _intra_group_visual_changes(plan: Path, image_root: Path) -> dict[int, bool]:
+    """Validate real in-group decoded RGB changes, not just human labels.
+
+    The caller first audits the source BK2, plan, marker log and all images,
+    including pixel-repeatability across supplied sets. We reject size drift
+    within the same before/middle/after group.
+    """
+    _, rows = parse_plan(plan)
+    grouped: dict[int, dict[str, tuple[int, int, bytes]]] = {}
+    for group, role, input_index, _ in rows:
+        filename = "vh_review_w%02d_%s_counter_%07d.png" % (
+            group, role, input_index + 1)
+        group_images = grouped.setdefault(group, {})
+        if role in group_images:
+            raise ValueError("duplicate frame role in visual-diff audit")
+        group_images[role] = decode_private_rgb8(
+            read_png_private(image_root, filename))
+    result = {}
+    for group, images in grouped.items():
+        if set(images) != set(ROLES):
+            raise ValueError("missing before/middle/after visual frames")
+        b, m, a = (images[role] for role in ROLES)
+        if b[:2] != m[:2] or b[:2] != a[:2]:
+            raise ValueError("within-group frame dimensions disagree")
+        result[group] = b[2] != m[2] and b[2] != a[2]
+    return result
+
+
 def shortlist(positions: list[tuple[int, str]], proof: dict,
-              annotation_csv: Path) -> dict:
+              annotation_csv: Path, visual_changes: dict[int, bool]) -> dict:
     # The upstream annotation CSV checker enforces exact header, roles,
     # bounded labels, full coverage and absence of duplicate/foreign rows.
     annotation_audit = audit_manual_labels(positions, annotation_csv)
@@ -82,6 +114,9 @@ def shortlist(positions: list[tuple[int, str]], proof: dict,
         raise ValueError("missing decoded image comparisons")
 
     groups = sorted({g for g, _ in positions})
+    if (set(visual_changes) != set(groups)
+            or any(type(value) is not bool for value in visual_changes.values())):
+        raise ValueError("incomplete source-validated within-group pixel evidence")
     details = []
     for group in groups:
         labels = [raw_labels[group, role] for role in ROLES]
@@ -95,7 +130,8 @@ def shortlist(positions: list[tuple[int, str]], proof: dict,
         elif (labels[0][0] != "tactical_board"
               and labels[1][0] == "tactical_board"
               and labels[2][0] == "tactical_board"):
-            state = "requires_game_state_witness"
+            state = ("requires_game_state_witness" if visual_changes[group]
+                     else "no_observed_intra_group_pixel_change")
         else:
             state = "not_candidate_in_selected_frames"
         if state not in STATES:
@@ -104,7 +140,12 @@ def shortlist(positions: list[tuple[int, str]], proof: dict,
             "review_group": group,
             "state": state,
             "all_three_positions_exact_rgb_equal_across_supplied_sets": all(exact),
-            "manual_transition_pattern": state == "requires_game_state_witness",
+            "manual_transition_pattern": (
+                labels[0][0] != "tactical_board"
+                and labels[1][0] == labels[2][0] == "tactical_board"
+                and all(a == b for a, b in labels)
+            ),
+            "intra_group_visual_change_confirmed": visual_changes[group],
             "actual_map02_scene_authenticated": False,
         })
 
@@ -122,6 +163,9 @@ def shortlist(positions: list[tuple[int, str]], proof: dict,
             sum(item["state"] == "awaiting_manual_classification" for item in details),
         "review_groups_with_label_conflicts":
             sum(item["state"] == "human_labels_disagree" for item in details),
+        "review_groups_without_intra_group_pixel_change":
+            sum(item["state"] == "no_observed_intra_group_pixel_change"
+                for item in details),
         "groups": details,
         "source_capture_chains_revalidated": True,
         "two_capture_sets_independently_authenticated": False,
@@ -146,7 +190,8 @@ def verify(
         pixel_threshold=0,
     )
     positions = checked_positions(plan, source)
-    return shortlist(positions, source, annotations)
+    visual_changes = _intra_group_visual_changes(plan, images1)
+    return shortlist(positions, source, annotations, visual_changes)
 
 
 def main() -> int:
