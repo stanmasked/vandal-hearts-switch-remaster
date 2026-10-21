@@ -145,7 +145,14 @@ if ([System.IO.Path]::GetFullPath($PluginFile) -cne [System.IO.Path]::GetFullPat
 }
 
 # Hardcoded no-media CLI: there is no --movie, --lua or disc argument.
-# Only the registered external-tool filename is passed to the real host.
+# Fresh Windows CI runners have no usable sound hardware. Upstream
+# MainForm displays a modal "Initialization Error" if the configured
+# sound driver fails, blocking the external-tool startup hook. Supply
+# only a disposable, synthetic CI config with SoundOutputMethod=Dummy.
+# --gdi avoids unrelated GPU backend assumptions in no-game tests.
+$ciConfig = Join-Path $env:RUNNER_TEMP 'vh-map02-only-nomedia-bizhawk211.json'
+$settings = '{"LastWrittenFrom":"2.11","SoundOutputMethod":3}'
+[System.IO.File]::WriteAllText($ciConfig, $settings, [System.Text.Encoding]::UTF8)
 $canary = Join-Path ([System.IO.Path]::GetTempPath()) 'vh-map02-test-inprocess-core.txt'
 Remove-Item -LiteralPath $canary -Force -ErrorAction SilentlyContinue
 $env:VH_MAP02_CI_NO_MEDIA_WITNESS = 'enabled'
@@ -154,7 +161,8 @@ $env:VH_MAP02_CI_NO_MEDIA_CANARY_PATH = $canary
 $stdout = Join-Path $env:RUNNER_TEMP 'vh-map02-gameless-emuhawk-output.txt'
 $stderr = Join-Path $env:RUNNER_TEMP 'vh-map02-gameless-emuhawk-error.txt'
 $hosted = Start-Process -FilePath $emulator -WorkingDirectory $root `
-    -ArgumentList @('--open-ext-tool-dll', 'VhMap02CoreWitness.dll') `
+    -ArgumentList @("--config=$ciConfig", '--gdi',
+        '--open-ext-tool-dll=VhMap02CoreWitness.dll') `
     -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
 try {
     $observed = $false
@@ -238,7 +246,7 @@ try {
     } catch {
         Write-Output 'VH_MAP02_EMUHAWK_CLI_SANITIZED_DIAGNOSTIC unavailable=1'
     } finally {
-        Remove-Item -LiteralPath $stdout, $stderr, $canary -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $stdout, $stderr, $canary, $ciConfig -Force -ErrorAction SilentlyContinue
         Remove-Item Env:VH_MAP02_CI_NO_MEDIA_WITNESS -ErrorAction SilentlyContinue
         Remove-Item Env:VH_MAP02_CI_NO_MEDIA_CANARY_PATH -ErrorAction SilentlyContinue
         $hosted.Dispose()
