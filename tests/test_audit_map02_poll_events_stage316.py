@@ -129,4 +129,15 @@ class OrdinalPollEventTests(unittest.TestCase):
         self.assertIn(0x89,c["active_poll_request_codes_observed_during_guest_window"])
         self.assertTrue(r["sampling_does_not_prove_exact_state_at_guest_input_timestamp"])
 
+    def test_poll_cancellation_cleanup_is_registered_and_preserves_last_return(self):
+        source=(Path(__file__).resolve().parents[1]/"tools"/
+                "map02_poll_events_stage316.c").read_text()
+        self.assertIn("#include <pthread.h>",source)
+        self.assertIn("static void vh_poll_event_cancel_cleanup(void *opaque)",source)
+        self.assertIn("__atomic_fetch_and(&s->poll_event_state[alias], ~UINT64_C(0xff),",source)
+        body=source[source.index("int poll(struct pollfd *fds,nfds_t nfds,int timeout) {"):]
+        body=body[:body.index("\n}")]
+        self.assertLess(body.index("pthread_cleanup_push("),body.index("vh_poll_event_entry("))
+        self.assertLess(body.index("vh_poll_event_return("),body.index("pthread_cleanup_pop(0)"))
+
 if __name__=="__main__":unittest.main()
