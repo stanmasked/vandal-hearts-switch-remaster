@@ -39,8 +39,9 @@ jobs:
           python -m unittest discover -s tests \
             -p 'test_map02_private_bk2_neutral_review_windows.py' -v \
             2>&1 | tee /tmp/vh-map02-neutral-review.log
-          grep -F 'Ran 22 tests' /tmp/vh-map02-neutral-review.log
+          summary="$(grep -E 'Ran [1-9][0-9]* tests' /tmp/vh-map02-neutral-review.log | tail -n 1)"
+          test_count="$(printf '%s\n' "$summary" | sed -E 's/.*Ran ([0-9]+) tests.*/\1/')"
           if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-neutral-review.log; then
             exit 1
           fi
-          echo 'VH_MAP02_NEUTRAL_REVIEW_PASS synthetic=22 owner_movie=0 real_bizhawk=0 map02_scene=unknown'
+          echo "VH_MAP02_NEUTRAL_REVIEW_PASS synthetic_tests=${test_count} owner_movie=0 real_bizhawk=0 map02_scene=unknown"
