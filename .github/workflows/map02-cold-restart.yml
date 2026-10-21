@@ -6,6 +6,8 @@ on:
       - '.github/workflows/map02-cold-restart.yml'
       - 'tests/run_map02_nexium_cold_restart.py'
       - 'tests/test_map02_cold_restart_oracle.py'
+      - 'tools/map02_evidence_bundle.py'
+      - 'tests/test_map02_evidence_bundle.py'
       - 'docs/MAP02_COLD_RESTART_DETERMINISM.md'
   workflow_dispatch:
 
@@ -31,6 +33,8 @@ jobs:
           set -euo pipefail
           python3 -m py_compile tests/run_map02_nexium_cold_restart.py tests/test_map02_cold_restart_oracle.py
           python3 -m unittest discover -s tests -p 'test_map02_cold_restart_oracle.py' -v
+          python3 -m py_compile tools/map02_evidence_bundle.py tests/test_map02_evidence_bundle.py
+          python3 -m unittest discover -s tests -p 'test_map02_evidence_bundle.py' -v
           echo 'VH_MAP02_COLD_RESTART_ORACLE_PASS real_nexium_claim=0 retail=0'
 
   combined-switch-nro:
@@ -178,6 +182,23 @@ jobs:
             --audit-only --evidence-dir map02-cold-restart-evidence \
             | tee map02-cold-restart-evidence/offline-audit.log
           grep -Fx 'VH_MAP02_COLD_RESTART_OFFLINE_AUDIT_PASS frames=24 png_sha256=1 board_rgb_sha256=1 guard_hud_rgb_sha256=1' map02-cold-restart-evidence/offline-audit.log
+      - name: Bind exact tested NRO and 24 PNGs in one verified evidence package
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          cp nros/vandal-hearts-prototype.nro map02-cold-restart-evidence/vandal-hearts-prototype.nro
+          expected_tree="$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD^{tree})"
+          python3 tools/map02_evidence_bundle.py create \
+            --evidence-dir map02-cold-restart-evidence \
+            --source-commit "$EXPECTED_SOURCE" \
+            --source-tree "$expected_tree"
+          python3 tools/map02_evidence_bundle.py verify \
+            --evidence-dir map02-cold-restart-evidence \
+            --source-commit "$EXPECTED_SOURCE" \
+            --source-tree "$expected_tree"
       - name: Upload authentic emulator screenshots and execution log
         if: always()
         uses: actions/upload-artifact@v4
