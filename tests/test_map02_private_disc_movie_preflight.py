@@ -354,6 +354,15 @@ class DiscMoviePreflightTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "analog input"):
             self.call()
 
+    def test_movie_end_marker_without_final_newline_is_valid(self):
+        keys = (["#Disc Select", "Open", "Close", "Reset", "#" + AXES[0]]
+                + list(AXES[1:]) + ["P1 " + name for name in BUTTONS] + [""])
+        neutral = "|1,...|128,128,128,128," + "." * len(BUTTONS) + "|"
+        movie = ("[Input]\nLogKey:" + "|".join(keys) + "\n"
+                 + (neutral + "\n") * 3 + "[/Input]")
+        write_movie(self.movie, log_override=movie)
+        self.assertTrue(self.call()["movie_input_log_matches_expected_frame_count"])
+
     def test_movie_overlong_decompressed_line_is_bounded(self):
         keys = (["#Disc Select", "Open", "Close", "Reset", "#" + AXES[0]]
                 + list(AXES[1:]) + ["P1 " + name for name in BUTTONS] + [""])
