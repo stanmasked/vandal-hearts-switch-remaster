@@ -4,12 +4,31 @@ import io
 import json
 import os
 from pathlib import Path
+import struct
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+import zlib
 
 from tools.map02_private_two_capture_audit import audit_pair, main
+
+def _chunk(kind: bytes, payload: bytes) -> bytes:
+    crc = zlib.crc32(kind + payload) & 0xffffffff
+    return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", crc)
+
+
+def synthetic_rgb_png(pixel: bytes, *, level: int = 6,
+                      extra_text: bool = False) -> bytes:
+    # 1x1 RGB image generated entirely from invented pixel values.
+    if len(pixel) != 3:
+        raise ValueError("synthetic RGB pixel must be exactly three bytes")
+    header = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    metadata = _chunk(b"tEXt", b"Synthetic\\x00CIOnly") if extra_text else b""
+    return (b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", header) + metadata
+            + _chunk(b"IDAT", zlib.compress(b"\x00" + pixel, level))
+            + _chunk(b"IEND", b""))
+
 
 ROWS = [(1, "before", 3000, "held"),
         (1, "middle", 3250, "neutral"),
@@ -73,13 +92,28 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
         self.assertNotIn("fictional-PNG", json.dumps(report))
 
     def test_different_screenshot_bytes_are_reported_not_authenticated(self):
-        (self.second / self.names[1]).write_bytes(b"synthetic changed")
+        name = self.names[1]
+        (self.first / name).write_bytes(synthetic_rgb_png(b"ABC"))
+        (self.second / name).write_bytes(synthetic_rgb_png(b"ABD"))
         report, _ = self.call()
         self.assertEqual(report["byte_identical_png_pairs"], 2)
         self.assertEqual(report["byte_different_png_pairs"], 1)
+        self.assertEqual(report["decoded_pixel_different_pairs"], 1)
         self.assertFalse(report["all_png_file_bytes_identical"])
         self.assertTrue(report["byte_differences_require_manual_visual_review"])
+        self.assertTrue(report["unresolved_pixel_differences_require_manual_review"])
         self.assertFalse(report["rendered_pixel_parity_verified"])
+
+    def test_different_png_encoding_same_pixels_needs_no_review(self):
+        name = self.names[0]
+        (self.first / name).write_bytes(synthetic_rgb_png(b"ABC", level=0))
+        (self.second / name).write_bytes(synthetic_rgb_png(b"ABC", level=9, extra_text=True))
+        report, _ = self.call()
+        self.assertEqual(report["byte_different_png_pairs"], 1)
+        self.assertEqual(report["decoded_pixel_equal_pairs"], 3)
+        self.assertEqual(report["decoded_pixel_different_pairs"], 0)
+        self.assertTrue(report["all_supported_png_pixel_content_equal"])
+        self.assertFalse(report["unresolved_pixel_differences_require_manual_review"])
 
     def test_same_directory_rejected_before_capture_verification(self):
         with self.assertRaisesRegex(ValueError, "separate private directories"):
@@ -134,7 +168,8 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
             self.call(count_b=2)
 
     def test_main_returns_review_code_for_different_png_bytes(self):
-        (self.second / self.names[-1]).write_bytes(b"fictional changed encoding")
+        (self.first / self.names[-1]).write_bytes(synthetic_rgb_png(b"ABC"))
+        (self.second / self.names[-1]).write_bytes(synthetic_rgb_png(b"ABD"))
         args = ["audit", str(self.movie), str(self.plan), str(self.first),
                 str(self.second)]
         with patch.object(sys, "argv", args), patch(
