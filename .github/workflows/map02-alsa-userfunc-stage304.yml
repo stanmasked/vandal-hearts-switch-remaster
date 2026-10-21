@@ -172,8 +172,18 @@ jobs:
             tools/map02_alsa_avail_preload_stage304.c \
             -ldl -pthread
           test -s research/libvh_map02_alsa_stage304.so
-          nm -D --defined-only research/libvh_map02_alsa_stage304.so |
-            grep -E ' [T] snd_pcm_avail_delay
+          nm -D --defined-only research/libvh_map02_alsa_stage304.so | grep -F 'snd_pcm_avail_delay'
+          ldd research/libvh_map02_alsa_stage304.so >evidence/research-also-library-links.txt
+          ! grep -F 'not found' evidence/research-also-library-links.txt
+          sha256sum research/libvh_map02_alsa_stage304.so | cut -d' ' -f1 >evidence/research-alsa-preload-sha256.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          data=Path('research/libvh_map02_alsa_stage304.so').read_bytes()
+          assert len(data)>10000 and data[:4]==b'\x7fELF'
+          assert Path('evidence/research-alsa-preload-sha256.txt').read_text().strip()==hashlib.sha256(data).hexdigest()
+          print('Compiled research ALSA observer:',hashlib.sha256(data).hexdigest())
+          PY
       - name: Run real NRO on new NeXium, same old guest path, opt-in P reporter
         timeout-minutes: 6
         shell: bash
