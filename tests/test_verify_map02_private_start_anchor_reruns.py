@@ -65,7 +65,8 @@ class PrivateStartAnchorRerunsTests(unittest.TestCase):
         result = self.call()
         self.assertTrue(result["png_sha256_repeats_identically"])
         self.assertEqual(result["capture_counters_one_based"], [1661, 1662, 1663])
-        self.assertEqual(result["independent_capture_run_count"], 2)
+        self.assertEqual(result["separate_capture_bundle_count"], 2)
+        self.assertFalse(result["capture_run_independence_authenticated"])
         for key in ("emulator_playback_executed_authenticated",
                     "screen_pixel_provenance_verified",
                     "input_to_displayed_image_offset_independently_verified",
