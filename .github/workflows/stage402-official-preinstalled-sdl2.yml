@@ -56,7 +56,8 @@ jobs:
           export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
           make sdl2-audio-probe
           test -s build/sdl2-audio-switch-probe.nro
-          file build/sdl2-audio-switch-probe.nro
+          # The original Makefile's tests/check_nro.py already validated NRO0
+          # and segment boundaries. The minimal official image lacks `file`.
           sha256sum build/sdl2-audio-switch-probe.nro | tee stage402-native-nro-sha256.txt
           echo "STAGE402_REAL_NRO_COMPILED_AND_HASHED" >> stage402-preinstalled-sdl2-receipt.txt
 
