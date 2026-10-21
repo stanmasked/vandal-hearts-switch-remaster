@@ -4,6 +4,7 @@ on:
     paths:
       - '.github/workflows/map02-bizhawk211-external-tool-compile.yml'
       - 'tools/map02_runtime_core_witness/**'
+      - 'tools/map02_runtime_core_witness_smoke/**'
       - 'docs/MAP02_RUNTIME_CORE_WITNESS.md'
   workflow_dispatch:
 permissions:
@@ -59,6 +60,26 @@ jobs:
             throw 'compiled witness assembly missing'
           }
           Write-Output 'VH_MAP02_REAL_BIZHAWK211_ASSEMBLY_COMPILE_PASS original_disc=0 original_bk2=0 bios=0 emulator_launched=0'
+      - name: Smoke-test real loader predicates and unloaded form against official assemblies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = "$env:VH_BIZHAWK_RELEASE_ROOT"
+          $witness = 'tools/map02_runtime_core_witness/bin/Release/net48/VhMap02CoreWitness.dll'
+          $external = Join-Path $root 'ExternalTools'
+          New-Item -ItemType Directory -Path $external -Force | Out-Null
+          $plugin = Join-Path $external 'VhMap02CoreWitness.dll'
+          Copy-Item -LiteralPath $witness -Destination $plugin
+          dotnet build tools/map02_runtime_core_witness_smoke/VhMap02LoaderSmoke.csproj -c Release -p:VH_BIZHAWK_RELEASE_ROOT="$root" --nologo -v:minimal
+          if ($LASTEXITCODE -ne 0) { throw 'real-loader smoke harness compile failed' }
+          $exe = 'tools/map02_runtime_core_witness_smoke/bin/Release/net48/VhMap02LoaderSmoke.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+            throw 'real-loader smoke test executable missing'
+          }
+          & $exe $root $plugin
+          if ($LASTEXITCODE -ne 0) {
+            throw 'BizHawk 2.11 external tool loader smoke rejected compiled DLL'
+          }
       - name: Publish only the compiled experimental witness DLL (no original assets)
         uses: actions/upload-artifact@v4
         with:
