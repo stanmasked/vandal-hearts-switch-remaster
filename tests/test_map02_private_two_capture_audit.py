@@ -89,7 +89,9 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
         from tools.verify_map02_private_visual_candidates import read_png_private
         def mutate_after_read(root, filename):
             original = read_png_private(root, filename)
-            if root == self.second and filename == self.names[0]:
+            # On macOS /var is a symlink to /private/var; audit_pair
+            # canonicalizes the owner-private root before reading.
+            if root == self.second.resolve(strict=True) and filename == self.names[0]:
                 (root / filename).write_bytes(original + b"changed")
             return original
         with patch(
