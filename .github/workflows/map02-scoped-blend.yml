@@ -99,6 +99,8 @@ on:
       - 'tests/test_check_map02_public_glibc_pc_provider_census.py'
       - 'tools/check_map02_public_glibc_actual_ld_r.py'
       - 'tests/test_check_map02_public_glibc_actual_ld_r.py'
+      - 'tools/check_map02_public_pc_unresolved_module_owners.py'
+      - 'tests/test_check_map02_public_pc_unresolved_module_owners.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -260,6 +262,8 @@ on:
       - 'tests/test_check_map02_public_glibc_pc_provider_census.py'
       - 'tools/check_map02_public_glibc_actual_ld_r.py'
       - 'tests/test_check_map02_public_glibc_actual_ld_r.py'
+      - 'tools/check_map02_public_pc_unresolved_module_owners.py'
+      - 'tests/test_check_map02_public_pc_unresolved_module_owners.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -358,6 +362,7 @@ jobs:
             tests.test_check_map02_public_four_archive_import_origin \
             tests.test_check_map02_public_glibc_pc_provider_census \
             tests.test_check_map02_public_glibc_actual_ld_r \
+            tests.test_check_map02_public_pc_unresolved_module_owners \
             tests.test_check_map02_private_archive_strategy_compare \
             tests.test_verify_map02_private_archive_comparison \
             tests.test_run_map02_private_link_gap_audit
@@ -965,6 +970,48 @@ jobs:
           print("Original PC imports remaining:",
                 result["original_pc_remaining_after_real_glibc_ld_r"])
           print("This is only an ELF ET_REL, never a complete playable game.")
+          PY
+      - name: Attribute 380 surviving original PC imports to exact compiled game versus backend objects
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m tools.check_map02_public_pc_unresolved_module_owners \
+            upstream-pc \
+            "${RUNNER_TEMP}/map02-cycle-private-build" \
+            "${RUNNER_TEMP}/map02-public-code-reloc/map02-unresolved-symbols.private.json" \
+            "${RUNNER_TEMP}/map02-public-code-reloc/map02-public-original-cd-gpu-reloc.o" \
+            "${RUNNER_TEMP}/map02-real-x11-native-provider/after-sdl2-unresolved.private.json" \
+            "${RUNNER_TEMP}/map02-real-sdl2-native-provider/linked/map02-private-candidate-linked.o" \
+            "${RUNNER_TEMP}/map02-real-four-archive-group/linked/map02-private-candidate-linked.o" \
+            "${RUNNER_TEMP}/map02-real-glibc-grouped-ld-r/linked/map02-private-candidate-linked.o" \
+            "${RUNNER_TEMP}/map02-real-glibc-grouped-ld-r-aggregate.json" \
+            | tee "${RUNNER_TEMP}/map02-original-pc-missing-module-owners.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          link = json.loads((root / "map02-real-glibc-grouped-ld-r-aggregate.json").read_text())
+          r = json.loads((root / "map02-original-pc-missing-module-owners.json").read_text())
+          assert r["linked_glibc_partial_elf_sha256"] == link["linked_partial_elf_sha256"]
+          assert r["four_archive_elf_sha256"] == link["input_four_elf_sha256"]
+          assert r["original_game_objects_checked"] == 85
+          assert r["backend_and_observer_objects_checked"] == 33
+          assert r["remaining_pc_total"] == link["original_pc_remaining_after_real_glibc_ld_r"] == 380
+          assert (r["original_game_only_imports"] +
+                  r["backend_only_imports"] +
+                  r["shared_game_backend_imports"] +
+                  r["missing_object_owner_imports"] == 380)
+          assert r["missing_object_owner_imports"] == 0
+          assert r["only_counts_and_hashes_published"] is True
+          assert r["retail_asset_content_accessed"] is False
+          assert r["executable_game_proven"] is False
+          assert r["authentic_map02_execution_proven"] is False
+          print("Remaining 380 original-PC imports, game-only:",
+                r["original_game_only_imports"])
+          print("Backend-only:", r["backend_only_imports"],
+                "referenced by both:", r["shared_game_backend_imports"])
+          print("Per-source names and paths are kept private; no retail MAP02 executed.")
           PY
       - name: Fail closed on upstream rasterizer source drift
         run: |
