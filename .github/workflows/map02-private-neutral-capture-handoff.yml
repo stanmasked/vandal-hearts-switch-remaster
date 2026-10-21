@@ -48,7 +48,7 @@ jobs:
           fi
           echo "VH_MAP02_CAPTURE_PLAN_PASS synthetic_tests=${test_count} original_bk2=0 game=0 map02=unknown"
   lua-capture-mocks:
-    name: Execute private capture Lua against forty-three invented emulator scenarios
+    name: Execute private capture Lua against fifty-one invented emulator scenarios
     runs-on: ubuntu-22.04
     timeout-minutes: 12
     steps:
