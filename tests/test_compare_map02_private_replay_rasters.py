@@ -84,6 +84,8 @@ class TwoReplayRasterTests(unittest.TestCase):
         self.assertEqual(report["schema"], SCHEMA)
         self.assertEqual(report["paired_frames"], 3)
         self.assertTrue(report["decoded_rgba_rasters_equal"])
+        self.assertTrue(report["candidate_boundary_raster_change_observed"])
+        self.assertFalse(report["scene_transition_authenticated"])
         for flag in ("independent_emulator_runs_authenticated",
                      "movie_to_video_sync_authenticated",
                      "original_ps1_game_authenticated",
@@ -93,6 +95,43 @@ class TwoReplayRasterTests(unittest.TestCase):
             self.assertFalse(report[flag])
         self.assertNotIn("png_file", report)
         self.assertNotIn("sha256", report)
+
+    def set_frame_pixels(self, run_index, frame_index, rgb):
+        _, _, images, shots = self.runs[run_index]
+        data = tiny_png(rgb, 6 if run_index == 0 else 1)
+        (images / shots[frame_index]["png_file"]).write_bytes(data)
+        shots[frame_index]["sha256"] = hashlib.sha256(data).hexdigest()
+        self.rewrite(run_index)
+
+    def test_static_screen_in_both_runs_is_not_a_transition(self):
+        # Two correctly hashed and frame-aligned sessions can still both
+        # show exactly the same still screen at the putative scene boundary.
+        for run in (0, 1):
+            self.set_frame_pixels(run, 1, (1, 3, 7))
+        with self.assertRaisesRegex(ValueError, "no decoded raster change"):
+            self.compare()
+
+    def test_latest_pre_candidate_witness_required(self):
+        # The *last* pre candidate is the visual reference, not the earliest.
+        for run in (0, 1):
+            self.runs[run][3][1]["label"] = "pre_map02"
+            self.runs[run][3][2]["label"] = "map02_candidate"
+            self.rewrite(run)
+        self.assertTrue(self.compare()["candidate_boundary_raster_change_observed"])
+        # First pre differs from the candidate, but latest pre is identical.
+        for run in (0, 1):
+            self.set_frame_pixels(run, 2, (2, 3, 7))
+        with self.assertRaisesRegex(ValueError, "no decoded raster change"):
+            self.compare()
+
+    def test_unchanged_post_candidate_capture_is_permitted(self):
+        # This gate is deliberately scoped to pre-versus-first-candidate.
+        # Later frames may legitimately be unchanged between observations.
+        for run in (0, 1):
+            self.set_frame_pixels(run, 2, (2, 3, 7))
+        result = self.compare()
+        self.assertEqual(result["paired_frames"], 3)
+        self.assertFalse(result["scene_transition_authenticated"])
 
     def test_changed_pixel_even_with_updated_png_sha_is_rejected(self):
         _, _, root, records = self.runs[1]
