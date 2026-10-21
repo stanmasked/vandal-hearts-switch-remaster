@@ -59,7 +59,7 @@ def observe(source,out,ready):
         if not path.is_absolute() or path.is_symlink():
             raise ValueError("Source and output must be non-symlink absolute paths")
     with source.open("rb") as f:
-        if f.stat().st_size!=SIZE:
+        if os.fstat(f.fileno()).st_size!=SIZE:
             raise ValueError("Shared mmap file changed size")
         with mmap.mmap(f.fileno(),SIZE,access=mmap.ACCESS_READ) as mm:
             def stop(_sig,_frame): raise Halt()
