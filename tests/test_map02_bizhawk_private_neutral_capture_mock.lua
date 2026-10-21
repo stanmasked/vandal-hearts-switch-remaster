@@ -125,6 +125,23 @@ local function run(option)
       return {[key] = pressed}
     end,
   }
+  -- Invented loaded-game identifiers: never source retail bytes or hashes.
+  gameinfo = {
+    getromhash = function()
+      if option == "game-id-read-error" then error("fictional API error") end
+      if option == "malformed-game-id" then return "SECRET\nINJECTION" end
+      if option == "empty-game-id" then return "" end
+      if option == "game-id-changes" and counter >= 1665 then
+        return "fictional-other-game-id"
+      end
+      if option == "game-id-changes-at-start" and counter >= 1662 then
+        return "fictional-other-game-id"
+      end
+      return "fictional-same-game-id"
+    end,
+  }
+  if option == "missing-gameinfo" then gameinfo = nil end
+  if option == "missing-game-hash-api" then gameinfo.getromhash = nil end
   if option == "missing-filename-api" then movie.filename = nil end
   if option == "missing-savestate-api" then movie.startsfromsavestate = nil end
   if option == "missing-saveram-api" then movie.startsfromsaveram = nil end
@@ -220,7 +237,7 @@ for _, option in ipairs({"plain", "prefixed", "boundary", "zero-counter", "spars
     assert(tonumber(candidate) == frames[i], option .. ": off-by-one movie frame")
     assert(held == (i == 2 and "neutral" or "held"), option .. ": expected button state")
   end
-  assert(lines[8] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes core_input_poll_observed=yes actual_map02=unverified")
+  assert(lines[8] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes game_rom_id_sampled=stable core_input_poll_observed=yes actual_map02=unverified")
   assert(#exit_codes == 1 and exit_codes[1] == 0,
          option .. ": successful bounded capture must close EmuHawk with exit code 0")
 end
@@ -238,7 +255,9 @@ for _, option in ipairs({
   "missing-event-table", "missing-state-event", "state-hook-refused",
   "poll-hook-refused", "state-loaded-before-first", "state-loaded-after-first",
   "bad-version", "missing-version-api", "missing-display-api",
-  "unknown-display", "display-changes"
+  "unknown-display", "display-changes",
+  "game-id-read-error", "malformed-game-id",
+  "game-id-changes", "game-id-changes-at-start"
 }) do
   local lines, shots, _, exit_codes = run(option)
   local rejected = false
@@ -259,12 +278,17 @@ end
 do
   local lines, shots, _, exit_codes = run("no-input-polls")
   assert(#shots == 3 and #exit_codes == 1 and exit_codes[1] == 0)
-  assert(lines[8] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes core_input_poll_observed=no actual_map02=unverified")
+  assert(lines[8] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes game_rom_id_sampled=stable core_input_poll_observed=no actual_map02=unverified")
 end
 do
   local lines, shots, _, exit_codes = run("missing-input-event")
   assert(#shots == 3 and #exit_codes == 1 and exit_codes[1] == 0)
-  assert(lines[8] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes core_input_poll_observed=no actual_map02=unverified")
+  assert(lines[8] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes game_rom_id_sampled=stable core_input_poll_observed=no actual_map02=unverified")
+end
+for _, option in ipairs({"missing-gameinfo", "missing-game-hash-api", "empty-game-id"}) do
+  local lines, shots, _, exit_codes = run(option)
+  assert(#shots == 3 and #exit_codes == 1 and exit_codes[1] == 0)
+  assert(lines[8] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes game_rom_id_sampled=unavailable core_input_poll_observed=yes actual_map02=unverified")
 end
 old_print("VH_MAP02_NEUTRAL_CAPTURE_LUA_MOCK_PASS cases=" .. scenarios ..
           " owner_bk2=0 actual_bizhawk=0 map02_verified=0")

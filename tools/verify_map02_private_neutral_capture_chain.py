@@ -50,7 +50,8 @@ START_PREFLIGHT = ("VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 "
                    "ps1_input_delivery=unverified")
 COMPLETE = re.compile(
     r"VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=([0-9]+) "
-    r"movie_input_only=yes core_input_poll_observed=(yes|no) actual_map02=unverified"
+    r"movie_input_only=yes game_rom_id_sampled=(stable|unavailable) "
+    r"core_input_poll_observed=(yes|no) actual_map02=unverified"
 )
 PROCESS_EXIT_SUCCESS = (
     "VH_PRIVATE_BIZHAWK_LOCAL_PROCESS_EXITED exit_success=1 "
@@ -118,6 +119,7 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
     runtime_profile = None
     process_exit = False
     core_poll_observed = False
+    stable_game_rom_id_sampled = False
     for line in lines:
         if line.startswith("VH_PRIVATE_BIZHAWK_LAUNCH_ERROR"):
             raise ValueError("private emulator launch failed before capture")
@@ -153,7 +155,8 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
                 raise ValueError("capture completion is invalid or premature")
             if int(match.group(1)) != len(planned):
                 raise ValueError("capture summary count differs")
-            core_poll_observed = match.group(2) == "yes"
+            stable_game_rom_id_sampled = match.group(2) == "stable"
+            core_poll_observed = match.group(3) == "yes"
             completed += 1
         elif line.startswith("VH_PRIVATE_NEUTRAL_CAPTURE"):
             match = LOG_ROW.fullmatch(line)
@@ -207,6 +210,8 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
         "owner_log_reports_live_first_start_anchor_before_screenshots": True,
         "owner_log_reports_poweron_movie_path_match": True,
         "owner_log_reports_input_poll_callback": core_poll_observed,
+        "owner_log_reports_stable_game_rom_id_samples": stable_game_rom_id_sampled,
+        "original_disc_full_hash_authenticated": False,
         "reported_bizhawk_version": runtime_profile[0],
         "reported_psx_display_standard": runtime_profile[1],
         "active_octoshock_core_verified": False,

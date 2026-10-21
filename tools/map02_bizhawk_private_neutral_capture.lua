@@ -173,6 +173,27 @@ end
 emit("VH_PRIVATE_NEUTRAL_RUNTIME_PREFLIGHT bizhawk_version=" ..
      runtime_version .. " display=" .. runtime_display ..
      " active_core=unverified")
+-- BizHawk exposes the loaded ROM's game-database hash. On PSX this may
+-- be based on a QUICK disc identifier (not a full BIN digest); it is NOT
+-- proof of the mounted disc's bytes, BIOS, or Octoshock core. Never print it.
+-- When available, pin it only within this one uninterrupted local process.
+local game_rom_id = nil
+if type(gameinfo) == "table" and type(gameinfo.getromhash) == "function" then
+  local ok, value = pcall(gameinfo.getromhash)
+  if not ok then return fail("gameinfo_hash_read_failed") end
+  if value ~= nil and value ~= "" then
+    if type(value) ~= "string" or #value < 8 or #value > 256
+        or value:find("[^%g ]") then
+      return fail("gameinfo_hash_malformed")
+    end
+    game_rom_id = value
+  end
+end
+local function game_rom_id_unchanged()
+  if game_rom_id == nil then return true end
+  local ok, current = pcall(gameinfo.getromhash)
+  return ok and current == game_rom_id
+end
 -- The owner-local launcher needs EmuHawk to exit as soon as the bounded
 -- captures finish, rather than playing the rest of this long BK2 movie.
 if type(client) ~= "table" or type(client.exitCode) ~= "function" then
@@ -273,6 +294,9 @@ while true do
     end
     first_start_off_seen = true
   elseif index == 1661 then
+    if not game_rom_id_unchanged() then
+      return fail("active_game_id_changed_before_start")
+    end
     if not first_start_off_seen or start_state(movie.getinput(index, 1)) ~= true then
       return fail("start_anchor_press_missing_or_ambiguous")
     end
@@ -284,6 +308,9 @@ while true do
   local wanted = captures[current]
   if index > wanted.index then return fail("scheduled_frame_missed") end
   if index == wanted.index then
+    if not game_rom_id_unchanged() then
+      return fail("active_game_id_changed_during_capture")
+    end
     local state = any_held(movie.getinput(index, 1))
     if state == nil or state ~= (wanted.held == "held") then
       return fail("movie_getinput_neutral_state_mismatch")
@@ -305,8 +332,9 @@ while true do
     current = current + 1
     if current > #captures then
       emit(string.format(
-        "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=%d movie_input_only=yes core_input_poll_observed=%s actual_map02=unverified",
-        #captures, input_polled and "yes" or "no"))
+        "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=%d movie_input_only=yes game_rom_id_sampled=%s core_input_poll_observed=%s actual_map02=unverified",
+        #captures, game_rom_id and "stable" or "unavailable",
+        input_polled and "yes" or "no"))
       if log_handle then log_handle:close(); log_handle = nil end
       -- Close the emulator with an explicit successful process status.
       -- Python then appends the process-exit marker required by the auditor.
