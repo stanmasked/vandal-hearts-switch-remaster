@@ -587,6 +587,114 @@ def summarize_high_fanout_abs64_patch_gaps(
     }
 
 
+
+def parse_readelf_abs64_data_patch_addends(readelf_output):
+    """Read actual ELF RELA addends without disclosing any values publicly.
+
+    GNU readelf -rW renders addends as hexadecimal without a 0x prefix.
+    They are signed by the separate '+' or '-' column. For a specific symbol
+    this patch-site record is source-file metadata, not a runtime target.
+    """
+    records = {}
+    section = None
+    for line in readelf_output.splitlines():
+        raw = line.strip()
+        if raw.startswith("Relocation section '"):
+            parts = raw.split("'")
+            if len(parts) < 3:
+                raise ValueError("MAP02 native ABS64 addend section header invalid")
+            section = parts[1]
+            continue
+        fields = raw.split()
+        if (section and len(fields) >= 3
+                and fields[2] == "R_X86_64_64"
+                and section.startswith((".rela.data", ".rel.data"))):
+            if (len(fields) != 7 or fields[5] not in ("+", "-")
+                    or not fields[0]
+                    or any(c not in "0123456789abcdefABCDEF" for c in fields[0])
+                    or not fields[6]
+                    or any(c not in "0123456789abcdefABCDEF" for c in fields[6])):
+                raise ValueError("MAP02 native ABS64 addend encoding invalid")
+            sign = 1 if fields[5] == "+" else -1
+            records.setdefault(fields[4], []).append(
+                (section, int(fields[0], 16), sign * int(fields[6], 16)))
+    return records
+
+
+def summarize_high_fanout_abs64_target_addends(
+        remaining, game_refs, backend_refs, game_addends, game_patch_offsets,
+        *, minimum_callers=8):
+    """Global addend multiplicity among only independently proven wide imports."""
+    if (type(minimum_callers) is not int or minimum_callers < 2
+            or len(game_refs) != len(game_addends)
+            or len(game_refs) != len(game_patch_offsets)):
+        raise ValueError("MAP02 ABS64 target addend source inventory invalid")
+    remaining = set(remaining)
+    game = [set(x) & remaining for x in game_refs]
+    backend = set().union(*(set(x) & remaining for x in backend_refs))
+    game_only = (set().union(*game) if game else set()) - backend
+    wide = {name for name in game_only
+            if sum(name in refs for refs in game) >= minimum_callers}
+    values = {}
+    records = 0
+    zero = 0
+    negative = 0
+    aligned = 0
+    objects = set()
+    selected_symbols = set()
+    for i, mapping in enumerate(game_addends):
+        for name, rows in mapping.items():
+            if name not in wide:
+                continue
+            if name not in game[i]:
+                raise ValueError("MAP02 ABS64 addend has no original caller")
+            expected = sorted(game_patch_offsets[i].get(name, ()))
+            actual = sorted((section, pos) for section, pos, _ in rows)
+            if actual != expected:
+                raise ValueError("MAP02 ABS64 addend patch-offset evidence differs")
+            if rows:
+                objects.add(i)
+                selected_symbols.add(name)
+            for section, offset, addend in rows:
+                if (not section.startswith((".rela.data", ".rel.data"))
+                        or type(offset) is not int or offset < 0
+                        or type(addend) is not int):
+                    raise ValueError("MAP02 ABS64 addend patch metadata invalid")
+                records += 1
+                zero += addend == 0
+                negative += addend < 0
+                aligned += addend % 8 == 0
+                values[addend] = values.get(addend, 0) + 1
+    # A missing addend witness in an object holding source patch offsets
+    # must not silently pass merely because other objects include that name.
+    for i, mapping in enumerate(game_patch_offsets):
+        for name, patches in mapping.items():
+            if name in wide and patches and name not in game_addends[i]:
+                raise ValueError("MAP02 missing ABS64 addend witness in original object")
+    repeated_values = [n for n in values.values() if n >= 2]
+    duplicate_records = sum(repeated_values)
+    if (sum(values.values()) != records or not 0 <= zero <= records
+            or not 0 <= negative <= records or not 0 <= aligned <= records
+            or not 0 <= duplicate_records <= records):
+        raise ValueError("MAP02 ABS64 target addend arithmetic inconsistent")
+    return {
+        "high_fanout_abs64_addend_total_records": records,
+        "high_fanout_abs64_addend_source_objects": len(objects),
+        "high_fanout_abs64_addend_symbol_names": len(selected_symbols),
+        "high_fanout_abs64_addend_distinct_values": len(values),
+        "high_fanout_abs64_addend_zero_records": zero,
+        "high_fanout_abs64_addend_negative_records": negative,
+        "high_fanout_abs64_addend_eight_aligned_records": aligned,
+        "high_fanout_abs64_addend_distinct_repeated_values":
+            len(repeated_values),
+        "high_fanout_abs64_addend_records_with_reused_values":
+            duplicate_records,
+        "high_fanout_abs64_addend_max_records_sharing_one_value":
+            max(values.values(), default=0),
+        "addend_multiplicity_does_not_prove_game_data_structure": True,
+    }
+
+
 def read_link_report(path):
     path = Path(path)
     if path.is_symlink():
@@ -673,6 +781,7 @@ def audit_owners(upstream, overlay_bundle,
         game_type_maps = []
         game_reloc_maps = []
         game_abs64_patch_maps = []
+        game_abs64_addend_maps = []
         for index, relative in enumerate(all_paths):
             if (not relative.startswith("build-map02-cycle/")
                     or not relative.endswith(".o")
@@ -718,6 +827,8 @@ def audit_owners(upstream, overlay_bundle,
                         parse_readelf_relocation_types(relocation.stdout))
                     game_abs64_patch_maps.append(
                         parse_readelf_abs64_data_patch_offsets(relocation.stdout))
+                    game_abs64_addend_maps.append(
+                        parse_readelf_abs64_data_patch_addends(relocation.stdout))
             finally:
                 os.close(fd)
             if stable_object_input(path) != witness:
@@ -749,6 +860,16 @@ def audit_owners(upstream, overlay_bundle,
         abs64_gaps = summarize_high_fanout_abs64_patch_gaps(
             remaining, refs[:EXPECTED_GAME], refs[EXPECTED_GAME:],
             game_abs64_patch_maps)
+        abs64_addends = summarize_high_fanout_abs64_target_addends(
+            remaining, refs[:EXPECTED_GAME], refs[EXPECTED_GAME:],
+            game_abs64_addend_maps, game_abs64_patch_maps)
+        if (abs64_addends["high_fanout_abs64_addend_total_records"] !=
+                abs64_layout["high_fanout_abs64_data_records"]
+                or abs64_addends["high_fanout_abs64_addend_source_objects"] !=
+                   abs64_layout["high_fanout_abs64_data_source_objects"]
+                or abs64_addends["high_fanout_abs64_addend_symbol_names"] !=
+                   abs64_layout["high_fanout_abs64_data_symbol_names"]):
+            raise ValueError("MAP02 addend evidence disagrees with proven data relocation layout")
         if (abs64_gaps["high_fanout_abs64_gap_total_records"] !=
                 abs64_layout["high_fanout_abs64_data_records"]
                 or abs64_gaps["high_fanout_abs64_gap_source_objects"] !=
@@ -812,6 +933,7 @@ def audit_owners(upstream, overlay_bundle,
             **relocation_provenance,
             **abs64_layout,
             **abs64_gaps,
+            **abs64_addends,
             "only_counts_and_hashes_published": True,
             "retail_asset_content_accessed": False,
             "executable_game_proven": False,
