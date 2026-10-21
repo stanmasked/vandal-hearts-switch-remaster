@@ -234,6 +234,108 @@ jobs:
               json.dumps(manifest,sort_keys=True,indent=2)+"\n")
           print("Exactly two synthetic TLS aliases, marked one has 7 tags and 10 ALSA preparations",sha)
           PY
+          # Exercise the real interposer's pthread-cancellation cleanup using
+          # two empty poll positions; keep the preceding completed return visible.
+          python3 tools/capture_map02_alsa_userspace_stage305.py \
+            --init --source "$RUNNER_TEMP/stage316-poll-cancel-PRIVATE.bin"
+          cat > research/map02-stage316-poll-cancel-test.c <<'C'
+          #define _GNU_SOURCE
+          #include <fcntl.h>
+          #include <poll.h>
+          #include <pthread.h>
+          #include <stdint.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <sys/mman.h>
+          #include <sys/stat.h>
+          #include <time.h>
+          #include <unistd.h>
+
+          #define MAP_BYTES 65536
+          #define EVENT_COUNTER_OFFSET 27664
+          #define EVENT_STATE_OFFSET 33280
+          #define EVENT_FIELDS 9
+          #define ALIASES 64
+
+          static int ready_read, empty0_read, empty1_read;
+          static void *blocked_poll(void *unused) {
+            (void)unused;
+            struct pollfd warm[2] = {
+              { .fd=ready_read, .events=POLLIN, .revents=0 },
+              { .fd=empty0_read, .events=POLLIN, .revents=0 }
+            };
+            int rc=poll(warm,2,0);
+            if (rc!=1 || !(warm[0].revents&POLLIN))
+              return (void *)(intptr_t)1;
+            struct pollfd pending[2] = {
+              { .fd=empty0_read, .events=POLLIN, .revents=0 },
+              { .fd=empty1_read, .events=POLLIN, .revents=0 }
+            };
+            (void)poll(pending,2,-1);
+            return (void *)(intptr_t)2;
+          }
+
+          static uint64_t load64(const unsigned char *map,size_t offset) {
+            return __atomic_load_n((const uint64_t *)(const void *)(map+offset),
+                                   __ATOMIC_RELAXED);
+          }
+
+          int main(void) {
+            const char *path=getenv("VH_STAGE305_ALSA_COUNTER_PATH");
+            if (!path) return 2;
+            int ready[2], empty0[2], empty1[2];
+            if (pipe(ready) || pipe(empty0) || pipe(empty1)) return 3;
+            const char byte='x';
+            if (write(ready[1],&byte,1)!=1) return 4;
+            ready_read=ready[0]; empty0_read=empty0[0]; empty1_read=empty1[0];
+
+            int fd=open(path,O_RDONLY|O_CLOEXEC);
+            struct stat st;
+            if (fd<0 || fstat(fd,&st) || st.st_size!=MAP_BYTES) return 5;
+            const unsigned char *map=mmap(NULL,MAP_BYTES,PROT_READ,MAP_SHARED,fd,0);
+            if (map==MAP_FAILED) return 6;
+
+            pthread_t thread;
+            if (pthread_create(&thread,NULL,blocked_poll,NULL)) return 7;
+            int alias=-1;
+            for (int attempt=0;attempt<2000 && alias<0;attempt++) {
+              for (int i=0;i<ALIASES;i++) {
+                uint64_t state=load64(map,EVENT_STATE_OFFSET+(size_t)i*8);
+                if ((state&UINT64_C(0xff))==UINT64_C(0x85) &&
+                    ((state>>8)&UINT64_C(0xff))==UINT64_C(0xa1)) {
+                  alias=i; break;
+                }
+              }
+              if (alias<0) {
+                const struct timespec pause={0,1000000};
+                nanosleep(&pause,NULL);
+              }
+            }
+            if (alias<0) {
+              pthread_cancel(thread);
+              pthread_join(thread,NULL);
+              return 8;
+            }
+            if (pthread_cancel(thread)) return 9;
+            void *result=NULL;
+            if (pthread_join(thread,&result) || result!=PTHREAD_CANCELED) return 10;
+
+            uint64_t final=load64(map,EVENT_STATE_OFFSET+(size_t)alias*8);
+            const uint64_t *counts=(const uint64_t *)(const void *)(
+              map+EVENT_COUNTER_OFFSET+(size_t)alias*EVENT_FIELDS*8);
+            if ((final&UINT64_C(0xff))!=0) return 11;
+            if (((final>>8)&UINT64_C(0xff))!=UINT64_C(0xa1)) return 12;
+            if (counts[0]<2 || counts[2]<2 || counts[4]<1) return 13;
+            puts("PASS: canceled poll clears active request and preserves last completed return");
+            return 0;
+          }
+          C
+          gcc -std=gnu11 -O2 -Werror -Wall -Wextra -pthread \
+            research/map02-stage316-poll-cancel-test.c \
+            -o research/map02-stage316-poll-cancel-test
+          env LD_PRELOAD="$PWD/research/libmap02-stage316-poll-events.so" \
+            VH_STAGE305_ALSA_COUNTER_PATH="$RUNNER_TEMP/stage316-poll-cancel-PRIVATE.bin" \
+            research/map02-stage316-poll-cancel-test
       - name: REAL new source-pinned NeXium GUI, original research ROM-free guest and direct TLS marker
         timeout-minutes: 7
         shell: bash
