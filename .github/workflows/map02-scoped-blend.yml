@@ -1082,6 +1082,17 @@ jobs:
           assert r["high_fanout_abs64_gap_non_multiple_8"] == 0
           assert r["high_fanout_abs64_gap_smallest_positive_distance_bytes"] == 8
           assert r["offset_gaps_do_not_identify_c_struct_or_executed_game"] is True
+          assert r["high_fanout_abs64_addend_total_records"] == 222
+          assert r["high_fanout_abs64_addend_source_objects"] == 2
+          assert r["high_fanout_abs64_addend_symbol_names"] == 1
+          assert 1 <= r["high_fanout_abs64_addend_distinct_values"] <= 222
+          assert 0 <= r["high_fanout_abs64_addend_zero_records"] <= 222
+          assert 0 <= r["high_fanout_abs64_addend_negative_records"] <= 222
+          assert 0 <= r["high_fanout_abs64_addend_eight_aligned_records"] <= 222
+          assert 0 <= r["high_fanout_abs64_addend_distinct_repeated_values"] <= 111
+          assert 0 <= r["high_fanout_abs64_addend_records_with_reused_values"] <= 222
+          assert (1 <= r["high_fanout_abs64_addend_max_records_sharing_one_value"] <= 222)
+          assert r["addend_multiplicity_does_not_prove_game_data_structure"] is True
           assert r["fanout_counts_distinct_source_objects_not_runtime_calls"] is True
           assert r["only_counts_and_hashes_published"] is True
           assert r["retail_asset_content_accessed"] is False
@@ -1135,6 +1146,13 @@ jobs:
           print("ABS64 per-source rank counts:",
                 r["high_fanout_abs64_gap_largest_source_object_records"],
                 r["high_fanout_abs64_gap_second_largest_source_object_records"])
+          print("ABS64 target-addend private values reduced to counts:",
+                {name: r["high_fanout_abs64_addend_" + name]
+                 for name in (
+                     "distinct_values", "zero_records", "negative_records",
+                     "eight_aligned_records", "distinct_repeated_values",
+                     "records_with_reused_values",
+                     "max_records_sharing_one_value")})
           print("Per-source names and paths are kept private; no retail MAP02 executed.")
           PY
       - name: Fail closed on upstream rasterizer source drift
