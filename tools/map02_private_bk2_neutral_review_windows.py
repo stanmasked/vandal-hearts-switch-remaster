@@ -62,14 +62,26 @@ class NeutralReviewCollector:
             if (self.minimum <= span <= self.maximum
                     and begin >= self.after
                     and end < self.before):
-                self._windows.append({
+                candidate = {
                     "first_neutral_input_frame_zero_based": begin,
                     "first_following_button_frame_zero_based": end,
                     "neutral_input_frames": span,
                     "suggested_local_review_input_indices_zero_based": [
                         begin - 1, begin + (span - 1) // 2, end
                     ],
-                })
+                }
+                # Keep memory bounded to the configured result count (<=50)
+                # even if a long movie has hundreds of thousands of pauses.
+                if len(self._windows) < self.limit:
+                    self._windows.append(candidate)
+                else:
+                    def key(item):
+                        return (-item["neutral_input_frames"],
+                                item["first_neutral_input_frame_zero_based"])
+                    worst = max(range(len(self._windows)),
+                                key=lambda i: key(self._windows[i]))
+                    if key(candidate) < key(self._windows[worst]):
+                        self._windows[worst] = candidate
         self._neutral_begin = None
         self._saw_buttons = True
 
