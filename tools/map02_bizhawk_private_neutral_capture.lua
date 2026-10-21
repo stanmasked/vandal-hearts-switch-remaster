@@ -166,6 +166,33 @@ if type(first_counter) ~= "number" or
   return fail("lua_must_attach_at_movie_start")
 end
 
+-- The original movie must not be replaced by a savestate at any point
+-- after this capture script attaches. Counter continuity is insufficient:
+-- loading a state could restore a matching counter while changing the core.
+if type(event) ~= "table" or type(event.onloadstate) ~= "function" then
+  return fail("savestate_event_api_unavailable")
+end
+local state_loaded = false
+local state_listener = event.onloadstate(function()
+  state_loaded = true
+end, "vh_map02_block_runtime_state_load")
+if type(state_listener) ~= "string" or state_listener == "" then
+  return fail("savestate_event_registration_failed")
+end
+-- Input-poll callbacks offer supplementary evidence that the running core
+-- requested controller data. They do NOT show which inputs were delivered.
+-- Some BizHawk builds/cores do not expose this callback, so unavailability
+-- is recorded honestly rather than promoted to proof or an automatic error.
+local input_polled = false
+if type(event.oninputpoll) == "function" then
+  local poll_listener = event.oninputpoll(function()
+    input_polled = true
+  end, "vh_map02_observe_input_poll")
+  if type(poll_listener) ~= "string" or poll_listener == "" then
+    return fail("input_poll_event_registration_failed")
+  end
+end
+
 local function start_state(data)
   if type(data) ~= "table" then return nil end
   local plain, prefixed = data["Start"], data["P1 Start"]
@@ -196,6 +223,7 @@ end
 local current, previous_counter = 1, nil
 local first_start_off_seen, first_start_on_seen = false, false
 while true do
+  if state_loaded then return fail("savestate_loaded_during_replay") end
   if type(emu.getsystemid) ~= "function" or emu.getsystemid() ~= "PSX" then
     return fail("emulated_system_changed")
   end
@@ -254,7 +282,8 @@ while true do
     current = current + 1
     if current > #captures then
       emit(string.format(
-        "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=%d movie_input_only=yes actual_map02=unverified", #captures))
+        "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=%d movie_input_only=yes core_input_poll_observed=%s actual_map02=unverified",
+        #captures, input_polled and "yes" or "no"))
       if log_handle then log_handle:close(); log_handle = nil end
       -- Close the emulator with an explicit successful process status.
       -- Python then appends the process-exit marker required by the auditor.
