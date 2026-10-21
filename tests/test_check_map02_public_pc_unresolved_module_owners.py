@@ -11,6 +11,8 @@ from tools.check_map02_public_pc_unresolved_module_owners import (
     parse_readelf_global_undefined_types, summarize_high_fanout_elf_types,
     parse_readelf_relocation_types, summarize_high_fanout_relocations,
     summarize_high_fanout_relocation_provenance,
+    parse_readelf_abs64_data_patch_offsets,
+    summarize_high_fanout_abs64_patch_layout,
 )
 from tools.check_map02_public_reloc_link import _undefined_symbol_names
 
@@ -265,6 +267,85 @@ class ModuleOwnerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "inventory invalid"):
             summarize_high_fanout_relocation_provenance(
                 {"a"}, [{"a"} for _ in range(8)], [], [{}])
+
+    def test_abs64_patch_offsets_from_real_readelf_format(self):
+        report = (
+            "Relocation section '.rela.text' at offset 0x110 contains 1 entry:\n"
+            "0000000000000007  0000000400000001 R_X86_64_64 0000000000000000 source - 0\n"
+            "Relocation section '.rela.data' at offset 0x150 contains 3 entries:\n"
+            "0000000000000000  0000000400000001 R_X86_64_64 0000000000000000 target + 0\n"
+            "0000000000000008  0000000400000001 R_X86_64_64 0000000000000000 target + 0\n"
+            "0000000000000010  0000000400000002 R_X86_64_PC32 0000000000000000 other - 4\n"
+            "Relocation section '.rela.data.rel.ro' at offset 0x230 contains 1 entry:\n"
+            "0000000000000000  0000000400000001 R_X86_64_64 0000000000000000 target + 0\n"
+        )
+        got = parse_readelf_abs64_data_patch_offsets(report)
+        self.assertEqual(got["target"], [
+            (".rela.data", 0), (".rela.data", 8),
+            (".rela.data.rel.ro", 0),
+        ])
+        self.assertNotIn("source", got)
+        self.assertNotIn("other", got)
+
+    def test_abs64_source_objects_do_not_mix_offsets_between_files(self):
+        game = [{"target"} for _ in range(8)]
+        maps = [
+            {"target": [(".rela.data", i) for i in (0, 8, 16, 32)]},
+            {"target": [(".rela.data", i) for i in (0, 8)]},
+            {"target": [(".rela.data.rel.ro", 0)]},
+            *({} for _ in range(5)),
+        ]
+        summary = summarize_high_fanout_abs64_patch_layout(
+            {"target"}, game, [], maps)
+        self.assertEqual(summary["high_fanout_abs64_data_records"], 7)
+        self.assertEqual(summary["high_fanout_abs64_data_symbol_names"], 1)
+        self.assertEqual(summary["high_fanout_abs64_data_source_objects"], 3)
+        self.assertEqual(summary["high_fanout_abs64_data_source_sections"], 3)
+        self.assertEqual(summary["high_fanout_abs64_data_aligned_eight_byte_records"], 7)
+        self.assertEqual(summary["high_fanout_abs64_data_adjacent_eight_byte_pairs"], 3)
+        self.assertEqual(summary["high_fanout_abs64_data_longest_eight_byte_run"], 3)
+        self.assertEqual(
+            summary["high_fanout_abs64_data_max_records_in_one_source_object"], 4)
+        self.assertTrue(
+            summary["patch_offset_adjacency_does_not_prove_runtime_pointer_table"])
+
+    def test_abs64_duplicate_section_patch_rejected(self):
+        game = [{"wide"} for _ in range(8)]
+        maps = [{"wide": [(".rela.data", 8), (".rela.data", 8)]},
+                *({} for _ in range(7))]
+        with self.assertRaisesRegex(ValueError, "duplicate ABS64"):
+            summarize_high_fanout_abs64_patch_layout(
+                {"wide"}, game, [], maps)
+
+    def test_abs64_wide_game_only_filters_shared_and_rare(self):
+        game = [{"wide", "shared"} for _ in range(8)]
+        game[0].add("rare")
+        maps = [{"wide": [(".rela.data", 8)],
+                 "shared": [(".rela.data", 24)],
+                 "rare": [(".rela.data", 32)]}] + [{} for _ in range(7)]
+        result = summarize_high_fanout_abs64_patch_layout(
+            {"wide", "shared", "rare"}, game, [{"shared"}], maps)
+        self.assertEqual(result["high_fanout_abs64_data_records"], 1)
+        self.assertEqual(result["high_fanout_abs64_data_symbol_names"], 1)
+
+    def test_native_gcc_abs64_data_section_offsets(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            src, obj = root / "pointer.c", root / "pointer.o"
+            src.write_text(
+                "extern int foreign_word;\n"
+                "void *locations[] = {&foreign_word, &foreign_word, &foreign_word};\n")
+            subprocess.run(
+                ["cc", "-c", "-O0", "-fno-pie", "-o", str(obj), str(src)],
+                check=True, capture_output=True, timeout=30)
+            data = subprocess.run(
+                ["readelf", "-rW", str(obj)], check=True,
+                capture_output=True, text=True, timeout=30)
+            raw = parse_readelf_abs64_data_patch_offsets(data.stdout)
+            self.assertEqual(len(raw["foreign_word"]), 3)
+            offsets = [offset for _, offset in raw["foreign_word"]]
+            self.assertEqual(
+                offsets, [min(offsets), min(offsets)+8, min(offsets)+16])
 
     def test_unattributed_name_not_silently_counted_as_owned(self):
         r = summarize_owner_groups(

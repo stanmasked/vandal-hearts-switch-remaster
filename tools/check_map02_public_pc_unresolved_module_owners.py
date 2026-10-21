@@ -388,6 +388,115 @@ def summarize_high_fanout_relocation_provenance(
     }
 
 
+
+def parse_readelf_abs64_data_patch_offsets(readelf_output):
+    """Exact absolute 64-bit relocation patch offsets inside data sections.
+
+    Keys remain owner-private. Offsets are *source-object-relative* and never
+    become public, even when the originating ELF is entirely asset-free.
+    """
+    found = {}
+    section = None
+    for line in readelf_output.splitlines():
+        entry = line.strip()
+        if entry.startswith("Relocation section '"):
+            bits = entry.split("'")
+            if len(bits) < 3:
+                raise ValueError("MAP02 ABS64 native relocation header invalid")
+            section = bits[1]
+            continue
+        fields = entry.split()
+        if (section and len(fields) >= 5 and fields[2] == "R_X86_64_64"):
+            if not section.startswith((".rela.data", ".rel.data")):
+                continue
+            if (not fields[0]
+                    or any(char not in "0123456789abcdefABCDEF"
+                           for char in fields[0])):
+                raise ValueError("MAP02 ABS64 patch offset malformed")
+            symbol, offset = fields[4], int(fields[0], 16)
+            found.setdefault(symbol, []).append((section, offset))
+    return found
+
+
+def summarize_high_fanout_abs64_patch_layout(
+        remaining, game_refs, backend_refs, game_abs64_offsets,
+        *, minimum_callers=8):
+    """Summarize pointer-width patch locality; not pointer/function semantics."""
+    if (type(minimum_callers) is not int or minimum_callers < 2
+            or len(game_refs) != len(game_abs64_offsets)):
+        raise ValueError("MAP02 ABS64 patch origin inventory invalid")
+    remaining = set(remaining)
+    game = [set(names) & remaining for names in game_refs]
+    backend = set().union(*(set(names) & remaining for names in backend_refs))
+    game_only = (set().union(*game) if game else set()) - backend
+    wide = {symbol for symbol in game_only
+            if sum(symbol in refs for refs in game) >= minimum_callers}
+
+    relevant_names = set()
+    object_indices = set()
+    data_sections = set()
+    total = 0
+    aligned = 0
+    contiguous_pairs = 0
+    longest_run = 0
+    maximum_in_one_object = 0
+    # Each object/section has independent offsets. They cannot be pooled
+    # without creating fake 8-byte adjacency across unrelated data segments.
+    for index, per_symbol in enumerate(game_abs64_offsets):
+        in_this_object = 0
+        for name, patches in per_symbol.items():
+            if name not in wide:
+                continue
+            if not name in game[index]:
+                raise ValueError("MAP02 ABS64 patch has no matching original game import")
+            relevant_names.add(name)
+            groups = {}
+            for section, offset in patches:
+                if (not section.startswith((".rela.data", ".rel.data"))
+                        or type(offset) is not int or offset < 0):
+                    raise ValueError("MAP02 ABS64 patch section or offset invalid")
+                groups.setdefault(section, []).append(offset)
+                data_sections.add((index, section))
+                total += 1
+                in_this_object += 1
+                aligned += (offset % 8 == 0)
+            for locations in groups.values():
+                if len(locations) != len(set(locations)):
+                    raise ValueError("MAP02 duplicate ABS64 patch offset within source section")
+                points = sorted(locations)
+                run = 1
+                longest_run = max(longest_run, run)
+                for pos in range(1, len(points)):
+                    if points[pos] - points[pos - 1] == 8:
+                        contiguous_pairs += 1
+                        run += 1
+                    else:
+                        run = 1
+                    longest_run = max(longest_run, run)
+        if in_this_object:
+            object_indices.add(index)
+            maximum_in_one_object = max(maximum_in_one_object, in_this_object)
+    if (total < len(relevant_names)
+            or not 0 <= contiguous_pairs <= max(0, total - 1)
+            or not 0 <= aligned <= total
+            or not 0 <= longest_run <= total
+            or (total == 0 and (relevant_names or object_indices
+                                or maximum_in_one_object or longest_run))):
+        raise ValueError("MAP02 ABS64 patch layout arithmetic inconsistent")
+    return {
+        "high_fanout_abs64_data_records": total,
+        "high_fanout_abs64_data_symbol_names": len(relevant_names),
+        "high_fanout_abs64_data_source_objects": len(object_indices),
+        "high_fanout_abs64_data_source_sections": len(data_sections),
+        "high_fanout_abs64_data_aligned_eight_byte_records": aligned,
+        "high_fanout_abs64_data_adjacent_eight_byte_pairs": contiguous_pairs,
+        "high_fanout_abs64_data_longest_eight_byte_run": longest_run,
+        "high_fanout_abs64_data_max_records_in_one_source_object":
+            maximum_in_one_object,
+        "patch_offset_adjacency_does_not_prove_runtime_pointer_table": True,
+    }
+
+
 def read_link_report(path):
     path = Path(path)
     if path.is_symlink():
@@ -473,6 +582,7 @@ def audit_owners(upstream, overlay_bundle,
         refs = []
         game_type_maps = []
         game_reloc_maps = []
+        game_abs64_patch_maps = []
         for index, relative in enumerate(all_paths):
             if (not relative.startswith("build-map02-cycle/")
                     or not relative.endswith(".o")
@@ -516,6 +626,8 @@ def audit_owners(upstream, overlay_bundle,
                         raise ValueError("MAP02 native object relocation metadata unavailable")
                     game_reloc_maps.append(
                         parse_readelf_relocation_types(relocation.stdout))
+                    game_abs64_patch_maps.append(
+                        parse_readelf_abs64_data_patch_offsets(relocation.stdout))
             finally:
                 os.close(fd)
             if stable_object_input(path) != witness:
@@ -541,6 +653,16 @@ def audit_owners(upstream, overlay_bundle,
         relocation_provenance = summarize_high_fanout_relocation_provenance(
             remaining, refs[:EXPECTED_GAME], refs[EXPECTED_GAME:],
             game_reloc_maps)
+        abs64_layout = summarize_high_fanout_abs64_patch_layout(
+            remaining, refs[:EXPECTED_GAME], refs[EXPECTED_GAME:],
+            game_abs64_patch_maps)
+        if (abs64_layout["high_fanout_abs64_data_records"] !=
+                relocation_provenance["high_fanout_provenance_abs64_records"]
+                or abs64_layout["high_fanout_abs64_data_symbol_names"] >
+                   relocation_provenance["high_fanout_provenance_any_non_pc32_plt32_imports"]
+                or abs64_layout["high_fanout_abs64_data_source_objects"] >
+                   EXPECTED_GAME):
+            raise ValueError("MAP02 ABS64 native data patch provenance differs")
         if (relocation_provenance["high_fanout_provenance_imports"]
                 != reloc_types["high_fanout_game_only_imports_with_relocation_check"]
                 or relocation_provenance["high_fanout_provenance_total_records"]
@@ -584,6 +706,7 @@ def audit_owners(upstream, overlay_bundle,
             **elf_types,
             **reloc_types,
             **relocation_provenance,
+            **abs64_layout,
             "only_counts_and_hashes_published": True,
             "retail_asset_content_accessed": False,
             "executable_game_proven": False,
