@@ -95,6 +95,15 @@ class PrivatePlanTests(unittest.TestCase):
         with self.mock([window(3000, 3500, 3200)]), self.assertRaises(ValueError):
             plan_lines(self.bk2)
 
+    def test_earliest_allowed_private_capture_at_input_1663(self):
+        with self.mock([window(1663, 1765, 1865)]):
+            rows = plan_lines(self.bk2, limit=1)
+        self.assertEqual(rows[3], "1,before,1663,held")
+
+    def test_capture_before_1663_refused(self):
+        with self.mock([window(1662, 1765, 1865)]), self.assertRaises(ValueError):
+            plan_lines(self.bk2, limit=1)
+
     def test_invalid_capture_limit_refused(self):
         for limit in (0, 11, True, 1.1):
             with self.subTest(limit=limit), self.mock([window()]), self.assertRaises(ValueError):
