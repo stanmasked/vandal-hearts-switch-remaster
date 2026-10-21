@@ -115,6 +115,50 @@ class PrivateContactSheetTests(unittest.TestCase):
         self.assertFalse(result["map02_scene_identified"])
         self.assertEqual(self.image_out.stat().st_mode & 0o777, 0o600)
 
+    def test_shortlist_filters_noncandidate_groups_after_auditing_all_sources(self):
+        second_rows = [
+            (2, "before", 4000, "held"),
+            (2, "middle", 4250, "neutral"),
+            (2, "after", 4500, "held"),
+        ]
+        plan_rows = [
+            "VH_MAP02_CAPTURE_PLAN_V1",
+            "movie_frames=933949",
+            "capture_count=6",
+            "1,before,3000,held",
+            "1,middle,3250,neutral",
+            "1,after,3500,held",
+            *["%d,%s,%d,%s" % row for row in second_rows],
+        ]
+        self.fixture.plan.write_text("\n".join(plan_rows) + "\n", encoding="ascii")
+        colors = ((5, 15, 25), (40, 50, 60), (100, 110, 120))
+        for folder in self.fixture.folders:
+            for row, color in zip(second_rows, colors):
+                folder.joinpath(self.fixture.name(*row[:3])).write_bytes(
+                    dual_fixtures.synthetic_png(color))
+        candidate = self.write_candidate_report()
+        report_data = json.loads(candidate.read_text(encoding="utf-8"))
+        report_data["private_review_group_count"] = 2
+        report_data["groups"].append({
+            "review_group": 2,
+            "state": "not_candidate_in_selected_frames",
+            "all_three_positions_exact_rgb_equal_across_supplied_sets": True,
+            "manual_transition_pattern": False,
+            "intra_group_visual_change_confirmed": False,
+            "actual_map02_scene_authenticated": False,
+        })
+        candidate.write_text(json.dumps(report_data), encoding="utf-8")
+        candidate.chmod(0o600)
+
+        result = self.call(count=6, reviewed_candidates=candidate)
+        self.assertEqual(result["source_audited_screenshot_positions"], 6)
+        self.assertEqual(result["source_audited_decoded_rgb_mismatches"], 0)
+        self.assertEqual(result["paired_screenshot_positions"], 3)
+        self.assertEqual(result["private_review_groups"], 1)
+        self.assertEqual(result["candidate_filter_group_count"], 1)
+        self.assertTrue(result["candidate_report_plan_binding_verified"])
+        self.assertFalse(result["map02_scene_identified"])
+
     def test_shortlist_for_different_plan_is_rejected_without_output(self):
         report = self.write_candidate_report(plan_sha256="0" * 64)
         with self.assertRaisesRegex(ValueError, "does not match current private capture plan"):
