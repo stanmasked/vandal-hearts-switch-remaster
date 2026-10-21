@@ -24,6 +24,8 @@ PHASE_OPS=("avail_delay","prepare","recover","status","start","drop",
 PHASE_ROW_BYTES=3*8
 LIBC_WAIT_OFFSET=54784
 POLL_EVENT_OFFSET=27664
+POLL_EVENT_LAST_OFFSET=32272
+POLL_EVENT_LAST_FIELDS=("last_requested_event_code","last_completed_return_code")
 POLL_EVENT_FIELDS=(
     "ordinal0_requested_POLLIN","ordinal0_requested_POLLOUT",
     "ordinal1_requested_POLLIN","ordinal1_requested_POLLOUT",
@@ -31,7 +33,7 @@ POLL_EVENT_FIELDS=(
     "ordinal1_returned_POLLIN","ordinal1_returned_POLLOUT",
     "returned_exceptional_any",
 )
-POLL_EVENT_HEADER=("kind","monotonic_ns","anonymous_tls_alias",*POLL_EVENT_FIELDS)
+POLL_EVENT_HEADER=("kind","monotonic_ns","anonymous_tls_alias",*POLL_EVENT_FIELDS,*POLL_EVENT_LAST_FIELDS)
 POLL_META_OFFSET=60928
 POLL_META_FIELDS=("last_timeout_plus_one","last_nfds_capped",
                   "timeout_infinite_entries","timeout_immediate_entries",
@@ -108,7 +110,7 @@ def observe(source,alsa_csv,tag_csv,phase_csv,libc_csv,meta_csv,event_csv,ready)
                         pw.writerow(("P",now,-1,"sample",count,0,0))
                         lw.writerow(("P",now,-1,"sample",count,0,0))
                         mw.writerow(("P",now,-1,count,*([0]*(len(POLL_META_FIELDS)-1))))
-                        ew.writerow(("P",now,-1,count,*([0]*(len(POLL_EVENT_FIELDS)-1))))
+                        ew.writerow(("P",now,-1,count,*([0]*(len(POLL_EVENT_FIELDS)+len(POLL_EVENT_LAST_FIELDS)-1))))
                         for alias,number in enumerate(marks):
                             if number:
                                 tw.writerow(("C",now,alias,number))
@@ -133,8 +135,10 @@ def observe(source,alsa_csv,tag_csv,phase_csv,libc_csv,meta_csv,event_csv,ready)
                         for alias in range(min(count,SLOTS)):
                             pos=POLL_EVENT_OFFSET+alias*len(POLL_EVENT_FIELDS)*8
                             vals=struct.unpack_from("<"+"Q"*len(POLL_EVENT_FIELDS),mm,pos)
-                            if any(vals):
-                                ew.writerow(("M",now,alias,*vals))
+                            last_codes=struct.unpack_from("<BB",mm,
+                                POLL_EVENT_LAST_OFFSET+alias*len(POLL_EVENT_LAST_FIELDS))
+                            if any(vals) or any(last_codes):
+                                ew.writerow(("M",now,alias,*vals,*last_codes))
                         a.flush();t.flush();ph.flush();lc.flush();pm.flush();ev.flush()
                         time.sleep(0.2)
                 except Halt:
