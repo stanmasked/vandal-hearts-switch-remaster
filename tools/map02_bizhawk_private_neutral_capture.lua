@@ -33,7 +33,7 @@ local function absolute_private_path(value)
 end
 local function canonical_movie_path(value)
   if not absolute_private_path(value) then return nil end
-  local path = value:gsub("\\\\", "/"):gsub("/+", "/")
+  local path = value:gsub("\\", "/"):gsub("/+", "/")
   -- macOS aliases /var to /private/var. Both may name the same file,
   -- depending on whether BizHawk returns the provided or resolved path.
   if path:sub(1, 13) == "/private/var/" then
