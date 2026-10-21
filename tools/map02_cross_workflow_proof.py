@@ -13,6 +13,9 @@ import sys
 from urllib import parse, request, error
 
 from map02_integration_candidate import digest, match_runtime_receipt
+from audit_map02_stack import AuditError
+from map02_candidate_receipt import ReceiptError
+from map02_evidence_bundle import EvidenceError
 from map02_evidence_bundle import verify as verify_runtime_bundle
 
 SHA40 = re.compile(r"^[0-9a-f]{40}$")
@@ -252,7 +255,7 @@ def main() -> int:
                   f"source={args.sha} root_sha256={data['root_sha256']} "
                   "main_merge=0")
         return 0
-    except (CrossProofError, OSError, KeyError, ValueError) as exc:
+    except (CrossProofError, AuditError, ReceiptError, EvidenceError, OSError, KeyError, ValueError) as exc:
         print(f"VH_MAP02_CROSS_WORKFLOW_FAIL: {exc}", file=sys.stderr)
         return 1
 
