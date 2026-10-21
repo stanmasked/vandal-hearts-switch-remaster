@@ -1054,9 +1054,9 @@ jobs:
                   r["high_fanout_only_nontext_relocation_names"])
           assert r["source_section_and_relocation_type_do_not_prove_runtime_abi"] is True
           assert r["high_fanout_abs64_data_records"] == 222
-          assert r["high_fanout_abs64_data_records"] == (
-              r["high_fanout_provenance_abs64_records"] ==
-              r["high_fanout_provenance_section_data_records"])
+          assert (r["high_fanout_abs64_data_records"] ==
+                  r["high_fanout_provenance_abs64_records"] ==
+                  r["high_fanout_provenance_section_data_records"])
           assert r["high_fanout_abs64_data_symbol_names"] == 1
           assert 1 <= r["high_fanout_abs64_data_source_objects"] <= 85
           assert (r["high_fanout_abs64_data_source_objects"] <=
