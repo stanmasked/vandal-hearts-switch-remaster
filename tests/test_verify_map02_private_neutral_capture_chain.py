@@ -64,7 +64,10 @@ class CaptureAuditTests(unittest.TestCase):
                                 invented_png(i + 1))
 
     def write_log(self, *, complete=True):
-        data = ["unrelated pretend emulator console text"]
+        data = ["unrelated pretend emulator console text",
+                "VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 "
+                "candidate_input=1661 first_start_pressed=yes "
+                "ps1_input_delivery=unverified"]
         data.extend(log_row(*r) for r in self.records)
         if complete:
             data.append("VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=%d "
@@ -95,6 +98,7 @@ class CaptureAuditTests(unittest.TestCase):
         value = self.call()
         self.assertTrue(value["private_plan_rebuilt_from_direct_bk2"])
         self.assertTrue(value["capture_logs_match_each_planned_input_and_counter"])
+        self.assertTrue(value["owner_log_reports_live_first_start_anchor_before_screenshots"])
         self.assertTrue(value["all_png_crc_zlib_scanlines_pass"])
         self.assertEqual(value["screenshot_count"], 3)
         for name in ("movie_input_to_actual_ps1_delivery_verified",
@@ -104,6 +108,36 @@ class CaptureAuditTests(unittest.TestCase):
                      "source_native_gpu_vram_verified", "private_input_or_png_published"):
             self.assertFalse(value[name])
         self.assertNotIn(str(self.base), json.dumps(value))
+
+    def test_missing_live_start_preflight_refused(self):
+        text = self.log.read_text()
+        self.log.write_text("\n".join(line for line in text.splitlines()
+                                     if not line.startswith("VH_PRIVATE_NEUTRAL_START_PREFLIGHT")) + "\n")
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_wrong_counter_in_start_preflight_refused(self):
+        self.log.write_text(self.log.read_text().replace(
+            "START_PREFLIGHT counter=1662", "START_PREFLIGHT counter=1663"))
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_duplicate_start_preflight_refused(self):
+        marker = "VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 candidate_input=1661 first_start_pressed=yes ps1_input_delivery=unverified\n"
+        with self.log.open("a") as stream:
+            stream.write(marker)
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_start_preflight_after_first_capture_refused(self):
+        text = self.log.read_text()
+        marker = "VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 candidate_input=1661 first_start_pressed=yes ps1_input_delivery=unverified"
+        text = text.replace(marker + "\n", "").replace(
+            log_row(*PICKS[0]) + "\n",
+            log_row(*PICKS[0]) + "\n" + marker + "\n")
+        self.log.write_text(text)
+        with self.assertRaises(ValueError):
+            self.call()
 
     def test_direct_source_plan_mismatch_rejected(self):
         with self.assertRaises(ValueError):
