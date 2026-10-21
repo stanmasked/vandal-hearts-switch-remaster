@@ -71,10 +71,18 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
         second = kwargs.pop("second", self.second)
         count_a = kwargs.pop("count_a", len(ROWS))
         count_b = kwargs.pop("count_b", len(ROWS))
+        version_b = kwargs.pop("version_b", "2.11")
+        display_b = kwargs.pop("display_b", "NTSC")
         with patch(
             "tools.map02_private_two_capture_audit.verify",
-            side_effect=[{"screenshot_count": count_a},
-                         {"screenshot_count": count_b}],
+            side_effect=[
+                {"screenshot_count": count_a,
+                 "reported_bizhawk_version": "2.11",
+                 "reported_psx_display_standard": "NTSC"},
+                {"screenshot_count": count_b,
+                 "reported_bizhawk_version": version_b,
+                 "reported_psx_display_standard": display_b},
+            ],
         ) as verifier, patch(
             "tools.map02_private_two_capture_audit.parse_plan",
             return_value=("fictional plan", ROWS),
@@ -87,6 +95,8 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
         report, verifier = self.call()
         self.assertEqual(verifier.call_count, 2)
         self.assertTrue(report["two_private_capture_chains_passed"])
+        self.assertTrue(report["same_reported_bizhawk_runtime_profile"])
+        self.assertFalse(report["octoshock_core_identity_authenticated"])
         self.assertTrue(report["distinct_capture_directories"])
         self.assertEqual(report["screenshot_pairs_checked"], 3)
         self.assertEqual(report["byte_identical_png_pairs"], 3)
@@ -197,6 +207,14 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "outside Git"):
             self.call()
 
+    def test_different_live_bizhawk_versions_block_comparison(self):
+        with self.assertRaisesRegex(ValueError, "different emulator runtime profiles"):
+            self.call(version_b="2.12")
+
+    def test_different_psx_display_standards_block_comparison(self):
+        with self.assertRaisesRegex(ValueError, "different emulator runtime profiles"):
+            self.call(display_b="PAL")
+
     def test_different_chain_counts_rejected(self):
         with self.assertRaisesRegex(ValueError, "counts differ"):
             self.call(count_b=2)
@@ -208,7 +226,12 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
                 str(self.second)]
         with patch.object(sys, "argv", args), patch(
             "tools.map02_private_two_capture_audit.verify",
-            side_effect=[{"screenshot_count": 3}, {"screenshot_count": 3}],
+            side_effect=[
+                {"screenshot_count": 3, "reported_bizhawk_version": "2.11",
+                 "reported_psx_display_standard": "NTSC"},
+                {"screenshot_count": 3, "reported_bizhawk_version": "2.11",
+                 "reported_psx_display_standard": "NTSC"},
+            ],
         ), patch(
             "tools.map02_private_two_capture_audit.parse_plan",
             return_value=("fictional plan", ROWS),
@@ -226,7 +249,12 @@ class TwoPrivateCaptureAuditTests(unittest.TestCase):
                 str(self.second)]
         with patch.object(sys, "argv", args), patch(
             "tools.map02_private_two_capture_audit.verify",
-            side_effect=[{"screenshot_count": 3}, {"screenshot_count": 3}],
+            side_effect=[
+                {"screenshot_count": 3, "reported_bizhawk_version": "2.11",
+                 "reported_psx_display_standard": "NTSC"},
+                {"screenshot_count": 3, "reported_bizhawk_version": "2.11",
+                 "reported_psx_display_standard": "NTSC"},
+            ],
         ), patch(
             "tools.map02_private_two_capture_audit.parse_plan",
             return_value=("fictional plan", ROWS),
