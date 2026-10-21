@@ -87,7 +87,7 @@ class ModuleOwnerTests(unittest.TestCase):
             "    3: 0000000000000000     0 NOTYPE  GLOBAL DEFAULT  UND unknown\n"
             "    4: 0000000000000000     0 FUNC    WEAK   DEFAULT  UND weak_only\n"
             "    5: 0000000000000000    11 FUNC    GLOBAL DEFAULT    1 defined\n"
-        ).replace("\\\n", "\n")
+        )
         classes = parse_readelf_global_undefined_types(example)
         self.assertEqual(classes, {
             "method": {"FUNC"}, "buffer": {"OBJECT"},
