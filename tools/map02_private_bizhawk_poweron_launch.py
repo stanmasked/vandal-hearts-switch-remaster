@@ -59,6 +59,47 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
         raise ValueError("capture Lua script requires an existing absolute path")
     lua = lua.resolve(strict=True)
     disc = _resolve_private_file(private_disc)
+    if disc.suffix.lower() == ".cue":
+        try:
+            cue_text = disc.read_text(encoding="utf-8-sig")
+        except (OSError, UnicodeError) as exc:
+            raise ValueError("CUE descriptor is not readable text") from exc
+        cue_root = disc.parent.resolve(strict=True)
+        track_count = 0
+        for line in cue_text.splitlines():
+            fields = line.strip().split(None, 1)
+            if not fields or fields[0].upper() != "FILE":
+                continue
+            if len(fields) != 2:
+                raise ValueError("malformed CUE FILE directive")
+            payload = fields[1].strip()
+            if payload.startswith('"'):
+                closing = payload.find('"', 1)
+                if closing < 1:
+                    raise ValueError("malformed quoted CUE track filename")
+                filename = payload[1:closing]
+                file_type = payload[closing + 1:].strip()
+                if not file_type or '"' in file_type:
+                    raise ValueError("malformed CUE track type")
+            else:
+                tokens = payload.split()
+                if len(tokens) != 2:
+                    raise ValueError("malformed unquoted CUE FILE directive")
+                filename, file_type = tokens
+            relative = Path(filename)
+            if relative.is_absolute() or ".." in relative.parts:
+                raise ValueError("CUE track path must remain under descriptor directory")
+            candidate = cue_root / relative
+            try:
+                resolved = candidate.resolve(strict=True)
+            except OSError as exc:
+                raise ValueError("CUE track file is missing") from exc
+            if not resolved.is_relative_to(cue_root):
+                raise ValueError("CUE track path escapes descriptor directory")
+            _resolve_private_file(candidate)
+            track_count += 1
+        if track_count == 0:
+            raise ValueError("CUE descriptor has no FILE tracks")
     movie = _resolve_private_file(private_bk2)
     plan = _resolve_private_file(private_plan)
     root = Path(private_png_root)
@@ -66,6 +107,14 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
         raise ValueError("PNG output must be an existing private absolute directory")
     root = root.resolve(strict=True)
     _reject_git(root)
+    # On POSIX, require a private output directory independently of the
+    # caller's umask; Windows ACLs are not represented by POSIX mode bits.
+    if os.name != "nt":
+        root_info = root.stat()
+        if root_info.st_uid != os.geteuid():
+            raise ValueError("PNG output directory must be owned by current user")
+        if stat.S_IMODE(root_info.st_mode) & 0o077:
+            raise ValueError("PNG output directory must be owner-only (mode 0700)")
 
     # Validate the known disc/MAP02 resource profile and BK2 metadata before
     # deriving a plan or allowing the caller to launch EmuHawk.
