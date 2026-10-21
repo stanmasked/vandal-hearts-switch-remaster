@@ -63,7 +63,7 @@ def read_source(path):
                     "Poll ordinal metadata alias or sample timestamp invalid")
             require(alias not in frames[-1]["alias"],"Duplicated ordinal TLS alias snapshot")
             require(all(x>=y for x,y in zip(counters,
-                    previous.get(alias,(0,)*len(counters))),
+                    previous.get(alias,(0,)*len(counters)))),
                     "Poll request or return ordinal counter decreased")
             previous[alias]=counters
             row=dict(zip(POLL_EVENT_FIELDS,counters))
