@@ -103,8 +103,9 @@ class ReviewShortlistTests(unittest.TestCase):
 
     def test_uncertain_label_suppresses_candidate(self):
         self.write_labels([("uncertain", "uncertain"), *TRANSITION[1:]])
-        self.assertEqual(self.call()["groups"][0]["state"],
-                         "awaiting_manual_classification")
+        group = self.call()["groups"][0]
+        self.assertEqual(group["state"], "awaiting_manual_classification")
+        self.assertFalse(group["manual_transition_pattern"])
 
     def test_png_pixel_disagreement_overrides_matching_manual_labels(self):
         self.sample.image(1, "middle").write_bytes(
