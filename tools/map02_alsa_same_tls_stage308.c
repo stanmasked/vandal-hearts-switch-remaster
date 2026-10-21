@@ -12,6 +12,7 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,6 +43,10 @@ struct vh_shared {
   unsigned char padding[32768 - (16 + VH_SLOTS*VH_OPS*VH_KINDS*8)];
   uint64_t cpal_callback_entries[VH_SLOTS];
 };
+_Static_assert(offsetof(struct vh_shared, cpal_callback_entries)==32768,
+               "CPAL anonymous TLS counter must be at stable mmap byte offset");
+_Static_assert(sizeof(struct vh_shared)<=VH_SIZE,
+               "Stage308 C shim counter storage exceeds bounded private mmap");
 
 static struct vh_shared *vh = NULL;
 static __thread int vh_alias = -1;
