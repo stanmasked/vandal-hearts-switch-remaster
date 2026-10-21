@@ -86,10 +86,10 @@ def _paste_frame(
     if width <= 0 or height <= 0:
         raise ValueError("empty captured frame")
     with Image.frombytes("RGB", (width, height), samples) as decoded:
-        decoded.thumbnail((CELL_WIDTH - 18, CELL_HEIGHT - 38),
+        decoded.thumbnail((CELL_WIDTH - 18, CELL_HEIGHT - 66),
                           Image.Resampling.LANCZOS)
         left = x + (CELL_WIDTH - decoded.width) // 2
-        top = y + 32 + (CELL_HEIGHT - 40 - decoded.height) // 2
+        top = y + 32 + (CELL_HEIGHT - 64 - decoded.height) // 2
         canvas.paste(decoded, (left, top))
 
     drawer = ImageDraw.Draw(canvas)
@@ -105,7 +105,7 @@ def _paste_frame(
     # restrictive PNG image, never to CI logs or the terminal.
     drawer.text(
         (x + 10, y + CELL_HEIGHT - 16),
-        "private input index: %d (display offset UNVERIFIED)" % input_index,
+        "input %d / display sync UNVERIFIED" % input_index,
         fill=(190, 197, 211),
     )
 
