@@ -40,7 +40,8 @@ def _read_aggregate(path):
     return report
 
 
-def audit_glibc_real_link(original_manifest, after_sdl_manifest, four_group_elf,
+def audit_glibc_real_link(original_manifest, original_elf,
+                          after_sdl_manifest, after_sdl_elf, four_group_elf,
                           copied_native_libc, copied_native_libm,
                           completed_census_json, new_private_root, *,
                           expected_pc_survivors=493, expected_four_total=983):
@@ -54,30 +55,41 @@ def audit_glibc_real_link(original_manifest, after_sdl_manifest, four_group_elf,
 
     entries = []
     try:
-        for path in (four_group_elf, copied_native_libc, copied_native_libm):
+        for path in (original_elf, after_sdl_elf, four_group_elf,
+                     copied_native_libc, copied_native_libm):
             item = _open_owned(path, require_private=True)
             entries.append(item)
             _check_abi(item)
-        four, libc, libm = entries
-        if (four[1].suffix != ".o" or libc[1].suffix != ".a"
+        original_source, sdl_source, four, libc, libm = entries
+        if (any(e[1].suffix != ".o" for e in entries[:3])
+                or libc[1].suffix != ".a"
                 or libm[1].suffix != ".a"
-                or len({(e[2][0], e[2][1]) for e in entries}) != 3
+                or len({(e[2][0], e[2][1]) for e in entries}) != 5
                 or libc[3] == libm[3]):
             raise ValueError("MAP02 real-glibc input identities invalid")
         witness = (
             ("four_group_public_elf_sha256", four[3]),
             ("copied_native_libc_archive_sha256", libc[3]),
             ("copied_native_libm_archive_sha256", libm[3]),
-            ("original_public_elf_sha256", orig["relocatable_elf_sha256"]),
-            ("after_sdl2_public_elf_sha256", sdl["relocatable_elf_sha256"]),
+            ("original_public_elf_sha256", original_source[3]),
+            ("after_sdl2_public_elf_sha256", sdl_source[3]),
         )
         if any(prior.get(field) != digest for field, digest in witness):
             raise ValueError("MAP02 real-glibc input census SHA mismatched")
 
+        orig_strong, orig_weak = _unresolved(original_source)
+        sdl_strong, sdl_weak = _unresolved(sdl_source)
+        if (orig["relocatable_elf_sha256"] != original_source[3]
+                or sdl["relocatable_elf_sha256"] != sdl_source[3]
+                or orig["strong_symbols"] != orig_strong
+                or orig["weak_symbols"] != orig_weak
+                or sdl["strong_symbols"] != sdl_strong
+                or sdl["weak_symbols"] != sdl_weak):
+            raise ValueError("MAP02 real-glibc underlying ELF and manifest disagree")
         before_strong, before_weak = _unresolved(four)
         before = set(before_strong)
-        original = set(orig["strong_symbols"])
-        after_sdl = set(sdl["strong_symbols"])
+        original = set(orig_strong)
+        after_sdl = set(sdl_strong)
         pc = original & after_sdl & before
         sdl_new = (after_sdl - original) & before
         system_new = before - after_sdl
@@ -166,7 +178,8 @@ def audit_glibc_real_link(original_manifest, after_sdl_manifest, four_group_elf,
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in (
-        "private_original_manifest", "private_after_sdl2_manifest",
+        "private_original_manifest", "private_original_elf",
+        "private_after_sdl2_manifest", "private_after_sdl2_elf",
         "private_four_group_elf", "private_copied_libc_archive",
         "private_copied_libm_archive", "completed_glibc_census_json",
         "new_owner_private_output_root",
@@ -175,7 +188,8 @@ def main():
     args = parser.parse_args()
     try:
         output = audit_glibc_real_link(
-            args.private_original_manifest, args.private_after_sdl2_manifest,
+            args.private_original_manifest, args.private_original_elf,
+            args.private_after_sdl2_manifest, args.private_after_sdl2_elf,
             args.private_four_group_elf, args.private_copied_libc_archive,
             args.private_copied_libm_archive, args.completed_glibc_census_json,
             args.new_owner_private_output_root)
