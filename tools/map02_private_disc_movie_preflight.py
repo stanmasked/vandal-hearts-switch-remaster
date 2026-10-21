@@ -287,7 +287,8 @@ def _movie_metadata(movie_path: Path, expected_movie_frames: int
                     raw_line = raw.readline(MAX_FRAME_LENGTH + 3)
                     if not raw_line:
                         break
-                    if not raw_line.endswith(b"\n"):
+                    if (not raw_line.endswith(b"\n")
+                            and raw_line != b"[/Input]"):
                         raise ValueError("BK2 input line exceeds bounded length")
                     bytes_read += len(raw_line)
                     if bytes_read > MAX_INPUT_BYTES:
