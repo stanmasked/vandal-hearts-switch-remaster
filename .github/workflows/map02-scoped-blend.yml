@@ -91,6 +91,8 @@ on:
       - 'tests/test_check_map02_public_xcb_after_x11.py'
       - 'tools/check_map02_public_grouped_x11_xcb.py'
       - 'tests/test_check_map02_public_grouped_x11_xcb.py'
+      - 'tools/check_map02_public_four_archive_group.py'
+      - 'tests/test_check_map02_public_four_archive_group.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -244,6 +246,8 @@ on:
       - 'tests/test_check_map02_public_xcb_after_x11.py'
       - 'tools/check_map02_public_grouped_x11_xcb.py'
       - 'tests/test_check_map02_public_grouped_x11_xcb.py'
+      - 'tools/check_map02_public_four_archive_group.py'
+      - 'tests/test_check_map02_public_four_archive_group.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -338,6 +342,7 @@ jobs:
             tests.test_check_map02_public_x11_after_sdl2 \
             tests.test_check_map02_public_xcb_after_x11 \
             tests.test_check_map02_public_grouped_x11_xcb \
+            tests.test_check_map02_public_four_archive_group \
             tests.test_check_map02_private_archive_strategy_compare \
             tests.test_verify_map02_private_archive_comparison \
             tests.test_run_map02_private_link_gap_audit
@@ -715,6 +720,60 @@ jobs:
           print("Sequential minus grouped (may be positive, zero, or negative):",
                 sequential - grouped_final)
           print("No retail MAP02 data, private names, or executable game.")
+          PY
+      - name: Measure four real grouped X11 XCB Xau Xdmcp GNU archives from original public SDL2 ELF
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The xcb static dependency chain requires Xau and Xdmcp providers.
+          sudo apt-get install -y --no-install-recommends libxau-dev libxdmcp-dev
+          xau_static="$(pkg-config --variable=libdir xau)/libXau.a"
+          xdmcp_static="$(pkg-config --variable=libdir xdmcp)/libXdmcp.a"
+          test -s "${xau_static}"
+          test -s "${xdmcp_static}"
+          python3 -m tools.check_map02_public_four_archive_group \
+            "${RUNNER_TEMP}/map02-real-x11-native-provider/after-sdl2-unresolved.private.json" \
+            "${RUNNER_TEMP}/map02-real-sdl2-native-provider/linked/map02-private-candidate-linked.o" \
+            "${RUNNER_TEMP}/map02-real-x11-native-provider/x11-system-candidate.a" \
+            "${RUNNER_TEMP}/map02-real-xcb-native-provider/xcb-system-candidate.a" \
+            "${xau_static}" \
+            "${xdmcp_static}" \
+            "${RUNNER_TEMP}/map02-real-four-archive-group" \
+            | tee "${RUNNER_TEMP}/map02-real-four-archive-aggregate.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          sdl = json.loads((root / "map02-real-sdl2-provider-aggregate.json").read_text())
+          x11 = json.loads((root / "map02-real-x11-aggregate.json").read_text())
+          xcb = json.loads((root / "map02-real-xcb-aggregate.json").read_text())
+          grouped = json.loads((root / "map02-real-grouped-x11-xcb-aggregate.json").read_text())
+          four = json.loads((root / "map02-real-four-archive-aggregate.json").read_text())
+          assert four["input_after_sdl2_sha256"] == sdl["linked_partial_elf_sha256"]
+          assert four["initial_after_sdl2_strong_undefined"] == 1085
+          assert four["copied_x11_sha256"] == x11["copied_x11_archive_sha256"]
+          assert four["copied_xcb_sha256"] == xcb["copied_xcb_archive_sha256"]
+          assert (four["original_strong_imports_resolved"] +
+                  four["original_strong_imports_remaining"] == 1085)
+          assert (four["original_strong_imports_remaining"] +
+                  four["new_strong_imports_from_four_archives"] ==
+                  four["final_strong_undefined_after_four_archives"])
+          assert (four["original_with_any_of_four_strong_providers"] +
+                  four["original_without_four_strong_providers"] == 1085)
+          assert four["real_four_archive_group_ld_r_executed"] is True
+          assert four["system_archive_origin_independently_attested"] is False
+          assert four["retail_assets_linked"] is False
+          assert four["fully_linked_game_executable"] is False
+          assert four["authentic_map02_execution_proven"] is False
+          print("Real X11/XCB grouped output unresolved:",
+                grouped["final_strong_undefined_after_grouped_x11_xcb"])
+          print("Real X11/XCB/Xau/Xdmcp grouped output unresolved:",
+                four["final_strong_undefined_after_four_archives"])
+          print("Four archives minus two (may be positive, zero, or negative):",
+                four["final_strong_undefined_after_four_archives"] -
+                grouped["final_strong_undefined_after_grouped_x11_xcb"])
+          print("Only owner-private intermediate native ELF; no retail gameplay.")
           PY
       - name: Fail closed on upstream rasterizer source drift
         run: |
