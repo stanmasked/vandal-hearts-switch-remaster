@@ -13,6 +13,7 @@ from tools.check_map02_public_x11_after_sdl2 import _save_local_undefined_manife
 from tools.check_map02_public_glibc_pc_provider_census import (
     SCHEMA, audit_glibc_static_coverage,
 )
+from tools.check_map02_private_provider_coverage import _candidate_strong_exports
 
 
 class OriginalPCGLibCProviderCensusTests(unittest.TestCase):
@@ -122,6 +123,15 @@ class OriginalPCGLibCProviderCensusTests(unittest.TestCase):
         for private in ("orig_libc", "orig_libm", "orig_both",
                         "orig_uncovered", str(self.root)):
             self.assertNotIn(json.dumps(private), json.dumps(r))
+
+    def test_real_gnu_ifunc_provider_is_counted_as_strong(self):
+        candidate = self.compile(
+            "gnu-ifunc",
+            "int plain_impl(void) {return 7;}\n"
+            "static void *resolve_target(void) {return plain_impl;}\n"
+            "int ifunc_provider(void) __attribute__((ifunc(\"resolve_target\")));\n")
+        archive = self.archive("real-gnu-ifunc.a", candidate)
+        self.assertIn("ifunc_provider", _candidate_strong_exports(archive))
 
     def test_wrong_baseline_rejected_before_files_created(self):
         folder = self.root / "wrong-count"
