@@ -8,6 +8,8 @@ on:
       - 'tests/test_map02_cold_restart_oracle.py'
       - 'tools/map02_evidence_bundle.py'
       - 'tests/test_map02_evidence_bundle.py'
+      - 'tools/map02_cross_workflow_proof.py'
+      - 'tests/test_map02_cross_workflow_proof.py'
       - 'docs/MAP02_COLD_RESTART_DETERMINISM.md'
   workflow_dispatch:
 
@@ -35,6 +37,8 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_map02_cold_restart_oracle.py' -v
           python3 -m py_compile tools/map02_evidence_bundle.py tests/test_map02_evidence_bundle.py
           python3 -m unittest discover -s tests -p 'test_map02_evidence_bundle.py' -v
+          python3 -m py_compile tools/map02_cross_workflow_proof.py tests/test_map02_cross_workflow_proof.py
+          python3 -m unittest discover -s tests -p 'test_map02_cross_workflow_proof.py' -v
           echo 'VH_MAP02_COLD_RESTART_ORACLE_PASS real_nexium_claim=0 retail=0'
 
   combined-switch-nro:
@@ -207,3 +211,87 @@ jobs:
           path: map02-cold-restart-evidence/
           if-no-files-found: warn
 
+
+  cross-workflow-proof:
+    name: Confirm exact-source integration candidate and genuine NeXium evidence
+    needs: [nexium-combined-session]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install Pillow and validate independent-proof oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pil
+          python3 -m unittest discover -s tests -p 'test_map02_cross_workflow_proof.py' -v
+      - name: Find newest successful integration workflow on identical commit
+        id: sibling
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          python3 tools/map02_cross_workflow_proof.py discover \
+            --repo "$GITHUB_REPOSITORY" \
+            --sha "$EXPECTED_SOURCE" \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Download exact-commit successful independent integration report
+        uses: actions/download-artifact@v4
+        with:
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.sibling.outputs.integration_run_id }}
+          github-token: ${{ github.token }}
+          name: map02-full-stack-no-merge-audit
+          path: sibling-integration
+      - name: Download genuine PNG and NRO proof from this NeXium run
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-map02-cold-restart-runtime
+          path: sibling-nexium
+      - name: Verify all files, RGB digests, source trees, independent CI and no-merge status
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+          INTEGRATION_RUN_ID: ${{ steps.sibling.outputs.integration_run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p cross-workflow-proof
+          python3 tools/map02_cross_workflow_proof.py verify \
+            --repo "$GITHUB_REPOSITORY" \
+            --sha "$EXPECTED_SOURCE" \
+            --tree "$(git rev-parse HEAD^{tree})" \
+            --integration-dir sibling-integration \
+            --runtime-dir sibling-nexium \
+            --integration-run "$INTEGRATION_RUN_ID" \
+            --runtime-run "$GITHUB_RUN_ID" \
+            --report cross-workflow-proof/cross-workflow.json \
+            | tee cross-workflow-proof/result.log
+          grep -F 'VH_MAP02_CROSS_WORKFLOW_PASS prs=26 upstream=25 png=24' cross-workflow-proof/result.log
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x = json.loads(Path("cross-workflow-proof/cross-workflow.json").read_text())
+          assert x["source_and_tree_match"] is True
+          assert x["real_merge_performed"] is False
+          assert x["physical_switch_verified"] is False
+          assert x["verified_png"] == 24 and x["verified_files"] == 35
+          assert x["integration_workflow_run_id"] != x["runtime_workflow_run_id"]
+          PY
+      - name: Save independent cross-workflow verification receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-independent-ci-cross-proof
+          path: cross-workflow-proof/
+          if-no-files-found: warn
