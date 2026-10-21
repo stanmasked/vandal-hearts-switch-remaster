@@ -23,3 +23,27 @@ Two Ubuntu 24.04 GitHub Actions jobs request separate 21ms and 22ms Pulse hints.
 At 21ms, an already-pending `poll` begun before guest input may have a *zero event category delta* during the guest interval. The active-request byte preserves its requested IN/OUT categories while that call remains in flight, even with zero cumulative delta; once it returns, the active byte is atomically cleared and its return is stored separately. A zero active byte therefore must not be mistaken for an active call with an empty requested-event mask. This is a sampled interposer state, not proof of the exact kernel wait state at every instant or of the root cause of missing audio. At 22ms, returned `POLLIN`/`POLLOUT` indicate category and anonymous ordinal only; they do NOT establish where the readiness notification originated. No lost wakeup, eventfd producer, exact kernel wait cause, permanent deadlock, 21/22ms causal hardware threshold or Nintendo Switch production audio fix follows from these counters alone.
 
 **Seven new isolated research files only; all prior Draft PRs, production game branch `main`, original NRO, control ELF and NeXium upstream are unchanged.**
+
+
+## Stage317 follow-up — cancellation-safe active request state
+
+POSIX thread cancellation can terminate a thread while it is blocked inside
+`poll()`, bypassing the wrapper's normal return path. Stage317 registers a
+pthread cleanup handler before publishing the active request. If cancellation
+unwinds the wrapper, the handler atomically clears only the low-byte active
+request and preserves the high-byte last completed return. It deliberately
+does not invent a poll return; the libc entry/return counters remain unmatched
+when the call is interrupted.
+
+The workflow adds an integration regression test against the compiled
+interposer: a worker first completes a ready two-position poll (establishing
+return code `0xa1`), then blocks in a two-position `POLLIN` request
+(`0x85`). The test cancels the worker and verifies that the active byte is
+cleared while `0xa1` remains intact and the cumulative request/return counters
+are consistent. The Python source-contract suite also checks that cleanup is
+registered before the active request is published and remains installed until
+the state transition completes.
+
+This is a synthetic cancellation regression only. It does not show that
+NeXium canceled the CPAL thread during Stage316, and it does not establish an
+audio root cause or production fix.
