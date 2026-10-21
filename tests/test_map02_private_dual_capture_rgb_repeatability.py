@@ -118,6 +118,15 @@ class PrivateDualRGBTests(unittest.TestCase):
         self.assertNotIn("3000", json.dumps(public_fields))
         self.assertNotIn("png_file", json.dumps(result))
 
+    def test_git_checkout_source_is_rejected_before_evidence_hashing(self):
+        (self.root / ".git").mkdir()
+        with patch(
+            "tools.map02_private_dual_capture_rgb_repeatability.capture_evidence_digest"
+        ) as digest:
+            with self.assertRaisesRegex(ValueError, "outside Git"):
+                self.call()
+        digest.assert_not_called()
+
     def test_source_evidence_digest_changes_when_a_planned_png_changes(self):
         first = self.call()["source_capture_evidence_sha256"]
         self.image(1, "middle").write_bytes(synthetic_png((240, 240, 240)))
