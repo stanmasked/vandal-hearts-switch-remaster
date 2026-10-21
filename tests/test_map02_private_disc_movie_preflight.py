@@ -8,7 +8,7 @@ import zipfile
 
 from tools.map02_private_disc_movie_preflight import (
     MAP02_BYTES, MAP02_LBA, PVD_LBA, SECTOR_BYTES, USER_DATA_BYTES,
-    EXPECTED_VOLUME_ID, inspect_pair,
+    EXPECTED_BIN_BYTES, EXPECTED_VOLUME_ID, inspect_pair,
 )
 
 SYNC = json.dumps({"o":{"FIOConfig":{
@@ -60,8 +60,9 @@ class DiscMoviePreflightTests(unittest.TestCase):
 
     def _write_disc(self, *, volume_id=EXPECTED_VOLUME_ID, valid_pvd=True):
         sectors = MAP02_LBA + (MAP02_BYTES + USER_DATA_BYTES - 1) // USER_DATA_BYTES
+        # Sparse synthetic image, no retail contents and no 665 MB of data written.
         with self.bin.open("wb") as handle:
-            handle.truncate(sectors * SECTOR_BYTES)
+            handle.truncate(EXPECTED_BIN_BYTES)
         pvd = bytearray(USER_DATA_BYTES)
         pvd[0] = 1
         pvd[1:6] = b"CD001" if valid_pvd else b"NOPE!"
@@ -87,6 +88,7 @@ class DiscMoviePreflightTests(unittest.TestCase):
     def test_matching_disc_profile_and_movie_header_is_ready_for_owner_replay(self):
         result = self.call()
         self.assertTrue(result["disc_volume_id_matches_audited_profile"])
+        self.assertTrue(result["disc_size_matches_audited_profile"])
         self.assertTrue(result["map02_prs_matches_expected_profile"])
         self.assertTrue(result["movie_header_matches_vandal_hearts_usa_psx_octoshock"])
         self.assertTrue(result["movie_sync_matches_one_controller_no_cards"])
@@ -94,6 +96,26 @@ class DiscMoviePreflightTests(unittest.TestCase):
         self.assertFalse(result["exact_disc_movie_compatibility_verified"])
         self.assertFalse(result["actual_octoshock_playback_verified"])
         self.assertFalse(result["map02_scene_identity_verified"])
+
+    def test_truncated_disc_with_valid_map02_sectors_is_not_ready(self):
+        # A minimal synthetic image can preserve the PVD/MAP02 bytes but
+        # lacks the rest of the known 282674-sector release profile.
+        sectors = MAP02_LBA + (MAP02_BYTES + USER_DATA_BYTES - 1) // USER_DATA_BYTES
+        with self.bin.open("r+b") as handle:
+            handle.truncate(sectors * SECTOR_BYTES)
+        result = self.call()
+        self.assertTrue(result["map02_prs_matches_expected_profile"])
+        self.assertTrue(result["disc_volume_id_matches_audited_profile"])
+        self.assertFalse(result["disc_size_matches_audited_profile"])
+        self.assertFalse(result["media_preflight_ready_for_owner_replay"])
+
+    def test_oversized_disc_with_matching_resource_is_not_ready(self):
+        with self.bin.open("r+b") as handle:
+            handle.truncate(EXPECTED_BIN_BYTES + SECTOR_BYTES)
+        result = self.call()
+        self.assertTrue(result["map02_prs_matches_expected_profile"])
+        self.assertFalse(result["disc_size_matches_audited_profile"])
+        self.assertFalse(result["media_preflight_ready_for_owner_replay"])
 
     def test_different_map02_resource_profile_is_not_accepted(self):
         result = self.call(expected_map02_sha256=hashlib.sha256(b"other profile").hexdigest())
