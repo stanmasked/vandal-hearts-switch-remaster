@@ -43,6 +43,44 @@ class Map02ScopedCiPolicyTests(unittest.TestCase):
             raw.count("            tests.test_inspect_map02_private_inputs \\"),
             1, "MAP02 inventory regressions must actually be executed")
 
+    def test_abs64_counts_are_compared_as_numbers_not_booleans(self):
+        """Guard against: assert 222 == (222 == 222), which always fails."""
+        import ast
+
+        raw = WORKFLOW.read_text(encoding="utf-8")
+        step = raw.split(
+            "      - name: Attribute 380 surviving original PC imports to exact compiled game versus backend objects\n", 1)[1].split("\\n      - name:", 1)[0]
+        code = step.split("          python3 - <<'PY'\n", 1)[1]
+        code = code.split("\n          PY", 1)[0]
+        parsed = ast.parse("\n".join(
+            line[10:] if line.startswith("          ") else line
+            for line in code.splitlines()))
+
+        def report_key(node):
+            if (isinstance(node, ast.Subscript)
+                    and isinstance(node.value, ast.Name)
+                    and node.value.id == "r"
+                    and isinstance(node.slice, ast.Constant)
+                    and isinstance(node.slice.value, str)):
+                return node.slice.value
+            return None
+
+        checks = [
+            node.test for node in ast.walk(parsed)
+            if isinstance(node, ast.Assert)
+            and isinstance(node.test, ast.Compare)
+            and report_key(node.test.left) == "high_fanout_abs64_data_records"
+        ]
+        self.assertEqual(len(checks), 1)
+        self.assertEqual(
+            [report_key(node) for node in
+             (checks[0].left, *checks[0].comparators)],
+            ["high_fanout_abs64_data_records",
+             "high_fanout_provenance_abs64_records",
+             "high_fanout_provenance_section_data_records"])
+        self.assertEqual(len(checks[0].ops), 2)
+        self.assertTrue(all(isinstance(op, ast.Eq) for op in checks[0].ops))
+
     def test_no_private_evidence_artifact_upload(self):
         raw = WORKFLOW.read_text(encoding="utf-8")
         self.assertNotIn("actions/upload-artifact", raw)
