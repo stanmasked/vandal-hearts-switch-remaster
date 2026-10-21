@@ -12,7 +12,7 @@ import hashlib
 import json
 from pathlib import Path
 from audit_map02_poll_arguments_stage315 import audit as previous_audit,parse as read_previous
-from capture_map02_poll_events_stage316 import POLL_EVENT_FIELDS,POLL_EVENT_HEADER
+from capture_map02_poll_events_stage316 import (POLL_EVENT_FIELDS,POLL_EVENT_HEADER,POLL_EVENT_LAST_FIELDS)
 
 SCHEMA="vh-map02-stage316-source-reparsed-cpal-poll-ordinal-event-categories/v1"
 MAX_LINES=120000
@@ -30,6 +30,7 @@ def read_source(path):
     require(next(r,None)==list(POLL_EVENT_HEADER),"Poll ordinal source changed/leaks raw fd or TID")
     frames=[]
     previous={}
+    ncounts=len(POLL_EVENT_FIELDS)
     for i,line in enumerate(r):
         require(i<MAX_LINES and len(line)==len(POLL_EVENT_HEADER),
                 "Poll ordinal event source row width/length invalid")
@@ -38,23 +39,68 @@ def read_source(path):
         except ValueError as e:raise ValueError("Poll ordinal counters nonnumeric") from e
         require(0<tm<2**64 and all(0<=x<2**64 for x in v),
                 "Poll ordinal unsigned source invalid")
+        counters=v[:ncounts]
+        last_codes=v[ncounts:]
+        require(len(last_codes)==len(POLL_EVENT_LAST_FIELDS)
+                and all(x<=255 for x in last_codes),
+                "Last poll category code outside uint8")
+        requested,returned=last_codes
+        require(requested==0 or ((requested&0x80)!=0 and (requested&0x70)==0),
+                "Invalid compact last requested poll event code")
+        status=(returned>>5)&3
+        require(returned==0 or ((returned&0x80)!=0 and status in (1,2,3)
+                and (status==1 or (returned&0x1f)==0)),
+                "Invalid compact last completed poll return code")
         if kind=="P":
-            require(alias==-1 and 0<=v[0]<=64 and not any(v[1:]),
+            require(alias==-1 and 0<=counters[0]<=64 and
+                    not any(counters[1:]) and not any(last_codes),
                     "Poll ordinal sample count/marker invalid")
             require(not frames or tm>frames[-1]["time"],"Poll ordinal source timestamp regression")
-            frames.append({"time":tm,"allocated":v[0],"alias":{}})
+            frames.append({"time":tm,"allocated":counters[0],"alias":{}})
         elif kind=="M":
             require(frames and tm==frames[-1]["time"]
                     and 0<=alias<frames[-1]["allocated"],
                     "Poll ordinal metadata alias or sample timestamp invalid")
             require(alias not in frames[-1]["alias"],"Duplicated ordinal TLS alias snapshot")
-            require(all(x>=y for x,y in zip(v,previous.get(alias,(0,)*len(v)))),
+            require(all(x>=y for x,y in zip(counters,
+                    previous.get(alias,(0,)*len(counters))),
                     "Poll request or return ordinal counter decreased")
-            previous[alias]=v
-            frames[-1]["alias"][alias]=dict(zip(POLL_EVENT_FIELDS,v))
+            previous[alias]=counters
+            row=dict(zip(POLL_EVENT_FIELDS,counters))
+            row.update(dict(zip(POLL_EVENT_LAST_FIELDS,last_codes)))
+            frames[-1]["alias"][alias]=row
         else:raise ValueError("Unknown poll ordinal source row type")
     require(len(frames)>=15,"Poll ordinal source lacks real observation samples")
     return frames,hashlib.sha256(data).hexdigest()
+
+def decode_last_request(code):
+    valid=bool(code&0x80)
+    return {
+        "valid_two_position_pollfd_snapshot":valid,
+        "ordinal0_requested_POLLIN":bool(code&1) if valid else None,
+        "ordinal0_requested_POLLOUT":bool(code&2) if valid else None,
+        "ordinal1_requested_POLLIN":bool(code&4) if valid else None,
+        "ordinal1_requested_POLLOUT":bool(code&8) if valid else None,
+        "other_requested_poll_events_not_recorded":True,
+    }
+
+def decode_last_return(code):
+    valid=bool(code&0x80)
+    status=(code>>5)&3
+    labels={0:"unavailable_or_not_two_position_poll",
+            1:"ready_positive_return",
+            2:"timeout_zero_return",
+            3:"error_negative_return"}
+    return {
+        "valid_two_position_pollfd_snapshot":valid,
+        "last_completed_poll_return_class":labels[status] if valid else labels[0],
+        "ordinal0_returned_POLLIN":bool(code&1) if valid and status==1 else None,
+        "ordinal0_returned_POLLOUT":bool(code&2) if valid and status==1 else None,
+        "ordinal1_returned_POLLIN":bool(code&4) if valid and status==1 else None,
+        "ordinal1_returned_POLLOUT":bool(code&8) if valid and status==1 else None,
+        "any_exceptional_return_event":bool(code&16) if valid and status==1 else None,
+        "this_is_last_completed_return_not_necessarily_the_active_poll":True,
+    }
 
 def summarize(frames,first,last,cpal_aliases):
     require(0<first<last,"Invalid bounded guest input interval")
@@ -75,10 +121,14 @@ def summarize(frames,first,last,cpal_aliases):
             o=before.get(field,0);n=after.get(field,0)
             require(n>=o,"Poll ordinal guest window counter regressed")
             values[field+"_guest_delta"]=n-o
+        request_code=after.get("last_requested_event_code",0)
+        return_code=after.get("last_completed_return_code",0)
         detail.append({
             "anonymous_same_process_native_TLS_alias":alias,
             "source_proven_preinput_CPAL_callback_thread":alias in cpal_aliases,
             **values,
+            "last_requested_poll_categories":decode_last_request(request_code),
+            "last_completed_poll_return_categories":decode_last_return(return_code),
             "two_ordinal_positions_are_not_linux_fd_numbers":True,
             "POLLIN_or_POLLOUT_count_may_coexist_in_one_return":True,
         })
@@ -88,6 +138,8 @@ def summarize(frames,first,last,cpal_aliases):
         "cpal_proven_native_thread_poll_event_categories":[x for x in detail
            if x["source_proven_preinput_CPAL_callback_thread"]],
         "requested_events_and_returned_revents_are_not_one_to_one":True,
+        "last_requested_categories_can_describe_a_poll_already_in_flight_before_input":True,
+        "last_completed_return_categories_do_not_describe_the_active_poll_unless_it_has_returned":True,
         "no_descriptors_or_raw_masks_captured":True,
     }
 
