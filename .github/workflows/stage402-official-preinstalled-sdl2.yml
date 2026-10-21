@@ -1,0 +1,86 @@
+name: Stage402 official preinstalled SDL2 Switch probe
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/stage402-official-preinstalled-sdl2.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  preinstalled-switch-sdl2:
+    name: Inspect pinned official devkitA64 image and compile original SDL2 NRO
+    runs-on: ubuntu-latest
+    # Official devkitPro docs recommend Docker images in CI, not pacman.
+    # Pin a published official image tag, not a mutable latest tag.
+    container: devkitpro/devkita64:20260219
+    timeout-minutes: 30
+    steps:
+      - name: Check out the unmodified Vandal Hearts source
+        uses: actions/checkout@v4
+
+      - name: Inspect exact preinstalled SDL2 toolchain without pacman/network install
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          PORT="$DEVKITPRO/portlibs/switch"
+          {
+            echo "STAGE402: inspecting official devkitpro/devkita64:20260219 image"
+            echo "STAGE402_DEVKIT_A64_GCC=$(test -x "$DEVKITA64/bin/aarch64-none-elf-gcc" && echo true || echo false)"
+            echo "STAGE402_SDL2_CONFIG=$(test -x "$PORT/bin/sdl2-config" && echo true || echo false)"
+            echo "STAGE402_SDL2_HEADER=$(test -f "$PORT/include/SDL2/SDL.h" && echo true || echo false)"
+            echo "STAGE402_SDL2_STATIC=$(test -f "$PORT/lib/libSDL2.a" && echo true || echo false)"
+            echo "STAGE402_SDL2_SHARED=$(test -e "$PORT/lib/libSDL2.so" && echo true || echo false)"
+          } | tee stage402-preinstalled-sdl2-receipt.txt
+          test -x "$DEVKITA64/bin/aarch64-none-elf-gcc"
+          if [ ! -x "$PORT/bin/sdl2-config" ] || [ ! -f "$PORT/include/SDL2/SDL.h" ]; then
+            echo "::error::OFFICIAL_IMAGE_LACKS_SDL2_PORTLIB: cannot build genuine SDL2 NRO without dependency. Do not run pacman or report a successful build."
+            exit 2
+          fi
+          "$PORT/bin/sdl2-config" --version
+          "$PORT/bin/sdl2-config" --cflags
+          "$PORT/bin/sdl2-config" --libs
+          test -f "$PORT/lib/libSDL2.a" || test -e "$PORT/lib/libSDL2.so"
+          echo "STAGE402_PREINSTALLED_SDL2_VERIFIED" >> stage402-preinstalled-sdl2-receipt.txt
+
+      - name: Build actual SDL2 music/audio probe NRO with original Makefile
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
+          make sdl2-audio-probe
+          test -s build/sdl2-audio-switch-probe.nro
+          file build/sdl2-audio-switch-probe.nro
+          sha256sum build/sdl2-audio-switch-probe.nro | tee stage402-native-nro-sha256.txt
+          echo "STAGE402_REAL_NRO_COMPILED_AND_HASHED" >> stage402-preinstalled-sdl2-receipt.txt
+
+      - name: Run original host audio stream unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          make test-audio-stream
+          echo "STAGE402_ORIGINAL_HOST_AUDIO_TESTS_PASSED" >> stage402-preinstalled-sdl2-receipt.txt
+
+      - name: Upload original native NRO only if actually built
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage402-official-devkita64-original-sdl2-audio-nro
+          path: |
+            build/sdl2-audio-switch-probe.nro
+            stage402-native-nro-sha256.txt
+          if-no-files-found: error
+
+      - name: Preserve accurate toolchain and dependency receipt, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage402-preinstalled-sdl2-dependency-evidence
+          path: stage402-preinstalled-sdl2-receipt.txt
+          if-no-files-found: warn
