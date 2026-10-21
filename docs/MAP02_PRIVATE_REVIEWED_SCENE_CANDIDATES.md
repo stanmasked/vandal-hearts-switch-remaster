@@ -24,9 +24,11 @@ Use the same optional neutral-window bounds that produced the source capture pla
 After the shortlist is created, you can optionally render a second, smaller
 private contact sheet containing only groups marked
 `requires_game_state_witness`. The contact-sheet tool revalidates both full
-capture chains and checks the report's exact `source_plan_sha256` before
-filtering; a report for another plan, an owner-readable-by-others file, or an
-empty candidate set is rejected. For example, repeat the same six source
+capture chains and checks both the exact `source_plan_sha256` and aggregate
+`source_capture_evidence_sha256` before filtering. The aggregate digest binds
+the report to the precise BK2, plan, logs and planned PNG bytes used during
+review; a report for another plan or capture set, an owner-readable-by-others
+file, or an empty candidate set is rejected. For example, repeat the same six source
 arguments and use:
 
     --reviewed-candidates /private/vh-map02-reviewed-candidates.json \
@@ -41,7 +43,7 @@ One group gets the state `requires_game_state_witness` **only when every corresp
 
 All other groups remain in one of five explicit states: `requires_pixel_replay` (cross-bundle image mismatch), `awaiting_manual_classification` (uncertain/unreviewed), `human_labels_disagree` (categories conflict), `no_observed_intra_group_pixel_change` (manual pattern but no matching observed pixel transition), and `not_candidate_in_selected_frames` (no before→two-board pattern). This ordering gives discrepancies higher priority than apparently agreeing labels. A repeated menu or wrong-scene image may still be labelled tactical, so even a group passing the pattern can be false.
 
-The resulting owner-only JSON uses schema `vh.map02.private-reviewed-scene-candidates.v3`, with counts, group numbers and conservative classifications. It includes `source_plan_sha256`, the SHA-256 of the exact canonical capture-plan bytes, so a stale shortlist cannot silently filter a different plan. It contains **no actual BK2 frame/input indices, paths, screenshots or image hashes**, and is written to a new, exclusive `0600` file outside Git. Never upload this private report, CSV, original movie, PS1 disc/BIOS or screenshots to GitHub or public CI.
+The resulting owner-only JSON uses schema `vh.map02.private-reviewed-scene-candidates.v3`, with counts, group numbers and conservative classifications. It includes `source_plan_sha256` plus one aggregate `source_capture_evidence_sha256`, so a stale shortlist cannot silently filter a different plan or different screenshots. The aggregate digest covers exact BK2, plan, logs and planned PNG bytes; it does not expose individual hashes, actual BK2 frame/input indices, paths, screenshots or image bytes. The report is written to a new, exclusive `0600` file outside Git. Never upload this private report, CSV, original movie, PS1 disc/BIOS or screenshots to GitHub or public CI.
 
 ## Boundaries of evidence
 
