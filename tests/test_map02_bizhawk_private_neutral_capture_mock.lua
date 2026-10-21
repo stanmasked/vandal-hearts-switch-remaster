@@ -4,6 +4,7 @@ local SCRIPT = "tools/map02_bizhawk_private_neutral_capture.lua"
 local old_print, old_getenv, old_open = print, os.getenv, io.open
 local ROOT = "/private/fake-local-images"
 local PLAN = "/private/fake-capture-plan.txt"
+local LOG = ROOT .. "/vh_private_capture.log"
 local SIGNATURE = "\137PNG\r\n\26\n"
 local BASE = "VH_MAP02_CAPTURE_PLAN_V1\nmovie_frames=933949\ncapture_count=3\n" ..
              "1,before,1664,held\n1,middle,1666,neutral\n1,after,1669,held\n"
@@ -12,7 +13,7 @@ local scenarios = 0
 local function run(option)
   scenarios = scenarios + 1
   local counter = option == "late-attach" and 80 or (option == "zero-counter" and 0 or 1)
-  local lines, screenshots, saved = {}, {}, {}
+  local lines, screenshots, saved, log_lines, exit_codes = {}, {}, {}, {}, {}
   local content = BASE
   if option == "boundary" then content = content:gsub("1,before,1664,held", "1,before,1663,held") end
   if option == "bad-header" then content = content:gsub("VH_MAP02_CAPTURE_PLAN_V1", "OTHER") end
@@ -26,10 +27,30 @@ local function run(option)
     if name == "VH_PRIVATE_PNG_DIR" then
       return option == "relative-root" and "fake-images" or ROOT
     end
+    if name == "VH_PRIVATE_CAPTURE_LOG" then
+      if option == "relative-log" then return "capture.log" end
+      if option == "outside-log" then return "/private/outside.log" end
+      return LOG
+    end
     error("unexpected environment variable")
   end
   io.open = function(path, mode)
-    assert(mode == "rb", "capture script must not write through Lua io")
+    if path == LOG and mode == "ab" then
+      return {
+        write = function(_, line, newline)
+          assert(newline == "\n", "private log records must be newline-delimited")
+          table.insert(log_lines, tostring(line))
+          return true
+        end,
+        flush = function() end,
+        close = function() end,
+      }
+    end
+    assert(mode == "rb", "only the private capture log may be opened for append")
+    if path == LOG then
+      if option == "missing-log" then return nil end
+      return { close = function() end }
+    end
     -- Simulate three public Git roots: inside the output root, an ancestor,
     -- and a worktree-style .git pointer file.
     local mark =
@@ -92,6 +113,11 @@ local function run(option)
     end,
   }
   emu = {
+    getsystemid = function()
+      if option == "wrong-system" then return "NES" end
+      if option == "system-changed" and counter >= 1664 then return "N64" end
+      return "PSX"
+    end,
     framecount = function() return counter end,
     frameadvance = function()
       assert(counter < 1700, "capture observer should terminate")
@@ -102,6 +128,7 @@ local function run(option)
       end
     end,
   }
+  if option == "missing-system-api" then emu.getsystemid = nil end
   client = {
     screenshot = function(path)
       assert(path:sub(1, #ROOT) == ROOT and path:match("%.png$"),
@@ -111,41 +138,51 @@ local function run(option)
         saved[path] = option == "malformed-png" and "badbytes" or SIGNATURE
       end
     end,
+    exitCode = function(code) table.insert(exit_codes, code) end,
   }
+  if option == "missing-exit-api" then client.exitCode = nil end
   print = function(line) table.insert(lines, tostring(line)) end
   local ok, err = pcall(dofile, SCRIPT)
   print, os.getenv, io.open = old_print, old_getenv, old_open
   assert(ok, tostring(err))
-  return lines, screenshots
+  return lines, screenshots, log_lines, exit_codes
 end
 
 for _, option in ipairs({"plain", "prefixed", "boundary", "zero-counter", "sparse-start"}) do
-  local lines, shots = run(option)
+  local lines, shots, log_lines, exit_codes = run(option)
   assert(#shots == 3, option .. ": expected three screenshot calls")
-  assert(#lines == 5, option .. ": Start preflight, three captures and summary")
-  assert(lines[1] == "VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 candidate_input=1661 first_start_pressed=yes ps1_input_delivery=unverified", option .. ": wrong live anchor")
+  assert(#lines == 6, option .. ": log ready, Start preflight, three captures and summary")
+  assert(#log_lines == #lines, option .. ": private file log must mirror console markers")
+  for i = 1, #lines do
+    assert(log_lines[i] == lines[i], option .. ": private log differs from console marker")
+  end
+  assert(lines[1] == "VH_PRIVATE_CAPTURE_LOG_READY schema=1", option .. ": missing log-ready marker")
+  assert(lines[2] == "VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 candidate_input=1661 first_start_pressed=yes ps1_input_delivery=unverified", option .. ": wrong live anchor")
   local frames = {option == "boundary" and 1663 or 1664, 1666, 1669}
   local roles = {"before", "middle", "after"}
   for i = 1, 3 do
-    local group, role, counter, candidate, held = lines[i + 1]:match(
+    local group, role, counter, candidate, held = lines[i + 2]:match(
       "^VH_PRIVATE_NEUTRAL_CAPTURE window=(%d+) role=([a-z]+) counter=(%d+) candidate_input=(%d+) expected_buttons=([a-z]+) png=written display_offset=unverified$")
     assert(tonumber(group) == 1 and role == roles[i], option .. ": bad role/group")
     assert(tonumber(counter) == frames[i] + 1, option .. ": bad core counter")
     assert(tonumber(candidate) == frames[i], option .. ": off-by-one movie frame")
     assert(held == (i == 2 and "neutral" or "held"), option .. ": expected button state")
   end
-  assert(lines[5] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes actual_map02=unverified")
+  assert(lines[6] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes actual_map02=unverified")
+  assert(#exit_codes == 1 and exit_codes[1] == 0,
+         option .. ": successful bounded capture must close EmuHawk with exit code 0")
 end
 
 for _, option in ipairs({
-  "relative-plan", "relative-root", "wrong-length", "not-readonly",
+  "relative-plan", "relative-root", "relative-log", "outside-log", "missing-log", "wrong-length", "not-readonly",
   "bad-header", "bad-count", "duplicate-index", "neutral-mismatch",
   "mode-leaves", "skip-counter", "saved-exists", "missing-write",
   "malformed-png", "invalid-role", "late-attach",
   "early-start", "missing-start", "ambiguous-start", "unknown-start",
-  "nil-start-table", "git-root", "git-parent", "git-worktree"
+  "nil-start-table", "git-root", "git-parent", "git-worktree",
+  "wrong-system", "system-changed", "missing-system-api", "missing-exit-api"
 }) do
-  local lines, shots = run(option)
+  local lines, shots, _, exit_codes = run(option)
   local rejected = false
   for _, line in ipairs(lines) do
     if line:match("^VH_PRIVATE_NEUTRAL_CAPTURE_ERROR ") then rejected = true end
@@ -154,6 +191,12 @@ for _, option in ipairs({
   end
   assert(rejected, option .. ": fail-closed diagnostic missing")
   assert(#shots < 3, option .. ": should reject before three successful PNGs")
+  if option == "missing-exit-api" then
+    assert(#exit_codes == 0, option .. ": unavailable exit API must not be called")
+  else
+    assert(#exit_codes == 1 and exit_codes[1] == 1,
+           option .. ": failed capture must terminate EmuHawk with exit code 1")
+  end
 end
 old_print("VH_MAP02_NEUTRAL_CAPTURE_LUA_MOCK_PASS cases=" .. scenarios ..
           " owner_bk2=0 actual_bizhawk=0 map02_verified=0")

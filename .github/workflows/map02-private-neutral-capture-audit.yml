@@ -32,15 +32,16 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           architecture: x64
-      - name: Validate 27 fabricated capture plans, Lua logs, screenshots
+      - name: Validate synthetic capture audit regression tests
         shell: bash
         run: |
           set -euo pipefail
           python -m unittest discover -s tests \
             -p 'test_verify_map02_private_neutral_capture_chain.py' -v \
             2>&1 | tee /tmp/vh-map02-private-neutral-capture-audit.log
-          grep -F 'Ran 27 tests' /tmp/vh-map02-private-neutral-capture-audit.log
+          summary="$(grep -E 'Ran [1-9][0-9]* tests' /tmp/vh-map02-private-neutral-capture-audit.log | tail -n 1)"
+          test_count="$(printf '%s\n' "$summary" | sed -E 's/.*Ran ([0-9]+) tests.*/\1/')"
           if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-private-neutral-capture-audit.log; then
             exit 1
           fi
-          echo 'VH_MAP02_CAPTURE_AUDIT_PASS synthetic=27 owner_bk2=0 real_octoshock=0 map02_scene=unknown'
+          echo "VH_MAP02_CAPTURE_AUDIT_PASS synthetic_tests=${test_count} owner_bk2=0 real_octoshock=0 map02_scene=unknown"

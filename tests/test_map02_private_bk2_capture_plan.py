@@ -23,6 +23,7 @@ class PrivatePlanTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
         self.bk2 = self.root / "fake.bk2"
+        self.bk2.write_bytes(b"fictional BK2 placeholder; never a real movie")
         self.plan = self.root / "capture-plan.txt"
 
     def mock(self, windows):
@@ -77,11 +78,39 @@ class PrivatePlanTests(unittest.TestCase):
             write_private_plan(self.bk2, self.plan)
         self.assertEqual(victim.read_text(), "unchanged")
 
-    def test_output_inside_checkout_refused(self):
+    def test_output_inside_checkout_refused_before_source_read(self):
         (self.root / ".git").mkdir()
-        with self.mock([window()]), self.assertRaises(ValueError):
-            write_private_plan(self.bk2, self.plan)
+        with tempfile.TemporaryDirectory() as outside:
+            source = Path(outside) / "fake.bk2"
+            source.write_bytes(b"fictional source")
+            with self.mock([window()]) as inspect, self.assertRaises(ValueError):
+                write_private_plan(source, self.plan)
+            inspect.assert_not_called()
         self.assertFalse(self.plan.exists())
+
+    def test_source_inside_checkout_refused_before_inspection(self):
+        (self.root / ".git").mkdir()
+        with tempfile.TemporaryDirectory() as outside:
+            target = Path(outside) / "private-plan.txt"
+            with self.mock([window()]) as inspect, self.assertRaises(ValueError):
+                write_private_plan(self.bk2, target)
+            inspect.assert_not_called()
+        self.assertFalse(target.exists())
+
+    def test_output_through_symlink_into_checkout_refused(self):
+        checkout = self.root / "checkout"
+        checkout.mkdir()
+        (checkout / ".git").mkdir()
+        alias = self.root / "checkout-alias"
+        alias.symlink_to(checkout, target_is_directory=True)
+        with tempfile.TemporaryDirectory() as outside:
+            source = Path(outside) / "fake.bk2"
+            source.write_bytes(b"fictional source")
+            target = alias / "capture-plan.txt"
+            with self.mock([window()]) as inspect, self.assertRaises(ValueError):
+                write_private_plan(source, target)
+            inspect.assert_not_called()
+        self.assertFalse((checkout / "capture-plan.txt").exists())
 
     def test_relative_output_refused(self):
         with self.mock([window()]), self.assertRaises(ValueError):

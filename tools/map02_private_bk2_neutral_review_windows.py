@@ -29,6 +29,16 @@ DEFAULT_LIMIT = 20
 MAX_LIMIT = 50
 
 
+def _reject_git_checkout(path: Path) -> Path:
+    """Resolve a source path and refuse Git checkouts and worktrees."""
+    real = Path(path).resolve(strict=True)
+    for parent in (real, *real.parents):
+        marker = parent / ".git"
+        if marker.exists() or marker.is_symlink():
+            raise ValueError("owner-private BK2 must be outside Git checkout/worktree")
+    return real
+
+
 class NeutralReviewCollector:
     """Bounded candidate points with a button-held frame at BOTH edges."""
 
@@ -60,7 +70,7 @@ class NeutralReviewCollector:
             begin, end = self._neutral_begin, index
             span = end - begin
             if (self.minimum <= span <= self.maximum
-                    and begin >= self.after
+                    and begin - 1 >= self.after
                     and end < self.before):
                 candidate = {
                     "first_neutral_input_frame_zero_based": begin,
@@ -105,6 +115,7 @@ def inspect_movie(private_movie: Path, *, minimum=DEFAULT_MINIMUM,
     movie = Path(private_movie)
     if movie.is_symlink() or not movie.is_file():
         raise ValueError("source must be regular and not a symlink")
+    movie = _reject_git_checkout(movie)
     info = movie.stat()
     if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= MAX_BK2_ARCHIVE:
         raise ValueError("source archive exceeds bounded size")
