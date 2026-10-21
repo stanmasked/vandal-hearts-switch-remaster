@@ -4,6 +4,8 @@ on:
     paths:
       - '.github/workflows/map02-private-disc-movie-preflight.yml'
       - 'tools/map02_private_disc_movie_preflight.py'
+      - 'tools/map02_private_psx_firmware_probe.py'
+      - 'tests/test_map02_private_psx_firmware_probe.py'
       - 'tools/map02_private_bin_digest_init.py'
       - 'tests/test_map02_private_bin_digest_init.py'
       - 'tests/test_map02_private_disc_movie_preflight.py'
@@ -68,3 +70,20 @@ jobs:
           fi
           grep -qx 'OK' /tmp/vh-map02-private-bin-bootstrap.log
           echo "VH_MAP02_PRIVATE_BIN_REFERENCE_BOOTSTRAP_PASS tests=$count original_bin=0 owner_digest_published=0"
+      - name: Compare invented PSX firmware metadata and local BIOS fingerprints
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_map02_private_psx_firmware_probe.py' -v \
+            2>&1 | tee /tmp/vh-map02-psx-firmware-probe.log
+          count=$(sed -nE 's/^Ran ([1-9][0-9]*) tests? in .*$/\1/p' /tmp/vh-map02-psx-firmware-probe.log)
+          if [[ "$count" != "17" ]]; then
+            echo 'unexpected fictional PSX firmware candidate test count' >&2
+            exit 1
+          fi
+          if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-psx-firmware-probe.log; then
+            exit 1
+          fi
+          grep -qx 'OK' /tmp/vh-map02-psx-firmware-probe.log
+          echo "VH_MAP02_PRIVATE_PSX_FIRMWARE_METADATA_PASS cases=$count actual_bios=0 original_bk2=0 emuhawk=0"
