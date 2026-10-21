@@ -47,6 +47,7 @@ class PersistentRasterSyntheticTests(unittest.TestCase):
         result = self.call()
         self.assertEqual(result["schema"], SCHEMA)
         self.assertTrue(result["two_supplied_raster_windows_pass"])
+        self.assertTrue(result["persistent_candidate_post_rgba_values_identical"])
         self.assertTrue(result["post_capture_within_120_counters"])
         for name in (
             "original_ps1_game_authenticated",
@@ -89,6 +90,68 @@ class PersistentRasterSyntheticTests(unittest.TestCase):
             self.replace_png(run, 2, (10, 20, 30))
         with self.assertRaisesRegex(ValueError, "insufficient persistent"):
             self.call()
+
+    def test_two_big_changes_at_same_positions_do_not_mean_stable(self):
+        # Former false positive: PRE=10, candidate=100, POST=120 over
+        # all 256 pixels. Same coordinates differ twice, yet no pixel's
+        # candidate RGBA value survives to the post frame.
+        for run in (0, 1):
+            self.replace_png(run, 2, (120, 20, 30))
+        with self.assertRaisesRegex(
+            ValueError, "insufficient persistent same-value"
+        ):
+            self.call()
+
+    def test_fifteen_exact_stable_pixels_do_not_meet_minimum(self):
+        # 241 moving pixels cannot inflate the 15 truly stable pixels.
+        stable = tuple(
+            (x, y, (100, 20, 30))
+            for x, y in ((1,1),(2,1),(3,1),(1,2),
+                         (5,1),(6,1),(7,1),(5,2),
+                         (9,1),(10,1),(11,1),(9,2),
+                         (13,1),(14,1),(15,1))
+        )
+        for run in (0, 1):
+            self.replace_png(run, 2, (120, 20, 30), changed=stable)
+        with self.assertRaisesRegex(
+            ValueError, "insufficient persistent same-value"
+        ):
+            self.call()
+
+    def test_sixteen_exact_stable_pixels_across_tiles_passes(self):
+        # Exactly 16 pixels persist with equal candidate/post color,
+        # distributed over 16 different grid tiles; other pixels move.
+        stable = tuple(
+            (x, y, (100, 20, 30))
+            for x in (1, 5, 9, 13) for y in (1, 5, 9, 13)
+        )
+        for run in (0, 1):
+            self.replace_png(run, 2, (120, 20, 30), changed=stable)
+        report = self.call()
+        self.assertTrue(report["persistent_candidate_post_rgba_values_identical"])
+        self.assertEqual(report["schema"], SCHEMA)
+        self.assertFalse(report["actual_map02_scene_transition_authenticated"])
+
+    def test_sixteen_stable_pixels_only_one_tile_is_rejected(self):
+        stable = tuple(
+            (x, y, (100, 20, 30))
+            for x in range(4) for y in range(4)
+        )
+        for run in (0, 1):
+            self.replace_png(run, 2, (120, 20, 30), changed=stable)
+        with self.assertRaisesRegex(
+            ValueError, "persistent change too spatially localized"
+        ):
+            self.call()
+
+    def test_alpha_only_post_change_invalidates_rgba_stability(self):
+        pre = Image.new("RGBA", (16, 16), (10, 20, 30, 255))
+        candidate = Image.new("RGBA", (16, 16), (100, 20, 30, 255))
+        post = Image.new("RGBA", (16, 16), (100, 20, 30, 254))
+        with self.assertRaisesRegex(
+            ValueError, "insufficient persistent same-value"
+        ):
+            persistent_witness(pre, candidate, post)
 
     def test_post_captured_too_late_rejected(self):
         self.fixture.change_counters((2000, 2100, 2221))
