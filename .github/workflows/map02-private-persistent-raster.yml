@@ -1,0 +1,45 @@
+name: MAP02 owner-private BK2 persistent raster witness (synthetic CI)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-private-persistent-raster.yml'
+      - 'tools/verify_map02_private_persistent_raster.py'
+      - 'tests/test_verify_map02_private_persistent_raster.py'
+      - 'docs/MAP02_PRIVATE_PERSISTENT_RASTER.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  invented-raster-persistence:
+    name: Synthetic candidate raster persistence (${{ matrix.os }} Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.9'
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: macos-15-intel
+            python: '3.11'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Install Pillow to decode invented sample rasters
+        shell: bash
+        run: python -m pip install 'Pillow>=10,<12'
+      - name: Prove 14 invented distributed and transient raster scenarios
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests             -p 'test_verify_map02_private_persistent_raster.py' -v             2>&1 | tee "$RUNNER_TEMP/map02-private-persistent-raster.log"
+          grep -F 'Ran 14 tests' "$RUNNER_TEMP/map02-private-persistent-raster.log"
+          if grep -E '^(FAILED|ERROR)' "$RUNNER_TEMP/map02-private-persistent-raster.log"; then exit 1; fi
+          echo 'VH_MAP02_PERSISTENT_RASTER_PASS synthetic=14 private_bk2=0 real_ps1=0 map02_scene_authenticated=0'
