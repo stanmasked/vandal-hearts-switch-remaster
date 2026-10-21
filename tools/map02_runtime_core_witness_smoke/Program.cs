@@ -268,20 +268,18 @@ namespace VhMap02LoaderSmoke
                             || saveButtons[0].Enabled)
                             throw new InvalidOperationException(
                                 "real NullEmulator does not fail closed with distinct status");
+                        var rejected = false;
                         try
                         {
                             snapshot.Invoke(null, new object[] { genuineNoGameCore });
                         }
                         catch (TargetInvocationException ex)
                         {
-                            if (!(ex.InnerException is InvalidOperationException))
-                                throw new InvalidOperationException(
-                                    "unexpected invalid real NullHawk snapshot error");
-                            goto NullHawkSnapshotRejected;
+                            rejected = ex.InnerException is InvalidOperationException;
                         }
-                        throw new InvalidOperationException(
-                            "real NullHawk must never export a PSX witness");
-                    NullHawkSnapshotRejected: ;
+                        if (!rejected)
+                            throw new InvalidOperationException(
+                                "real NullHawk must never export a PSX witness");
                     }
 
                     _stage = "synthetic-negative-core-gates";
