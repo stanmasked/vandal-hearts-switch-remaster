@@ -121,9 +121,13 @@ def shortlist(positions: list[tuple[int, str]], proof: dict,
     for group in groups:
         labels = [raw_labels[group, role] for role in ROLES]
         exact = [pixel_matches[group, role] for role in ROLES]
+        has_unreviewed_labels = any(
+            label in ("unreviewed", "uncertain")
+            for pair in labels for label in pair
+        )
         if not all(exact):
             state = "requires_pixel_replay"
-        elif any("unreviewed" in x or "uncertain" in x for x in labels):
+        elif has_unreviewed_labels:
             state = "awaiting_manual_classification"
         elif any(a != b for a, b in labels):
             state = "human_labels_disagree"
@@ -141,7 +145,8 @@ def shortlist(positions: list[tuple[int, str]], proof: dict,
             "state": state,
             "all_three_positions_exact_rgb_equal_across_supplied_sets": all(exact),
             "manual_transition_pattern": (
-                labels[0][0] != "tactical_board"
+                not has_unreviewed_labels
+                and labels[0][0] != "tactical_board"
                 and labels[1][0] == labels[2][0] == "tactical_board"
                 and all(a == b for a, b in labels)
             ),
