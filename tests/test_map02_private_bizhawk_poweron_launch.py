@@ -295,6 +295,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.assertEqual(run.call_count, 1)
         c = run.call_args
         self.assertFalse(c.kwargs["shell"])
+        self.assertEqual(c.kwargs["timeout"], 28800)
         self.assertEqual(c.args[0][1], "--movie=" + str(self.bk2.resolve()))
         self.assertEqual(c.args[0][2], "--lua=" + str(self.lua.resolve()))
         self.assertEqual(c.kwargs["env"]["VH_PRIVATE_CAPTURE_PLAN"], str(self.plan.resolve()))
@@ -311,6 +312,85 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.assertIs(c.kwargs["stderr"], subprocess.STDOUT)
         self.assertIn("original_ps1_authenticated=0", stream.getvalue())
         self.assertNotIn(str(self.bk2.resolve()), stream.getvalue())
+
+    def test_custom_local_emulator_timeout_is_enforced(self):
+        args = [
+            "program", str(self.program.resolve()), str(self.disc.resolve()),
+            str(self.bk2.resolve()), str(self.plan.resolve()),
+            str(self.output.resolve()), "--capture-lua", str(self.lua.resolve()),
+            "--emulator-timeout-seconds", "7200", "--launch",
+        ]
+        with patch.object(sys, "argv", args), patch(
+            "tools.map02_private_bizhawk_poweron_launch.plan_lines",
+            return_value=ROWS,
+        ), patch(
+            "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_bizhawk_poweron_launch.subprocess.run",
+            return_value=Mock(returncode=0),
+        ) as runner:
+            with contextlib.redirect_stdout(io.StringIO()):
+                status = main()
+        self.assertEqual(status, 0)
+        self.assertEqual(runner.call_args.kwargs["timeout"], 7200)
+
+    def test_invalid_emulator_timeout_rejected_without_launch_or_files(self):
+        for invalid in ("0", "299", "86401", "-10"):
+            with self.subTest(timeout=invalid):
+                args = [
+                    "program", str(self.program.resolve()),
+                    str(self.disc.resolve()), str(self.bk2.resolve()),
+                    str(self.plan.resolve()), str(self.output.resolve()),
+                    "--emulator-timeout-seconds", invalid, "--launch",
+                ]
+                with patch.object(sys, "argv", args), patch(
+                    "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
+                ) as inspect, patch(
+                    "tools.map02_private_bizhawk_poweron_launch.subprocess.run",
+                ) as runner, contextlib.redirect_stderr(io.StringIO()):
+                    with self.assertRaises(SystemExit) as error:
+                        main()
+                self.assertNotEqual(error.exception.code, 0)
+                inspect.assert_not_called()
+                runner.assert_not_called()
+                self.assertFalse((self.output / "vh_private_capture.log").exists())
+
+    def test_emulator_timeout_refuses_to_claim_success_or_leak_paths(self):
+        args = [
+            "program", str(self.program.resolve()), str(self.disc.resolve()),
+            str(self.bk2.resolve()), str(self.plan.resolve()),
+            str(self.output.resolve()), "--capture-lua", str(self.lua.resolve()),
+            "--emulator-timeout-seconds", "500", "--launch",
+        ]
+        timeout_error = subprocess.TimeoutExpired(
+            cmd=[str(self.program.resolve()), "--movie=" + str(self.bk2.resolve())],
+            timeout=500,
+        )
+        with patch.object(sys, "argv", args), patch(
+            "tools.map02_private_bizhawk_poweron_launch.plan_lines",
+            return_value=ROWS,
+        ), patch(
+            "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_bizhawk_poweron_launch.subprocess.run",
+            side_effect=timeout_error,
+        ) as runner:
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                status = main()
+        self.assertEqual(status, 1)
+        runner.assert_called_once()
+        self.assertEqual(runner.call_args.kwargs["timeout"], 500)
+        audit = (self.output / "vh_private_capture.log").read_text(encoding="ascii")
+        self.assertIn("VH_PRIVATE_BIZHAWK_LAUNCH_ERROR process_started=1 reason=emulator_timeout", audit)
+        self.assertNotIn("exit_success=1", audit)
+        self.assertNotIn(str(self.bk2.resolve()), stdout.getvalue())
+        self.assertNotIn(str(self.disc.resolve()), audit)
+        process_log = self.output / "vh_emuhawk_process.log"
+        self.assertTrue(process_log.exists())
+        self.assertEqual(process_log.stat().st_mode & 0o777, 0o600)
 
     def test_emuhawk_start_failure_is_logged_without_private_paths(self):
         args = [
