@@ -27,6 +27,7 @@ from tools.map02_private_disc_movie_preflight import (
     MAX_CUE_BYTES, PVD_LBA, SECTOR_BYTES, USER_DATA_BYTES,
     inspect_pair, read_private_full_bin_sha256, _full_image_sha256, _read_cue,
 )
+from tools.map02_private_psx_firmware_probe import compare_firmware
 from tools.map02_private_two_capture_audit import _private_root, audit_pair
 from tools.verify_map02_private_neutral_capture_chain import verify
 
@@ -155,6 +156,20 @@ def _require_movie_unchanged(path: Path, original_digest: bytes) -> None:
         raise ValueError("owner-private BK2 changed between capture attempts")
 
 
+def _require_firmware_candidate_matches(
+        movie: Path, private_bios_candidate: Path | None) -> None:
+    """Compare private candidate to a unique recorded PSX firmware hash.
+
+    Does not authenticate what EmuHawk mounted. Re-run at checkpoints to
+    detect changed candidate bytes during either of two local launches.
+    """
+    if private_bios_candidate is None:
+        return
+    receipt = compare_firmware(movie, private_bios_candidate)
+    if not receipt["candidate_bios_sha1_matches_movie_psx_firmware_metadata"]:
+        raise ValueError("private PSX firmware metadata absent, ambiguous or candidate mismatch")
+
+
 def _no_existing_outputs(workspace: Path) -> None:
     for name in (PLAN_NAME, *RUN_NAMES):
         candidate = workspace / name
@@ -176,6 +191,7 @@ def _capture_dir(path: Path) -> None:
 def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
                   private_workspace: Path, *,
                   expected_digest_file: Path | None = None,
+                  private_psx_bios_candidate: Path | None = None,
                   max_windows: int = 4,
                   emulator_timeout_seconds: int | None = None,
                   start: bool = False) -> dict:
@@ -222,6 +238,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     _require_movie_unchanged(private_bk2, movie_identity)
     _require_disc_unchanged(private_disc, disc_identity)
     _require_digest_reference_unchanged(expected_digest_file, digest)
+    _require_firmware_candidate_matches(private_bk2, private_psx_bios_candidate)
     if not start:
         candidate = plan_lines(private_bk2, limit=max_windows)
         if len(candidate) < 6 or (len(candidate) - 3) % 3:
@@ -238,6 +255,9 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             "private_capture_plan_rows_checked": len(candidate) - 3,
             "full_bin_sha256_checked": digest is not None,
             "full_bin_reference_stable_during_preflight": digest is not None,
+            "candidate_bios_matches_bk2_psx_firmware_metadata":
+                private_psx_bios_candidate is not None,
+            "actual_emuhawk_loaded_bios_authenticated": False,
             "emulator_timeout_seconds": (
                 emulator_timeout_seconds
                 if emulator_timeout_seconds is not None
@@ -263,6 +283,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         _require_movie_unchanged(private_bk2, movie_identity)
         _require_disc_unchanged(private_disc, disc_identity)
         _require_digest_reference_unchanged(expected_digest_file, digest)
+        _require_firmware_candidate_matches(private_bk2, private_psx_bios_candidate)
         output = workspace / name
         _capture_dir(output)
         argv = [
@@ -290,6 +311,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         # outside the small PVD/MAP02 sector sample cannot survive.
         _require_full_bin_unchanged(private_disc, digest)
         _require_digest_reference_unchanged(expected_digest_file, digest)
+        _require_firmware_candidate_matches(private_bk2, private_psx_bios_candidate)
         if process.returncode != 0:
             raise ValueError("one private emulator capture process failed")
         # Reject an emulator that returned zero without the exact expected
@@ -308,6 +330,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     # Third parent-side full read: the final PNG/pair audit may take time.
     _require_full_bin_unchanged(private_disc, digest)
     _require_digest_reference_unchanged(expected_digest_file, digest)
+    _require_firmware_candidate_matches(private_bk2, private_psx_bios_candidate)
     return {
         "schema": SCHEMA,
         "explicit_launch_requested": True,
@@ -330,6 +353,9 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         "on_disk_full_bin_matched_private_reference_at_checkpoints":
             digest is not None,
         "emulator_mounted_disc_identity_authenticated": False,
+        "candidate_bios_matched_bk2_metadata_at_checkpoints":
+            private_psx_bios_candidate is not None,
+        "actual_emuhawk_loaded_bios_authenticated": False,
         "emulator_timeout_seconds": (
             emulator_timeout_seconds
             if emulator_timeout_seconds is not None
@@ -355,6 +381,7 @@ def main() -> int:
     parser.add_argument("owner_private_bk2", type=Path)
     parser.add_argument("owner_existing_empty_private_workspace", type=Path)
     parser.add_argument("--private-full-bin-sha256-file", type=Path)
+    parser.add_argument("--private-psx-bios-candidate", type=Path)
     parser.add_argument("--max-windows", type=int, default=4)
     parser.add_argument(
         "--emulator-timeout-seconds", type=int,
@@ -369,6 +396,7 @@ def main() -> int:
             args.owner_private_ps1_cue, args.owner_private_bk2,
             args.owner_existing_empty_private_workspace,
             expected_digest_file=args.private_full_bin_sha256_file,
+            private_psx_bios_candidate=args.private_psx_bios_candidate,
             max_windows=args.max_windows,
             emulator_timeout_seconds=args.emulator_timeout_seconds,
             start=args.launch_two,
