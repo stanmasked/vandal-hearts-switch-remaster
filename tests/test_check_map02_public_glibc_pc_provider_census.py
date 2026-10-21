@@ -1,4 +1,5 @@
 """Real native GCC/ar/ld census tests; no user retail assets or names logged."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -118,8 +119,16 @@ class OriginalPCGLibCProviderCensusTests(unittest.TestCase):
         self.assertFalse(r["fully_linked_game_executable"])
         self.assertFalse(r["authentic_map02_execution_proven"])
         self.assertEqual(root.stat().st_mode & 0o777, 0o700)
-        for path in ("glibc-system-libc-static.a", "glibc-system-libm-static.a"):
+        for original, path, hash_key in (
+                (self.libc, "glibc-system-libc-static.a",
+                 "copied_native_libc_archive_sha256"),
+                (self.libm, "glibc-system-libm-static.a",
+                 "copied_native_libm_archive_sha256")):
             self.assertEqual((root / path).stat().st_mode & 0o777, 0o600)
+            expected_sha = hashlib.sha256(original.read_bytes()).hexdigest()
+            self.assertEqual(r[hash_key], expected_sha)
+            self.assertEqual(hashlib.sha256((root / path).read_bytes()).hexdigest(),
+                             expected_sha)
         for private in ("orig_libc", "orig_libm", "orig_both",
                         "orig_uncovered", str(self.root)):
             self.assertNotIn(json.dumps(private), json.dumps(r))
@@ -153,6 +162,10 @@ class OriginalPCGLibCProviderCensusTests(unittest.TestCase):
         with self.assertRaises((OSError, ValueError)):
             self.census(self.root / "symlink-output", libm=alias)
         self.assertFalse((self.root / "symlink-output" / "glibc-system-libm-static.a").exists())
+
+    def test_identical_libc_libm_source_archives_rejected(self):
+        with self.assertRaisesRegex(ValueError, "provider archives must differ"):
+            self.census(self.root / "same-provider", libm=self.libc)
 
     def test_existing_output_preserved(self):
         root = self.root / "occupied"
