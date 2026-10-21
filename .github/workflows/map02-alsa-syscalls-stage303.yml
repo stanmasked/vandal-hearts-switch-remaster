@@ -1,0 +1,348 @@
+name: MAP02 Stage303 source-pinned selected Linux syscalls in real NeXium guests
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-alsa-syscalls-stage303.yml'
+      - 'tools/audit_map02_alsa_syscalls_stage303.py'
+      - 'tools/sample_map02_linux_clocks_stage303.py'
+      - 'tools/run_map02_alsa_strace_guest_stage303.sh'
+      - 'tests/test_audit_map02_alsa_syscalls_stage303.py'
+      - 'docs/MAP02_ALSA_SYSCALLS_STAGE303.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+env:
+  VH_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_OLD: 'e801588983a866c76dcedb52e818859a68ad113d'
+  VH_STAGE303_PARENT: 'be50fb15dba2628719682c2944cdafc698045d55'
+  VH_HOST: 'fb154cbd581826a4f217485eff338badf0ea14c28a82bff258e7baf32c84153a'
+  VH_NRO: '371c9fd9f1f41ad87cbb5f7f96a3e5e9d56878f8cfff2bf7fea2c17120c2611b'
+jobs:
+  real-stage298-gui-guest:
+    name: Stage303 selected Linux syscall tracer with genuine NRO at ${{ matrix.hint }}ms
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        hint: [21, 22]
+    env:
+      VH_HINT: ${{ matrix.hint }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fail closed on unexpected game changes and synthetic tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_HEAD"
+          python3 - <<'PY'
+          import os,subprocess
+          files=set(subprocess.check_output(["git","diff","--name-only",os.environ["VH_STAGE303_PARENT"],"HEAD"],text=True).splitlines())
+          allowed={".github/workflows/map02-alsa-syscalls-stage303.yml",
+                   "tools/audit_map02_alsa_syscalls_stage303.py",
+                   "tools/sample_map02_linux_clocks_stage303.py",
+                   "tools/run_map02_alsa_strace_guest_stage303.sh",
+                   "tests/test_audit_map02_alsa_syscalls_stage303.py",
+                   "docs/MAP02_ALSA_SYSCALLS_STAGE303.md"}
+          assert files and files<=allowed,sorted(files-allowed)
+          PY
+          python3 -m unittest discover -s tests -p 'test_audit_map02_cpal_lifetime_stage299.py' -v
+          python3 -m unittest discover -s tests -p 'test_audit_map02_pulse_event_clocks_stage301.py' -v
+          python3 -m unittest discover -s tests -p 'test_audit_map02_pulse_sinks_stage300.py' -v
+          python3 -m unittest discover -s tests -p 'test_audit_map02_alsa_syscalls_stage303.py' -v
+          python3 -m py_compile tools/audit_map02_alsa_syscalls_stage303.py tools/sample_map02_linux_clocks_stage303.py
+          # Both scripts have identical original guest interaction, only new
+          # opt-in watcher and bracket markers, no NRO/host or CPAL changes.
+          python3 - <<'PY'
+          from pathlib import Path
+          old=Path("tools/run_map02_filelogger_guest_stage294.sh").read_text()
+          new=Path("tools/run_map02_pulse_events_stage301.sh").read_text()
+          for token in ('for button in c x m', 'sleep 9',
+                        'guest-first-input-monotonic-ns.txt',
+                        'guest-final-observation-monotonic-ns.txt',
+                        'export PULSE_LATENCY_MSEC="$VH_HINT"',
+                        'export NEXIUM_CPU_BACKEND=rustarmic'):
+              assert token in old and token in new,token
+          assert 'capture_map02_pulse_events_stage301.py' in new
+          assert 'pulse-snapshot-during-start-ns.txt' in new
+          assert 'pulse-snapshot-after-end-ns.txt' in new
+          trace=Path("tools/run_map02_alsa_strace_guest_stage303.sh").read_text()
+          assert 'strace -f -qq -ttt -T -s 0' in trace
+          assert 'MAP02_STAGE303_RAW_TRACE' in trace and '$RUNNER_TEMP/map02-stage303-trace-' in trace
+          assert 'for button in c x m' in trace and 'sleep 9' in trace
+          assert 'sample_map02_linux_clocks_stage303.py' in trace
+          PY
+          python3 -m unittest discover -s tests -p 'test_audit_map02_cpal_lifecycle_snapshots.py' -v
+          grep -Fx 'export NEXIUM_CPU_BACKEND=rustarmic' tools/run_map02_filelogger_guest_stage294.sh
+          grep -Fx 'export PULSE_LATENCY_MSEC="$VH_HINT"' tools/run_map02_filelogger_guest_stage294.sh
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-stage298-timestamped-experimental-nexium-linux-x86_64
+          run-id: 39509934054
+          github-token: ${{ github.token }}
+          path: host
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-audout-presubmit-research-nro
+          run-id: 39460035568
+          github-token: ${{ github.token }}
+          path: guest
+      - name: SHA-identify actual new compiled ELF and unchanged ROM-free generated NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          chmod 0755 host/nexium
+          echo "$VH_HOST  host/nexium" | sha256sum -c -
+          echo "$VH_NRO  guest/vandal-hearts-map02-audio.nro" | sha256sum -c -
+          python3 - <<'PY'
+          import hashlib,json,os,struct
+          from pathlib import Path
+          raw=Path("host/nexium").read_bytes()
+          m=json.loads(Path("host/manifest.json").read_text())
+          assert len(raw)>100000 and raw[:4]==b"\x7fELF" and struct.unpack_from("<H",raw,18)[0]==62
+          assert hashlib.sha256(raw).hexdigest()==os.environ["VH_HOST"]
+          assert m["schema"]=="vh-map02-stage298-nexium-cpal-timestamped-host-build/v1"
+          assert m["result"]=="STAGE298_OPT_IN_TIMESTAMPED_NEXIUM_LINUX_BINARY_COMPILED"
+          assert m["research_head_sha"]==os.environ["VH_OLD"]
+          assert m["executable_sha256"]==os.environ["VH_HOST"]
+          assert m["executable_size_bytes"]==len(raw)
+          assert m["pinned_upstream_source_sha"]=="089562567a0a8760dfdd8420e1f57c35159a9219"
+          assert m["cargo_lock_sha256"]=="e6e8fcb90624650afddd1f25327dd4e6b042b094e8336cb5f43d2dc370e28739"
+          assert m["lifecycle_instrumented_audio_source_sha256"]=="dca4066830d132317ec4ae57f90b1943b785ea871f078844d1ff7da7fcb5040d"
+          assert m["cpu_backend"]=="rustarmic" and m["build_profile"]=="release"
+          assert all(m[k] is True for k in ("stage298_separate_cpal_lifetime_p_csv",
+            "stage298_non_rt_build_play_drop_timestamps",
+            "stage298_original_l_csv_unchanged","stage298_same_original_cpal_callbacks"))
+          assert m["physical_nintendo_switch_audio_proven"] is False
+          assert b"VH_MAP02_CPAL_LIFETIME_PATH" in raw and b"VH_MAP02_CPAL_TRACE_PATH" in raw
+          assert b"map02-cpal-counts" in raw
+          assert os.environ["VH_HOST"]!="c3803abd7a06fd4081d7d49367cfbd2cedc4bb1650996f1e09fca5788c881b65"
+          Path("evidence/stage298-source-pinned-build-manifest.json").write_text(json.dumps(m,sort_keys=True,indent=2)+"\n")
+          g=json.loads(Path("guest/manifest.json").read_text())
+          nro=Path("guest/vandal-hearts-map02-audio.nro").read_bytes()
+          assert g["schema"]=="vh-map02-presubmit-guest-nro/v1"
+          assert g["source_sha"]=="04b20024a50327091cff430eb5c28e4722d4ec76"
+          assert g["run_id"]==39460035568 and nro[16:20]==b"NRO0"
+          assert g["nro_sha256"]==os.environ["VH_NRO"]
+          assert hashlib.sha256(nro).hexdigest()==g["nro_sha256"]
+          assert Path("guest/nro.sha256").read_text().split()[0]==g["nro_sha256"]
+          pair={
+            "schema":"vh-map02-stage299-pinned-new-elf-and-generated-nro/v1",
+            "exact_stage298_elf_sha256":m["executable_sha256"],
+            "exact_generated_nro_sha256":g["nro_sha256"],
+            "stage298_build_source_sha":m["research_head_sha"],
+            "stage298_build_run_id":39509934054,
+            "original_nro_artifact_run_id":39460035568,
+            "guest_original_research_source_sha":g["source_sha"],
+            "hint_ms":int(os.environ["VH_HINT"]),
+            "actual_stage299_run_id":int(os.environ["GITHUB_RUN_ID"]),
+            "attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
+            "rom_or_licensed_audio_used":False,
+            "physical_switch_speaker_proven":False}
+          Path("evidence/stage299-pinned-new-host-guest.json").write_text(json.dumps(pair,sort_keys=True,indent=2)+"\n")
+          print("Real NEW ELF and unchanged generated NRO verified.")
+          PY
+      - name: Install actual Linux CPAL ALSA/Pulse and GUI dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 \
+            libxkbcommon0 libxkbcommon-x11-0 libx11-xcb1 \
+            libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers libgl1-mesa-dri \
+            pulseaudio pulseaudio-utils libasound2-plugins strace
+          ldd host/nexium > evidence/host-linked-libraries.txt
+          ! grep -F 'not found' evidence/host-linked-libraries.txt
+      - name: Run real NRO on new NeXium, same old guest path, opt-in P reporter
+        timeout-minutes: 6
+        shell: bash
+        run: |
+          set -euo pipefail
+          export MAP02_HOST="$PWD/host/nexium"
+          export MAP02_NRO="$PWD/guest/vandal-hearts-map02-audio.nro"
+          export MAP02_EVIDENCE="$PWD/evidence"
+          export VH_MAP02_CPAL_LIFETIME_PATH="$MAP02_EVIDENCE/host-cpal-lifetime-p.csv"
+          bash tools/run_map02_alsa_strace_guest_stage303.sh
+          test -s "$RUNNER_TEMP/map02-stage303-trace-${VH_HINT}.txt"
+          test -s evidence/strace-clock-before.json
+          test -s evidence/strace-clock-after.json
+          test -s evidence/pulse-sink-input-events-monotonic.csv
+          test -s evidence/pulse-event-subscriber-ready-ns.txt
+          test -s evidence/pulse-snapshot-during-start-ns.txt
+          test -s evidence/pulse-snapshot-after-end-ns.txt
+          test -s evidence/host-cpal-lifetime-p.csv
+      - name: Original L and new P raw snapshot verification
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 tools/audit_map02_cpal_lifecycle_snapshots.py \
+            --trace evidence/host-cpal-audioout-timeline.csv \
+            --first-input-marker evidence/guest-first-input-monotonic-ns.txt \
+            --final-observation-marker evidence/guest-final-observation-monotonic-ns.txt \
+            --output evidence/host-cpal-lifecycle-audit.json
+          python3 tools/audit_map02_cpal_lifetime_stage299.py \
+            --p evidence/host-cpal-lifetime-p.csv \
+            --l evidence/host-cpal-audioout-timeline.csv \
+            --first-input-marker evidence/guest-first-input-monotonic-ns.txt \
+            --final-observation-marker evidence/guest-final-observation-monotonic-ns.txt \
+            --output evidence/host-cpal-lifetime-audit.json
+      - name: Decode actual guest prejoin and final optical truthfully
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/decode_map02_prejoin_stage.py \
+            --image evidence/guest-prejoin.png --output evidence/guest-prejoin-stage.json
+          if python3 tools/decode_map02_audout_presubmit.py \
+            --image evidence/guest-final.png --output evidence/guest-final-receipt.json; then
+            echo "Genuine 8/8 optical verified" >evidence/optical-status.txt
+          else
+            echo "Final optical unverified" >evidence/optical-status.txt
+          fi
+      - name: Digest real virtual PCM, including actual silence
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from array import array
+          import hashlib,json,sys
+          from pathlib import Path
+          p=Path("evidence/virtual-pulse-48k-stereo-s16le.pcm")
+          r={"schema":"vh-map02-stage299-virtual-pcm/v1","physical_switch_dac_proven":False}
+          if p.is_file():
+              b=p.read_bytes()
+              r.update(raw_sha256=hashlib.sha256(b).hexdigest(),bytes=len(b),
+                valid_pcm16le_stereo=len(b)>0 and len(b)%4==0)
+              if r["valid_pcm16le_stereo"]:
+                  a=array("h");a.frombytes(b)
+                  if sys.byteorder!="little":a.byteswap()
+                  r["nonzero_pcm16_samples"]=sum(x!=0 for x in a)
+          else:r["capture_missing"]=True
+          Path("evidence/virtual-pcm-health.json").write_text(json.dumps(r,indent=2,sort_keys=True)+"\n")
+          print(json.dumps(r,sort_keys=True))
+          PY
+      - name: Independently re-decode real guest P L CRC PCM and GUI FileLogger
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_map02_cpal_lifetime_guest_stage299.py \
+            --evidence evidence \
+            --logdir "$RUNNER_TEMP/vh-map02-stage294-home/.config/NeXium/logs" \
+            --hint "$VH_HINT" --run-id "$GITHUB_RUN_ID" \
+            --output evidence/stage299-source-pinned-real-lifetime-receipt.json
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          r=json.loads(Path("evidence/stage299-source-pinned-real-lifetime-receipt.json").read_text())
+          assert r["result"]=="REAL_STAGE299_NEW_SHA_PINNED_P_L_GUEST_FILELOGGER_VERIFIED"
+          assert r["hint_ms"]==int(os.environ["VH_HINT"])
+          assert r["stage298_compiled_elf_sha256"]==os.environ["VH_HOST"]
+          assert r["actual_P_reporter_redecoded"] and r["actual_original_L_reporter_redecoded"]
+          assert not r["raw_gui_filelogger_uploaded"] and not r["physical_switch_audio_proven"]
+          print("Actual new-ELF P/L guest/FileLogger research proof passed")
+          PY
+      - name: Independently verify genuine Pulse sink-input event RECEIPT timeline vs actual P L guest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_map02_pulse_event_clocks_stage301.py \
+            --evidence evidence --hint "$VH_HINT" --run-id "$GITHUB_RUN_ID" \
+            --output evidence/stage301-pulse-subscribe-verified.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path("evidence/stage301-pulse-subscribe-verified.json").read_text())
+          assert report["result"]=="REAL_STAGE301_GUEST_CPAL_PULSE_RECEIPT_CLOCKS_REPARSED"
+          assert report["sink_input_new_notification_count"]>0
+          assert report["timestamp_measures_notification_RECEPTION_not_Pulse_generation"] is True
+          assert report["no_production_audio_fix_or_physical_switch_output_proven"] is True
+          PY
+      - name: Independently source-revalidate selected raw Linux syscalls then REDACT
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_map02_alsa_syscalls_stage303.py \
+            --evidence evidence \
+            --raw-trace "$RUNNER_TEMP/map02-stage303-trace-${VH_HINT}.txt" \
+            --hint "$VH_HINT" --run-id "$GITHUB_RUN_ID" \
+            --output evidence/stage303-sanitized-syscall-audit.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("evidence/stage303-sanitized-syscall-audit.json").read_text())
+          assert r["result"]=="REAL_STAGE303_PINNED_GUEST_SELECTED_LINUX_SYSCALLS_REPARSED"
+          assert r["raw_trace_is_uploaded"] is False
+          assert r["trace_tool_child_ptrace_changes_guest_scheduling"] is True
+          assert r["no_ALSA_root_cause_or_production_audio_fix_proven"] is True
+          PY
+      - name: Final source-backed summary without inferred root cause
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,os
+          p=Path("evidence/stage301-pulse-subscribe-verified.json")
+          report=json.loads(p.read_text()) if p.exists() else {"result":"UNVERIFIED"}
+          syscallpath=Path("evidence/stage303-sanitized-syscall-audit.json")
+          syscalls=json.loads(syscallpath.read_text()) if syscallpath.exists() else {"result":"UNVERIFIED"}
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
+              print("### Stage303 genuine Linux syscall trace (private, sanitized)",file=f)
+              print("Real syscall audit: **"+syscalls["result"]+"**",file=f)
+              if syscalls["result"]=="REAL_STAGE303_PINNED_GUEST_SELECTED_LINUX_SYSCALLS_REPARSED":
+                  print("Guest CPAL entries: "+str(syscalls["source_guest_cpal_post_input_entries"]),file=f)
+                  print("Guest optical CRC: "+str(syscalls["source_guest_8_page_optical_crc"]),file=f)
+                  print("Nonzero virtual PCM16: "+str(syscalls["source_virtual_pcm_nonzero_samples"]),file=f)
+                  print("Selected syscall counts: "+str(syscalls["selected_syscall_counts"]),file=f)
+                  print("Kernel SNDRV_PCM ioctl categories: "+str(syscalls["audio_kernel_ioctl_categories"]),file=f)
+                  print("Errno labels in SELECTED syscalls: "+str(syscalls["selected_error_code_counts"]),file=f)
+              print("Private raw strace never uploaded. strace perturbs timing. No CPAL/ALSA root cause inferred.",file=f)
+              print("Result: **"+report["result"]+"**",file=f)
+              if report["result"]=="REAL_STAGE301_GUEST_CPAL_PULSE_RECEIPT_CLOCKS_REPARSED":
+                  for key in ("hint_ms","actual_sink_input_notification_count",
+                              "sink_input_new_notification_count",
+                              "sink_input_remove_notification_count",
+                              "host_guest_window_cpal_callback_entries",
+                              "virtual_pcm_nonzero_samples","guest_final_8_page_crc_verified"):
+                      print(key+": "+str(report[key]),file=f)
+                  for route in report["observed_profile_routes"]:
+                      print(f'- {route["profile"]}: during #{route["during_sink_input_id"]} to late #{route["late_sink_input_id"]}, first late-input NEW receipt: {route["first_new_for_late_sink_input_RECEIVED_ns"]}, phase: {route["first_new_for_late_sink_input_received_phase"]}',file=f)
+              print("Receipt timestamp is NOT Pulse event generation time. No ALSA recovery or causal guest fix proven.",file=f)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage303-sanitized-Linux-syscalls-hint${{ matrix.hint }}-evidence
+          path: |
+            evidence/stage301-pulse-subscribe-verified.json
+            evidence/stage303-sanitized-syscall-audit.json
+            evidence/strace-clock-before.json
+            evidence/strace-clock-after.json
+            evidence/stage299-source-pinned-real-lifetime-receipt.json
+            evidence/stage299-pinned-new-host-guest.json
+            evidence/stage298-source-pinned-build-manifest.json
+            evidence/host-cpal-audioout-timeline.csv
+            evidence/host-cpal-lifetime-p.csv
+            evidence/host-cpal-lifecycle-audit.json
+            evidence/host-cpal-lifetime-audit.json
+            evidence/pulse-sink-input-events-monotonic.csv
+            evidence/pulse-event-subscriber-ready-ns.txt
+            evidence/pulse-snapshot-*.txt
+            evidence/guest-first-input-monotonic-ns.txt
+            evidence/guest-final-observation-monotonic-ns.txt
+            evidence/guest-prejoin-stage.json
+            evidence/guest-final-receipt.json
+            evidence/guest-prejoin.png
+            evidence/guest-final.png
+            evidence/virtual-pcm-health.json
+            evidence/host-linked-libraries.txt
+          if-no-files-found: warn
