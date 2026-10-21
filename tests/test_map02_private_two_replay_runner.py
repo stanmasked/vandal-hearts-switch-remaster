@@ -10,7 +10,11 @@ import unittest
 from unittest.mock import Mock, patch
 
 from tools.map02_private_two_replay_runner import (
-    PLAN_NAME, RUN_NAMES, _private_movie_identity, capture_twice, main,
+    PLAN_NAME, RUN_NAMES, _disc_source_snapshot, _private_movie_identity,
+    capture_twice, main,
+)
+from tools.map02_private_disc_movie_preflight import (
+    EXPECTED_BIN_BYTES, MAP02_LBA, SECTOR_BYTES,
 )
 
 
@@ -34,8 +38,18 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         self.program = self.root / "fictional-emulator"
         self.disc = self.root / "fictional.cue"
         self.movie = self.root / "fictional.bk2"
-        for path in (self.program, self.disc, self.movie):
-            path.write_text("synthetic-only")
+        self.bin = self.root / "fictional.bin"
+        self.program.write_text("fictional-emulator-only")
+        self.movie.write_text("synthetic-only")
+        self.disc.write_text(
+            'FILE "fictional.bin" BINARY\n'
+            '  TRACK 01 MODE2/2352\n'
+            '    INDEX 01 00:00:00\n',
+            encoding="ascii",
+        )
+        # Sparse fiction, no original sectors, no 665 MB written to disk.
+        with self.bin.open("wb") as handle:
+            handle.truncate(EXPECTED_BIN_BYTES)
         self.args = (self.program, self.disc, self.movie, self.workspace)
 
     def run_mocked(self, *, processes=None, match=True, digest=None,
@@ -104,6 +118,7 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         writer.assert_not_called()
         self.assertTrue(report["media_preflight_passed"])
         self.assertTrue(report["owner_bk2_stable_during_preflight"])
+        self.assertTrue(report["disc_source_stable_during_preflight"])
         self.assertEqual(report["private_capture_plan_rows_checked"], 3)
         self.assertFalse(report["full_bin_sha256_checked"])
         self.assertEqual(report["emulator_timeout_seconds"], 28800)
@@ -183,6 +198,8 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         self.assertEqual(result["emulator_processes_started"], 2)
         self.assertEqual(result["capture_attempts_audited"], 2)
         self.assertTrue(result["same_bk2_bytes_across_capture_attempts"])
+        self.assertTrue(result["same_cue_and_sampled_bin_sectors_across_attempts"])
+        self.assertFalse(result["full_disc_content_equality_authenticated"])
         self.assertFalse(result["independent_cold_boots_authenticated"])
         self.assertFalse(result["original_map02_scene_authenticated"])
         self.assertEqual(media.call_count, 1)
@@ -240,6 +257,88 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
                 inspector.assert_not_called()
                 process.assert_not_called()
                 self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_disc_cue_mutated_during_first_process_blocks_second(self):
+        def changed_cue(*args, **kwargs):
+            self.disc.write_text(
+                'FILE "fictional.bin" BINARY\n'
+                'TRACK 01 MODE2/2352\n'
+                'INDEX 01 00:00:00\n',
+                encoding="ascii",
+            )
+            return Mock(returncode=0)
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_two_replay_runner.write_private_plan",
+            side_effect=self._write_plan,
+        ), patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+            side_effect=changed_cue,
+        ) as launched, patch(
+            "tools.map02_private_two_replay_runner.verify",
+        ) as audit:
+            with self.assertRaisesRegex(ValueError, "disc source changed"):
+                capture_twice(*self.args, start=True)
+        launched.assert_called_once()
+        audit.assert_not_called()
+        self.assertFalse((self.workspace / RUN_NAMES[1]).exists())
+
+    def test_disc_sector_mutated_during_second_process_blocks_comparison(self):
+        attempts = [0]
+        def corrupt_sector(*args, **kwargs):
+            attempts[0] += 1
+            if attempts[0] == 2:
+                with self.bin.open("r+b") as media:
+                    media.seek(MAP02_LBA * SECTOR_BYTES + 24)
+                    media.write(b"NOTIGINAL")
+            return Mock(returncode=0)
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_two_replay_runner.write_private_plan",
+            side_effect=self._write_plan,
+        ), patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+            side_effect=corrupt_sector,
+        ) as launched, patch(
+            "tools.map02_private_two_replay_runner.verify",
+            return_value={"screenshot_count": 3},
+        ) as audit, patch(
+            "tools.map02_private_two_replay_runner.audit_pair",
+        ) as compare:
+            with self.assertRaisesRegex(ValueError, "disc source changed"):
+                capture_twice(*self.args, start=True)
+        self.assertEqual(launched.call_count, 2)
+        audit.assert_called_once()
+        compare.assert_not_called()
+
+    def test_disc_identity_same_files_stable_and_sample_sector_changes(self):
+        before = _disc_source_snapshot(self.disc)
+        self.assertEqual(before, _disc_source_snapshot(self.disc))
+        with self.bin.open("r+b") as media:
+            media.seek(MAP02_LBA * SECTOR_BYTES)
+            media.write(b"fictional changed sector")
+        self.assertNotEqual(before, _disc_source_snapshot(self.disc))
+
+    def test_disc_identity_rejects_bin_symlink(self):
+        target = self.root / "backup-fake.bin"
+        self.bin.rename(target)
+        try:
+            self.bin.symlink_to(target)
+        except (OSError, NotImplementedError):
+            self.skipTest("symlinks unsupported")
+        with self.assertRaisesRegex(ValueError, "nonsymlink"):
+            _disc_source_snapshot(self.disc)
+
+    def test_disc_identity_does_not_attest_untouched_full_bin(self):
+        # The source receipt intentionally probes only PVD and MAP02.
+        # A change in a remote unprobed sector cannot be called whole-BIN
+        # equality even though metadata (ctime) normally catches mutation.
+        report, *_ = self.run_mocked()
+        self.assertFalse(report["full_disc_content_equality_authenticated"])
 
     def test_movie_mutated_during_first_process_blocks_second(self):
         def first_capture(*args, **kwargs):
