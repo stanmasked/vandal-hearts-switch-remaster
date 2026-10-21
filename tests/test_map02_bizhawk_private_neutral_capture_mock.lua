@@ -11,7 +11,7 @@ local scenarios = 0
 
 local function run(option)
   scenarios = scenarios + 1
-  local counter = 1
+  local counter = option == "late-attach" and 80 or (option == "zero-counter" and 0 or 1)
   local lines, screenshots, saved = {}, {}, {}
   local content = BASE
   if option == "boundary" then content = content:gsub("1,before,1664,held", "1,before,1663,held") end
@@ -59,7 +59,21 @@ local function run(option)
     end,
     getinput = function(idx, port)
       assert(port == 1)
-      assert(idx == 1663 or idx == 1664 or idx == 1666 or idx == 1669)
+      assert(idx == 1660 or idx == 1661 or idx == 1663 or
+             idx == 1664 or idx == 1666 or idx == 1669)
+      if idx == 1660 or idx == 1661 then
+        local pressed = idx == 1661
+        if option == "early-start" and idx == 1660 then pressed = true end
+        if option == "missing-start" and idx == 1661 then pressed = false end
+        if option == "ambiguous-start" and idx == 1661 then
+          return {Start = true, ["P1 Start"] = false}
+        end
+        if option == "unknown-start" and idx == 1661 then
+          return {["P2 Start"] = true}
+        end
+        local start_key = option == "prefixed" and "P1 Start" or "Start"
+        return {[start_key] = pressed}
+      end
       local pressed = (idx ~= 1666)
       if option == "neutral-mismatch" then pressed = not pressed end
       local key = option == "prefixed" and "P1 Up" or "Up"
@@ -94,7 +108,7 @@ local function run(option)
   return lines, screenshots
 end
 
-for _, option in ipairs({"plain", "prefixed", "boundary"}) do
+for _, option in ipairs({"plain", "prefixed", "boundary", "zero-counter"}) do
   local lines, shots = run(option)
   assert(#shots == 3, option .. ": expected three screenshot calls")
   assert(#lines == 4, option .. ": three capture lines and summary")
@@ -115,7 +129,8 @@ for _, option in ipairs({
   "relative-plan", "relative-root", "wrong-length", "not-readonly",
   "bad-header", "bad-count", "duplicate-index", "neutral-mismatch",
   "mode-leaves", "skip-counter", "saved-exists", "missing-write",
-  "malformed-png", "invalid-role"
+  "malformed-png", "invalid-role", "late-attach",
+  "early-start", "missing-start", "ambiguous-start", "unknown-start"
 }) do
   local lines, shots = run(option)
   local rejected = false
