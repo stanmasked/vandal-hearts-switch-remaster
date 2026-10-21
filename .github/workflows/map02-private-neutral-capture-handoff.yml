@@ -34,18 +34,18 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           architecture: x64
-      - name: Ensure all 15 capture-plan unit tests use fake selection metadata
+      - name: Ensure all 17 capture-plan unit tests use fake selection metadata
         shell: bash
         run: |
           set -euo pipefail
           python -m unittest discover -s tests \
             -p 'test_map02_private_bk2_capture_plan.py' -v \
             2>&1 | tee /tmp/vh-map02-capture-plan.log
-          grep -F 'Ran 15 tests' /tmp/vh-map02-capture-plan.log
+          grep -F 'Ran 17 tests' /tmp/vh-map02-capture-plan.log
           if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-capture-plan.log; then
             exit 1
           fi
-          echo 'VH_MAP02_CAPTURE_PLAN_PASS synthetic=15 original_bk2=0 game=0 map02=unknown'
+          echo 'VH_MAP02_CAPTURE_PLAN_PASS synthetic=17 original_bk2=0 game=0 map02=unknown'
   lua-capture-mocks:
     name: Execute private capture Lua against thirty-one invented emulator scenarios
     runs-on: ubuntu-22.04
