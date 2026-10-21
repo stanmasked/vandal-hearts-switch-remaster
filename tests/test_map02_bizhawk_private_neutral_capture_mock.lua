@@ -191,7 +191,12 @@ for _, option in ipairs({
   end
   assert(rejected, option .. ": fail-closed diagnostic missing")
   assert(#shots < 3, option .. ": should reject before three successful PNGs")
-  assert(#exit_codes == 0, option .. ": failed capture must not signal successful process exit")
+  if option == "missing-exit-api" then
+    assert(#exit_codes == 0, option .. ": unavailable exit API must not be called")
+  else
+    assert(#exit_codes == 1 and exit_codes[1] == 1,
+           option .. ": failed capture must terminate EmuHawk with exit code 1")
+  end
 end
 old_print("VH_MAP02_NEUTRAL_CAPTURE_LUA_MOCK_PASS cases=" .. scenarios ..
           " owner_bk2=0 actual_bizhawk=0 map02_verified=0")
