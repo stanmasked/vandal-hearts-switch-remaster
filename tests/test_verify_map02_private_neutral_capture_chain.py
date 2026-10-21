@@ -40,8 +40,10 @@ def invented_png(value):
 def log_row(group, role, index, held):
     return (
         "VH_PRIVATE_NEUTRAL_CAPTURE window=%d role=%s counter=%d "
-        "candidate_input=%d expected_buttons=%s png=written "
-        "display_offset=unverified" % (group, role, index + 1, index, held)
+        "candidate_input=%d expected_buttons=%s lag_count=%d png=written "
+        "display_offset=unverified" % (
+            group, role, index + 1, index, held, (index + 1) // 10
+        )
     )
 
 
@@ -108,6 +110,9 @@ class CaptureAuditTests(unittest.TestCase):
         self.assertTrue(value["owner_log_reports_live_first_start_anchor_before_screenshots"])
         self.assertTrue(value["owner_log_reports_poweron_movie_path_match"])
         self.assertTrue(value["owner_log_reports_input_poll_callback"])
+        self.assertTrue(value["psx_lag_timeline_available"])
+        self.assertEqual(value["reported_psx_lag_counts_at_snapshots"], [300, 325, 350])
+        self.assertFalse(value["psx_lag_timeline_authenticates_movie_sync"])
         self.assertTrue(value["owner_log_reports_stable_game_rom_id_samples"])
         self.assertFalse(value["original_disc_full_hash_authenticated"])
         self.assertEqual(value["reported_bizhawk_version"], "2.11")
@@ -124,6 +129,58 @@ class CaptureAuditTests(unittest.TestCase):
                      "source_native_gpu_vram_verified", "private_input_or_png_published"):
             self.assertFalse(value[name])
         self.assertNotIn(str(self.base), json.dumps(value))
+
+    def test_optional_lag_counter_unavailable_not_falsely_verified(self):
+        original = self.log.read_text(encoding="utf-8")
+        updated = original
+        for index in (300, 325, 350):
+            updated = updated.replace(
+                "lag_count=%d " % index, "lag_count=unavailable ",
+            )
+        self.log.write_text(updated, encoding="utf-8")
+        report = self.call()
+        self.assertFalse(report["psx_lag_timeline_available"])
+        self.assertIsNone(report["reported_psx_lag_counts_at_snapshots"])
+        self.assertFalse(report["psx_lag_timeline_authenticates_movie_sync"])
+
+    def test_psx_lag_samples_cannot_disappear_mid_capture(self):
+        self.log.write_text(self.log.read_text(encoding="utf-8").replace(
+            "lag_count=325 ", "lag_count=unavailable ",
+        ), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "lag telemetry"):
+            self.call()
+
+    def test_psx_lag_samples_cannot_reappear_mid_capture(self):
+        source = self.log.read_text(encoding="utf-8").replace(
+            "lag_count=300 ", "lag_count=unavailable ",
+        )
+        self.log.write_text(source, encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "lag counter"):
+            self.call()
+
+    def test_psx_lag_count_regression_rejected(self):
+        self.log.write_text(self.log.read_text(encoding="utf-8").replace(
+            "lag_count=325 ", "lag_count=299 ",
+        ), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "lag counter"):
+            self.call()
+
+    def test_psx_lag_count_larger_than_frame_rejected(self):
+        self.log.write_text(self.log.read_text(encoding="utf-8").replace(
+            "lag_count=325 ", "lag_count=9999 ",
+        ), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "lag counter"):
+            self.call()
+
+    def test_psx_lag_counter_malformed_is_rejected(self):
+        original = self.log.read_text(encoding="utf-8")
+        for token in ("-1", "1.5", "maybe", "00325"):
+            with self.subTest(token=token):
+                self.log.write_text(original.replace(
+                    "lag_count=325 ", "lag_count=" + token + " ",
+                ), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "capture record"):
+                    self.call()
 
     def test_lua_reports_no_core_input_polls_without_false_authentication(self):
         source = self.log.read_text(encoding="utf-8")
