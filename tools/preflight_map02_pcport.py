@@ -54,8 +54,12 @@ def check_disc_image(path: Path) -> tuple[bool, str]:
 
 
 
-def identify_disc_release(path: Path) -> str:
-    """Reproduce pinned libcd.c boot/card-ID probes without scanning disc data."""
+def identify_disc_boot_family(path: Path) -> str:
+    """Classify the runtime boot/card-ID family, not the exact retail/localized release.
+
+    A translated or patched disc can preserve the original PS-X EXE card ID.
+    The exact US data-generator input is gated separately by the executable MD5.
+    """
     data_offset = 24
     sector_size = 2352
     header_size = 0x800
@@ -86,6 +90,11 @@ def identify_disc_release(path: Path) -> str:
             if ident in identifiers:
                 return identifiers[ident]
     return "unknown"
+
+
+def identify_disc_release(path: Path) -> str:
+    """Backward-compatible alias; returns only the boot/card-ID family."""
+    return identify_disc_boot_family(path)
 
 
 def _run(args, *, cwd=None):
@@ -181,13 +190,18 @@ def inspect(upstream: Path, *, game_exe: Path | None = None,
         if not ok:
             blockers.append("disc_raw_layout_invalid")
         else:
-            release = identify_disc_release(disc_image)
-            checks["disc_release"] = release
-            checks["disc_supported_by_us_port"] = release in ("USA", "Asia")
-            if release == "Japan":
+            boot_family = identify_disc_boot_family(disc_image)
+            checks["disc_boot_id_family"] = boot_family
+            checks["disc_boot_id_accepted_by_us_runtime"] = boot_family in ("USA", "Asia")
+            checks["disc_exact_retail_release_verified"] = False
+            checks["disc_identification_basis"] = (
+                "embedded PS-X EXE boot/card ID only; localized or patched content "
+                "may retain this identifier"
+            )
+            if boot_family == "Japan":
                 blockers.append("disc_region_not_supported_by_us_build")
-            elif release == "unknown":
-                blockers.append("disc_release_unrecognized")
+            elif boot_family == "unknown":
+                blockers.append("disc_boot_id_unrecognized")
 
     for executable in ("make", "cc", "pkg-config"):
         present = shutil.which(executable) is not None
@@ -216,7 +230,9 @@ def inspect(upstream: Path, *, game_exe: Path | None = None,
         "notes": [
             "Read-only: no game resources extracted, copied, or uploaded.",
             "Tracked upstream source changes (staged or unstaged) block the pinned build; untracked user files are ignored.",
-            "The disc boot/card ID probes mirror pinned libcd.c; they are not a full disc-integrity or ownership check.",
+            "The disc boot/card ID identifies a runtime family, not the exact retail or localization build; patched images may preserve the ID.",
+            "The boot/card ID probe mirrors pinned libcd.c and is not a full disc-integrity or ownership check.",
+            "The exact US data-generator executable is gated separately by its retail MD5; a USA-family boot ID does not satisfy that gate.",
             "Passing does not prove a full compile, playable startup, or visible terrain pixels.",
             "KROM/BIOS verifies the exact US 209-glyph charset-2 SHA-256 required by the pinned generator.",
             "The game executable MD5 is the US data-generator requirement, not merely disc runtime region detection.",

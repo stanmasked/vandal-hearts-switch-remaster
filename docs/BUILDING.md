@@ -16,6 +16,8 @@ Upstream project: https://github.com/HalmyLyseas/VandalHearts-PcPort
 
 The upstream repository separates the byte-matching decompilation from the native PC port. Its documented PC backend uses SDL2, OpenAL, OpenGL on Windows/Linux, and a Metal presentation path on macOS. It also uses Python 3 for build-time data generation and pthreads/Threads for its high-resolution rasterizer.
 
+Before attempting a local MAP02 PC-port build, run the read-only prerequisite checker and interpret its region fields carefully: [MAP02 PC-port preflight](MAP02_PC_PORT_PREFLIGHT.md). In particular, a boot/card ID that places a disc in the USA runtime family does not prove the image is the exact US retail release or satisfy the pinned data generator's US executable MD5 gate. Keep the full preflight report private because it contains local paths and hashes.
+
 The upstream PC CMake file declares CMake 3.16 or newer and normally enables:
 - SDL2
 - OpenGL on non-Apple targets
