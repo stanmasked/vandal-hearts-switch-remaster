@@ -1,0 +1,184 @@
+"""Invented-only BizHawk CLI launch preflight and privacy tests."""
+import contextlib
+import io
+import os
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch, Mock
+
+from tools.map02_private_bizhawk_poweron_launch import build_launch, main
+
+
+ROWS = [
+    "VH_MAP02_CAPTURE_PLAN_V1", "movie_frames=933949",
+    "capture_count=3", "1,before,3000,held",
+    "1,middle,3250,neutral", "1,after,3500,held",
+]
+
+
+class PrivateBizHawkBootTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.program = self.root / "EmuHawk.exe"
+        self.disc = self.root / "fictional.cue"
+        self.bk2 = self.root / "fictional.bk2"
+        self.plan = self.root / "private-plan.txt"
+        self.lua = self.root / "capture.lua"
+        self.output = self.root / "private-png"
+        self.output.mkdir()
+        for path in (self.program, self.disc, self.bk2, self.lua):
+            path.write_bytes(b"synthetic only")
+        self.plan.write_text("\n".join(ROWS) + "\n", encoding="ascii")
+
+    def call(self, **kwargs):
+        with patch("tools.map02_private_bizhawk_poweron_launch.plan_lines",
+                   return_value=kwargs.pop("source_rows", ROWS)) as source:
+            result = build_launch(
+                kwargs.pop("program", self.program),
+                kwargs.pop("disc", self.disc),
+                kwargs.pop("movie", self.bk2),
+                kwargs.pop("plan", self.plan),
+                kwargs.pop("output", self.output),
+                script=kwargs.pop("lua", self.lua),
+                minimum=kwargs.pop("minimum", 180),
+                maximum=kwargs.pop("maximum", 1800),
+                after=kwargs.pop("after", 1663),
+                before=kwargs.pop("before", 933949),
+            )
+        self.assertFalse(kwargs)
+        self.assertEqual(source.call_args.kwargs["limit"], 1)
+        return result
+
+    def test_exact_bizhawk_argv_and_environment_without_shell(self):
+        argv, env, count = self.call()
+        self.assertEqual(count, 3)
+        self.assertEqual(argv, [
+            str(self.program), "--movie=" + str(self.bk2),
+            "--lua=" + str(self.lua), str(self.disc),
+        ])
+        self.assertEqual(env["VH_PRIVATE_CAPTURE_PLAN"], str(self.plan))
+        self.assertEqual(env["VH_PRIVATE_PNG_DIR"], str(self.output))
+        self.assertNotIn("github", str(argv).lower())
+
+    def test_owner_original_files_must_not_reside_in_git_checkout(self):
+        (self.root / ".git").mkdir()
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_refuses_private_movie_symlink(self):
+        other = self.root / "shortcut.bk2"
+        other.symlink_to(self.bk2)
+        with self.assertRaises(ValueError):
+            self.call(movie=other)
+
+    def test_refuses_missing_private_disc(self):
+        with self.assertRaises(ValueError):
+            self.call(disc=self.root / "missing.cue")
+
+    def test_refuses_wrong_bk2_to_plan_relationship(self):
+        rows = ROWS[:-1] + ["1,after,3502,held"]
+        with self.assertRaises(ValueError):
+            self.call(source_rows=rows)
+
+    def test_refuses_already_existing_screenshot_output(self):
+        (self.output / "vh_review_w01_middle_counter_0003251.png").write_bytes(b"old")
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_refuses_symlinked_screenshot_output(self):
+        actual = self.root / "real-image-dir"
+        actual.mkdir()
+        self.output.rmdir()
+        self.output.symlink_to(actual, target_is_directory=True)
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_refuses_git_inside_resolved_parent_symlink(self):
+        actual = self.root / "real"
+        actual.mkdir()
+        (actual / ".git").write_text("gitdir: elsewhere", encoding="ascii")
+        image = actual / "images"
+        image.mkdir()
+        alias = self.root / "alias"
+        alias.symlink_to(actual, target_is_directory=True)
+        with self.assertRaises(ValueError):
+            self.call(output=alias / "images")
+
+    def test_refuses_relative_executable_path(self):
+        with self.assertRaises(ValueError):
+            self.call(program=Path("EmuHawk.exe"))
+
+    def test_refuses_nonexistent_lua_script(self):
+        with self.assertRaises(ValueError):
+            self.call(lua=self.root / "missing.lua")
+
+    def test_plan_scan_arguments_preserve_movie_clock_bounds(self):
+        args, env, count = self.call(
+            minimum=240, maximum=1200, after=2000, before=900000)
+        self.assertEqual(args[1], "--movie=" + str(self.bk2))
+        self.assertEqual(count, 3)
+
+    def test_cli_preflight_never_executes_or_echoes_private_paths(self):
+        command = [
+            "program", str(self.program), str(self.disc), str(self.bk2),
+            str(self.plan), str(self.output), "--capture-lua", str(self.lua),
+        ]
+        with patch.object(sys, "argv", command):
+            with patch("tools.map02_private_bizhawk_poweron_launch.plan_lines",
+                       return_value=ROWS):
+                with patch("tools.map02_private_bizhawk_poweron_launch.subprocess.run") as run:
+                    stream = io.StringIO()
+                    with contextlib.redirect_stdout(stream):
+                        result = main()
+        self.assertEqual(result, 0)
+        run.assert_not_called()
+        self.assertIn("emulator_started=0", stream.getvalue())
+        for private in (self.bk2, self.disc, self.plan, self.output):
+            self.assertNotIn(str(private), stream.getvalue())
+
+    def test_explicit_launch_uses_argv_without_shell_or_upload(self):
+        args = [
+            "program", str(self.program), str(self.disc), str(self.bk2),
+            str(self.plan), str(self.output), "--capture-lua", str(self.lua),
+            "--launch",
+        ]
+        with patch.object(sys, "argv", args):
+            with patch("tools.map02_private_bizhawk_poweron_launch.plan_lines",
+                       return_value=ROWS):
+                with patch("tools.map02_private_bizhawk_poweron_launch.subprocess.run",
+                           return_value=Mock(returncode=0)) as run:
+                    stream = io.StringIO()
+                    with contextlib.redirect_stdout(stream):
+                        status = main()
+        self.assertEqual(status, 0)
+        self.assertEqual(run.call_count, 1)
+        c = run.call_args
+        self.assertFalse(c.kwargs["shell"])
+        self.assertEqual(c.args[0][1], "--movie=" + str(self.bk2))
+        self.assertEqual(c.args[0][2], "--lua=" + str(self.lua))
+        self.assertEqual(c.kwargs["env"]["VH_PRIVATE_CAPTURE_PLAN"], str(self.plan))
+        self.assertIn("original_ps1_authenticated=0", stream.getvalue())
+        self.assertNotIn(str(self.bk2), stream.getvalue())
+
+    def test_nonzero_emulator_exit_is_not_reported_successful(self):
+        args = [
+            "program", str(self.program), str(self.disc), str(self.bk2),
+            str(self.plan), str(self.output), "--capture-lua", str(self.lua),
+            "--launch",
+        ]
+        with patch.object(sys, "argv", args):
+            with patch("tools.map02_private_bizhawk_poweron_launch.plan_lines",
+                       return_value=ROWS):
+                with patch("tools.map02_private_bizhawk_poweron_launch.subprocess.run",
+                           return_value=Mock(returncode=9)):
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        status = main()
+        self.assertEqual(status, 1)
+
+
+if __name__ == "__main__":
+    unittest.main()
