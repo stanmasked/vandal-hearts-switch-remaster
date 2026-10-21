@@ -62,6 +62,18 @@ namespace VhMap02LoaderSmoke
                     + " emulator_process_started=0 original_disc=0 bios=0 bk2=0");
                 return 0;
             }
+            catch (TargetInvocationException error)
+            {
+                var inner = error.InnerException;
+                var deeper = (inner as TypeInitializationException)?.InnerException;
+                Console.Error.WriteLine(
+                    "VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_FAIL stage=" + _stage
+                    + " exception_type=TargetInvocationException"
+                    + " inner_type=" + (inner == null ? "unknown" : inner.GetType().Name)
+                    + " deeper_type=" + (deeper == null ? "none" : deeper.GetType().Name)
+                    + " authenticated=0");
+                return 1;
+            }
             catch (ReflectionTypeLoadException error)
             {
                 // Only assembly basenames that satisfy this whitelist can be
