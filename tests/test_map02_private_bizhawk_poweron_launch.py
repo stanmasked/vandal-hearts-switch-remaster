@@ -31,6 +31,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.lua = self.root / "capture.lua"
         self.output = self.root / "private-png"
         self.output.mkdir()
+        self.output.chmod(0o700)
         for path in (self.program, self.disc, self.bk2, self.lua):
             path.write_bytes(b"synthetic only")
         self.plan.write_text("\n".join(ROWS) + "\n", encoding="ascii")
@@ -112,6 +113,21 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         (self.output / "vh_emuhawk_process.log").symlink_to(victim)
         with self.assertRaises(ValueError):
             self.call()
+
+    def test_refuses_group_or_world_accessible_png_root(self):
+        if os.name == "nt":
+            self.skipTest("POSIX directory mode bits are not Windows ACLs")
+        self.output.chmod(0o755)
+        with self.assertRaisesRegex(ValueError, "owner-only"):
+            self.call()
+
+    def test_refuses_png_root_owned_by_another_user(self):
+        if os.name == "nt":
+            self.skipTest("POSIX uid ownership is unavailable on Windows")
+        with patch("tools.map02_private_bizhawk_poweron_launch.os.geteuid",
+                   return_value=self.output.stat().st_uid + 1):
+            with self.assertRaisesRegex(ValueError, "owned by current user"):
+                self.call()
 
     def test_refuses_already_existing_screenshot_output(self):
         (self.output / "vh_review_w01_middle_counter_0003251.png").write_bytes(b"old")
