@@ -102,6 +102,7 @@ class CaptureAuditTests(unittest.TestCase):
         self.assertTrue(value["private_plan_rebuilt_from_direct_bk2"])
         self.assertTrue(value["capture_logs_match_each_planned_input_and_counter"])
         self.assertTrue(value["owner_log_reports_live_first_start_anchor_before_screenshots"])
+        self.assertTrue(value["owner_launcher_reports_successful_process_exit"])
         self.assertTrue(value["all_png_crc_zlib_scanlines_pass"])
         self.assertEqual(value["screenshot_count"], 3)
         for name in ("movie_input_to_actual_ps1_delivery_verified",
@@ -202,6 +203,20 @@ class CaptureAuditTests(unittest.TestCase):
             stream.write("VH_PRIVATE_BIZHAWK_LOCAL_PROCESS_EXITED exit_success=1 "
                          "original_ps1_authenticated=0 map02_identified=0\n")
         with self.assertRaises(ValueError):
+            self.call()
+
+    def test_malformed_launcher_exit_marker_refused(self):
+        self.log.write_text(self.log.read_text().replace(
+            "exit_success=1 original_ps1_authenticated=0 map02_identified=0",
+            "exit_success=yes original_ps1_authenticated=0 map02_identified=0"))
+        with self.assertRaisesRegex(ValueError, "process exit marker is invalid"):
+            self.call()
+
+    def test_launcher_error_marker_refused(self):
+        with self.log.open("a") as stream:
+            stream.write("VH_PRIVATE_BIZHAWK_LAUNCH_ERROR process_started=0 "
+                         "original_ps1_authenticated=0\\n")
+        with self.assertRaisesRegex(ValueError, "launch failed"):
             self.call()
 
     def test_duplicate_completion_refused(self):
