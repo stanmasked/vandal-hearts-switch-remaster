@@ -30,6 +30,15 @@ local function run(option)
   end
   io.open = function(path, mode)
     assert(mode == "rb", "capture script must not write through Lua io")
+    -- Simulate three public Git roots: inside the output root, an ancestor,
+    -- and a worktree-style .git pointer file.
+    local mark =
+      (option == "git-root" and path == ROOT .. "/.git/HEAD") or
+      (option == "git-parent" and path == "/private/.git/HEAD") or
+      (option == "git-worktree" and path == "/private/.git")
+    if mark then
+      return { close = function() end }
+    end
     if path == PLAN then
       return {
         read = function(_, size) assert(size == 8193); return content end,
@@ -134,7 +143,7 @@ for _, option in ipairs({
   "mode-leaves", "skip-counter", "saved-exists", "missing-write",
   "malformed-png", "invalid-role", "late-attach",
   "early-start", "missing-start", "ambiguous-start", "unknown-start",
-  "nil-start-table"
+  "nil-start-table", "git-root", "git-parent", "git-worktree"
 }) do
   local lines, shots = run(option)
   local rejected = false
