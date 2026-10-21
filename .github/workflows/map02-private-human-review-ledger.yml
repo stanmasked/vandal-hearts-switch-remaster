@@ -1,0 +1,44 @@
+name: MAP02 private owner review-label ledger (synthetic CI)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-private-human-review-ledger.yml'
+      - 'tools/map02_private_human_review_ledger.py'
+      - 'tests/test_map02_private_human_review_ledger.py'
+      - 'docs/MAP02_PRIVATE_HUMAN_REVIEW_LEDGER.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  invented-human-review-ledger:
+    name: Synthetic private manual-label audit (${{ matrix.os }} Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.9'
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: macos-15-intel
+            python: '3.11'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Exercise invented local annotation tables and PNG source audit mocks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_map02_private_human_review_ledger.py' -v \
+            2>&1 | tee "$RUNNER_TEMP/map02-human-review-ledger.log"
+          grep -F 'Ran 16 tests' "$RUNNER_TEMP/map02-human-review-ledger.log"
+          if grep -E '^(FAILED|ERROR)' "$RUNNER_TEMP/map02-human-review-ledger.log"; then exit 1; fi
+          echo 'VH_MAP02_PRIVATE_REVIEW_LEDGER_PASS synthetic=16 original_bk2=0 screenshot=0 map02_proof=0'
