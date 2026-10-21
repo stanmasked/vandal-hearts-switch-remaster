@@ -200,7 +200,7 @@ class CaptureAuditTests(unittest.TestCase):
     def test_duplicate_launcher_exit_marker_refused(self):
         with self.log.open("a") as stream:
             stream.write("VH_PRIVATE_BIZHAWK_LOCAL_PROCESS_EXITED exit_success=1 "
-                         "original_ps1_authenticated=0 map02_identified=0\\n")
+                         "original_ps1_authenticated=0 map02_identified=0\n")
         with self.assertRaises(ValueError):
             self.call()
 
