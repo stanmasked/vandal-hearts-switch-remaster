@@ -55,6 +55,28 @@ namespace VhMap02LoaderSmoke
                     + " emulator_process_started=0 original_disc=0 bios=0 bk2=0");
                 return 0;
             }
+            catch (ReflectionTypeLoadException error)
+            {
+                // Only assembly basenames that satisfy this whitelist can be
+                // shown. No exception messages, disk paths, media identifiers.
+                var names = error.LoaderExceptions.OfType<FileNotFoundException>()
+                    .Select(ex =>
+                    {
+                        try { return new AssemblyName(ex.FileName).Name; }
+                        catch { return ""; }
+                    })
+                    .Where(name => name != null
+                        && name.Length <= 80
+                        && name.All(c => char.IsLetterOrDigit(c)
+                            || c == '.' || c == '_' || c == '-'))
+                    .Distinct().Take(8).ToArray();
+                Console.Error.WriteLine(
+                    "VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_FAIL stage=" + _stage
+                    + " exception_type=ReflectionTypeLoadException"
+                    + " unresolved_assembly_names=" + string.Join(",", names)
+                    + " authenticated=0");
+                return 1;
+            }
             catch (Exception error)
             {
                 // Print only finite controlled phases and exception TYPE;
