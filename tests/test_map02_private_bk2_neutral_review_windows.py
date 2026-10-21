@@ -107,6 +107,12 @@ class NeutralReviewTests(unittest.TestCase):
         self.assertEqual(
             self.collect([(), (), ("Circle",)], after=1665), [])
 
+    def test_after_bound_applies_to_earliest_suggested_capture_frame(self):
+        # The neutral run starts at 1664, but its "before" screenshot is
+        # input frame 1663. A requested lower bound of 1664 must reject it.
+        self.assertEqual(
+            self.collect([(), (), (), ("Circle",)], after=1664), [])
+
     def test_ranking_uses_duration_not_scene_probability(self):
         points = self.collect([
             (), (), ("Circle",),
@@ -208,6 +214,31 @@ class NeutralReviewTests(unittest.TestCase):
             link.symlink_to(movie)
             with self.assertRaises(ValueError):
                 inspect_movie(link)
+
+
+    def test_archive_inside_git_checkout_or_worktree_is_refused(self):
+        for marker_kind in ("directory", "worktree-file", "symlinked-parent"):
+            with self.subTest(marker_kind=marker_kind):
+                with tempfile.TemporaryDirectory() as folder:
+                    root = Path(folder)
+                    if marker_kind == "directory":
+                        (root / ".git").mkdir()
+                        movie = root / "source.bk2"
+                    elif marker_kind == "worktree-file":
+                        (root / ".git").write_text("gitdir: ../private-worktree")
+                        movie = root / "source.bk2"
+                    else:
+                        actual = root / "checkout"
+                        actual.mkdir()
+                        (actual / ".git").mkdir()
+                        movie = actual / "source.bk2"
+                    movie.write_bytes(b"not-a-zip")
+                    if marker_kind == "symlinked-parent":
+                        alias = root / "alias"
+                        alias.symlink_to(actual, target_is_directory=True)
+                        movie = alias / "source.bk2"
+                    with self.assertRaisesRegex(ValueError, "outside Git checkout/worktree"):
+                        inspect_movie(movie)
 
 
 if __name__ == "__main__":

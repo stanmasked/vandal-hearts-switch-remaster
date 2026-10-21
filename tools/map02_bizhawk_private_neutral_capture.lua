@@ -7,8 +7,23 @@ local NAMES = {
   "Up", "Down", "Left", "Right", "Select", "Start", "Square",
   "Triangle", "Circle", "Cross", "L1", "R1", "L2", "R2", "L3", "R3", "MODE"
 }
+local log_handle = nil
+local function emit(line)
+  print(line)
+  if log_handle then
+    log_handle:write(line, "\n")
+    log_handle:flush()
+  end
+end
 local function fail(code)
-  print("VH_PRIVATE_NEUTRAL_CAPTURE_ERROR " .. code)
+  emit("VH_PRIVATE_NEUTRAL_CAPTURE_ERROR " .. code)
+  if log_handle then log_handle:close(); log_handle = nil end
+  -- Do not leave a failed capture running through the remaining long movie.
+  -- The launcher will record the nonzero process exit; if the API is missing,
+  -- the existing preflight error remains fail-closed and needs owner cleanup.
+  if type(client) == "table" and type(client.exitCode) == "function" then
+    pcall(client.exitCode, 1)
+  end
   return
 end
 local function absolute_private_path(value)
@@ -18,7 +33,9 @@ local function absolute_private_path(value)
 end
 local plan_file = os.getenv("VH_PRIVATE_CAPTURE_PLAN")
 local root = os.getenv("VH_PRIVATE_PNG_DIR")
-if not absolute_private_path(plan_file) or not absolute_private_path(root) then
+local log_path = os.getenv("VH_PRIVATE_CAPTURE_LOG")
+if not absolute_private_path(plan_file) or not absolute_private_path(root)
+    or not absolute_private_path(log_path) then
   return fail("absolute_private_paths_required")
 end
 -- Best-effort Git checkout guard for environments without LuaFileSystem.
@@ -42,6 +59,22 @@ end
 if capture_root_in_git_checkout(root) then
   return fail("private_png_dir_inside_git_checkout")
 end
+if capture_root_in_git_checkout(log_path) then
+  return fail("private_log_inside_git_checkout")
+end
+local normalized_root = root:gsub("\\", "/"):gsub("/+$", "")
+local normalized_log = log_path:gsub("\\", "/"):gsub("/+$", "")
+if normalized_log ~= normalized_root .. "/vh_private_capture.log" then
+  return fail("private_log_must_be_inside_capture_root")
+end
+-- The Python launcher creates this file with exclusive mode 0600 before
+-- starting EmuHawk. Refuse to silently create a less-private log from Lua.
+local log_probe = io.open(log_path, "rb")
+if not log_probe then return fail("private_log_not_precreated") end
+log_probe:close()
+log_handle = io.open(log_path, "ab")
+if not log_handle then return fail("private_log_unavailable") end
+emit("VH_PRIVATE_CAPTURE_LOG_READY schema=1")
 local fp = io.open(plan_file, "rb")
 if not fp then return fail("private_plan_unavailable") end
 local body = fp:read(8193)
@@ -81,8 +114,19 @@ for g = 1, n / 3 do
     return fail("incomplete_group_order")
   end
 end
+-- Distinguish an actual PlayStation system from unrelated movies whose
+-- frame counts happen to match. This does not attest which PSX *core* is
+-- running; the owner must still verify Octoshock in EmuHawk.
+if type(emu.getsystemid) ~= "function" or emu.getsystemid() ~= "PSX" then
+  return fail("wrong_or_unknown_emulated_system")
+end
 if movie.length() ~= EXPECTED_LENGTH or movie.getreadonly() ~= true then
   return fail("wrong_movie_length_or_readonly")
+end
+-- The owner-local launcher needs EmuHawk to exit as soon as the bounded
+-- captures finish, rather than playing the rest of this long BK2 movie.
+if type(client) ~= "table" or type(client.exitCode) ~= "function" then
+  return fail("emuhawk_exit_code_api_unavailable")
 end
 -- Fail closed on a late Lua attachment, manual seek, or a savestate loaded
 -- after startup. This still cannot prove an authentic PS1 power-on.
@@ -122,6 +166,9 @@ end
 local current, previous_counter = 1, nil
 local first_start_off_seen, first_start_on_seen = false, false
 while true do
+  if type(emu.getsystemid) ~= "function" or emu.getsystemid() ~= "PSX" then
+    return fail("emulated_system_changed")
+  end
   if movie.mode() ~= "PLAY" or movie.getreadonly() ~= true then
     return fail("movie_playback_left_readonly")
   end
@@ -149,7 +196,7 @@ while true do
       return fail("start_anchor_press_missing_or_ambiguous")
     end
     first_start_on_seen = true
-    print("VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 candidate_input=1661 first_start_pressed=yes ps1_input_delivery=unverified")
+    emit("VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 candidate_input=1661 first_start_pressed=yes ps1_input_delivery=unverified")
   elseif index > 1661 and not first_start_on_seen then
     return fail("start_anchor_was_not_observed_live")
   end
@@ -171,13 +218,17 @@ while true do
     local sig = saved:read(8)
     saved:close()
     if sig ~= "\137PNG\r\n\26\n" then return fail("screenshot_not_png") end
-    print(string.format(
+    emit(string.format(
       "VH_PRIVATE_NEUTRAL_CAPTURE window=%d role=%s counter=%d candidate_input=%d expected_buttons=%s png=written display_offset=unverified",
       wanted.group, wanted.role, counter, index, wanted.held))
     current = current + 1
     if current > #captures then
-      print(string.format(
+      emit(string.format(
         "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=%d movie_input_only=yes actual_map02=unverified", #captures))
+      if log_handle then log_handle:close(); log_handle = nil end
+      -- Close the emulator with an explicit successful process status.
+      -- Python then appends the process-exit marker required by the auditor.
+      client.exitCode(0)
       return
     end
   end

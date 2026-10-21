@@ -16,7 +16,9 @@ index 1661, all four analog axes neutral.
 A **controller-neutral interval** is a run of frames when no digital
 buttons are held, with at least one held-button frame immediately before
 AND immediately after the run. Both edge frames must be inside the
-requested review region. Pauses at movie start and end are always
+requested review region: the lower bound applies to the *before* screenshot
+as well as the neutral-run start, and the upper bound includes the following
+held-button frame. Pauses at movie start and end are always
 excluded. By default the tool selects spans of **180–1800 input frames**
 and returns at most **20** windows, sorted by duration descending,
 then by earliest movie input frame; ties and ranks have **no scene
@@ -40,6 +42,12 @@ outside the Git repository:
       --max-neutral-frames 1800 \
       --max-windows 20 \
       > /private/vh-neutral-review.json
+
+Before opening the archive, the scanner resolves the BK2 path and refuses
+any source whose real path is inside a Git checkout or worktree, including
+a .git pointer file and a symlinked parent into Git. The JSON contains
+real movie-input frame indices, so keep the redirection destination outside
+the repository as shown above; do not commit or upload the report.
 
 Optional exact movie-input range controls:
 

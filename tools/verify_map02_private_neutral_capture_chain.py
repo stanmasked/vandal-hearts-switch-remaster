@@ -41,6 +41,10 @@ COMPLETE = re.compile(
     r"VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=([0-9]+) "
     r"movie_input_only=yes actual_map02=unverified"
 )
+PROCESS_EXIT_SUCCESS = (
+    "VH_PRIVATE_BIZHAWK_LOCAL_PROCESS_EXITED exit_success=1 "
+    "original_ps1_authenticated=0 map02_identified=0"
+)
 
 
 def parse_plan(private_plan: Path) -> tuple[str, list[tuple[int, str, int, str]]]:
@@ -99,7 +103,15 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
     observed = []
     completed = 0
     preflight = False
+    process_exit = False
     for line in lines:
+        if line.startswith("VH_PRIVATE_BIZHAWK_LAUNCH_ERROR"):
+            raise ValueError("private emulator launch failed before capture")
+        if line.startswith("VH_PRIVATE_BIZHAWK_LOCAL_PROCESS_EXITED"):
+            if (line != PROCESS_EXIT_SUCCESS or not preflight or completed != 1
+                    or process_exit or len(observed) != len(planned)):
+                raise ValueError("private emulator process exit marker is invalid")
+            process_exit = True
         if line.startswith("VH_PRIVATE_NEUTRAL_START_PREFLIGHT"):
             if line != START_PREFLIGHT or preflight or completed or observed:
                 raise ValueError("missing, duplicate or misplaced live Start anchor")
@@ -123,8 +135,9 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
                     or int(counter) != int(candidate) + 1):
                 raise ValueError("log counter, role or source frame differs")
             observed.append(item)
-    if not preflight or completed != 1 or len(observed) != len(planned):
-        raise ValueError("capture log missing Start anchor or incomplete")
+    if (not preflight or completed != 1 or not process_exit
+            or len(observed) != len(planned)):
+        raise ValueError("capture log missing Start anchor, successful process exit or completion")
 
     root = Path(image_root)
     if not root.is_absolute() or root.is_symlink() or not root.is_dir():
@@ -161,6 +174,7 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
         "private_plan_rebuilt_from_direct_bk2": True,
         "capture_logs_match_each_planned_input_and_counter": True,
         "owner_log_reports_live_first_start_anchor_before_screenshots": True,
+        "owner_launcher_reports_successful_process_exit": True,
         "all_png_crc_zlib_scanlines_pass": True,
         "distinct_screenshot_file_inodes": True,
         "movie_input_to_actual_ps1_delivery_verified": False,
