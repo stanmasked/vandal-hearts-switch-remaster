@@ -642,7 +642,9 @@ def summarize_high_fanout_abs64_target_addends(
     aligned = 0
     objects = set()
     selected_symbols = set()
+    per_object_values = []
     for i, mapping in enumerate(game_addends):
+        object_values = {}
         for name, rows in mapping.items():
             if name not in wide:
                 continue
@@ -665,6 +667,9 @@ def summarize_high_fanout_abs64_target_addends(
                 negative += addend < 0
                 aligned += addend % 8 == 0
                 values[addend] = values.get(addend, 0) + 1
+                object_values[addend] = object_values.get(addend, 0) + 1
+        if object_values:
+            per_object_values.append(object_values)
     # A missing addend witness in an object holding source patch offsets
     # must not silently pass merely because other objects include that name.
     for i, mapping in enumerate(game_patch_offsets):
@@ -673,9 +678,33 @@ def summarize_high_fanout_abs64_target_addends(
                 raise ValueError("MAP02 missing ABS64 addend witness in original object")
     repeated_values = [n for n in values.values() if n >= 2]
     duplicate_records = sum(repeated_values)
+    object_frequency = {}
+    within_object_repeated_values = set()
+    within_object_reused_records = 0
+    maximum_same_value_in_one_object = 0
+    distinct_values_per_object = []
+    for object_values in per_object_values:
+        distinct_values_per_object.append(len(object_values))
+        maximum_same_value_in_one_object = max(
+            maximum_same_value_in_one_object,
+            max(object_values.values(), default=0))
+        for value, count in object_values.items():
+            object_frequency[value] = object_frequency.get(value, 0) + 1
+            if count >= 2:
+                within_object_repeated_values.add(value)
+                within_object_reused_records += count
+    cross_object_values = {
+        value for value, count in object_frequency.items() if count > 1}
+    cross_object_records = sum(values[value] for value in cross_object_values)
     if (sum(values.values()) != records or not 0 <= zero <= records
             or not 0 <= negative <= records or not 0 <= aligned <= records
-            or not 0 <= duplicate_records <= records):
+            or not 0 <= duplicate_records <= records
+            or not 0 <= within_object_reused_records <= records
+            or not 0 <= cross_object_records <= records
+            or len(per_object_values) != len(objects)
+            or (per_object_values and
+                not 1 <= min(distinct_values_per_object)
+                <= max(distinct_values_per_object) <= records)):
         raise ValueError("MAP02 ABS64 target addend arithmetic inconsistent")
     return {
         "high_fanout_abs64_addend_total_records": records,
@@ -691,6 +720,20 @@ def summarize_high_fanout_abs64_target_addends(
             duplicate_records,
         "high_fanout_abs64_addend_max_records_sharing_one_value":
             max(values.values(), default=0),
+        "high_fanout_abs64_addend_values_repeated_within_source_object":
+            len(within_object_repeated_values),
+        "high_fanout_abs64_addend_records_reused_within_source_object":
+            within_object_reused_records,
+        "high_fanout_abs64_addend_values_shared_across_source_objects":
+            len(cross_object_values),
+        "high_fanout_abs64_addend_records_with_cross_object_shared_values":
+            cross_object_records,
+        "high_fanout_abs64_addend_max_records_same_value_in_one_object":
+            maximum_same_value_in_one_object,
+        "high_fanout_abs64_addend_min_distinct_values_per_source_object":
+            min(distinct_values_per_object, default=0),
+        "high_fanout_abs64_addend_max_distinct_values_per_source_object":
+            max(distinct_values_per_object, default=0),
         "addend_multiplicity_does_not_prove_game_data_structure": True,
     }
 
