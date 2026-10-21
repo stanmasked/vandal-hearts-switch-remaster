@@ -75,7 +75,7 @@ class CaptureAuditTests(unittest.TestCase):
         data.extend(log_row(*r) for r in self.records)
         if complete:
             data.append("VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=%d "
-                        "movie_input_only=yes core_input_poll_observed=yes actual_map02=unverified" %
+                        "movie_input_only=yes game_rom_id_sampled=stable core_input_poll_observed=yes actual_map02=unverified" %
                         len(self.records))
         if process_exit:
             data.append("VH_PRIVATE_BIZHAWK_LOCAL_PROCESS_EXITED exit_success=%d "
@@ -108,6 +108,8 @@ class CaptureAuditTests(unittest.TestCase):
         self.assertTrue(value["owner_log_reports_live_first_start_anchor_before_screenshots"])
         self.assertTrue(value["owner_log_reports_poweron_movie_path_match"])
         self.assertTrue(value["owner_log_reports_input_poll_callback"])
+        self.assertTrue(value["owner_log_reports_stable_game_rom_id_samples"])
+        self.assertFalse(value["original_disc_full_hash_authenticated"])
         self.assertEqual(value["reported_bizhawk_version"], "2.11")
         self.assertEqual(value["reported_psx_display_standard"], "NTSC")
         self.assertFalse(value["active_octoshock_core_verified"])
@@ -142,6 +144,25 @@ class CaptureAuditTests(unittest.TestCase):
         ), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "completion"):
             self.call()
+
+    def test_unavailable_game_rom_id_is_reported_as_unverified(self):
+        source = self.log.read_text(encoding="utf-8")
+        self.log.write_text(source.replace(
+            "game_rom_id_sampled=stable", "game_rom_id_sampled=unavailable"
+        ), encoding="utf-8")
+        result = self.call()
+        self.assertFalse(result["owner_log_reports_stable_game_rom_id_samples"])
+        self.assertFalse(result["original_disc_full_hash_authenticated"])
+
+    def test_invalid_game_rom_id_evidence_is_rejected(self):
+        original = self.log.read_text(encoding="utf-8")
+        for token in ("changed", "yes", "STABLE", "st" + "able\\nPRIVATE"):
+            with self.subTest(token=token):
+                self.log.write_text(original.replace(
+                    "game_rom_id_sampled=stable", "game_rom_id_sampled=" + token
+                ), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "completion"):
+                    self.call()
 
     def test_missing_live_runtime_profile_is_rejected(self):
         original = self.log.read_text(encoding="utf-8")
@@ -352,7 +373,7 @@ class CaptureAuditTests(unittest.TestCase):
     def test_duplicate_completion_refused(self):
         with self.log.open("a") as f:
             f.write("VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 "
-                    "movie_input_only=yes core_input_poll_observed=yes actual_map02=unverified\n")
+                    "movie_input_only=yes game_rom_id_sampled=stable core_input_poll_observed=yes actual_map02=unverified\n")
         with self.assertRaises(ValueError):
             self.call()
 
