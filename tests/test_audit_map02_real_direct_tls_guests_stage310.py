@@ -53,12 +53,14 @@ class Stage310SameTLSTests(unittest.TestCase):
 
     def test_reject_alsa_decrease(self):
         a,t=frames()
+        a[0]["alias_op"][(1,"writei")]["total"]=200
         a[25]["alias_op"][(1,"writei")]["total"]=0
         with self.assertRaisesRegex(ValueError,"regressed"):
             source_window(a,t,self.first,self.last)
 
     def test_reject_cpal_counter_decrease(self):
         a,t=frames()
+        t[0]["alias"][1]=200
         t[25]["alias"][1]=1
         with self.assertRaisesRegex(ValueError,"regressed"):
             source_window(a,t,self.first,self.last)
@@ -70,7 +72,7 @@ class Stage310SameTLSTests(unittest.TestCase):
     def test_read_tag_schema_fail_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             p=Path(tmp)/"alias.csv"
-            p.write_text("kind,ts,thread_pid,total\nP,1000,-1,0\n")
+            p.write_text("kind,ts,thread_pid,total\n"+"P,1000,-1,0\n"*20)
             with self.assertRaisesRegex(ValueError,"header"):
                 read_tag(p)
 
