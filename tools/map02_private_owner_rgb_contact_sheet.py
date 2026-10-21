@@ -112,10 +112,18 @@ def _eligible_candidate_groups(
     if (report.get("schema") != CANDIDATE_SCHEMA
             or report.get("source_plan_sha256") != plan_sha256):
         raise ValueError("reviewed candidate report does not match current private capture plan")
-    if (report.get("actual_map02_start_authenticated") is not False
-            or report.get("original_ps1_game_authenticated") is not False
-            or report.get("game_state_or_gpu_vram_witness_available") is not False
-            or report.get("private_bk2_images_labels_or_frame_coordinates_uploaded") is not False):
+    false_provenance_flags = (
+        "two_capture_sets_independently_authenticated",
+        "independent_human_reviewers_authenticated",
+        "input_to_video_alignment_verified",
+        "original_ps1_game_authenticated",
+        "actual_map02_start_authenticated",
+        "game_state_or_gpu_vram_witness_available",
+        "private_bk2_images_labels_or_frame_coordinates_uploaded",
+    )
+    if report.get("source_capture_chains_revalidated") is not True:
+        raise ValueError("reviewed candidate report lacks source-chain audit")
+    if any(report.get(field) is not False for field in false_provenance_flags):
         raise ValueError("reviewed candidate report overclaims provenance")
 
     rows = report.get("groups")
