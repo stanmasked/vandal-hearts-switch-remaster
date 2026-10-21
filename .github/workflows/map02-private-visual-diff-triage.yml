@@ -1,0 +1,60 @@
+name: MAP02 private PNG visual difference triage (synthetic CI)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-private-visual-diff-triage.yml'
+      - 'tools/map02_private_png_visual_diff.py'
+      - 'tools/map02_private_visual_diff_triage.py'
+      - 'tests/test_map02_private_png_visual_diff.py'
+      - 'tests/test_map02_private_visual_diff_triage.py'
+      - 'docs/MAP02_PRIVATE_VISUAL_DIFF_TRIAGE.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-opaque-png:
+    name: Synthetic RGB PNG filters (${{ matrix.os }} Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.9'
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: macos-15-intel
+            python: '3.11'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Exercise 19 invented PNG pixel decoder scenarios
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_map02_private_png_visual_diff.py' -v \
+            2>&1 | tee /tmp/map02-png-pixel-tests.log
+          grep -F 'Ran 19 tests' /tmp/map02-png-pixel-tests.log
+          if grep -E '^(FAILED|ERROR)' /tmp/map02-png-pixel-tests.log; then
+            exit 1
+          fi
+          echo "VH_MAP02_RGB_DECODE_PASS synthetic=19 owner_png=0 real_ps1=0 scene=unknown"
+      - name: Exercise 15 invented postcapture triage scenarios
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_map02_private_visual_diff_triage.py' -v \
+            2>&1 | tee /tmp/map02-visual-triage-tests.log
+          grep -F 'Ran 15 tests' /tmp/map02-visual-triage-tests.log
+          if grep -E '^(FAILED|ERROR)' /tmp/map02-visual-triage-tests.log; then
+            exit 1
+          fi
+          echo "VH_MAP02_VISUAL_TRIAGE_PASS synthetic=15 owner_png=0 actual_octoshock=0 map02_identified=0"
