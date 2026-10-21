@@ -1,20 +1,90 @@
-name: MAP02 Stage304 ALSA preflight
+name: MAP02 Stage304 real userspace ALSA guest calls
 on:
   pull_request:
     paths:
       - '.github/workflows/map02-alsa-userfunc-stage304.yml'
       - 'tools/map02_alsa_avail_preload_stage304.c'
+      - 'tools/run_map02_alsa_userfunc_guest_stage304.sh'
+      - 'tools/run_map02_alsa_userfunc_ci_stage304.sh'
       - 'tools/audit_map02_alsa_userfunc_stage304.py'
+      - 'tests/test_audit_map02_alsa_userfunc_stage304.py'
+      - 'docs/MAP02_ALSA_USERFUNC_STAGE304.md'
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
+env:
+  VH_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_HOST: 'fb154cbd581826a4f217485eff338badf0ea14c28a82bff258e7baf32c84153a'
+  VH_NRO: '371c9fd9f1f41ad87cbb5f7f96a3e5e9d56878f8cfff2bf7fea2c17120c2611b'
 jobs:
-  validate:
-    name: ALSA preflight original ROM-free research code
+  real-stage304-guest:
     runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        hint: [21, 22]
+    env:
+      VH_HINT: ${{ matrix.hint }}
     steps:
       - uses: actions/checkout@v4
-      - name: Python syntax
+        with:
+          ref: ${{ env.VH_EXACT_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-stage298-timestamped-experimental-nexium-linux-x86_64
+          run-id: 39509934054
+          github-token: ${{ github.token }}
+          path: host
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-audout-presubmit-research-nro
+          run-id: 39460035568
+          github-token: ${{ github.token }}
+          path: guest
+      - name: Install headless Pulse ALSA and research compiler
         run: |
-          python3 -m py_compile tools/audit_map02_alsa_userfunc_stage304.py
-          python3 -m unittest discover -s tests -p 'test_audit_map02_alsa_userfunc_stage304.py' -v
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            gcc make libasound2-dev libasound2-plugins \
+            xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 \
+            libxkbcommon0 libxkbcommon-x11-0 libx11-xcb1 \
+            libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers libgl1-mesa-dri \
+            pulseaudio pulseaudio-utils
+      - name: Real 21 or 22 ms NeXium ALSA symbol guest audit
+        timeout-minutes: 7
+        run: |
+          bash tools/run_map02_alsa_userfunc_ci_stage304.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage304-real-userspace-alsa-hint${{ matrix.hint }}
+          path: |
+            evidence/stage304-real-alsa-userfunc-receipt.json
+            evidence/host-alsa-avail-delay-usertrace.csv
+            evidence/research-alsa-preload-sha256.txt
+            evidence/stage301-pulse-subscribe-verified.json
+            evidence/stage299-source-pinned-real-lifetime-receipt.json
+            evidence/stage299-pinned-new-host-guest.json
+            evidence/stage298-source-pinned-build-manifest.json
+            evidence/host-cpal-audioout-timeline.csv
+            evidence/host-cpal-lifetime-p.csv
+            evidence/host-cpal-lifecycle-audit.json
+            evidence/host-cpal-lifetime-audit.json
+            evidence/pulse-sink-input-events-monotonic.csv
+            evidence/pulse-event-subscriber-ready-ns.txt
+            evidence/pulse-snapshot-*.txt
+            evidence/guest-first-input-monotonic-ns.txt
+            evidence/guest-final-observation-monotonic-ns.txt
+            evidence/guest-prejoin-stage.json
+            evidence/guest-final-receipt.json
+            evidence/guest-prejoin.png
+            evidence/guest-final.png
+            evidence/virtual-pcm-health.json
+          if-no-files-found: warn
