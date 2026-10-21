@@ -319,6 +319,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             paired["same_reported_psx_lag_timeline"],
         "same_reported_psx_core_fallback_configuration":
             paired["same_reported_psx_core_fallback_configuration"],
+        "both_runs_reported_psx_core_fallback_disabled":
+            paired["both_runs_reported_psx_core_fallback_disabled"],
         "same_bk2_bytes_across_capture_attempts": True,
         "same_cue_and_sampled_bin_sectors_across_attempts": True,
         "full_disc_content_equality_authenticated": False,
