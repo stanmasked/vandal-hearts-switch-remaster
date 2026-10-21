@@ -107,7 +107,7 @@ class TwoReplayRasterTests(unittest.TestCase):
         self.runs[1][3][1]["emulator_counter"] = 201
         self.runs[1][3][1]["movie_input_candidate"] = 200
         marker = self.runs[1][0]
-        marker.write_text(marker.read_text().replace("counter=200", "counter=201"),
+        marker.write_text(marker.read_text().replace("counter=200 candidate_input=199", "counter=201 candidate_input=200"),
                           encoding="utf-8")
         self.rewrite(1)
         with self.assertRaisesRegex(ValueError, "unequal input-frame"):
