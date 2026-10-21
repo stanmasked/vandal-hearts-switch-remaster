@@ -144,6 +144,7 @@ def main():
         result = audit_glibc_static_coverage(
             args.private_original_manifest, args.private_original_elf,
             args.private_after_sdl2_manifest, args.private_after_sdl2_elf,
+            args.private_four_archive_elf,
             args.ordinary_native_system_libc_a,
             args.ordinary_native_versioned_system_libm_a,
             args.new_owner_private_output_root)
