@@ -106,8 +106,11 @@ def summarize(frames,first,last,cpal_aliases):
     require(0<first<last,"Invalid bounded guest input interval")
     a=max((i for i,s in enumerate(frames) if s["time"]<=first),default=None)
     b=max((i for i,s in enumerate(frames) if s["time"]<=last),default=None)
-    require(a is not None and b is not None and b-a>=10
+    first_after=min((i for i,s in enumerate(frames) if s["time"]>=first),default=None)
+    require(a is not None and b is not None and first_after is not None
+            and a<=first_after<=b and b-a>=10
             and first-frames[a]["time"]<1_000_000_000
+            and frames[first_after]["time"]-first<1_000_000_000
             and last-frames[b]["time"]<1_000_000_000,
             "True source poll event snapshots do not bracket guest input")
     seen=set(cpal_aliases)
@@ -115,20 +118,37 @@ def summarize(frames,first,last,cpal_aliases):
     detail=[]
     for alias in sorted(seen):
         before=frames[a]["alias"].get(alias,{})
+        first_post=frames[first_after]["alias"].get(alias,{})
         after=frames[b]["alias"].get(alias,{})
         values={}
         for field in POLL_EVENT_FIELDS:
             o=before.get(field,0);n=after.get(field,0)
             require(n>=o,"Poll ordinal guest window counter regressed")
             values[field+"_guest_delta"]=n-o
-        request_code=after.get("active_request_event_code",0)
+        active_codes=[]
+        for frame in frames[first_after:b+1]:
+            code=frame["alias"].get(alias,{}).get("active_request_event_code",0)
+            if code:
+                active_codes.append(code)
+        active_codes_unique=sorted(set(active_codes))
+        before_code=before.get("active_request_event_code",0)
+        first_post_code=first_post.get("active_request_event_code",0)
+        final_code=after.get("active_request_event_code",0)
         return_code=after.get("last_completed_return_code",0)
         detail.append({
             "anonymous_same_process_native_TLS_alias":alias,
             "source_proven_preinput_CPAL_callback_thread":alias in cpal_aliases,
             **values,
-            "active_poll_request_categories":decode_active_request(request_code),
-            "last_completed_poll_return_categories":decode_last_return(return_code),
+            "active_poll_request_categories_at_nearest_pre_input_sample":decode_active_request(before_code),
+            "active_poll_request_categories_at_first_post_input_sample":decode_active_request(first_post_code),
+            "active_poll_request_categories_at_final_observation":decode_active_request(final_code),
+            "active_poll_request_codes_observed_during_guest_window":active_codes_unique,
+            "active_poll_request_categories_observed_during_guest_window":[
+                decode_active_request(code) for code in active_codes_unique],
+            "active_poll_samples_with_two_position_request_during_guest_window":len(active_codes),
+            "last_completed_poll_return_categories_at_final_observation":decode_last_return(return_code),
+            "nearest_pre_input_sample_age_ns":first-frames[a]["time"],
+            "first_post_input_sample_delay_ns":frames[first_after]["time"]-first,
             "two_ordinal_positions_are_not_linux_fd_numbers":True,
             "POLLIN_or_POLLOUT_count_may_coexist_in_one_return":True,
         })
@@ -140,6 +160,8 @@ def summarize(frames,first,last,cpal_aliases):
         "requested_events_and_returned_revents_are_not_one_to_one":True,
         "active_request_code_is_zero_when_no_two_position_poll_is_currently_active":True,
         "active_request_and_last_completed_return_are_sampled_as_one_atomic_state":True,
+        "active_request_categories_are_sampled_near_input_and_across_guest_window":True,
+        "sampling_does_not_prove_exact_state_at_guest_input_timestamp":True,
         "no_descriptors_or_raw_masks_captured":True,
     }
 

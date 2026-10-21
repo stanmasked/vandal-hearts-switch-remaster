@@ -36,11 +36,11 @@ class OrdinalPollEventTests(unittest.TestCase):
         self.assertEqual(len(c),1)
         self.assertEqual(c[0]["ordinal0_requested_POLLIN_guest_delta"],0)
         self.assertEqual(c[0]["ordinal1_requested_POLLOUT_guest_delta"],0)
-        req=c[0]["active_poll_request_categories"]
+        req=c[0]["active_poll_request_categories_at_final_observation"]
         self.assertTrue(req["valid_two_position_pollfd_snapshot"])
         self.assertTrue(req["ordinal0_requested_POLLIN"])
         self.assertTrue(req["ordinal1_requested_POLLOUT"])
-        self.assertTrue(c[0]["last_completed_poll_return_categories"]
+        self.assertTrue(c[0]["last_completed_poll_return_categories_at_final_observation"]
                         ["this_is_last_completed_return_not_the_active_request_result"])
         self.assertEqual(len(sha),64)
     def test_active_other_thread_not_misattributed_to_cpal(self):
@@ -102,10 +102,25 @@ class OrdinalPollEventTests(unittest.TestCase):
         r=summarize(frames,1_050_000_000,9_000_000_000,{1})
         other=next(x for x in r["all_anonymous_tls_poll_event_categories"]
                    if x["anonymous_same_process_native_TLS_alias"]==0)
-        active=other["active_poll_request_categories"]
+        active=other["active_poll_request_categories_at_final_observation"]
         self.assertFalse(active["valid_two_position_pollfd_snapshot"])
         self.assertIsNone(active["ordinal0_requested_POLLIN"])
-        self.assertEqual(other["last_completed_poll_return_categories"]
+        self.assertEqual(other["last_completed_poll_return_categories_at_final_observation"]
                          ["last_completed_poll_return_class"],"ready_positive_return")
+    def test_transient_active_poll_is_not_lost_when_final_sample_is_inactive(self):
+        # Clear alias 1's active code only at the last source sample in the
+        # guest window; the earlier in-flight request must remain in the audit.
+        k=max(i for i,row in enumerate(self.records)
+              if row[0]=="M" and row[2]==1 and row[1]<=9_000_000_000)
+        row=list(self.records[k]);row[12]=0;self.records[k]=row;self.write()
+        frames,_=read_source(self.path)
+        r=summarize(frames,1_050_000_000,9_000_000_000,{1})
+        c=r["cpal_proven_native_thread_poll_event_categories"][0]
+        self.assertTrue(c["active_poll_request_categories_at_first_post_input_sample"]
+                        ["valid_two_position_pollfd_snapshot"])
+        self.assertFalse(c["active_poll_request_categories_at_final_observation"]
+                         ["valid_two_position_pollfd_snapshot"])
+        self.assertIn(0x89,c["active_poll_request_codes_observed_during_guest_window"])
+        self.assertTrue(r["sampling_does_not_prove_exact_state_at_guest_input_timestamp"])
 
 if __name__=="__main__":unittest.main()
