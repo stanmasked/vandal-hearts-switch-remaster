@@ -50,7 +50,7 @@ RU v1.6, создайте **вне Git** файл, содержащий толь
 Выполните:
 
     python3 -m tools.map02_private_disc_movie_preflight \
-      /private/Vandal_Hearts_(RU)_v1.6.cue \
+      "/private/Vandal_Hearts_(RU)_v1.6.cue" \
       /private/vandalhearts.bk2 \
       --private-full-bin-sha256-file /private/vh-full-bin.sha256
 
