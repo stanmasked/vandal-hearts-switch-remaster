@@ -80,7 +80,12 @@ timeout --kill-after=5s 75s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
     sleep 1
     window="$(xdotool search --onlyvisible --name NeXium 2>/dev/null | tail -n1 || true)"
     [[ -z "$window" ]] || break
-    kill -0 "$guest" 2>/dev/null || exit 1
+    if ! kill -0 "$guest" 2>/dev/null; then
+      code=0
+      wait "$guest" 2>/dev/null || code=$?
+      printf "%s\n" "$code" >"$MAP02_EVIDENCE/host-early-exit-code.txt"
+      exit 1
+    fi
   done
   test -n "$window"
   sleep 4
