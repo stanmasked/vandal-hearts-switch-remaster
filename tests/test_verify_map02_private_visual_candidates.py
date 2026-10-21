@@ -67,6 +67,7 @@ class PrivateVisualCandidateTests(unittest.TestCase):
         self.assertEqual(result["integrity_checked_png_count"], 3)
         self.assertEqual(result["manual_candidate_interval_counter_exclusive_inclusive"], [100, 200])
         self.assertTrue(result["png_envelopes_crcs_sha256_match"])
+        self.assertTrue(result["png_idat_zlib_scanlines_verified"])
         for key in ("visual_scene_content_authenticated", "original_ps1_game_authenticated",
                     "input_to_emulator_video_alignment_verified", "map02_scene_frame_identified",
                     "ps1_gpu_vram_captured", "private_screenshots_uploaded"):
@@ -85,6 +86,20 @@ class PrivateVisualCandidateTests(unittest.TestCase):
 
     def test_changed_image_hash_refused(self):
         (self.pictures / self.shots[1]["png_file"]).write_bytes(invented_png((7, 8, 9)))
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_corrupt_idat_with_correct_png_crc_and_sha_is_refused(self):
+        # Previously this forged PNG passed both chunk CRC and SHA checks.
+        # The compressed pixel stream is deliberately undecodable.
+        forged = (b"\x89PNG\r\n\x1a\n"
+                  + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
+                  + chunk(b"IDAT", b"NOT A ZLIB STREAM")
+                  + chunk(b"IEND", b""))
+        target = self.pictures / self.shots[1]["png_file"]
+        target.write_bytes(forged)
+        self.shots[1]["sha256"] = hashlib.sha256(forged).hexdigest()
+        self.save_manifest()
         with self.assertRaises(ValueError):
             self.call()
 
