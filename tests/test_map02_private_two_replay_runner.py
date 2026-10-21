@@ -1,5 +1,6 @@
 """Synthetic owner-local two-emulator-run coordination checks (no game)."""
 import contextlib
+import hashlib
 import io
 import os
 from pathlib import Path
@@ -11,7 +12,7 @@ from unittest.mock import Mock, patch
 
 from tools.map02_private_two_replay_runner import (
     PLAN_NAME, RUN_NAMES, _disc_source_snapshot, _private_movie_identity,
-    capture_twice, main,
+    capture_twice, main, _require_full_bin_unchanged,
 )
 from tools.map02_private_disc_movie_preflight import (
     EXPECTED_BIN_BYTES, MAP02_LBA, SECTOR_BYTES,
@@ -551,6 +552,108 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
                 capture_twice(*self.args, start=True)
         process.assert_called_once()
         self.assertFalse((self.workspace / RUN_NAMES[1]).exists())
+
+    def test_full_bin_postcheck_detects_different_bytes_outside_map02(self):
+        # Standalone helper with tiny invented bytes: no huge original image.
+        payload = b"FICTIONAL_CD_IMAGE" * 8
+        self.bin.write_bytes(payload)
+        expected = hashlib.sha256(payload).hexdigest()
+        with patch(
+            "tools.map02_private_two_replay_runner.EXPECTED_BIN_BYTES",
+            len(payload),
+        ):
+            _require_full_bin_unchanged(self.disc, expected)
+            with self.bin.open("r+b") as handle:
+                handle.seek(-1, os.SEEK_END)
+                handle.write(b"!")
+            with self.assertRaisesRegex(ValueError, "full BIN content changed"):
+                _require_full_bin_unchanged(self.disc, expected)
+
+    def test_no_private_reference_skips_full_image_postcheck(self):
+        with patch(
+            "tools.map02_private_two_replay_runner._full_image_sha256"
+        ) as hashed:
+            result, _, _, process, _, _ = self.run_mocked()
+        self.assertEqual(process.call_count, 2)
+        hashed.assert_not_called()
+        self.assertEqual(result["full_bin_postprocess_checks_performed"], 0)
+        self.assertFalse(result["on_disk_full_bin_matched_private_reference_at_checkpoints"])
+
+    def _run_private_source_change(self, stage):
+        """Fictional digest observes one unprobed last-byte mutation.
+
+        Mock only the sector-snapshot gate: actual filesystem timestamps
+        would already catch this mutation, but this isolates the *entire
+        image* hashing check from that weaker sample.
+        """
+        reference = self._private_reference()
+        subprocess_count = [0]
+        def simulated_emulator(*args, **kwargs):
+            subprocess_count[0] += 1
+            if (stage == "first" and subprocess_count[0] == 1
+                    or stage == "second" and subprocess_count[0] == 2):
+                with self.bin.open("r+b") as handle:
+                    handle.seek(-1, os.SEEK_END)
+                    handle.write(b"!")
+            return Mock(returncode=0)
+        def fake_full_hash(fd, file_size):
+            self.assertEqual(file_size, EXPECTED_BIN_BYTES)
+            final_byte = os.pread(fd, 1, file_size - 1)
+            return "a" * 64 if final_byte == b"\\x00" else "b" * 64
+        def simulated_comparison(*args, **kwargs):
+            if stage == "final":
+                with self.bin.open("r+b") as handle:
+                    handle.seek(-1, os.SEEK_END)
+                    handle.write(b"!")
+            return dict(PAIR_OK)
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_two_replay_runner.write_private_plan",
+            side_effect=self._write_plan,
+        ), patch(
+            "tools.map02_private_two_replay_runner._require_disc_unchanged",
+        ), patch(
+            "tools.map02_private_two_replay_runner._full_image_sha256",
+            side_effect=fake_full_hash,
+        ) as full_hash, patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+            side_effect=simulated_emulator,
+        ) as launched, patch(
+            "tools.map02_private_two_replay_runner.verify",
+            return_value={"screenshot_count": 3},
+        ) as chain, patch(
+            "tools.map02_private_two_replay_runner.audit_pair",
+            side_effect=simulated_comparison,
+        ) as paired:
+            with self.assertRaisesRegex(ValueError, "full BIN content changed"):
+                capture_twice(
+                    *self.args, expected_digest_file=reference, start=True,
+                )
+        return launched, chain, paired, full_hash
+
+    def test_first_emulator_modifies_unprobed_bin_byte_blocks_second(self):
+        launched, audited, paired, hashed = self._run_private_source_change("first")
+        self.assertEqual(launched.call_count, 1)
+        audited.assert_not_called()
+        paired.assert_not_called()
+        self.assertEqual(hashed.call_count, 1)
+        self.assertFalse((self.workspace / RUN_NAMES[1]).exists())
+
+    def test_second_emulator_modifies_unprobed_bin_byte_blocks_pair_audit(self):
+        launched, audited, paired, hashed = self._run_private_source_change("second")
+        self.assertEqual(launched.call_count, 2)
+        self.assertEqual(audited.call_count, 1)
+        paired.assert_not_called()
+        self.assertEqual(hashed.call_count, 2)
+
+    def test_final_png_audit_modifies_bin_byte_blocks_success_report(self):
+        launched, audited, paired, hashed = self._run_private_source_change("final")
+        self.assertEqual(launched.call_count, 2)
+        self.assertEqual(audited.call_count, 2)
+        paired.assert_called_once()
+        self.assertEqual(hashed.call_count, 3)
 
     def test_requested_private_digest_is_used_before_both_runs(self):
         digest_file = self.root / "fictional.sha256"
