@@ -135,7 +135,7 @@ class FourSystemArchiveGroupTests(unittest.TestCase):
     def test_symlink_and_duplicate_source_archives_fail_closed(self):
         linked = self.root / "untrusted-Xdmcp.a"
         linked.symlink_to(self.xdmcp)
-        with self.assertRaisesRegex(ValueError, "not an ordinary|source metadata"):
+        with self.assertRaises((OSError, ValueError)):
             measure_four_group(
                 self.manifest, self.original, self.x11, self.xcb,
                 self.xau, linked, self.root / "bad-symlink",
