@@ -26,13 +26,19 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.root = Path(tmp.name)
         self.program = self.root / "EmuHawk.exe"
         self.disc = self.root / "fictional.cue"
+        self.track = self.root / "fictional.bin"
         self.bk2 = self.root / "fictional.bk2"
         self.plan = self.root / "private-plan.txt"
         self.lua = self.root / "capture.lua"
         self.output = self.root / "private-png"
         self.output.mkdir()
-        for path in (self.program, self.disc, self.bk2, self.lua):
+        self.output.chmod(0o700)
+        for path in (self.program, self.track, self.bk2, self.lua):
             path.write_bytes(b"synthetic only")
+        self.disc.write_text(
+            'FILE "fictional.bin" BINARY\nTRACK 01 MODE2/2352\nINDEX 01 00:00:00\n',
+            encoding="ascii",
+        )
         self.plan.write_text("\n".join(ROWS) + "\n", encoding="ascii")
 
     def call(self, **kwargs):
@@ -77,6 +83,34 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.assertEqual(env["VH_PRIVATE_PROCESS_LOG"],
                          str((self.output / "vh_emuhawk_process.log").resolve()))
         self.assertNotIn("github", str(argv).lower())
+
+    def test_refuses_cue_with_missing_track_file(self):
+        self.track.unlink()
+        with self.assertRaisesRegex(ValueError, "CUE track file is missing"):
+            self.call()
+
+    def test_refuses_cue_track_path_escape(self):
+        self.disc.write_text(
+            'FILE "../outside.bin" BINARY\nTRACK 01 MODE2/2352\nINDEX 01 00:00:00\n',
+            encoding="ascii",
+        )
+        with self.assertRaisesRegex(ValueError, "remain under descriptor directory"):
+            self.call()
+
+    def test_refuses_group_or_world_accessible_png_root(self):
+        if os.name == "nt":
+            self.skipTest("POSIX directory mode bits are not Windows ACLs")
+        self.output.chmod(0o755)
+        with self.assertRaisesRegex(ValueError, "owner-only"):
+            self.call()
+
+    def test_refuses_png_root_owned_by_another_user(self):
+        if os.name == "nt":
+            self.skipTest("POSIX uid ownership is unavailable on Windows")
+        with patch("tools.map02_private_bizhawk_poweron_launch.os.geteuid",
+                   return_value=self.output.stat().st_uid + 1):
+            with self.assertRaisesRegex(ValueError, "owned by current user"):
+                self.call()
 
     def test_disc_movie_profile_mismatch_blocks_plan_and_launch(self):
         with patch(
