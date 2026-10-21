@@ -90,12 +90,13 @@ class OriginalPCGLibCProviderCensusTests(unittest.TestCase):
             os.close(e[0])
 
     def census(self, root, *, libc=None, libm=None, manifest=None, **kwargs):
+        expected = dict(expected_original=5, expected_after_sdl=5,
+                        expected_original_survivors=4, expected_final=5)
+        expected.update(kwargs)
         return audit_glibc_static_coverage(
             manifest or self.orig_manifest, self.original,
             self.sdl_manifest, self.sdl_elf, self.four_elf,
-            libc or self.libc, libm or self.libm, root,
-            expected_original=5, expected_after_sdl=5,
-            expected_original_survivors=4, expected_final=5, **kwargs)
+            libc or self.libc, libm or self.libm, root, **expected)
 
     def test_native_export_name_census_has_disjoint_buckets(self):
         root = self.root / "glibc-census-output"
