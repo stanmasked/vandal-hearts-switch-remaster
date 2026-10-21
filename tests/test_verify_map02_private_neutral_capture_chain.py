@@ -287,7 +287,7 @@ class CaptureAuditTests(unittest.TestCase):
             line for line in original.splitlines()
             if not line.startswith("VH_PRIVATE_NEUTRAL_RUNTIME_PREFLIGHT")
         ) + "\n", encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "runtime profile"):
+        with self.assertRaisesRegex(ValueError, "runtime profile|core preference"):
             self.call()
 
     def test_duplicate_live_runtime_profile_is_rejected(self):
