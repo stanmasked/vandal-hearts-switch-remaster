@@ -43,6 +43,12 @@ outside the Git repository:
       --max-windows 20 \
       > /private/vh-neutral-review.json
 
+Before opening the archive, the scanner resolves the BK2 path and refuses
+any source whose real path is inside a Git checkout or worktree, including
+a .git pointer file and a symlinked parent into Git. The JSON contains
+real movie-input frame indices, so keep the redirection destination outside
+the repository as shown above; do not commit or upload the report.
+
 Optional exact movie-input range controls:
 
     --after-input-frame 25000 --before-input-frame 150000
