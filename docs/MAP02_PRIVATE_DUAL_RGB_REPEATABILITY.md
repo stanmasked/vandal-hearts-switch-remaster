@@ -51,11 +51,14 @@ The resulting **owner-private** JSON reports aggregate exact RGB match
 count, byte-identical PNG count, count of RGB discrepancies and a
 per-position list ranked by largest changed-pixel fraction. A screenshot
 with different tEXt PNG metadata but identical decoded pixels counts
-as a pixel match and a PNG-byte mismatch. The report includes review
-group numbers/role but **no screenshot file paths, raw movie-input frame
-numbers, image bytes, hashes or decoded RGB buffers**. It is saved only
-to a new owner-only file (0600) outside the Git checkout; overwriting
-an existing file is refused.
+as a pixel match and a PNG-byte mismatch. Schema v2 adds one opaque
+`source_capture_evidence_sha256`: a digest over the exact BK2, canonical
+plan, both logs and all planned PNG bytes in deterministic group/role order.
+This binds a later shortlist to the precise evidence that was audited,
+without publishing individual file hashes, paths, raw movie-input frame
+numbers, image bytes or decoded RGB buffers. The digest is computed before and after the full audit; changes during that
+interval cause a fail-closed error. It is saved only to a new owner-only file
+(0600) outside the Git checkout; overwriting an existing file is refused.
 
 ## Evidence limitations
 

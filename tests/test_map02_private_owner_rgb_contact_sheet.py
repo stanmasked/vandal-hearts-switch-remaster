@@ -1,6 +1,7 @@
 """Invented PNGs only: review image renderer never reads owner BK2 in CI."""
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -15,6 +16,7 @@ import test_map02_private_dual_capture_rgb_repeatability as dual_fixtures
 from tools.map02_private_owner_rgb_contact_sheet import (
     SCHEMA, MAX_SHEET_PIXELS, _checked_groups, _output_path_safely_uncreated, render,
 )
+from tools.map02_private_reviewed_scene_candidates import SCHEMA as CANDIDATE_SCHEMA
 
 
 class PrivateContactSheetTests(unittest.TestCase):
@@ -26,7 +28,7 @@ class PrivateContactSheetTests(unittest.TestCase):
         self.fixture = fixture
         self.image_out = fixture.root / "owner-only-contact-sheet.png"
 
-    def call(self, output=None, *, count=3):
+    def call(self, output=None, *, count=3, reviewed_candidates=None):
         f = self.fixture
         with patch(
             "tools.map02_private_dual_capture_rgb_repeatability.verify_chain",
@@ -37,6 +39,7 @@ class PrivateContactSheetTests(unittest.TestCase):
                 f.logs[1], f.folders[1],
                 output if output is not None else self.image_out,
                 minimum=200, maximum=1000,
+                reviewed_candidates=reviewed_candidates,
             )
         self.assertEqual(audit.call_count, 2)
         return result
@@ -67,6 +70,166 @@ class PrivateContactSheetTests(unittest.TestCase):
             self.assertGreaterEqual(screenshot.height, 400)
             screenshot.verify()
         self.assertEqual(self.image_out.stat().st_mode & 0o777, 0o600)
+
+    def write_candidate_report(self, *, state="requires_game_state_witness",
+                               plan_sha256=None, count=3):
+        source_proof = self.fixture.call(count=count)
+        plan_sha = plan_sha256 or hashlib.sha256(
+            self.fixture.plan.read_bytes()).hexdigest()
+        candidate = state == "requires_game_state_witness"
+        report = {
+            "schema": CANDIDATE_SCHEMA,
+            "source_plan_sha256": plan_sha,
+            "source_capture_evidence_sha256":
+                source_proof["source_capture_evidence_sha256"],
+            "private_review_group_count": 1,
+            "review_groups_requiring_game_state_witness": 1 if candidate else 0,
+            "groups": [{
+                "review_group": 1,
+                "state": state,
+                "all_three_positions_exact_rgb_equal_across_supplied_sets": candidate,
+                "manual_transition_pattern": candidate,
+                "intra_group_visual_change_confirmed": candidate,
+                "actual_map02_scene_authenticated": False,
+            }],
+            "source_capture_chains_revalidated": True,
+            "two_capture_sets_independently_authenticated": False,
+            "independent_human_reviewers_authenticated": False,
+            "input_to_video_alignment_verified": False,
+            "actual_map02_start_authenticated": False,
+            "original_ps1_game_authenticated": False,
+            "game_state_or_gpu_vram_witness_available": False,
+            "private_bk2_images_labels_or_frame_coordinates_uploaded": False,
+        }
+        path = self.fixture.root / "owner-private-reviewed-candidates.json"
+        path.write_text(json.dumps(report), encoding="utf-8")
+        path.chmod(0o600)
+        return path
+
+    def test_plan_bound_shortlist_filters_sheet_and_marks_limits(self):
+        report = self.write_candidate_report()
+        result = self.call(reviewed_candidates=report)
+        self.assertTrue(result["reviewed_candidate_filter_applied"])
+        self.assertTrue(result["candidate_report_plan_binding_verified"])
+        self.assertTrue(result["candidate_report_capture_evidence_binding_verified"])
+        self.assertEqual(result["candidate_filter_group_count"], 1)
+        self.assertEqual(result["private_review_groups"], 1)
+        self.assertEqual(result["paired_screenshot_positions"], 3)
+        self.assertEqual(result["source_audited_screenshot_positions"], 3)
+        self.assertFalse(result["map02_scene_identified"])
+        self.assertEqual(self.image_out.stat().st_mode & 0o777, 0o600)
+
+    def test_shortlist_filters_noncandidate_groups_after_auditing_all_sources(self):
+        second_rows = [
+            (2, "before", 4000, "held"),
+            (2, "middle", 4250, "neutral"),
+            (2, "after", 4500, "held"),
+        ]
+        plan_rows = [
+            "VH_MAP02_CAPTURE_PLAN_V1",
+            "movie_frames=933949",
+            "capture_count=6",
+            "1,before,3000,held",
+            "1,middle,3250,neutral",
+            "1,after,3500,held",
+            *["%d,%s,%d,%s" % row for row in second_rows],
+        ]
+        self.fixture.plan.write_text("\n".join(plan_rows) + "\n", encoding="ascii")
+        colors = ((5, 15, 25), (40, 50, 60), (100, 110, 120))
+        for folder in self.fixture.folders:
+            for row, color in zip(second_rows, colors):
+                folder.joinpath(self.fixture.name(*row[:3])).write_bytes(
+                    dual_fixtures.synthetic_png(color))
+        candidate = self.write_candidate_report(count=6)
+        report_data = json.loads(candidate.read_text(encoding="utf-8"))
+        report_data["private_review_group_count"] = 2
+        report_data["groups"].append({
+            "review_group": 2,
+            "state": "not_candidate_in_selected_frames",
+            "all_three_positions_exact_rgb_equal_across_supplied_sets": True,
+            "manual_transition_pattern": False,
+            "intra_group_visual_change_confirmed": False,
+            "actual_map02_scene_authenticated": False,
+        })
+        candidate.write_text(json.dumps(report_data), encoding="utf-8")
+        candidate.chmod(0o600)
+
+        result = self.call(count=6, reviewed_candidates=candidate)
+        self.assertEqual(result["source_audited_screenshot_positions"], 6)
+        self.assertEqual(result["source_audited_decoded_rgb_mismatches"], 0)
+        self.assertEqual(result["paired_screenshot_positions"], 3)
+        self.assertEqual(result["private_review_groups"], 1)
+        self.assertEqual(result["candidate_filter_group_count"], 1)
+        self.assertTrue(result["candidate_report_plan_binding_verified"])
+        self.assertFalse(result["map02_scene_identified"])
+
+    def test_shortlist_for_different_capture_evidence_is_rejected(self):
+        report = self.write_candidate_report()
+        self.fixture.image(1, "middle").write_bytes(
+            dual_fixtures.synthetic_png((240, 240, 240)))
+        with self.assertRaisesRegex(
+            ValueError, "does not match current private capture plan or evidence"
+        ):
+            self.call(reviewed_candidates=report)
+        self.assertFalse(self.image_out.exists())
+
+    def test_shortlist_for_different_plan_is_rejected_without_output(self):
+        report = self.write_candidate_report(plan_sha256="0" * 64)
+        with self.assertRaisesRegex(
+            ValueError, "does not match current private capture plan or evidence"
+        ):
+            self.call(reviewed_candidates=report)
+        self.assertFalse(self.image_out.exists())
+
+    def test_empty_candidate_shortlist_is_rejected_without_output(self):
+        report = self.write_candidate_report(state="not_candidate_in_selected_frames")
+        with self.assertRaisesRegex(ValueError, "no eligible groups"):
+            self.call(reviewed_candidates=report)
+        self.assertFalse(self.image_out.exists())
+
+    def test_candidate_report_overclaiming_emulator_provenance_is_rejected(self):
+        report = self.write_candidate_report()
+        payload = json.loads(report.read_text(encoding="utf-8"))
+        payload["two_capture_sets_independently_authenticated"] = True
+        report.write_text(json.dumps(payload), encoding="utf-8")
+        report.chmod(0o600)
+        with self.assertRaisesRegex(ValueError, "overclaims provenance"):
+            self.call(reviewed_candidates=report)
+        self.assertFalse(self.image_out.exists())
+
+    def test_candidate_report_rejects_non_string_state_without_output(self):
+        report = self.write_candidate_report()
+        payload = json.loads(report.read_text(encoding="utf-8"))
+        payload["groups"][0]["state"] = []
+        report.write_text(json.dumps(payload), encoding="utf-8")
+        report.chmod(0o600)
+        with self.assertRaisesRegex(ValueError, "groups do not match capture plan"):
+            self.call(reviewed_candidates=report)
+        self.assertFalse(self.image_out.exists())
+
+    def test_capture_evidence_mutation_during_render_fails_before_output(self):
+        report = self.write_candidate_report()
+
+        def mutate_source(*_args, **_kwargs):
+            self.fixture.image(1, "middle").write_bytes(
+                dual_fixtures.synthetic_png((240, 240, 240)))
+
+        with patch(
+            "tools.map02_private_owner_rgb_contact_sheet._paste_frame",
+            side_effect=mutate_source,
+        ):
+            with self.assertRaisesRegex(
+                ValueError, "changed during contact-sheet rendering"
+            ):
+                self.call(reviewed_candidates=report)
+        self.assertFalse(self.image_out.exists())
+
+    def test_candidate_report_must_be_owner_private(self):
+        report = self.write_candidate_report()
+        report.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "owner-only regular JSON"):
+            self.call(reviewed_candidates=report)
+        self.assertFalse(self.image_out.exists())
 
     def test_disagreement_remains_reviewable_not_scene_proof(self):
         f = self.fixture

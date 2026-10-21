@@ -8,6 +8,7 @@ Never send private screenshots, input frame numbers or output JSON to CI.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -22,9 +23,93 @@ from tools.map02_private_png_visual_diff import (
 )
 from tools.map02_private_visual_diff_triage import save_private_report
 
-SCHEMA = "vh.map02.private-dual-bundle-rgb-repeatability.v1"
+SCHEMA = "vh.map02.private-dual-bundle-rgb-repeatability.v2"
 MAX_FRAMES = 30
+MAX_EVIDENCE_FILE_BYTES = 128 * 1024 * 1024
 ROLES = ("before", "middle", "after")
+
+
+def _hash_source_file(digest, label: str, path: Path) -> None:
+    """Add one bounded, race-checked source file to a local aggregate digest."""
+    path = Path(path)
+    if path.is_symlink():
+        raise ValueError("capture evidence file must not be a symlink")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    fd = os.open(path, flags)
+    try:
+        before = os.fstat(fd)
+        if (not stat.S_ISREG(before.st_mode) or before.st_size < 0
+                or before.st_size > MAX_EVIDENCE_FILE_BYTES):
+            raise ValueError("capture evidence file is not regular or exceeds bounds")
+        encoded_label = label.encode("ascii")
+        digest.update(len(encoded_label).to_bytes(4, "big"))
+        digest.update(encoded_label)
+        digest.update(before.st_size.to_bytes(8, "big"))
+        count = 0
+        with os.fdopen(os.dup(fd), "rb") as source:
+            while True:
+                block = source.read(1024 * 1024)
+                if not block:
+                    break
+                count += len(block)
+                digest.update(block)
+        after = os.fstat(fd)
+        if (count != before.st_size
+                or (before.st_dev, before.st_ino, before.st_size,
+                    before.st_mtime_ns, before.st_ctime_ns)
+                != (after.st_dev, after.st_ino, after.st_size,
+                    after.st_mtime_ns, after.st_ctime_ns)):
+            raise ValueError("capture evidence changed while being hashed")
+    finally:
+        os.close(fd)
+
+
+def _preflight_source_path(path: Path, *, directory: bool) -> None:
+    """Reject missing, nonregular or Git-contained owner files before hashing."""
+    source = Path(path)
+    if source.is_symlink():
+        raise ValueError("private capture evidence path must not be a symlink")
+    if directory:
+        if not source.is_dir():
+            raise ValueError("private capture evidence root must be a directory")
+    elif not source.is_file():
+        raise ValueError("private capture evidence source must be a regular file")
+    real = source.resolve(strict=True)
+    info = real.stat()
+    if directory:
+        if not stat.S_ISDIR(info.st_mode):
+            raise ValueError("private capture evidence root must be a directory")
+    elif not stat.S_ISREG(info.st_mode):
+        raise ValueError("private capture evidence source must be regular")
+    for parent in (real, *real.parents):
+        marker = parent / ".git"
+        if marker.exists() or marker.is_symlink():
+            raise ValueError("owner-private capture evidence must stay outside Git")
+
+
+def capture_evidence_digest(
+    private_bk2: Path, private_plan: Path,
+    log_one: Path, root_one: Path, log_two: Path, root_two: Path,
+    planned: list[tuple[int, str, int, str]],
+) -> str:
+    """Return one opaque digest of the exact inputs, logs and planned PNG bytes."""
+    digest = hashlib.sha256()
+    digest.update(b"vh.map02.private-capture-evidence.v1\\0")
+    for label, path in (
+        ("source-bk2", private_bk2),
+        ("canonical-plan", private_plan),
+        ("run1-log", log_one),
+        ("run2-log", log_two),
+    ):
+        _hash_source_file(digest, label, Path(path))
+    for group, role, frame, _held in planned:
+        filename = "vh_review_w%02d_%s_counter_%07d.png" % (
+            group, role, frame + 1)
+        for run_label, root in (("run1", root_one), ("run2", root_two)):
+            label = "%s:%d:%s:%d" % (run_label, group, role, frame)
+            _hash_source_file(digest, label, Path(root) / filename)
+    return digest.hexdigest()
 
 
 def _separate_real_files(first: Path, second: Path) -> None:
@@ -49,6 +134,16 @@ def verify(private_bk2: Path, private_plan: Path,
         raise ValueError("pixel threshold must be an integer 0..254")
     _separate_real_files(log_one, log_two)
     _separate_real_files(root_one, root_two)
+    for source_path in (private_bk2, private_plan, log_one, log_two):
+        _preflight_source_path(source_path, directory=False)
+    for root_path in (root_one, root_two):
+        _preflight_source_path(root_path, directory=True)
+    plan_snapshot, planned = parse_plan(private_plan)
+    evidence_before = capture_evidence_digest(
+        private_bk2, private_plan, log_one, root_one, log_two, root_two, planned,
+    )
+    if parse_plan(private_plan)[0] != plan_snapshot:
+        raise ValueError("private capture plan changed before audit")
 
     # Critical: both bundles are independently checked against the same
     # original BK2 frame plan, without trusting their own marker lines.
@@ -62,7 +157,6 @@ def verify(private_bk2: Path, private_plan: Path,
             or not 3 <= proof_one["screenshot_count"] <= MAX_FRAMES):
         raise ValueError("source capture bundle counts disagree")
 
-    _, planned = parse_plan(private_plan)
     if len(planned) != proof_one["screenshot_count"]:
         raise ValueError("private capture plan length disagrees with audit")
     inodes = set()
@@ -105,6 +199,14 @@ def verify(private_bk2: Path, private_plan: Path,
             "cross_bundle": difference,
         })
 
+    if parse_plan(private_plan)[0] != plan_snapshot:
+        raise ValueError("private capture plan changed during audit")
+    evidence_after = capture_evidence_digest(
+        private_bk2, private_plan, log_one, root_one, log_two, root_two, planned,
+    )
+    if evidence_after != evidence_before:
+        raise ValueError("private capture evidence changed during audit")
+
     # Rank mismatches first. Order of captured positions remains recoverable
     # from the group and role; no sensitive private frame indices are emitted.
     roles = {name: idx for idx, name in enumerate(ROLES)}
@@ -115,6 +217,7 @@ def verify(private_bk2: Path, private_plan: Path,
     ))
     return {
         "schema": SCHEMA,
+        "source_capture_evidence_sha256": evidence_after,
         "supplied_capture_bundle_count": 2,
         "compared_screenshot_positions": len(compared),
         "exact_decoded_rgb_matches": rgb_matches,

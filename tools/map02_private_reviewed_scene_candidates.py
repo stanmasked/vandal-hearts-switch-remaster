@@ -14,23 +14,24 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 from io import StringIO
 import json
 from pathlib import Path
 
 from tools.map02_private_dual_capture_rgb_repeatability import (
-    verify as verify_dual, ROLES,
+    verify as verify_dual, capture_evidence_digest, ROLES,
 )
 from tools.map02_private_human_review_ledger import (
     checked_positions, evaluate as audit_manual_labels, HEADER, LABELS,
     MAX_REVIEW_BYTES, write_private_new,
 )
 from tools.validate_map02_private_replay_markers import _read_regular
-from tools.verify_map02_private_neutral_capture_chain import parse_plan
+from tools.verify_map02_private_neutral_capture_chain import parse_plan, PLAN_LIMIT
 from tools.verify_map02_private_visual_candidates import read_png_private
 from tools.map02_private_png_visual_diff import decode_private_rgb8
 
-SCHEMA = "vh.map02.private-reviewed-scene-candidates.v2"
+SCHEMA = "vh.map02.private-reviewed-scene-candidates.v3"
 STATES = frozenset((
     "requires_pixel_replay",
     "awaiting_manual_classification",
@@ -70,7 +71,18 @@ def _intra_group_visual_changes(plan: Path, image_root: Path) -> dict[int, bool]
 
 
 def shortlist(positions: list[tuple[int, str]], proof: dict,
-              annotation_csv: Path, visual_changes: dict[int, bool]) -> dict:
+              annotation_csv: Path, visual_changes: dict[int, bool], *,
+              source_plan_sha256: str,
+              source_capture_evidence_sha256: str) -> dict:
+    for label, value in (
+        ("canonical source plan SHA-256", source_plan_sha256),
+        ("source capture evidence SHA-256", source_capture_evidence_sha256),
+    ):
+        if (type(value) is not str or len(value) != 64
+                or any(ch not in "0123456789abcdef" for ch in value)):
+            raise ValueError("invalid " + label)
+    if proof.get("source_capture_evidence_sha256") != source_capture_evidence_sha256:
+        raise ValueError("source capture evidence digest mismatch")
     # The upstream annotation CSV checker enforces exact header, roles,
     # bounded labels, full coverage and absence of duplicate/foreign rows.
     annotation_audit = audit_manual_labels(positions, annotation_csv)
@@ -156,6 +168,8 @@ def shortlist(positions: list[tuple[int, str]], proof: dict,
 
     return {
         "schema": SCHEMA,
+        "source_plan_sha256": source_plan_sha256,
+        "source_capture_evidence_sha256": source_capture_evidence_sha256,
         "private_review_group_count": len(groups),
         "fully_reviewed_position_pairs": annotation_audit["fully_categorized_position_pairs"],
         "matching_human_label_pairs": annotation_audit["matching_human_label_pairs"],
@@ -189,6 +203,12 @@ def verify(
     minimum: int = 180, maximum: int = 1800,
     after: int = 1663, before: int = 933949,
 ) -> dict:
+    plan_snapshot = _read_regular(plan, PLAN_LIMIT)
+    try:
+        plan_bytes = plan_snapshot.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise ValueError("private capture plan is not ASCII") from exc
+    plan_digest = hashlib.sha256(plan_bytes).hexdigest()
     source = verify_dual(
         movie, plan, log1, images1, log2, images2,
         minimum=minimum, maximum=maximum, after=after, before=before,
@@ -196,7 +216,19 @@ def verify(
     )
     positions = checked_positions(plan, source)
     visual_changes = _intra_group_visual_changes(plan, images1)
-    return shortlist(positions, source, annotations, visual_changes)
+    if _read_regular(plan, PLAN_LIMIT) != plan_snapshot:
+        raise ValueError("private capture plan changed during audit")
+    _, planned_rows = parse_plan(plan)
+    evidence_after_review = capture_evidence_digest(
+        movie, plan, log1, images1, log2, images2, planned_rows,
+    )
+    if evidence_after_review != source["source_capture_evidence_sha256"]:
+        raise ValueError("private capture evidence changed during manual review")
+    return shortlist(
+        positions, source, annotations, visual_changes,
+        source_plan_sha256=plan_digest,
+        source_capture_evidence_sha256=source["source_capture_evidence_sha256"],
+    )
 
 
 def main() -> int:
