@@ -48,7 +48,7 @@ RUNTIME_PREFLIGHT = re.compile(
 )
 CORE_PREFERENCE = re.compile(
     r"VH_PRIVATE_NEUTRAL_CORE_PREFERENCE preferred=Octoshock "
-    r"fallback=(allowed|blocked|unverified) active_core=unverified"
+    r"fallback=(blocked) active_core=unverified"
 )
 START_PREFLIGHT = ("VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 "
                    "candidate_input=1661 first_start_pressed=yes "
@@ -248,6 +248,7 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
         "original_disc_full_hash_authenticated": False,
         "owner_log_reports_octoshock_preference": True,
         "reported_psx_core_fallback_configuration": core_preference,
+        "owner_log_reports_psx_core_fallback_disabled": True,
         "octoshock_preference_authenticates_active_core": False,
         "reported_bizhawk_version": runtime_profile[0],
         "reported_psx_display_standard": runtime_profile[1],

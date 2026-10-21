@@ -24,6 +24,7 @@ PAIR_OK = {
     "same_reported_bizhawk_runtime_profile": True,
     "same_reported_psx_lag_timeline": True,
     "same_reported_psx_core_fallback_configuration": True,
+    "both_runs_reported_psx_core_fallback_disabled": True,
     "decoded_pixel_equal_pairs": 3,
     "decoded_pixel_different_pairs": 0,
     "decoded_pixel_unsupported_pairs": 0,

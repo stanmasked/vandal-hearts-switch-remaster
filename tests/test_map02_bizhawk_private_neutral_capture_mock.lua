@@ -208,10 +208,11 @@ local function run(option)
       if option == "config-changes-after-start" and counter >= 1664 then
         preferred = "Nymashock"
       end
-      local disable_fallback = false
-      if option == "fallback-blocked" then disable_fallback = true end
+      local disable_fallback = true
+      if option == "fallback-allowed" then disable_fallback = false end
+      if option == "fallback-unverified" then disable_fallback = nil end
       if option == "config-fallback-changes" and counter >= 1664 then
-        disable_fallback = true
+        disable_fallback = false
       end
       return {PreferredCores = {PSX = preferred},
               DontTryOtherCores = disable_fallback}
@@ -253,7 +254,7 @@ for _, option in ipairs({"plain", "prefixed", "boundary", "zero-counter", "spars
   assert(lines[2] == "VH_PRIVATE_NEUTRAL_MOVIE_SOURCE_PREFLIGHT source=poweron filename=matched core_identity=unverified", option .. ": wrong power-on source")
   local display = option == "pal-display" and "PAL" or "NTSC"
   assert(lines[3] == "VH_PRIVATE_NEUTRAL_RUNTIME_PREFLIGHT bizhawk_version=2.11 display=" .. display .. " active_core=unverified", option .. ": wrong runtime")
-  local fallback = option == "fallback-blocked" and "blocked" or "allowed"
+  local fallback = "blocked"
   assert(lines[4] == "VH_PRIVATE_NEUTRAL_CORE_PREFERENCE preferred=Octoshock fallback=" .. fallback .. " active_core=unverified", option .. ": wrong configured core preference")
   assert(lines[5] == "VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 candidate_input=1661 first_start_pressed=yes ps1_input_delivery=unverified", option .. ": wrong live anchor")
   local frames = {option == "boundary" and 1663 or 1664, 1666, 1669}
@@ -291,7 +292,8 @@ for _, option in ipairs({
   "lag-counter-errors", "lag-counter-NaN", "lag-counter-negative",
   "lag-counter-too-large", "lag-counter-fractional", "lag-counter-regresses",
   "missing-config-api", "config-read-error", "config-nymashock",
-  "config-no-psx", "config-changes-after-start", "config-fallback-changes"
+  "config-no-psx", "config-changes-after-start", "config-fallback-changes",
+  "fallback-allowed", "fallback-unverified"
 }) do
   local lines, shots, _, exit_codes = run(option)
   local rejected = false
