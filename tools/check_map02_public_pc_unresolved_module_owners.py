@@ -54,6 +54,63 @@ def summarize_owner_groups(remaining, game_refs, backend_refs):
     }
 
 
+
+def summarize_game_only_fanout(remaining, game_refs, backend_refs):
+    """Real distinct caller-object fanout; never disclose symbol names.
+
+    Import fanout measures breadth of references, *not* implementation location
+    or runtime use. Repeated undefined relocations in one TU count only once.
+    """
+    remaining = set(remaining)
+    game = [set(x) & remaining for x in game_refs]
+    backend = [set(x) & remaining for x in backend_refs]
+    game_names = set().union(*game) if game else set()
+    backend_names = set().union(*backend) if backend else set()
+    game_only = game_names - backend_names
+    backend_only = backend_names - game_names
+    shared = game_names & backend_names
+    bins = {"one": 0, "two_to_three": 0, "four_to_seven": 0,
+            "eight_or_more": 0}
+    edge_total = 0
+    maximum = 0
+    for symbol in game_only:
+        callers = sum(symbol in refs for refs in game)
+        if callers == 0:
+            raise ValueError("MAP02 game-only symbol has no actual caller")
+        maximum = max(maximum, callers)
+        edge_total += callers
+        if callers == 1:
+            bins["one"] += 1
+        elif callers <= 3:
+            bins["two_to_three"] += 1
+        elif callers <= 7:
+            bins["four_to_seven"] += 1
+        else:
+            bins["eight_or_more"] += 1
+    game_shared_pairs = sum(len(refs & shared) for refs in game)
+    backend_shared_pairs = sum(len(refs & shared) for refs in backend)
+    backend_only_pairs = sum(len(refs & backend_only) for refs in backend)
+    game_total_pairs = sum(map(len, game))
+    backend_total_pairs = sum(map(len, backend))
+    if (sum(bins.values()) != len(game_only)
+            or edge_total + game_shared_pairs != game_total_pairs
+            or backend_only_pairs + backend_shared_pairs != backend_total_pairs
+            or (not game_only and maximum != 0)
+            or (game_only and not 1 <= maximum <= len(game))
+            or (len(game_only) + len(backend_only) + len(shared) >
+                len(remaining))):
+        raise ValueError("MAP02 game symbol fanout arithmetic inconsistent")
+    return {
+        **{"game_only_fanout_" + key: value for key, value in bins.items()},
+        "game_only_reference_pairs": edge_total,
+        "shared_game_reference_pairs": game_shared_pairs,
+        "backend_only_reference_pairs": backend_only_pairs,
+        "shared_backend_reference_pairs": backend_shared_pairs,
+        "game_only_max_caller_objects_per_symbol": maximum,
+        "fanout_counts_distinct_source_objects_not_runtime_calls": True,
+    }
+
+
 def read_link_report(path):
     path = Path(path)
     if path.is_symlink():
@@ -164,6 +221,18 @@ def audit_owners(upstream, overlay_bundle,
             _confirm_owned(e)
         output = summarize_owner_groups(
             remaining, refs[:EXPECTED_GAME], refs[EXPECTED_GAME:])
+        fanout = summarize_game_only_fanout(
+            remaining, refs[:EXPECTED_GAME], refs[EXPECTED_GAME:])
+        if (sum(fanout["game_only_fanout_" + name]
+                for name in ("one", "two_to_three", "four_to_seven",
+                             "eight_or_more")) != output["original_game_only_imports"]
+                or (fanout["game_only_reference_pairs"] +
+                    fanout["shared_game_reference_pairs"] !=
+                    output["game_object_symbol_reference_pairs"])
+                or (fanout["backend_only_reference_pairs"] +
+                    fanout["shared_backend_reference_pairs"] !=
+                    output["backend_object_symbol_reference_pairs"])):
+            raise ValueError("MAP02 fanout and original owner counts diverge")
         if (output["missing_object_owner_imports"] != 0
                 or output["remaining_pc_total"] != expected_remaining
                 or output["game_objects_with_remaining_imports"] > EXPECTED_GAME
@@ -178,6 +247,7 @@ def audit_owners(upstream, overlay_bundle,
             "original_game_objects_checked": EXPECTED_GAME,
             "backend_and_observer_objects_checked": EXPECTED_BACKEND,
             **output,
+            **fanout,
             "only_counts_and_hashes_published": True,
             "retail_asset_content_accessed": False,
             "executable_game_proven": False,
