@@ -354,6 +354,15 @@ class DiscMoviePreflightTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "analog input"):
             self.call()
 
+    def test_movie_overlong_decompressed_line_is_bounded(self):
+        keys = (["#Disc Select", "Open", "Close", "Reset", "#" + AXES[0]]
+                + list(AXES[1:]) + ["P1 " + name for name in BUTTONS] + [""])
+        oversized = ("[Input]\nLogKey:" + "|".join(keys)
+                     + "\n|1,...|" + ("Z" * 4096) + "|\n[/Input]\n")
+        write_movie(self.movie, log_override=oversized)
+        with self.assertRaisesRegex(ValueError, "bounded length"):
+            self.call()
+
     def test_expected_movie_frame_limit_is_bounded(self):
         with self.assertRaisesRegex(ValueError, "frame count"):
             self.call(expected_movie_frames=0)
