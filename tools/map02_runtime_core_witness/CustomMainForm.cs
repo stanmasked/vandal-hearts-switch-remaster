@@ -18,7 +18,7 @@ namespace VhMap02CoreWitness
     public sealed class CoreWitnessForm : ToolFormBase, IExternalToolForm
     {
         [RequiredService]
-        public IEmulator Emulator { get; set; }
+        public IEmulator Emulator { get; set; } = null!; // injected after construction
 
         private readonly Label _summary;
         private readonly Button _save;

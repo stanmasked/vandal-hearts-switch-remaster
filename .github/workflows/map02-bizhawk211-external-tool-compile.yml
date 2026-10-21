@@ -1,0 +1,68 @@
+name: MAP02 real BizHawk 2.11 External Tool compile (no game media)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-bizhawk211-external-tool-compile.yml'
+      - 'tools/map02_runtime_core_witness/**'
+      - 'docs/MAP02_RUNTIME_CORE_WITNESS.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  witness-real-assembly-compile:
+    name: Compile core witness against verified official BizHawk 2.11 (Windows)
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Fetch exact official BizHawk 2.11 Windows release, verify SHA-256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $url = 'https://github.com/TASEmulators/BizHawk/releases/download/2.11/BizHawk-2.11-win-x64.zip'
+          $expected = '722b5aac5e1d89f890b2875b0150f4a86f5762d211f7cd47029cac70434955c0'
+          $zipFile = Join-Path $env:RUNNER_TEMP 'bizhawk211-official-win-x64.zip'
+          $expanded = Join-Path $env:RUNNER_TEMP 'bizhawk211-official-win-x64'
+          Invoke-WebRequest -Uri $url -OutFile $zipFile
+          $actual = (Get-FileHash -Path $zipFile -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -cne $expected) { throw 'official BizHawk 2.11 release hash mismatch' }
+          Expand-Archive -LiteralPath $zipFile -DestinationPath $expanded -Force
+          $exe = @(Get-ChildItem -LiteralPath $expanded -Recurse -File -Filter 'EmuHawk.exe')
+          if ($exe.Count -ne 1) { throw 'expected one official EmuHawk.exe in release archive' }
+          $root = $exe[0].DirectoryName
+          foreach ($path in @(
+            (Join-Path $root 'EmuHawk.exe'),
+            (Join-Path $root 'dll/BizHawk.Client.Common.dll'),
+            (Join-Path $root 'dll/BizHawk.Emulation.Common.dll')
+          )) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw 'expected official BizHawk assembly absent'
+            }
+          }
+          "VH_BIZHAWK_RELEASE_ROOT=$root" >> $env:GITHUB_ENV
+          Write-Output 'VH_MAP02_OFFICIAL_BIZHAWK211_PIN_VERIFIED actual_game_assets=0'
+      - name: Compile actual C# witness project against real upstream 2.11 DLLs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $project = 'tools/map02_runtime_core_witness/VhMap02CoreWitness.csproj'
+          dotnet build $project -c Release -p:VH_BIZHAWK_RELEASE_ROOT="$env:VH_BIZHAWK_RELEASE_ROOT" --nologo -v:minimal
+          if ($LASTEXITCODE -ne 0) { throw 'actual BizHawk 2.11 witness compile failed' }
+          $dll = 'tools/map02_runtime_core_witness/bin/Release/net48/VhMap02CoreWitness.dll'
+          if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) {
+            throw 'compiled witness assembly missing'
+          }
+          Write-Output 'VH_MAP02_REAL_BIZHAWK211_ASSEMBLY_COMPILE_PASS original_disc=0 original_bk2=0 bios=0 emulator_launched=0'
+      - name: Publish only the compiled experimental witness DLL (no original assets)
+        uses: actions/upload-artifact@v4
+        with:
+          name: vh-map02-bizhawk211-experimental-core-witness
+          path: tools/map02_runtime_core_witness/bin/Release/net48/VhMap02CoreWitness.dll
+          if-no-files-found: error
+          retention-days: 14

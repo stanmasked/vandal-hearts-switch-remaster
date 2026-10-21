@@ -15,8 +15,37 @@ injection of services after construction. The new tiny optional tool reads
 **the injected live IEmulator**, not BK2 metadata or configuration.
 
 This is a practical path to genuine owner-local runtime core evidence.
-**It has not yet been compiled or run inside an authentic owner EmuHawk
-session**; only the Python verifier has synthetic CI coverage.
+**The C# External Tool now compiles against real SHA-256-pinned official
+BizHawk 2.11 Windows binaries** in GitHub Actions (Stage501). However,
+it has NOT been loaded or run inside an authentic owner EmuHawk
+session. The Python witness verifier has separate synthetic CI coverage.
+
+## Stage501: real official BizHawk 2.11 assembly compatibility
+
+The Stage501 Windows GitHub Actions workflow downloads the exact
+upstream `BizHawk-2.11-win-x64.zip`, independently verifies the GitHub
+release SHA-256 before extraction, and compiles the **same
+`VhMap02CoreWitness.csproj`** using `VH_BIZHAWK_RELEASE_ROOT`
+against its real `EmuHawk.exe`, `BizHawk.Client.Common.dll` and
+`BizHawk.Emulation.Common.dll`. The first run exposed a genuine C#
+non-nullable late-injection error; it was fixed, and the next Windows
+build passed with **zero warnings and zero errors**.
+
+The Actions workflow also retains a **short-lived experimental DLL-only
+artifact** (`vh-map02-bizhawk211-experimental-core-witness`) for
+14 days. It contains only our compiled source, **no** original ROM,
+BIOS, BIN, CUE, BK2, screenshots or official BizHawk binaries. For
+testing it locally, download the artifact from the exact-head successful
+GitHub Actions run and install the extracted
+`VhMap02CoreWitness.dll` in the `ExternalTools` folder of the
+**matching unmodified BizHawk 2.11 Windows installation**. This is
+an experimental build, not a runtime-certified plugin. Keep the
+original game files entirely separate from GitHub checkouts.
+
+The original owner-local source build workflow described below
+remains supported. CI only confirms compilation, **not** runtime load,
+service injection, movie replay, BIOS, actual disc mount or MAP02
+frames.
 
 ## Owner-local build (requires a matching, unmodified BizHawk source tree)
 
@@ -97,9 +126,11 @@ stronger than observing only the preferred core. However:
   checks remain mandatory before authentic gameplay or remake fidelity
   can be claimed.
 
-The CI suite exercises **20 invented witness pairs**; it does not build
-the Windows BizHawk plugin, run EmuHawk, authenticate a live core or
-touch original game assets. Keep the corresponding PR in Draft.
+The Python CI suite exercises **20 invented witness pairs**; the
+Stage501 Windows CI additionally **compiles** the plugin against
+official SHA-256-verified BizHawk 2.11 binaries. Neither CI workflow
+runs EmuHawk, authenticates a live core or touches original game
+assets. Keep the corresponding PR in Draft.
 
 Official sources consulted: BizHawk
 `src/BizHawk.Client.EmuHawk/MainForm.Movie.cs`,
