@@ -27,6 +27,10 @@ MAP02_BYTES = 22783
 # Owner-local RU v1.6 image length from the independent disc inventory.
 # A valid MAP02 sector range alone does not establish a complete disc image.
 EXPECTED_BIN_BYTES = 664849248
+# Exact owner-local SHA-256 pinned after two reads of the same RU v1.6 BIN.
+# Equality identifies that *specific copy*; it is not release authenticity.
+EXPECTED_BIN_SHA256 = "48c686f9ae7e57615c06fd20d1048b2b8e9e7debabc371e6e941821b6b3b121a"
+FULL_HASH_CHUNK_BYTES = 1024 * 1024
 EXPECTED_VOLUME_ID = "SLUS_00447"
 EXPECTED_MAP02_SHA256 = "c370660f7f13e6d6e76f4126a45418bc9c64c747de8309ca946d37b502516387"
 MAX_CUE_BYTES = 64 * 1024
@@ -171,7 +175,23 @@ def _raw_sector(fd: int, lba: int, file_size: int) -> bytes:
     return sector
 
 
-def _disc_profile(bin_path: Path, expected_map02_sha256: str) -> tuple[bool, bool, bool]:
+def _full_image_sha256(fd: int, file_size: int) -> str:
+    """Read a bounded block at a time; never expose raw image data or hash."""
+    digest = hashlib.sha256()
+    offset = 0
+    while offset < file_size:
+        chunk = _read_at(fd, offset, min(FULL_HASH_CHUNK_BYTES, file_size - offset))
+        if not chunk:
+            raise ValueError("incomplete private BIN during full image hashing")
+        digest.update(chunk)
+        offset += len(chunk)
+    return digest.hexdigest()
+
+
+def _disc_profile(bin_path: Path, expected_map02_sha256: str, *,
+                  verify_full_bin_sha256: bool = False,
+                  expected_bin_sha256: str = EXPECTED_BIN_SHA256
+                  ) -> tuple[bool, bool, bool, bool | None]:
     fd, before = _open_stable(bin_path)
     try:
         if before.st_size <= 0 or before.st_size % SECTOR_BYTES:
@@ -196,6 +216,14 @@ def _disc_profile(bin_path: Path, expected_map02_sha256: str) -> tuple[bool, boo
             take = min(remaining, len(data))
             payload.extend(data[:take])
             remaining -= take
+        full_match = None
+        if verify_full_bin_sha256:
+            # Reject nonmatching lengths without traversing an arbitrarily
+            # large untrusted file. A request to verify still fails closed.
+            full_match = (
+                _full_image_sha256(fd, before.st_size) == expected_bin_sha256
+                if size_match else False
+            )
         _assert_stable(fd, bin_path, before)
     finally:
         os.close(fd)
@@ -203,7 +231,7 @@ def _disc_profile(bin_path: Path, expected_map02_sha256: str) -> tuple[bool, boo
         raise ValueError("incomplete MAP02 resource read")
     resource_match = hashlib.sha256(payload).hexdigest() == expected_map02_sha256
     volume_match = volume_id == EXPECTED_VOLUME_ID
-    return volume_match, resource_match, size_match
+    return volume_match, resource_match, size_match, full_match
 
 
 def _movie_metadata(movie_path: Path) -> tuple[bool, bool]:
@@ -237,18 +265,31 @@ def _movie_metadata(movie_path: Path) -> tuple[bool, bool]:
 
 
 def inspect_pair(cue_path: Path, movie_path: Path, *,
-                 expected_map02_sha256: str = EXPECTED_MAP02_SHA256) -> dict:
+                 expected_map02_sha256: str = EXPECTED_MAP02_SHA256,
+                 verify_full_bin_sha256: bool = False,
+                 expected_bin_sha256: str = EXPECTED_BIN_SHA256) -> dict:
     if (not isinstance(expected_map02_sha256, str)
             or not re.fullmatch(r"[0-9a-f]{64}", expected_map02_sha256)):
         raise ValueError("expected MAP02 profile digest must be lowercase SHA-256")
+    if (type(verify_full_bin_sha256) is not bool
+            or not isinstance(expected_bin_sha256, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", expected_bin_sha256)):
+        raise ValueError("full BIN verification requires a lowercase SHA-256")
     cue = _resolve_private_file(cue_path)
     movie = _resolve_private_file(movie_path)
     cue_text = _read_cue(cue)
     bin_name = _parse_cue(cue_text)
     bin_path = _resolve_private_file(cue.parent / bin_name)
-    volume_match, resource_match, size_match = _disc_profile(bin_path, expected_map02_sha256)
+    volume_match, resource_match, size_match, full_match = _disc_profile(
+        bin_path, expected_map02_sha256,
+        verify_full_bin_sha256=verify_full_bin_sha256,
+        expected_bin_sha256=expected_bin_sha256,
+    )
     movie_header_match, movie_sync_match = _movie_metadata(movie)
-    profile_match = volume_match and resource_match and size_match
+    profile_match = (
+        volume_match and resource_match and size_match
+        and (not verify_full_bin_sha256 or full_match is True)
+    )
     ready = profile_match and movie_header_match and movie_sync_match
     return {
         "schema": SCHEMA,
@@ -256,6 +297,8 @@ def inspect_pair(cue_path: Path, movie_path: Path, *,
         "iso9660_pvd_valid": True,
         "disc_volume_id_matches_audited_profile": volume_match,
         "disc_size_matches_audited_profile": size_match,
+        "full_bin_sha256_requested": verify_full_bin_sha256,
+        "full_bin_sha256_verified": full_match,
         "map02_prs_matches_expected_profile": resource_match,
         "movie_header_matches_vandal_hearts_usa_psx_octoshock": movie_header_match,
         "movie_sync_matches_one_controller_no_cards": movie_sync_match,
@@ -274,9 +317,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("owner_private_cue", type=Path)
     parser.add_argument("owner_private_bk2", type=Path)
+    parser.add_argument(
+        "--verify-full-bin-sha256", action="store_true",
+        help="Stream the entire owner-local RU v1.6 BIN and check its pinned SHA-256",
+    )
     args = parser.parse_args()
     try:
-        report = inspect_pair(args.owner_private_cue, args.owner_private_bk2)
+        report = inspect_pair(
+            args.owner_private_cue, args.owner_private_bk2,
+            verify_full_bin_sha256=args.verify_full_bin_sha256,
+        )
     except (OSError, ValueError, UnicodeError, KeyError, zipfile.BadZipFile,
             RuntimeError, TypeError):
         parser.error("owner-private disc/movie compatibility preflight unavailable")
