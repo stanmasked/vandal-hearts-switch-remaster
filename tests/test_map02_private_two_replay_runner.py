@@ -85,7 +85,10 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
                 with patch(
                     "tools.map02_private_two_replay_runner.read_private_full_bin_sha256",
                     return_value="a" * 64,
-                ) as reference:
+                ) as reference, patch(
+                    "tools.map02_private_two_replay_runner._full_image_sha256",
+                    return_value="a" * 64,
+                ) as complete_hash:
                     report = capture_twice(
                         *self.args, start=True, expected_digest_file=digest,
                         emulator_timeout_seconds=emulator_timeout_seconds,
@@ -93,6 +96,7 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
                     self.assertGreaterEqual(reference.call_count, 2)
                     for call in reference.call_args_list:
                         self.assertEqual(call.args, (digest,))
+                    self.assertEqual(complete_hash.call_count, 3)
         return report, media, planning, process, chain, comparison
 
     def _write_plan(self, movie, path, **kwargs):
@@ -206,6 +210,10 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         self.assertTrue(result["same_bk2_bytes_across_capture_attempts"])
         self.assertTrue(result["same_cue_and_sampled_bin_sectors_across_attempts"])
         self.assertFalse(result["full_disc_content_equality_authenticated"])
+        self.assertEqual(result["full_bin_postprocess_checks_performed"], 0)
+        self.assertFalse(result["full_bin_final_postaudit_check_performed"])
+        self.assertFalse(result["on_disk_full_bin_matched_private_reference_at_checkpoints"])
+        self.assertFalse(result["emulator_mounted_disc_identity_authenticated"])
         self.assertFalse(result["independent_cold_boots_authenticated"])
         self.assertFalse(result["original_map02_scene_authenticated"])
         self.assertEqual(media.call_count, 1)
@@ -559,6 +567,10 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
                 ["--private-full-bin-sha256-file", str(digest_file), "--launch"],
             )
         self.assertFalse(report["owner_private_assets_uploaded"])
+        self.assertEqual(report["full_bin_postprocess_checks_performed"], 2)
+        self.assertTrue(report["full_bin_final_postaudit_check_performed"])
+        self.assertTrue(report["on_disk_full_bin_matched_private_reference_at_checkpoints"])
+        self.assertFalse(report["emulator_mounted_disc_identity_authenticated"])
 
     def test_media_mismatch_rejected_before_any_private_outputs(self):
         with patch(
