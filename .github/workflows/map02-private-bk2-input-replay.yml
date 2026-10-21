@@ -1,0 +1,47 @@
+name: MAP02 private BizHawk BK2 input replay reader (synthetic CI)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-private-bk2-input-replay.yml'
+      - 'tools/inspect_map02_private_bk2.py'
+      - 'tests/test_inspect_map02_private_bk2.py'
+      - 'docs/MAP02_PRIVATE_BK2_OFFLINE_INPUT_REPLAY.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  invented-bk2-contracts:
+    name: Synthetic BK2 reader (${{ matrix.os }} Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.9'
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: macos-15-intel
+            python: '3.11'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Run 12 completely synthetic BK2 input/privacy tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_inspect_map02_private_bk2.py' -v \
+            2>&1 | tee /tmp/vh-map02-private-bk2-tests.log
+          grep -F 'Ran 12 tests' /tmp/vh-map02-private-bk2-tests.log
+          if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-private-bk2-tests.log; then
+            exit 1
+          fi
+          echo "VH_MAP02_PRIVATE_BK2_INPUT_READER_PASS python=${{ matrix.python }} synthetic=12 owner_bk2=0 original_disc=0 map02_frame_identified=0"
