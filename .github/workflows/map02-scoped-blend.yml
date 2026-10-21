@@ -949,6 +949,8 @@ jobs:
                   result["final_strong_undefined"])
           assert result["actual_native_grouped_ld_r_executed"] is True
           assert result["final_product_is_elf_rel_only"] is True
+          assert result["strong_input_still_weak_undefined"] == 0
+          assert result["final_weak_undefined"] >= 0
           assert result["fully_linked_game_executable"] is False
           assert result["authentic_map02_execution_proven"] is False
           assert result["switch_game_proven"] is False
