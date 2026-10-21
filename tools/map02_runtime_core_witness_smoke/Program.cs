@@ -22,6 +22,13 @@ namespace VhMap02LoaderSmoke
             var shortName = new AssemblyName(args.Name).Name;
             if (shortName == null || shortName.Contains("/") || shortName.Contains("\\"))
                 return null;
+            // BizHawk's managed assembly is *named* BizHawk.Client.EmuHawk,
+            // but its official on-disk executable is called EmuHawk.exe.
+            if (shortName == "BizHawk.Client.EmuHawk")
+            {
+                var emulatorExe = Path.Combine(_root, "EmuHawk.exe");
+                return File.Exists(emulatorExe) ? Assembly.LoadFrom(emulatorExe) : null;
+            }
             foreach (var candidate in new[]
             {
                 Path.Combine(_root, shortName + ".dll"),
