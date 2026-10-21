@@ -25,7 +25,7 @@ def synth():
             join.append((i,clock,taskid,1 if taskid==4 else -1,
                          1 if taskid==4 else 0))
     tags=[{"time":base+i*200_000_000,
-           "alias":({1:1} if i>=1 else {})}
+           "alias":{1:1}}
           for i in range(82)]
     return tasks,join,tags
 
