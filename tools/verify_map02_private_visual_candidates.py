@@ -16,6 +16,8 @@ import stat
 import struct
 import zlib
 
+from tools.map02_private_png_idat import verify_idat_scanlines
+
 from tools.validate_map02_private_replay_markers import (
     MARKER, MAX_LOG_BYTES, _read_regular, verify as verify_marker_log,
 )
@@ -147,6 +149,7 @@ def verify(inspection_json: Path, marker_log: Path, manifest_json: Path,
         seen_files.add(filename)
         data = read_png_private(image_root, filename)
         png_header_and_crc(data)
+        verify_idat_scanlines(data)
         if hashlib.sha256(data).hexdigest() != digest:
             raise ValueError("private screenshot hash mismatch")
         if label == "pre_map02":
@@ -167,6 +170,7 @@ def verify(inspection_json: Path, marker_log: Path, manifest_json: Path,
         "integrity_checked_png_count": len(shots),
         "markers_matching_screenshot_metadata": True,
         "png_envelopes_crcs_sha256_match": True,
+        "png_idat_zlib_scanlines_verified": True,
         "pre_candidate_observed_emulator_counter": pre,
         "first_map02_candidate_emulator_counter": candidate,
         "manual_candidate_interval_counter_exclusive_inclusive": [pre, candidate],
