@@ -111,18 +111,19 @@ end
 for _, option in ipairs({"plain", "prefixed", "boundary", "zero-counter"}) do
   local lines, shots = run(option)
   assert(#shots == 3, option .. ": expected three screenshot calls")
-  assert(#lines == 4, option .. ": three capture lines and summary")
+  assert(#lines == 5, option .. ": Start preflight, three captures and summary")
+  assert(lines[1] == "VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 candidate_input=1661 first_start_pressed=yes ps1_input_delivery=unverified", option .. ": wrong live anchor")
   local frames = {option == "boundary" and 1663 or 1664, 1666, 1669}
   local roles = {"before", "middle", "after"}
   for i = 1, 3 do
-    local group, role, counter, candidate, held = lines[i]:match(
+    local group, role, counter, candidate, held = lines[i + 1]:match(
       "^VH_PRIVATE_NEUTRAL_CAPTURE window=(%d+) role=([a-z]+) counter=(%d+) candidate_input=(%d+) expected_buttons=([a-z]+) png=written display_offset=unverified$")
     assert(tonumber(group) == 1 and role == roles[i], option .. ": bad role/group")
     assert(tonumber(counter) == frames[i] + 1, option .. ": bad core counter")
     assert(tonumber(candidate) == frames[i], option .. ": off-by-one movie frame")
     assert(held == (i == 2 and "neutral" or "held"), option .. ": expected button state")
   end
-  assert(lines[4] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes actual_map02=unverified")
+  assert(lines[5] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes actual_map02=unverified")
 end
 
 for _, option in ipairs({
