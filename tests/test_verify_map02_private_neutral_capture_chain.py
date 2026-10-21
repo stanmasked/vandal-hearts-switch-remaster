@@ -73,7 +73,7 @@ class CaptureAuditTests(unittest.TestCase):
         data.extend(log_row(*r) for r in self.records)
         if complete:
             data.append("VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=%d "
-                        "movie_input_only=yes actual_map02=unverified" %
+                        "movie_input_only=yes core_input_poll_observed=yes actual_map02=unverified" %
                         len(self.records))
         if process_exit:
             data.append("VH_PRIVATE_BIZHAWK_LOCAL_PROCESS_EXITED exit_success=%d "
@@ -105,6 +105,8 @@ class CaptureAuditTests(unittest.TestCase):
         self.assertTrue(value["capture_logs_match_each_planned_input_and_counter"])
         self.assertTrue(value["owner_log_reports_live_first_start_anchor_before_screenshots"])
         self.assertTrue(value["owner_log_reports_poweron_movie_path_match"])
+        self.assertTrue(value["owner_log_reports_input_poll_callback"])
+        self.assertTrue(value["savestate_load_detection_declared_in_lua"])
         self.assertTrue(value["owner_launcher_reports_successful_process_exit"])
         self.assertTrue(value["all_png_crc_zlib_scanlines_pass"])
         self.assertEqual(value["screenshot_count"], 3)
@@ -115,6 +117,26 @@ class CaptureAuditTests(unittest.TestCase):
                      "source_native_gpu_vram_verified", "private_input_or_png_published"):
             self.assertFalse(value[name])
         self.assertNotIn(str(self.base), json.dumps(value))
+
+    def test_lua_reports_no_core_input_polls_without_false_authentication(self):
+        source = self.log.read_text(encoding="utf-8")
+        self.log.write_text(source.replace(
+            "core_input_poll_observed=yes",
+            "core_input_poll_observed=no",
+        ), encoding="utf-8")
+        report = self.call()
+        self.assertFalse(report["owner_log_reports_input_poll_callback"])
+        self.assertFalse(report["movie_input_to_actual_ps1_delivery_verified"])
+        self.assertFalse(report["real_bizhawk_execution_authenticated"])
+
+    def test_malformed_core_input_poll_marker_rejected(self):
+        source = self.log.read_text(encoding="utf-8")
+        self.log.write_text(source.replace(
+            "core_input_poll_observed=yes",
+            "core_input_poll_observed=maybe",
+        ), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "completion"):
+            self.call()
 
     def test_missing_poweron_movie_source_marker_refused(self):
         text = self.log.read_text()
@@ -264,7 +286,7 @@ class CaptureAuditTests(unittest.TestCase):
     def test_duplicate_completion_refused(self):
         with self.log.open("a") as f:
             f.write("VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 "
-                    "movie_input_only=yes actual_map02=unverified\n")
+                    "movie_input_only=yes core_input_poll_observed=yes actual_map02=unverified\n")
         with self.assertRaises(ValueError):
             self.call()
 
