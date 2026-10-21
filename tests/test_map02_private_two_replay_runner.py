@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from tools.map02_private_two_replay_runner import (
-    PLAN_NAME, RUN_NAMES, capture_twice, main,
+    PLAN_NAME, RUN_NAMES, _private_movie_identity, capture_twice, main,
 )
 
 
@@ -103,6 +103,7 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         process.assert_not_called()
         writer.assert_not_called()
         self.assertTrue(report["media_preflight_passed"])
+        self.assertTrue(report["owner_bk2_stable_during_preflight"])
         self.assertEqual(report["private_capture_plan_rows_checked"], 3)
         self.assertFalse(report["full_bin_sha256_checked"])
         self.assertEqual(report["emulator_timeout_seconds"], 28800)
@@ -181,6 +182,7 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         self.assertTrue(result["all_supported_png_pixel_content_equal"])
         self.assertEqual(result["emulator_processes_started"], 2)
         self.assertEqual(result["capture_attempts_audited"], 2)
+        self.assertTrue(result["same_bk2_bytes_across_capture_attempts"])
         self.assertFalse(result["independent_cold_boots_authenticated"])
         self.assertFalse(result["original_map02_scene_authenticated"])
         self.assertEqual(media.call_count, 1)
@@ -238,6 +240,88 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
                 inspector.assert_not_called()
                 process.assert_not_called()
                 self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_movie_mutated_during_first_process_blocks_second(self):
+        def first_capture(*args, **kwargs):
+            self.movie.write_text("synthetic-only-but-now-modified")
+            return Mock(returncode=0)
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_two_replay_runner.write_private_plan",
+            side_effect=self._write_plan,
+        ), patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+            side_effect=first_capture,
+        ) as launch, patch(
+            "tools.map02_private_two_replay_runner.verify",
+        ) as verifier, patch(
+            "tools.map02_private_two_replay_runner.audit_pair",
+        ) as comparison:
+            with self.assertRaisesRegex(ValueError, "BK2 changed between"):
+                capture_twice(*self.args, start=True)
+        launch.assert_called_once()
+        verifier.assert_not_called()
+        comparison.assert_not_called()
+        self.assertFalse((self.workspace / RUN_NAMES[1]).exists())
+
+    def test_movie_mutated_during_second_process_blocks_comparison(self):
+        attempts = [0]
+        def captured_process(*args, **kwargs):
+            attempts[0] += 1
+            if attempts[0] == 2:
+                self.movie.write_bytes(b"synthetic-second-run-different")
+            return Mock(returncode=0)
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_two_replay_runner.write_private_plan",
+            side_effect=self._write_plan,
+        ), patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+            side_effect=captured_process,
+        ) as launch, patch(
+            "tools.map02_private_two_replay_runner.verify",
+            return_value={"screenshot_count": 3},
+        ) as verifier, patch(
+            "tools.map02_private_two_replay_runner.audit_pair",
+        ) as comparison:
+            with self.assertRaisesRegex(ValueError, "BK2 changed between"):
+                capture_twice(*self.args, start=True)
+        self.assertEqual(launch.call_count, 2)
+        verifier.assert_called_once()
+        comparison.assert_not_called()
+
+    def test_movie_identity_ignores_filename_but_not_bytes(self):
+        another = self.root / "another-fictional.bk2"
+        another.write_bytes(self.movie.read_bytes())
+        self.assertEqual(
+            _private_movie_identity(self.movie),
+            _private_movie_identity(another),
+        )
+        another.write_bytes(b"changed")
+        self.assertNotEqual(
+            _private_movie_identity(self.movie),
+            _private_movie_identity(another),
+        )
+
+    def test_movie_identity_rejects_symlink(self):
+        mirror = self.root / "fictional-symlink.bk2"
+        try:
+            mirror.symlink_to(self.movie)
+        except (OSError, NotImplementedError):
+            self.skipTest("symlink creation not available")
+        with self.assertRaises((OSError, ValueError)):
+            _private_movie_identity(mirror)
+
+    def test_movie_identity_rejects_oversized_file_before_full_read(self):
+        oversized = self.root / "too-big-fictional.bk2"
+        with oversized.open("wb") as handle:
+            handle.truncate(8 * 1024 * 1024 + 1)
+        with self.assertRaisesRegex(ValueError, "bounded size"):
+            _private_movie_identity(oversized)
 
     def test_first_process_failure_stops_before_second(self):
         with patch(
