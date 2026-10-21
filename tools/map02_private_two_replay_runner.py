@@ -16,7 +16,10 @@ import subprocess
 import sys
 
 from tools.map02_private_bk2_capture_plan import plan_lines, write_private_plan
-from tools.map02_private_bizhawk_poweron_launch import SCRIPT
+from tools.map02_private_bizhawk_poweron_launch import (
+    SCRIPT, DEFAULT_EMULATOR_TIMEOUT_SECONDS,
+    MIN_EMULATOR_TIMEOUT_SECONDS, MAX_EMULATOR_TIMEOUT_SECONDS,
+)
 from tools.map02_private_disc_movie_preflight import (
     inspect_pair, read_private_full_bin_sha256,
 )
@@ -51,6 +54,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
                   private_workspace: Path, *,
                   expected_digest_file: Path | None = None,
                   max_windows: int = 4,
+                  emulator_timeout_seconds: int | None = None,
                   start: bool = False) -> dict:
     """Require explicit opt-in; run separate fresh emulator subprocesses.
 
@@ -65,6 +69,11 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         raise ValueError("private capture window count must be 1..10")
     if type(start) is not bool:
         raise ValueError("private execution opt-in must be boolean")
+    if emulator_timeout_seconds is not None and (
+            type(emulator_timeout_seconds) is not int or
+            not MIN_EMULATOR_TIMEOUT_SECONDS <= emulator_timeout_seconds
+            <= MAX_EMULATOR_TIMEOUT_SECONDS):
+        raise ValueError("emulator timeout seconds must be within 300..86400")
     emulator = Path(private_emuhawk)
     if (not emulator.is_absolute() or not emulator.is_file()
             or not SCRIPT.is_absolute() or not SCRIPT.is_file()):
@@ -92,6 +101,11 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             "media_preflight_passed": True,
             "private_capture_plan_rows_checked": len(candidate) - 3,
             "full_bin_sha256_checked": digest is not None,
+            "emulator_timeout_seconds": (
+                emulator_timeout_seconds
+                if emulator_timeout_seconds is not None
+                else DEFAULT_EMULATOR_TIMEOUT_SECONDS
+            ),
             "emulator_processes_started": 0,
             "capture_attempts_audited": 0,
             "owner_private_assets_uploaded": False,
@@ -115,6 +129,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         ]
         if expected_digest_file is not None:
             argv += ["--private-full-bin-sha256-file", str(expected_digest_file)]
+        if emulator_timeout_seconds is not None:
+            argv += ["--emulator-timeout-seconds", str(emulator_timeout_seconds)]
         argv.append("--launch")
         # The child wrapper redirects EmuHawk stdout/stderr (which contain
         # absolute private paths) into files in the private capture folder.
@@ -137,6 +153,11 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         "explicit_launch_requested": True,
         "emulator_processes_started": 2,
         "capture_attempts_audited": 2,
+        "emulator_timeout_seconds": (
+            emulator_timeout_seconds
+            if emulator_timeout_seconds is not None
+            else DEFAULT_EMULATOR_TIMEOUT_SECONDS
+        ),
         "screenshot_pairs_checked": paired["screenshot_pairs_checked"],
         "matching_pixel_pairs": paired["decoded_pixel_equal_pairs"],
         "different_pixel_pairs": paired["decoded_pixel_different_pairs"],
@@ -158,6 +179,10 @@ def main() -> int:
     parser.add_argument("owner_existing_empty_private_workspace", type=Path)
     parser.add_argument("--private-full-bin-sha256-file", type=Path)
     parser.add_argument("--max-windows", type=int, default=4)
+    parser.add_argument(
+        "--emulator-timeout-seconds", type=int,
+        help="Optional EmuHawk watchdog, between 300 and 86400 seconds",
+    )
     parser.add_argument("--launch-two", action="store_true",
                         help="Actually run TWO sequential local EmuHawk processes")
     args = parser.parse_args()
@@ -168,6 +193,7 @@ def main() -> int:
             args.owner_existing_empty_private_workspace,
             expected_digest_file=args.private_full_bin_sha256_file,
             max_windows=args.max_windows,
+            emulator_timeout_seconds=args.emulator_timeout_seconds,
             start=args.launch_two,
         )
     except (OSError, ValueError, TypeError, RuntimeError, KeyError):
