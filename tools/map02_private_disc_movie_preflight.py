@@ -16,7 +16,10 @@ import re
 import stat
 import zipfile
 
-from tools.inspect_map02_private_bk2 import parse_header, parse_sync, read_small, safe_members
+from tools.inspect_map02_private_bk2 import (
+    MAX_FRAMES, MAX_INPUT_BYTES, check_logkey, parse_header, parse_sync,
+    read_frame, read_small, safe_members,
+)
 
 SECTOR_BYTES = 2352
 USER_DATA_OFFSET = 24
@@ -34,6 +37,7 @@ EXPECTED_VOLUME_ID = "SLUS_00447"
 EXPECTED_MAP02_SHA256 = "c370660f7f13e6d6e76f4126a45418bc9c64c747de8309ca946d37b502516387"
 MAX_CUE_BYTES = 64 * 1024
 SCHEMA = "vh.map02.private-disc-movie-preflight.v1"
+EXPECTED_MOVIE_FRAMES = 933949
 
 
 def _identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
@@ -241,7 +245,8 @@ def _disc_profile(bin_path: Path, expected_map02_sha256: str, *,
     return volume_match, resource_match, size_match, full_match
 
 
-def _movie_metadata(movie_path: Path) -> tuple[bool, bool]:
+def _movie_metadata(movie_path: Path, expected_movie_frames: int
+                    ) -> tuple[bool, bool, bool]:
     fd, before = _open_stable(movie_path)
     with os.fdopen(fd, "rb") as handle:
         if before.st_size <= 0 or before.st_size > 8 * 1024 * 1024:
@@ -267,17 +272,45 @@ def _movie_metadata(movie_path: Path) -> tuple[bool, bool]:
                 )
             except ValueError:
                 sync_match = False
+            # Check the entire BK2 controller stream. Header/sync metadata alone
+            # can be copied into a movie with malformed or truncated inputs.
+            with archive.open("Input Log.txt") as raw:
+                if raw.readline(256).strip() != b"[Input]":
+                    raise ValueError("BK2 input block missing")
+                check_logkey(raw.readline(2048).rstrip(b"\r\n"))
+                frames = 0
+                bytes_read = 0
+                ended = False
+                for raw_line in raw:
+                    bytes_read += len(raw_line)
+                    if bytes_read > MAX_INPUT_BYTES:
+                        raise ValueError("BK2 input expansion limit exceeded")
+                    line = raw_line.rstrip(b"\r\n")
+                    if line == b"[/Input]":
+                        ended = True
+                        break
+                    read_frame(line)
+                    frames += 1
+                    if frames > MAX_FRAMES:
+                        raise ValueError("BK2 input frame limit exceeded")
+                if not ended or raw.read(1):
+                    raise ValueError("BK2 input end marker missing or extra bytes")
+            input_match = frames == expected_movie_frames
         _assert_stable(handle.fileno(), movie_path, before)
-        return header_match, sync_match
+        return header_match, sync_match, input_match
 
 
 def inspect_pair(cue_path: Path, movie_path: Path, *,
                  expected_map02_sha256: str = EXPECTED_MAP02_SHA256,
                  verify_full_bin_sha256: bool = False,
-                 expected_bin_sha256: str | None = None) -> dict:
+                 expected_bin_sha256: str | None = None,
+                 expected_movie_frames: int = EXPECTED_MOVIE_FRAMES) -> dict:
     if (not isinstance(expected_map02_sha256, str)
             or not re.fullmatch(r"[0-9a-f]{64}", expected_map02_sha256)):
         raise ValueError("expected MAP02 profile digest must be lowercase SHA-256")
+    if (type(expected_movie_frames) is not int
+            or not 1 <= expected_movie_frames <= MAX_FRAMES):
+        raise ValueError("expected BK2 frame count is outside bounded range")
     if type(verify_full_bin_sha256) is not bool:
         raise ValueError("full BIN verification flag must be boolean")
     if verify_full_bin_sha256 and (
@@ -296,12 +329,15 @@ def inspect_pair(cue_path: Path, movie_path: Path, *,
         verify_full_bin_sha256=verify_full_bin_sha256,
         expected_bin_sha256=expected_bin_sha256,
     )
-    movie_header_match, movie_sync_match = _movie_metadata(movie)
+    movie_header_match, movie_sync_match, movie_input_match = _movie_metadata(
+        movie, expected_movie_frames
+    )
     profile_match = (
         volume_match and resource_match and size_match
         and (not verify_full_bin_sha256 or full_match is True)
     )
-    ready = profile_match and movie_header_match and movie_sync_match
+    ready = (profile_match and movie_header_match and movie_sync_match
+             and movie_input_match)
     return {
         "schema": SCHEMA,
         "cue_single_mode2_2352_track": True,
@@ -313,6 +349,7 @@ def inspect_pair(cue_path: Path, movie_path: Path, *,
         "map02_prs_matches_expected_profile": resource_match,
         "movie_header_matches_vandal_hearts_usa_psx_octoshock": movie_header_match,
         "movie_sync_matches_one_controller_no_cards": movie_sync_match,
+        "movie_input_log_matches_expected_frame_count": movie_input_match,
         "media_preflight_ready_for_owner_replay": ready,
         "exact_disc_movie_compatibility_verified": False,
         "bios_configuration_verified": False,
