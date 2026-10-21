@@ -143,6 +143,27 @@ class DiscMoviePreflightTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "MSF address"):
             self.call()
 
+    def test_rejects_inconsistent_duplicate_cdxa_subheader(self):
+        # Keep MAP02 payload and its digest unchanged; corrupt only the
+        # second four-byte CD-XA subheader copy.
+        target = MAP02_LBA + 2
+        with self.bin.open("r+b") as handle:
+            handle.seek(target * SECTOR_BYTES + 20)
+            handle.write(b"\\x01")
+        with self.assertRaisesRegex(ValueError, "repeated subheader mismatch"):
+            self.call()
+
+    def test_rejects_mode2_form2_disguised_as_form1(self):
+        # Form 2 uses a different data layout. Ensure the 2048-byte map
+        # payload isn't interpreted as valid Form 1 after header mutation.
+        target = MAP02_LBA + 4
+        with self.bin.open("r+b") as handle:
+            for offset in (18, 22):
+                handle.seek(target * SECTOR_BYTES + offset)
+                handle.write(b"\\x20")
+        with self.assertRaisesRegex(ValueError, "Form 2 sector"):
+            self.call()
+
     def test_different_map02_resource_profile_is_not_accepted(self):
         result = self.call(expected_map02_sha256=hashlib.sha256(b"other profile").hexdigest())
         self.assertFalse(result["map02_prs_matches_expected_profile"])
