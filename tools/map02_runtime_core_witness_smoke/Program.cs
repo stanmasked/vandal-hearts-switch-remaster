@@ -15,6 +15,7 @@ namespace VhMap02LoaderSmoke
     internal static class Program
     {
         private static string _root = "";
+        private static string _stage = "initial";
 
         private static Assembly Resolve(object sender, ResolveEventArgs args)
         {
@@ -46,6 +47,7 @@ namespace VhMap02LoaderSmoke
                     throw new InvalidOperationException("official release or plugin missing");
 
                 AppDomain.CurrentDomain.AssemblyResolve += Resolve;
+                _stage = "typed-assembly-load";
                 RunSmoke(plug);
                 Console.WriteLine(
                     "VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_PASS"
@@ -53,11 +55,14 @@ namespace VhMap02LoaderSmoke
                     + " emulator_process_started=0 original_disc=0 bios=0 bk2=0");
                 return 0;
             }
-            catch (Exception)
+            catch (Exception error)
             {
-                // Never emit external loader exception messages with local paths.
+                // Print only finite controlled phases and exception TYPE;
+                // exception messages and paths can reveal private information.
                 Console.Error.WriteLine(
-                    "VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_FAIL authenticated=0");
+                    "VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_FAIL"
+                    + " stage=" + _stage + " exception_type=" + error.GetType().Name
+                    + " authenticated=0");
                 return 1;
             }
         }
@@ -67,12 +72,14 @@ namespace VhMap02LoaderSmoke
         private static void RunSmoke(string plug)
         {
                 var assembly = Assembly.LoadFrom(plug);
+                _stage = "assembly-references";
                 if (!assembly.GetReferencedAssemblies().Any(
                         name => name.Name != null && name.Name.StartsWith("BizHawk.")))
                     throw new InvalidOperationException("no direct BizHawk reference");
 
                 // Same core matching predicate as upstream 2.11
                 // ExternalToolManager.GenerateToolTipFromFileName().
+                _stage = "metadata-discovery";
                 var candidates = assembly.GetTypes().Where(
                     type => typeof(IExternalToolForm).IsAssignableFrom(type)
                         && type.GetCustomAttributes(typeof(ExternalToolAttribute), true).Any()
@@ -86,6 +93,7 @@ namespace VhMap02LoaderSmoke
                 if (attribute.Name != "VH MAP02 Core Witness")
                     throw new InvalidOperationException("unexpected external tool name");
 
+                _stage = "injection-property";
                 var property = entrypoint.GetProperty("Emulator", BindingFlags.Instance
                     | BindingFlags.Public | BindingFlags.NonPublic);
                 if (property == null || property.PropertyType != typeof(IEmulator)
@@ -94,11 +102,14 @@ namespace VhMap02LoaderSmoke
                         typeof(RequiredServiceAttribute), true).Any())
                     throw new InvalidOperationException("live IEmulator injection hook missing");
 
+                _stage = "form-activation";
                 using (var form = Activator.CreateInstance(entrypoint) as Form)
                 {
                     if (form == null || !(form is IExternalToolForm))
                         throw new InvalidOperationException("external form constructor failed");
+                    _stage = "null-core-restart";
                     ((IExternalToolForm)form).Restart();
+                    _stage = "disabled-save-control";
                     var saveButtons = form.Controls.OfType<Button>().ToArray();
                     if (saveButtons.Length != 1 || saveButtons[0].Enabled)
                         throw new InvalidOperationException(
