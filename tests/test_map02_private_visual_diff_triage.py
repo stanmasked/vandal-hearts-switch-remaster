@@ -139,9 +139,9 @@ class PrivateVisualTriageTests(unittest.TestCase):
 
     def test_underlying_chain_failure_prevents_visual_ranking(self):
         with patch("tools.map02_private_visual_diff_triage.verify_chain",
-                   side_effect=ValueError("wrong BK2")),
-                self.assertRaises(ValueError):
-            triage(self.movie, self.plan, self.log, self.pictures)
+                   side_effect=ValueError("wrong BK2")):
+            with self.assertRaises(ValueError):
+                triage(self.movie, self.plan, self.log, self.pictures)
 
     def test_save_report_0600_with_no_image_bytes(self):
         result = self.call()
