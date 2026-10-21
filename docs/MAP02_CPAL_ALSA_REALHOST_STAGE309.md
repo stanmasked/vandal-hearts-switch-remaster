@@ -1,0 +1,19 @@
+# MAP02 Stage309 — independently compile the new CPAL / ALSA direct-TLS-tag NeXium host
+
+**Experimental research only / Draft / DO NOT MERGE.** Stacked on [Stage308 Draft PR #408](https://github.com/stanmasked/vandal-hearts-switch-remaster/pull/408), which prepares the source-anchored `map02_s308_callback_tag_only()` hook and two-thread synthetic ALSA-null identity test. This Stage309 builds an **actual new Linux x86_64 release NeXium executable** rather than treating source parsing as a compiled emulator. It is **not** an actual 21/22ms guest run or proof of live CPAL identity.
+
+## Exact sources and host reproduction
+
+The actual GitHub Actions runner separately checks out the pinned original `nexium-emu/nexium` upstream commit `089562567a0a8760dfdd8420e1f57c35159a9219`, recursively including Rustarmic. It verifies a completely clean source tree and source diff scope. The Stage274 source overlay and Stage286/Stage298 CPAL lifetime overlays are applied exactly as in the successful original Stage298 host build. Only **after** preserving the original Stage298 `audio.rs` source SHA does CI apply Stage308's opt-in callback marker to the same `audio.rs` in the local workspace (never upstream). The unchanged source's guest AudioOut counters, callback entry/return counters, P/L reporter, build/play/drop stamps and CPAL body remain present.
+
+The new build uses the same pinned original Cargo.lock SHA-256 `e6e8fcb90624650afddd1f25327dd4e6b042b094e8336cb5f43d2dc370e28739` with a Cargo release build for `nexium-gui --bin nexium --no-default-features --features backend-rustarmic`. CI rejects unexpected source edits, unresolved shared libs, ELF without the original lifetime trace tags, or ELF that does not contain the newly instrumented opt-in Stage308 callback hook guard `VH_MAP02_STAGE308_CALLBACK_TAG` and pre-resolved symbol name `vh_map02_stage308_cpal_callback_mark`. Both the original Stage298 source SHA and new Stage309 source SHA are retained in build artifacts. The **new experimental binary has its own SHA-256** and MUST NOT overwrite or be represented as the original confirmed Stage298 ELF SHA-256 `fb154cbd581826a4f217485eff338badf0ea14c28a82bff258e7baf32c84153a`.
+
+The exact callback hook remains disabled unless a separate future guest launcher sets `VH_MAP02_STAGE308_CALLBACK_TAG=1` and preloads the Stage308 interposer, which has its own synthetic source-verified anonymous TLS slot marker. Stage309 does **not** set that variable and does **not** run a generated NRO. It builds and packages only a separately identified experimental host ELF, without any game ROM or PS1 audio assets.
+
+## Evidence boundaries and next gate
+
+The original Stage307 21/22ms result was **temporal coactivity only**. Stage308's new callback/shim identity mechanism requires a synthetically verified pair of different ALSA threads before guest use. Stage309 requires proof a **new** instrumented NeXium ELF builds and contains the CPAL symbol hook. Neither source parsing, ELF build, successful synthetic ALSA-null forwarding nor an opt-in symbol being present proves that the hook executes in a real CPAL callback.
+
+A subsequent independent 21/22ms ROM-free NeXium guest run must source-pin both the **new Stage309 ELF SHA** and unchanged generated NRO SHA-256 `371c9fd9f1f41ad87cbb5f7f96a3e5e9d56878f8cfff2bf7fea2c17120c2611b`, preload the Stage308 shim **only in the host process**, and show whether the exact same TLS alias receives both the actual CPAL marker and ALSA exported-function calls. Even if it does, this proves identity only inside a **new instrumented experiment**; extra relaxed atomic callbacks and LD_PRELOAD perturb scheduling. It does not prove an uninstrumented 21ms backend cause, production fix, physical Nintendo Switch audio or original PS1 soundtrack output.
+
+**Strict scope:** Stage309 adds only this document and its CI workflow, without touching main, prior experimental ELF/NRO, original game, or NeXium upstream.

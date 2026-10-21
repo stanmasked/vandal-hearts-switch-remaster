@@ -1,0 +1,371 @@
+name: MAP02 Stage309 real compiled experimental NeXium with CPAL ALSA TLS tagging
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-cpal-alsa-direct-realhost-stage309.yml'
+      - 'docs/MAP02_CPAL_ALSA_REALHOST_STAGE309.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VH_RESEARCH_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  VH_PARENT_SHA: 'e00647e00f19e57a3c94f50a74e3007980fa16b4'
+  NEXIUM_SOURCE_SHA: '089562567a0a8760dfdd8420e1f57c35159a9219'
+  CARGO_TERM_COLOR: never
+
+jobs:
+  cpal-host-build:
+    name: Build opt-in Stage309 same-TLS-marked x86_64 Linux NeXium independently of original Stage298 host
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact-stage research tools
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_RESEARCH_SHA }}
+          path: research
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout immutable independent NeXium source
+        uses: actions/checkout@v4
+        with:
+          repository: nexium-emu/nexium
+          ref: 089562567a0a8760dfdd8420e1f57c35159a9219
+          path: upstream
+          fetch-depth: 1
+          submodules: recursive
+          persist-credentials: false
+      - name: Fail closed on unexpected source or code changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C research rev-parse HEAD)" = "$VH_RESEARCH_SHA"
+          test "$(git -C upstream rev-parse HEAD)" = "$NEXIUM_SOURCE_SHA"
+          test -s upstream/rustarmic/Cargo.toml
+          test "$(git -C upstream submodule status --recursive | grep -c rustarmic)" -ge 1
+          python3 - <<'PY'
+          import os,subprocess
+          changed=set(subprocess.check_output(
+              ["git","-C","research","diff","--name-only",
+               os.environ["VH_PARENT_SHA"],"HEAD"],text=True).splitlines())
+          allowed={
+              ".github/workflows/map02-cpal-alsa-direct-realhost-stage309.yml",
+              "docs/MAP02_CPAL_ALSA_REALHOST_STAGE309.md",
+          }
+          assert changed and changed<=allowed,(sorted(changed-allowed),sorted(changed))
+          assert not subprocess.check_output(
+              ["git","-C","upstream","status","--porcelain"],text=True).strip()
+          print("Frozen parent, exactly two host-only research changes:",sorted(changed))
+          PY
+      - name: Install system dependencies for actual Linux CPAL/ALSA type-check
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config \
+            clang libclang-dev llvm-dev libasound2-dev libpulse-dev \
+            libudev-dev libdbus-1-dev libopus-dev libssl-dev \
+            libgtk-3-dev libibus-1.0-dev libx11-dev libxext-dev \
+            libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev \
+            libxtst-dev libxinerama-dev libxkbcommon-dev libwayland-dev \
+            wayland-protocols libdecor-0-dev libdrm-dev libgbm-dev
+          pkg-config --modversion alsa
+          pkg-config --modversion opus
+      - name: Set stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: upstream
+          cache-on-failure: true
+      - name: Synthetic overlay tests, then apply to exact upstream code
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s research/tests \
+            -p 'test_prepare_map02_nexium_cpal_overlay.py' -v
+          python3 research/tools/prepare_map02_nexium_cpal_overlay.py \
+            --upstream upstream --manifest stage275-source-overlay-receipt.json
+      - name: Apply Stage286 lifecycle/error probes on top of Stage274 counters
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s research/tests \
+            -p 'test_patch_map02_cpal_lifecycle_stage286.py' -v
+          python3 research/tools/patch_map02_cpal_lifecycle_stage286.py \
+            --input upstream/nexium-runner/src/audio.rs \
+            --output upstream/nexium-runner/src/map02-stage287-temporary.rs
+          mv upstream/nexium-runner/src/map02-stage287-temporary.rs \
+            upstream/nexium-runner/src/audio.rs
+          sha256sum upstream/nexium-runner/src/audio.rs \
+            > stage287-lifecycle-source-sha256.txt
+          rustfmt --edition 2021 --emit stdout upstream/nexium-runner/src/audio.rs >/dev/null
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path("upstream/nexium-runner/src/audio.rs").read_text()
+          assert all("MAP02_CPAL_LIFECYCLE.store("+str(n) in s for n in (1,2,3,4,5))
+          assert "MAP02_CPAL_ERROR_COUNT.fetch_add" in s
+          assert 'writeln!(output, "L,{nanos},{lifecycle},{errors}' in s
+          print("Stage286 source-pinned lifecycle probes verified")
+          PY
+      - name: Apply Stage298 NON-real-time CPAL lifetime stamp and stream guard overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s research/tests \
+            -p 'test_patch_map02_cpal_stream_timestamps_stage298.py' -v
+          python3 research/tools/patch_map02_cpal_stream_timestamps_stage298.py \
+            --input upstream/nexium-runner/src/audio.rs \
+            --output upstream/nexium-runner/src/map02-stage298-temporary.rs
+          mv upstream/nexium-runner/src/map02-stage298-temporary.rs \
+             upstream/nexium-runner/src/audio.rs
+          sha256sum upstream/nexium-runner/src/audio.rs \
+            > stage298-timestamp-source-sha256.txt
+          rustfmt --edition 2021 --emit stdout upstream/nexium-runner/src/audio.rs >/dev/null
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path("upstream/nexium-runner/src/audio.rs").read_text()
+          assert 'VH_MAP02_CPAL_LIFETIME_PATH' in s
+          assert 'P,{nanos},{build_begin},{build_ok}' in s
+          assert s.count('writeln!(output, "L,{nanos}') == 1
+          assert s.count('writeln!(second,') == 1
+          assert "impl Drop for Map02S298RetainedStream" in s
+          assert "stream.pause()" not in s
+          assert s.count('MAP02_CPAL_ENTER.fetch_add(1, Ordering::Relaxed)')==2
+          print("Verified new independent P reporter and unchanged L/CPAL callback path")
+          PY
+      - name: Stage308 exact source-anchored CPAL/ALSA identity hook after unchanged Stage298 overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s research/tests \
+            -p 'test_patch_map02_cpal_thread_tag_stage308.py' -v
+          test -s upstream/nexium-runner/src/audio.rs
+          sha256sum upstream/nexium-runner/src/audio.rs \
+            > stage309-original-stage298-source-sha256.txt
+          python3 research/tools/patch_map02_cpal_thread_tag_stage308.py \
+            --input upstream/nexium-runner/src/audio.rs \
+            --output stage309-opt-in-only-audio.rs
+          mv stage309-opt-in-only-audio.rs upstream/nexium-runner/src/audio.rs
+          sha256sum upstream/nexium-runner/src/audio.rs \
+            > stage309-opt-in-direct-tls-source-sha256.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path("upstream/nexium-runner/src/audio.rs").read_text()
+          assert s.count("map02_s308_callback_tag_only();")==2
+          assert s.count("map02_s308_prepare_callback_hook();")==1
+          assert s.count("MAP02_CPAL_ENTER.fetch_add(1, Ordering::Relaxed);")==2
+          assert s.count("MAP02_CPAL_RETURN.fetch_add(1, Ordering::Relaxed);")==2
+          assert s.count('writeln!(output, "L,{nanos}')==1
+          assert s.count('writeln!(second,')==1
+          assert "stream.pause()" not in s
+          assert 'VH_MAP02_STAGE308_CALLBACK_TAG' in s
+          assert 'libc::dlsym(libc::RTLD_DEFAULT' in s
+          print("Both CPAL callbacks retain original counters and add an opt-in marker only")
+          PY
+          rustfmt --edition 2021 --emit stdout \
+            upstream/nexium-runner/src/audio.rs >/dev/null
+      - name: Verify overlay applies to only declared NeXium code paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,subprocess
+          from pathlib import Path
+          m=json.loads(Path("stage275-source-overlay-receipt.json").read_text())
+          expected={"nexium-runner/src/audio.rs",
+                    "nexium-kernel/src/services/audio_out/handlers.rs",
+                    "nexium-runner/Cargo.toml"}
+          observed=set(subprocess.check_output(
+              ["git","-C","upstream","diff","--name-only"],text=True).splitlines())
+          assert m["upstream_git_sha_expected"]=="089562567a0a8760dfdd8420e1f57c35159a9219"
+          assert observed==expected,(observed,expected)
+          assert {x["path"] for x in m["source_files"]}==expected
+          assert all(x["sha256_before"]!=x["sha256_after"] for x in m["source_files"])
+          print("Only pinned runner/kernel/Cargo files changed:",sorted(observed))
+          PY
+          rustfmt --edition 2021 --emit stdout \
+            upstream/nexium-runner/src/audio.rs >/dev/null
+          rustfmt --edition 2021 --emit stdout \
+            upstream/nexium-kernel/src/services/audio_out/handlers.rs >/dev/null
+      - name: Resolve Cargo dependencies and record exact lockfile checksum
+        shell: bash
+        env:
+          CARGO_NET_RETRY: '2'
+        run: |
+          set -euo pipefail
+          cargo generate-lockfile --manifest-path upstream/Cargo.toml \
+            2>&1 | tee stage275-lockfile-resolution.log
+          test -s upstream/Cargo.lock
+          sha256sum upstream/Cargo.lock | tee stage275-cargo-lock-sha256.txt
+          rustc --version
+          cargo --version
+      - name: Enforce the proven Stage275 dependency lock SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED='e6e8fcb90624650afddd1f25327dd4e6b042b094e8336cb5f43d2dc370e28739'
+          ACTUAL="$(cut -d ' ' -f1 stage275-cargo-lock-sha256.txt)"
+          if [[ "$ACTUAL" != "$EXPECTED" ]]; then
+            echo "::error::Cargo.lock differs from independently type-checked Stage275; do not silently build with different dependencies"
+            exit 1
+          fi
+          echo "Pinning Cargo dependency graph SHA-256: $ACTUAL"
+      - name: Build actual Linux NeXium GUI with instrumented CPAL and Rustarmic
+        shell: bash
+        timeout-minutes: 65
+        env:
+          CARGO_NET_RETRY: '2'
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path upstream/Cargo.toml \
+            --release --locked --package nexium-gui --bin nexium \
+            --no-default-features --features backend-rustarmic \
+            2>&1 | tee stage287-host-release-build.log
+          test -x upstream/target/release/nexium
+          file upstream/target/release/nexium
+          readelf -h upstream/target/release/nexium | head -n 25
+          ldd upstream/target/release/nexium | tee stage287-host-linked-dependencies.txt
+          if grep -F 'not found' stage287-host-linked-dependencies.txt; then
+            echo "::error::New Stage309 NeXium host build has unresolved shared libraries"
+            exit 1
+          fi
+      - name: Independently verify ELF binary provenance and researcher-only content
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os,platform,subprocess
+          from pathlib import Path
+          src=Path("upstream/target/release/nexium")
+          raw=src.read_bytes()
+          assert len(raw)>100000, "Host executable suspiciously small"
+          assert raw[:4]==b"\x7fELF", "Not an ELF host executable"
+          assert platform.machine()=="x86_64","Non-x86_64 runner"
+          assert b"VH_MAP02_CPAL_TRACE_PATH" in raw, (
+              "Compiled host missing research-only CPAL telemetry switch")
+          assert b"map02-cpal-counts" in raw, (
+              "Compiled host missing callback observation thread name")
+          assert b"VH_MAP02_STAGE308_CALLBACK_TAG" in raw, (
+              "Compiled host missing opt-in Stage308 CPAL callback hook guard")
+          assert b"vh_map02_stage308_cpal_callback_mark" in raw, (
+              "Compiled host missing pre-resolved Stage308 shim callback hook symbol")
+          assert b"VH_MAP02_CPAL_LIFETIME_PATH" in raw, (
+              "Compiled Stage298 executable missing opt-in P lifetime report switch")
+          overlay=json.loads(Path("stage275-source-overlay-receipt.json").read_text())
+          lock_sha=hashlib.sha256(Path("upstream/Cargo.lock").read_bytes()).hexdigest()
+          expected="e6e8fcb90624650afddd1f25327dd4e6b042b094e8336cb5f43d2dc370e28739"
+          assert lock_sha==expected
+          assert overlay["upstream_git_sha_expected"]==os.environ["NEXIUM_SOURCE_SHA"]
+          assert len(overlay["source_files"])==3
+          manifest={
+            "schema":"vh-map02-stage309-real-compiled-opt-in-cpal-alsa-tls-host/v1",
+            "result":"STAGE309_EXPERIMENTAL_SAME_TLS_TAGGED_NEXIUM_LINUX_BINARY_COMPILED",
+            "research_head_sha":os.environ["VH_RESEARCH_SHA"],
+            "pinned_upstream_source_sha":os.environ["NEXIUM_SOURCE_SHA"],
+            "cargo_lock_sha256":lock_sha,
+            "executable_sha256":hashlib.sha256(raw).hexdigest(),
+            "executable_size_bytes":len(raw),
+            "platform":"linux-x86_64",
+            "rustc_version":subprocess.check_output(["rustc","--version"],
+                                                     text=True).strip(),
+            "cargo_version":subprocess.check_output(["cargo","--version"],
+                                                     text=True).strip(),
+            "cpu_backend":"rustarmic",
+            "source_overlay_files":overlay["source_files"],
+            "stage286_lifecycle_overlay_source_sha":"95a89aa0e43f1a28b8d4e25b477f7aa7e4045ee7",
+            "lifecycle_instrumented_audio_source_sha256":hashlib.sha256(
+                Path("upstream/nexium-runner/src/audio.rs").read_bytes()).hexdigest(),
+            "stage309_opt_in_original_host_unmodified":True,
+            "stage309_separate_new_host_elf":True,
+            "stage309_direct_cpal_alsa_tls_probe_function_compiled":True,
+            "stage309_direct_cpal_alsa_tls_source_marker_in_both_callbacks":True,
+            "stage309_real_cpal_callback_invocations_verified":False,
+            "stage309_synthetic_tls_pair_consistency_verified_by_this_job":False,
+            "stage309_marker_from_guest_audio_verified":False,
+            "stage309_actual_alsa_thread_identity_verified":False,
+            "stage298_separate_cpal_lifetime_p_csv":True,
+            "stage298_non_rt_build_play_drop_timestamps":True,
+            "stage298_same_original_cpal_callbacks":True,
+            "stage298_original_l_csv_unchanged":True,
+            "stage298_exact_callback_time_proven":False,
+            "stage309_realtime_instrumentation_scheduling_neutrality_proven":False,
+            "stage298_device_pause_reported":False,
+            "stage298_instrumentation_causal_perturbation_excluded":False,
+            "cpal_lifecycle_csv_prefix":"L",
+            "cpal_lifecycle_state_reporter_added":True,
+            "cpal_error_callback_counter_added":True,
+            "stream_pause_drop_or_causal_mechanism_proven":False,
+            "cpal_trace_opt_in_env_present":True,
+            "lifecycle_events_executed_at_runtime_proven":False,
+            "build_profile":"release",
+            "nightly_binary_equivalence_proven":False,
+            "emulator_guest_boot_proven":False,
+            "cpal_callback_runtime_activity_proven":False,
+            "guest_audout_service_root_cause_proven":False,
+            "physical_nintendo_switch_audio_proven":False,
+            "licensed_game_rom_or_pcm_included":False,
+          }
+          Path("stage287-host-build-manifest.json").write_text(
+              json.dumps(manifest,indent=2,sort_keys=True)+"\n",
+              encoding="utf-8")
+          print(json.dumps(manifest,indent=2,sort_keys=True))
+          PY
+      - name: Package isolated research-only NeXium host without ROMs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stage309-host-binary
+          install -m 0755 upstream/target/release/nexium stage309-host-binary/nexium
+          cp stage287-host-build-manifest.json stage309-host-binary/manifest.json
+          sha256sum stage309-host-binary/nexium
+      - name: Report build status without claiming guest audio success
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          m=Path("stage287-host-build-manifest.json")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              print("### Stage309 truly compiled NEW opt-in same-TLS CPAL/ALSA identity host ELF",file=out)
+              if not m.is_file():
+                  print("**UNVERIFIED**: release binary build/ELF identity not confirmed.",file=out)
+              else:
+                  x=json.loads(m.read_text())
+                  print("Result: "+x["result"],file=out)
+                  print("Binary SHA-256: "+x["executable_sha256"],file=out)
+                  print("Upstream source SHA: "+x["pinned_upstream_source_sha"],file=out)
+                  print("Cargo.lock SHA-256: "+x["cargo_lock_sha256"],file=out)
+                  print("**No guest boot, CPAL runtime evidence, 21-ms fix, "
+                        "nightly equivalence or physical Switch DAC proof.**",file=out)
+          PY
+      - name: Archive binary identity, bounded build logs and dependency snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-stage309-real-compiled-opt-in-cpal-alsa-direct-tls-source-evidence
+          path: |
+            stage275-source-overlay-receipt.json
+            stage287-host-build-manifest.json
+            stage275-cargo-lock-sha256.txt
+            stage275-lockfile-resolution.log
+            stage287-host-release-build.log
+            stage287-host-linked-dependencies.txt
+            stage287-lifecycle-source-sha256.txt
+            stage298-timestamp-source-sha256.txt
+            stage309-original-stage298-source-sha256.txt
+            stage309-opt-in-direct-tls-source-sha256.txt
+          if-no-files-found: warn
+      - name: Upload the isolated experimental NeXium Linux binary
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-stage309-new-optin-direct-alsa-cpal-tagged-nexium-linux-x86_64
+          path: stage309-host-binary/
+          if-no-files-found: error
