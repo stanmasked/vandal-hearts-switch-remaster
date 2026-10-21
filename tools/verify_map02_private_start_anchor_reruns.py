@@ -95,7 +95,8 @@ def verify(private_inspection: Path, log_one: Path, folder_one: Path,
         raise ValueError("PNG capture bytes differ between two private runs")
     return {
         "schema": SCHEMA,
-        "independent_capture_run_count": 2,
+        "separate_capture_bundle_count": 2,
+        "capture_run_independence_authenticated": False,
         "matching_screenshot_counter_count": 3,
         "first_start_input_index_zero_based": 1661,
         "capture_counters_one_based": list(COUNTERS),
