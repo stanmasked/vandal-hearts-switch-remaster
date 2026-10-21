@@ -57,11 +57,11 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         argv, env, count = self.call()
         self.assertEqual(count, 3)
         self.assertEqual(argv, [
-            str(self.program), "--movie=" + str(self.bk2),
-            "--lua=" + str(self.lua), str(self.disc),
+            str(self.program.resolve()), "--movie=" + str(self.bk2.resolve()),
+            "--lua=" + str(self.lua.resolve()), str(self.disc.resolve()),
         ])
-        self.assertEqual(env["VH_PRIVATE_CAPTURE_PLAN"], str(self.plan))
-        self.assertEqual(env["VH_PRIVATE_PNG_DIR"], str(self.output))
+        self.assertEqual(env["VH_PRIVATE_CAPTURE_PLAN"], str(self.plan.resolve()))
+        self.assertEqual(env["VH_PRIVATE_PNG_DIR"], str(self.output.resolve()))
         self.assertNotIn("github", str(argv).lower())
 
     def test_owner_original_files_must_not_reside_in_git_checkout(self):
@@ -119,13 +119,13 @@ class PrivateBizHawkBootTests(unittest.TestCase):
     def test_plan_scan_arguments_preserve_movie_clock_bounds(self):
         args, env, count = self.call(
             minimum=240, maximum=1200, after=2000, before=900000)
-        self.assertEqual(args[1], "--movie=" + str(self.bk2))
+        self.assertEqual(args[1], "--movie=" + str(self.bk2.resolve()))
         self.assertEqual(count, 3)
 
     def test_cli_preflight_never_executes_or_echoes_private_paths(self):
         command = [
-            "program", str(self.program), str(self.disc), str(self.bk2),
-            str(self.plan), str(self.output), "--capture-lua", str(self.lua),
+            "program", str(self.program.resolve()), str(self.disc.resolve()), str(self.bk2.resolve()),
+            str(self.plan.resolve()), str(self.output.resolve()), "--capture-lua", str(self.lua.resolve()),
         ]
         with patch.object(sys, "argv", command):
             with patch("tools.map02_private_bizhawk_poweron_launch.plan_lines",
@@ -142,8 +142,8 @@ class PrivateBizHawkBootTests(unittest.TestCase):
 
     def test_explicit_launch_uses_argv_without_shell_or_upload(self):
         args = [
-            "program", str(self.program), str(self.disc), str(self.bk2),
-            str(self.plan), str(self.output), "--capture-lua", str(self.lua),
+            "program", str(self.program.resolve()), str(self.disc.resolve()), str(self.bk2.resolve()),
+            str(self.plan.resolve()), str(self.output.resolve()), "--capture-lua", str(self.lua.resolve()),
             "--launch",
         ]
         with patch.object(sys, "argv", args):
@@ -158,16 +158,16 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.assertEqual(run.call_count, 1)
         c = run.call_args
         self.assertFalse(c.kwargs["shell"])
-        self.assertEqual(c.args[0][1], "--movie=" + str(self.bk2))
-        self.assertEqual(c.args[0][2], "--lua=" + str(self.lua))
-        self.assertEqual(c.kwargs["env"]["VH_PRIVATE_CAPTURE_PLAN"], str(self.plan))
+        self.assertEqual(c.args[0][1], "--movie=" + str(self.bk2.resolve()))
+        self.assertEqual(c.args[0][2], "--lua=" + str(self.lua.resolve()))
+        self.assertEqual(c.kwargs["env"]["VH_PRIVATE_CAPTURE_PLAN"], str(self.plan.resolve()))
         self.assertIn("original_ps1_authenticated=0", stream.getvalue())
-        self.assertNotIn(str(self.bk2), stream.getvalue())
+        self.assertNotIn(str(self.bk2.resolve()), stream.getvalue())
 
     def test_nonzero_emulator_exit_is_not_reported_successful(self):
         args = [
-            "program", str(self.program), str(self.disc), str(self.bk2),
-            str(self.plan), str(self.output), "--capture-lua", str(self.lua),
+            "program", str(self.program.resolve()), str(self.disc.resolve()), str(self.bk2.resolve()),
+            str(self.plan.resolve()), str(self.output.resolve()), "--capture-lua", str(self.lua.resolve()),
             "--launch",
         ]
         with patch.object(sys, "argv", args):
