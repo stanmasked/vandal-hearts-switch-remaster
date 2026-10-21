@@ -46,6 +46,10 @@ RUNTIME_PREFLIGHT = re.compile(
     r"bizhawk_version=([0-9]{1,3}\.[0-9]{1,3}(?:\.[0-9]{1,3})?) "
     r"display=(NTSC|PAL) active_core=unverified"
 )
+CORE_PREFERENCE = re.compile(
+    r"VH_PRIVATE_NEUTRAL_CORE_PREFERENCE preferred=Octoshock "
+    r"fallback=(allowed|blocked|unverified) active_core=unverified"
+)
 START_PREFLIGHT = ("VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 "
                    "candidate_input=1661 first_start_pressed=yes "
                    "ps1_input_delivery=unverified")
@@ -119,6 +123,7 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
     preflight = False
     source_preflight = False
     runtime_profile = None
+    core_preference = None
     process_exit = False
     core_poll_observed = False
     stable_game_rom_id_sampled = False
@@ -142,9 +147,16 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
                     or process_exit):
                 raise ValueError("malformed, duplicate or misplaced runtime profile")
             runtime_profile = match.groups()
+        if line.startswith("VH_PRIVATE_NEUTRAL_CORE_PREFERENCE"):
+            match = CORE_PREFERENCE.fullmatch(line)
+            if (match is None or core_preference is not None
+                    or not source_preflight or runtime_profile is None
+                    or preflight or completed or observed or process_exit):
+                raise ValueError("malformed, duplicate or misplaced PSX core preference")
+            core_preference = match.group(1)
         if line.startswith("VH_PRIVATE_NEUTRAL_START_PREFLIGHT"):
-            if not source_preflight or runtime_profile is None:
-                raise ValueError("missing source or runtime profile before live Start")
+            if not source_preflight or runtime_profile is None or core_preference is None:
+                raise ValueError("missing source, runtime or core preference before live Start")
             if (line != START_PREFLIGHT
                     or preflight or completed or observed):
                 raise ValueError("missing, duplicate or misplaced live Start anchor")
@@ -185,6 +197,7 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
                 lag_samples.append(observed_lag)
             observed.append(item)
     if (not source_preflight or runtime_profile is None
+            or core_preference is None
             or not preflight or completed != 1 or not process_exit
             or len(observed) != len(planned)):
         raise ValueError("capture log missing Start anchor, successful process exit or completion")
@@ -233,6 +246,9 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
         "owner_log_reports_input_poll_callback": core_poll_observed,
         "owner_log_reports_stable_game_rom_id_samples": stable_game_rom_id_sampled,
         "original_disc_full_hash_authenticated": False,
+        "owner_log_reports_octoshock_preference": True,
+        "reported_psx_core_fallback_configuration": core_preference,
+        "octoshock_preference_authenticates_active_core": False,
         "reported_bizhawk_version": runtime_profile[0],
         "reported_psx_display_standard": runtime_profile[1],
         "active_octoshock_core_verified": False,
