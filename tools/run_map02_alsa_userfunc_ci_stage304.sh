@@ -93,6 +93,19 @@ patterns={
   "early_exit_without_gui":r"no window|no such window",
 }
 counts={k:len(re.findall(p,body)) for k,p in patterns.items()}
+# Strictly diagnostic, bounded, redacted *only* matching failure lines.
+# No unfiltered stdout, paths, TIDs, PIDs, hostnames or environment values.
+safe=[]
+for original in raw.decode("utf-8",errors="replace").splitlines():
+ if not re.search(r"error|failed|panic|vulkan|display|render|window",original,re.I):
+  continue
+ value=re.sub(r"(?:/[-_A-Za-z0-9.]+){2,}", "<PATH>",original)
+ value=re.sub(r"[A-Za-z0-9_.%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "<EMAIL>",value)
+ value=re.sub(r"0x[0-9a-fA-F]+", "<ADDR>",value)
+ value=re.sub(r"\b\d{5,}\b", "<NUM>",value)
+ value=re.sub(r"[\x00-\x1f\x7f]", " ",value)
+ safe.append(value[:180])
+ if len(safe)>=4:break
 exit_path=root/"host-early-exit-code.txt"
 exit_code=None
 if exit_path.is_file():
@@ -105,6 +118,7 @@ out={
  "raw_stdout_sha256":hashlib.sha256(raw).hexdigest(),
  "raw_stdout_size_bytes":len(raw),
  "sanitized_error_category_counts":counts,
+ "redacted_failure_lines":safe,
  "raw_stdout_or_private_host_log_uploaded":False,
  "no_alsa_root_cause_or_hardware_audio_proven":True}
 (root/"stage304-sanitized-early-exit.json").write_text(
