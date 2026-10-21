@@ -599,7 +599,7 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         def fake_full_hash(fd, file_size):
             self.assertEqual(file_size, EXPECTED_BIN_BYTES)
             final_byte = os.pread(fd, 1, file_size - 1)
-            return "a" * 64 if final_byte == b"\\x00" else "b" * 64
+            return "a" * 64 if final_byte == b"\x00" else "b" * 64
         def simulated_comparison(*args, **kwargs):
             if stage == "final":
                 with self.bin.open("r+b") as handle:
