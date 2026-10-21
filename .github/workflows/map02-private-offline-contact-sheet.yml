@@ -1,0 +1,46 @@
+name: MAP02 private offline review contact sheet (synthetic CI)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-private-offline-contact-sheet.yml'
+      - 'tools/map02_private_offline_contact_sheet.py'
+      - 'tests/test_map02_private_offline_contact_sheet.py'
+      - 'docs/MAP02_PRIVATE_OFFLINE_CONTACT_SHEET.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  no-network-local-review:
+    name: Fictional local HTML image review (${{ matrix.os }} Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.9'
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: macos-15-intel
+            python: '3.11'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Validate 17 invented offline HTML privacy cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_map02_private_offline_contact_sheet.py' -v \
+            2>&1 | tee /tmp/vh-map02-local-contact-sheet-tests.log
+          grep -F 'Ran 17 tests' /tmp/vh-map02-local-contact-sheet-tests.log
+          if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-local-contact-sheet-tests.log; then
+            exit 1
+          fi
+          echo 'VH_MAP02_OFFLINE_CONTACT_SHEET_PASS invented=17 original_bk2=0 owner_png=0 real_octoshock=0 map02=unknown'
