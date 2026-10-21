@@ -72,7 +72,47 @@ export MAP02_NRO="$PWD/guest/vandal-hearts-map02-audio.nro"
 export MAP02_EVIDENCE="$PWD/evidence"
 export MAP02_ALSA_SHIM="$PWD/research/libvh_map02_alsa_stage304.so"
 export VH_MAP02_CPAL_LIFETIME_PATH="$MAP02_EVIDENCE/host-cpal-lifetime-p.csv"
-bash tools/run_map02_alsa_userfunc_guest_stage304.sh
+if ! bash tools/run_map02_alsa_userfunc_guest_stage304.sh; then
+ python3 - <<'PY'
+import hashlib,json,re
+from pathlib import Path
+root=Path("evidence")
+log=root/"nexium-guest-stdout.log"
+raw=log.read_bytes() if log.is_file() else b""
+body=raw.decode("utf-8",errors="replace").lower()
+patterns={
+  "panic":r"\bpanic\b|panicked",
+  "segmentation_fault":r"segmentation fault|sigsegv|segfault",
+  "illegal_instruction":r"illegal instruction|sigill",
+  "symbol_lookup":r"undefined symbol|symbol lookup error|relocation error",
+  "library_load":r"error while loading shared libraries|cannot open shared object",
+  "rust_error":r"rustarmic|backtrace",
+  "graphics_initialization":r"vulkan|xcb|x11|winit|egl|gtk",
+  "alsa_or_cpal":r"alsa|cpal|snd_pcm|audio",
+  "generic_failure":r"\bfailed\b|\berror\b|fatal",
+  "early_exit_without_gui":r"no window|no such window",
+}
+counts={k:len(re.findall(p,body)) for k,p in patterns.items()}
+exit_path=root/"host-early-exit-code.txt"
+exit_code=None
+if exit_path.is_file():
+ try: exit_code=int(exit_path.read_text().strip())
+ except ValueError: exit_code=None
+out={
+ "schema":"vh-map02-stage304-sanitized-launch-failure/v1",
+ "result":"NE_XIUM_CHILD_ENDED_BEFORE_GUEST_WINDOW",
+ "child_exit_code_if_observed":exit_code,
+ "raw_stdout_sha256":hashlib.sha256(raw).hexdigest(),
+ "raw_stdout_size_bytes":len(raw),
+ "sanitized_error_category_counts":counts,
+ "raw_stdout_or_private_host_log_uploaded":False,
+ "no_alsa_root_cause_or_hardware_audio_proven":True}
+(root/"stage304-sanitized-early-exit.json").write_text(
+ json.dumps(out,indent=2,sort_keys=True)+"\n")
+print(json.dumps(out,indent=2,sort_keys=True))
+PY
+ exit 1
+fi
 test -s evidence/host-alsa-avail-delay-usertrace.csv
 
 python3 tools/audit_map02_cpal_lifecycle_snapshots.py \
