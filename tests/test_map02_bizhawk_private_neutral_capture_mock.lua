@@ -11,7 +11,7 @@ local scenarios = 0
 
 local function run(option)
   scenarios = scenarios + 1
-  local counter = 1
+  local counter = option == "late-attach" and 80 or (option == "zero-counter" and 0 or 1)
   local lines, screenshots, saved = {}, {}, {}
   local content = BASE
   if option == "boundary" then content = content:gsub("1,before,1664,held", "1,before,1663,held") end
@@ -30,6 +30,15 @@ local function run(option)
   end
   io.open = function(path, mode)
     assert(mode == "rb", "capture script must not write through Lua io")
+    -- Simulate three public Git roots: inside the output root, an ancestor,
+    -- and a worktree-style .git pointer file.
+    local mark =
+      (option == "git-root" and path == ROOT .. "/.git/HEAD") or
+      (option == "git-parent" and path == "/private/.git/HEAD") or
+      (option == "git-worktree" and path == "/private/.git")
+    if mark then
+      return { close = function() end }
+    end
     if path == PLAN then
       return {
         read = function(_, size) assert(size == 8193); return content end,
@@ -59,7 +68,23 @@ local function run(option)
     end,
     getinput = function(idx, port)
       assert(port == 1)
-      assert(idx == 1663 or idx == 1664 or idx == 1666 or idx == 1669)
+      assert(idx == 1660 or idx == 1661 or idx == 1663 or
+             idx == 1664 or idx == 1666 or idx == 1669)
+      if idx == 1660 or idx == 1661 then
+        if option == "sparse-start" and idx == 1660 then return {} end
+        if option == "nil-start-table" and idx == 1660 then return nil end
+        local pressed = idx == 1661
+        if option == "early-start" and idx == 1660 then pressed = true end
+        if option == "missing-start" and idx == 1661 then pressed = false end
+        if option == "ambiguous-start" and idx == 1661 then
+          return {Start = true, ["P1 Start"] = false}
+        end
+        if option == "unknown-start" and idx == 1661 then
+          return {["P2 Start"] = true}
+        end
+        local start_key = option == "prefixed" and "P1 Start" or "Start"
+        return {[start_key] = pressed}
+      end
       local pressed = (idx ~= 1666)
       if option == "neutral-mismatch" then pressed = not pressed end
       local key = option == "prefixed" and "P1 Up" or "Up"
@@ -94,28 +119,31 @@ local function run(option)
   return lines, screenshots
 end
 
-for _, option in ipairs({"plain", "prefixed", "boundary"}) do
+for _, option in ipairs({"plain", "prefixed", "boundary", "zero-counter", "sparse-start"}) do
   local lines, shots = run(option)
   assert(#shots == 3, option .. ": expected three screenshot calls")
-  assert(#lines == 4, option .. ": three capture lines and summary")
+  assert(#lines == 5, option .. ": Start preflight, three captures and summary")
+  assert(lines[1] == "VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 candidate_input=1661 first_start_pressed=yes ps1_input_delivery=unverified", option .. ": wrong live anchor")
   local frames = {option == "boundary" and 1663 or 1664, 1666, 1669}
   local roles = {"before", "middle", "after"}
   for i = 1, 3 do
-    local group, role, counter, candidate, held = lines[i]:match(
+    local group, role, counter, candidate, held = lines[i + 1]:match(
       "^VH_PRIVATE_NEUTRAL_CAPTURE window=(%d+) role=([a-z]+) counter=(%d+) candidate_input=(%d+) expected_buttons=([a-z]+) png=written display_offset=unverified$")
     assert(tonumber(group) == 1 and role == roles[i], option .. ": bad role/group")
     assert(tonumber(counter) == frames[i] + 1, option .. ": bad core counter")
     assert(tonumber(candidate) == frames[i], option .. ": off-by-one movie frame")
     assert(held == (i == 2 and "neutral" or "held"), option .. ": expected button state")
   end
-  assert(lines[4] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes actual_map02=unverified")
+  assert(lines[5] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes actual_map02=unverified")
 end
 
 for _, option in ipairs({
   "relative-plan", "relative-root", "wrong-length", "not-readonly",
   "bad-header", "bad-count", "duplicate-index", "neutral-mismatch",
   "mode-leaves", "skip-counter", "saved-exists", "missing-write",
-  "malformed-png", "invalid-role"
+  "malformed-png", "invalid-role", "late-attach",
+  "early-start", "missing-start", "ambiguous-start", "unknown-start",
+  "nil-start-table", "git-root", "git-parent", "git-worktree"
 }) do
   local lines, shots = run(option)
   local rejected = false

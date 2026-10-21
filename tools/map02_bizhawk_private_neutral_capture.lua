@@ -21,6 +21,27 @@ local root = os.getenv("VH_PRIVATE_PNG_DIR")
 if not absolute_private_path(plan_file) or not absolute_private_path(root) then
   return fail("absolute_private_paths_required")
 end
+-- Best-effort Git checkout guard for environments without LuaFileSystem.
+-- Stop BEFORE writing any owner-private screenshot to a public checkout.
+-- A later Python auditor independently resolves paths and repeats this check.
+local function capture_root_in_git_checkout(path)
+  local location = path:gsub("\\", "/"):gsub("/+$", "")
+  if location:find("/.git/", 1, true) or location:match("/%.git$") then
+    return true
+  end
+  while location and #location >= 2 do
+    local marker = io.open(location .. "/.git/HEAD", "rb")
+    if marker then marker:close(); return true end
+    -- Worktrees use a .git *file* instead of a .git directory.
+    local pointer = io.open(location .. "/.git", "rb")
+    if pointer then pointer:close(); return true end
+    location = location:match("^(.*)/[^/]+$")
+  end
+  return false
+end
+if capture_root_in_git_checkout(root) then
+  return fail("private_png_dir_inside_git_checkout")
+end
 local fp = io.open(plan_file, "rb")
 if not fp then return fail("private_plan_unavailable") end
 local body = fp:read(8193)
@@ -63,6 +84,27 @@ end
 if movie.length() ~= EXPECTED_LENGTH or movie.getreadonly() ~= true then
   return fail("wrong_movie_length_or_readonly")
 end
+-- Fail closed on a late Lua attachment, manual seek, or a savestate loaded
+-- after startup. This still cannot prove an authentic PS1 power-on.
+local first_counter = emu.framecount()
+if type(first_counter) ~= "number" or
+    (first_counter ~= 0 and first_counter ~= 1) then
+  return fail("lua_must_attach_at_movie_start")
+end
+
+local function start_state(data)
+  if type(data) ~= "table" then return nil end
+  local plain, prefixed = data["Start"], data["P1 Start"]
+  if plain ~= nil and type(plain) ~= "boolean" then return nil end
+  if prefixed ~= nil and type(prefixed) ~= "boolean" then return nil end
+  if plain ~= nil and prefixed ~= nil and plain ~= prefixed then return nil end
+  if plain == true or prefixed == true then return true end
+  if plain == false or prefixed == false then return false end
+  -- BizHawk may return a sparse table containing pressed buttons only.
+  -- Missing Start therefore means "not pressed" (not an error). The
+  -- following frame still MUST contain an explicit Start=true.
+  return false
+end
 
 local function any_held(data)
   if type(data) ~= "table" then return nil end
@@ -78,6 +120,7 @@ local function any_held(data)
 end
 
 local current, previous_counter = 1, nil
+local first_start_off_seen, first_start_on_seen = false, false
 while true do
   if movie.mode() ~= "PLAY" or movie.getreadonly() ~= true then
     return fail("movie_playback_left_readonly")
@@ -90,7 +133,26 @@ while true do
     return fail("emulator_counter_jump")
   end
   previous_counter = counter
-  local index = counter - 1 -- a provisional input-to-counter convention
+  local index = counter - 1 -- still only a provisional input-to-display convention
+  -- The previously inspected owner's BK2 has its first Start press at zero-
+  -- based movie input 1661. Observe that known edge during THIS uninterrupted
+  -- replay before accepting any later plan candidate. movie.getinput is still
+  -- recorded movie data, not independently observed PS1 controller delivery.
+  if index == 1660 then
+    local pressed = start_state(movie.getinput(index, 1))
+    if pressed == nil or pressed then
+      return fail("start_anchor_before_missing_or_pressed")
+    end
+    first_start_off_seen = true
+  elseif index == 1661 then
+    if not first_start_off_seen or start_state(movie.getinput(index, 1)) ~= true then
+      return fail("start_anchor_press_missing_or_ambiguous")
+    end
+    first_start_on_seen = true
+    print("VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 candidate_input=1661 first_start_pressed=yes ps1_input_delivery=unverified")
+  elseif index > 1661 and not first_start_on_seen then
+    return fail("start_anchor_was_not_observed_live")
+  end
   local wanted = captures[current]
   if index > wanted.index then return fail("scheduled_frame_missed") end
   if index == wanted.index then

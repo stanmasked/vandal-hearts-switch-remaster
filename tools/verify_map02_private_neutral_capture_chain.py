@@ -34,6 +34,9 @@ LOG_ROW = re.compile(
     r"candidate_input=([0-9]+) expected_buttons=(held|neutral) "
     r"png=written display_offset=unverified"
 )
+START_PREFLIGHT = ("VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 "
+                   "candidate_input=1661 first_start_pressed=yes "
+                   "ps1_input_delivery=unverified")
 COMPLETE = re.compile(
     r"VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=([0-9]+) "
     r"movie_input_only=yes actual_map02=unverified"
@@ -95,19 +98,24 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
     lines = read_private(private_log, LOG_LIMIT).splitlines()
     observed = []
     completed = 0
+    preflight = False
     for line in lines:
-        if line.startswith("VH_PRIVATE_NEUTRAL_CAPTURE_ERROR"):
+        if line.startswith("VH_PRIVATE_NEUTRAL_START_PREFLIGHT"):
+            if line != START_PREFLIGHT or preflight or completed or observed:
+                raise ValueError("missing, duplicate or misplaced live Start anchor")
+            preflight = True
+        elif line.startswith("VH_PRIVATE_NEUTRAL_CAPTURE_ERROR"):
             raise ValueError("private emulator probe reported incomplete capture")
         if line.startswith("VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE"):
             match = COMPLETE.fullmatch(line)
-            if match is None or completed or len(observed) != len(planned):
+            if match is None or not preflight or completed or len(observed) != len(planned):
                 raise ValueError("capture completion is invalid or premature")
             if int(match.group(1)) != len(planned):
                 raise ValueError("capture summary count differs")
             completed += 1
         elif line.startswith("VH_PRIVATE_NEUTRAL_CAPTURE"):
             match = LOG_ROW.fullmatch(line)
-            if match is None or completed or len(observed) >= len(planned):
+            if match is None or not preflight or completed or len(observed) >= len(planned):
                 raise ValueError("malformed or late private capture record")
             g, role, counter, candidate, held = match.groups()
             item = (int(g), role, int(candidate), held)
@@ -115,12 +123,18 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
                     or int(counter) != int(candidate) + 1):
                 raise ValueError("log counter, role or source frame differs")
             observed.append(item)
-    if completed != 1 or len(observed) != len(planned):
-        raise ValueError("capture log incomplete")
+    if not preflight or completed != 1 or len(observed) != len(planned):
+        raise ValueError("capture log missing Start anchor or incomplete")
 
     root = Path(image_root)
     if not root.is_absolute() or root.is_symlink() or not root.is_dir():
         raise ValueError("capture images must be in one real absolute directory")
+    # Resolve parent symlinks as well: a private-looking path could otherwise
+    # point to a public Git checkout and be committed accidentally.
+    resolved = root.resolve(strict=True)
+    if any((parent / ".git").exists() or (parent / ".git").is_symlink()
+           for parent in (resolved, *resolved.parents)):
+        raise ValueError("private screenshots must stay outside Git checkouts")
     inodes = set()
     hash_count = 0
     for group, role, index, _ in planned:
@@ -146,6 +160,7 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
         "screenshot_count": hash_count,
         "private_plan_rebuilt_from_direct_bk2": True,
         "capture_logs_match_each_planned_input_and_counter": True,
+        "owner_log_reports_live_first_start_anchor_before_screenshots": True,
         "all_png_crc_zlib_scanlines_pass": True,
         "distinct_screenshot_file_inodes": True,
         "movie_input_to_actual_ps1_delivery_verified": False,
