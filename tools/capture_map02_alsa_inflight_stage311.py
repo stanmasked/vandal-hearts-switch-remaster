@@ -34,7 +34,7 @@ def observe(source,alsa_csv,tag_csv,phase_csv,ready):
     paths=(source,alsa_csv,tag_csv,phase_csv,ready)
     if any(not p.is_absolute() or p.is_symlink() for p in paths):
         raise ValueError("Absolute private mmap and sanitized outputs required")
-    if len(set(paths))!=4:
+    if len(set(paths))!=len(paths):
         raise ValueError("Source/outputs must have distinct paths")
     with source.open("rb") as f:
         if os.fstat(f.fileno()).st_size!=SIZE:
