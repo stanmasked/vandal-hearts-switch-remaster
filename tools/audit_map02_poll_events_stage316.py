@@ -66,6 +66,15 @@ def read_source(path):
                     previous.get(alias,(0,)*len(counters)))),
                     "Poll request or return ordinal counter decreased")
             previous[alias]=counters
+            for bit,index in ((1,0),(2,1),(4,2),(8,3)):
+                require(not (requested&bit) or counters[index]>0,
+                        "Active poll request category contradicts cumulative counter")
+            if status==1:
+                for bit,index in ((1,4),(2,5),(4,6),(8,7)):
+                    require(not (returned&bit) or counters[index]>0,
+                            "Last poll return category contradicts cumulative counter")
+                require(not (returned&(1<<4)) or counters[8]>0,
+                        "Last exceptional poll return contradicts cumulative counter")
             row=dict(zip(POLL_EVENT_FIELDS,counters))
             row.update(dict(zip(POLL_EVENT_LAST_FIELDS,last_codes)))
             frames[-1]["alias"][alias]=row

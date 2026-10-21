@@ -21,7 +21,7 @@ class OrdinalPollEventTests(unittest.TestCase):
             # CPAL alias 1 has a request that can remain pending across guest input.
             # Code 0x89: valid, ordinal 0 requests IN and ordinal 1 requests OUT.
             # 0xa9: last completed call returned ready with those same categories.
-            self.records.append(("M",tm,1,1,0,0,1,0,0,0,0,0,0x89,0xa9))
+            self.records.append(("M",tm,1,1,0,0,1,1,0,0,1,0,0x89,0xa9))
             if i:
                 # Alias 0 progresses; its categories must never be attributed to CPAL.
                 self.records.append(("M",tm,0,i,0,i,0,i,0,i,0,0,0,0xa5))
@@ -89,6 +89,12 @@ class OrdinalPollEventTests(unittest.TestCase):
     def test_invalid_last_return_without_status_rejected(self):
         row=list(self.records[1]);row[-1]=0x80;self.records[1]=row;self.write()
         with self.assertRaisesRegex(ValueError,"return code"):read_source(self.path)
+    def test_last_return_must_match_cumulative_category_counters(self):
+        row=list(self.records[1])
+        row[7]=0
+        self.records[1]=row;self.write()
+        with self.assertRaisesRegex(ValueError,"return category contradicts cumulative"):
+            read_source(self.path)
     def test_decode_unknown_request_not_mistaken_for_no_requested_events(self):
         r=decode_active_request(0)
         self.assertFalse(r["valid_two_position_pollfd_snapshot"])
