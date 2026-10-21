@@ -1,0 +1,181 @@
+name: MAP02 Stage308 source-pinned CPAL ALSA same-TLS callback provenance preflight
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-direct-cpal-alsa-tag-stage308.yml'
+      - 'tools/patch_map02_cpal_thread_tag_stage308.py'
+      - 'tools/map02_alsa_same_tls_stage308.c'
+      - 'tools/map02_same_tls_synthetic_stage308.c'
+      - 'tests/test_patch_map02_cpal_thread_tag_stage308.py'
+      - 'docs/MAP02_DIRECT_CPAL_ALSA_THREAD_TAG_STAGE308.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  PINNED_STAGE307_PARENT: '2ac64fb3c29cc06b38167de8046a5d456c1ca0ef'
+  PINNED_NEXIUM_UPSTREAM: '089562567a0a8760dfdd8420e1f57c35159a9219'
+jobs:
+  direct-tag-callback-source-and-synthetic-thread-parity:
+    name: Stage308 exact host-source patch + synthetic ALSA null shared TLS thread provenance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: research
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: nexium-emu/nexium
+          ref: 089562567a0a8760dfdd8420e1f57c35159a9219
+          path: upstream
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Hard-scope research changes and independently verify exact upstream source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream rev-parse HEAD)" = "$PINNED_NEXIUM_UPSTREAM"
+          python3 - <<'PY'
+          import os,subprocess
+          changed=set(subprocess.check_output(["git","-C","research","diff","--name-only",
+                               os.environ["PINNED_STAGE307_PARENT"],"HEAD"],
+                               text=True).splitlines())
+          allowed={
+              ".github/workflows/map02-direct-cpal-alsa-tag-stage308.yml",
+              "tools/patch_map02_cpal_thread_tag_stage308.py",
+              "tools/map02_alsa_same_tls_stage308.c",
+              "tools/map02_same_tls_synthetic_stage308.c",
+              "tests/test_patch_map02_cpal_thread_tag_stage308.py",
+              "docs/MAP02_DIRECT_CPAL_ALSA_THREAD_TAG_STAGE308.md"}
+          assert changed and changed<=allowed,sorted(changed-allowed)
+          PY
+          python3 -m unittest discover -s research/tests \
+            -p 'test_patch_map02_cpal_thread_tag_stage308.py' -v
+      - name: Prepare source-pinned original Stage274 and Stage286 and Stage298 overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 research/tools/prepare_map02_nexium_cpal_overlay.py \
+            --upstream upstream --manifest stage308-stage274-original-overlay.json
+          python3 research/tools/patch_map02_cpal_lifecycle_stage286.py \
+            --input upstream/nexium-runner/src/audio.rs \
+            --output original-stage286-audio.rs
+          mv original-stage286-audio.rs upstream/nexium-runner/src/audio.rs
+          python3 research/tools/patch_map02_cpal_stream_timestamps_stage298.py \
+            --input upstream/nexium-runner/src/audio.rs \
+            --output original-stage298-audio.rs
+          mv original-stage298-audio.rs upstream/nexium-runner/src/audio.rs
+          sha256sum upstream/nexium-runner/src/audio.rs \
+            > stage308-original-stage298-source-sha256.txt
+          python3 research/tools/patch_map02_cpal_thread_tag_stage308.py \
+            --input upstream/nexium-runner/src/audio.rs \
+            --output stage308-tagged-audio.rs
+          mv stage308-tagged-audio.rs upstream/nexium-runner/src/audio.rs
+          sha256sum upstream/nexium-runner/src/audio.rs \
+            > stage308-opt-in-only-audio-sha256.txt
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+          src=Path("upstream/nexium-runner/src/audio.rs").read_text()
+          assert src.count("map02_s308_callback_tag_only();")==2
+          assert src.count("map02_s308_prepare_callback_hook();")==1
+          assert src.count("MAP02_CPAL_ENTER.fetch_add(1, Ordering::Relaxed);")==2
+          assert src.count("MAP02_CPAL_RETURN.fetch_add(1, Ordering::Relaxed);")==2
+          assert src.count('writeln!(output, "L,{nanos}')==1
+          assert src.count('writeln!(second,')==1
+          assert "stream.pause()" not in src
+          changes=set(subprocess.check_output(["git","-C","upstream","diff","--name-only"],
+                                  text=True).splitlines())
+          assert changes=={
+              "nexium-runner/src/audio.rs",
+              "nexium-runner/Cargo.toml",
+              "nexium-kernel/src/services/audio_out/handlers.rs",
+          },sorted(changes)
+          PY
+      - name: Rust syntax parse the exact experimental host callback source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 --emit stdout \
+            upstream/nexium-runner/src/audio.rs > /dev/null
+          # Rustfmt parse is NOT a build/type-check and does not validate
+          # that this new experimental NeXium actually runs a CPAL callback.
+      - name: Compile shim and run SYNTHETIC two-thread direct TLS attribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential libasound2-dev binutils
+          mkdir -p stage308-build stage308-receipt
+          gcc -std=gnu11 -O2 -Werror -Wall -Wextra -fPIC -shared \
+            research/tools/map02_alsa_same_tls_stage308.c \
+            -o stage308-build/libmap02-same-tls-stage308.so -lasound -ldl -pthread
+          gcc -std=gnu11 -O2 -Werror -Wall -Wextra \
+            research/tools/map02_same_tls_synthetic_stage308.c \
+            -o stage308-build/stage308-two-thread-synthetic-null -lasound -ldl -pthread
+          nm -D stage308-build/libmap02-same-tls-stage308.so | \
+            grep -E ' [TW] vh_map02_stage308_cpal_callback_mark$'
+          clean="$(stage308-build/stage308-two-thread-synthetic-null)"
+          python3 research/tools/capture_map02_alsa_userspace_stage305.py \
+            --init --source "$RUNNER_TEMP/stage308-test-PRIVATE.bin"
+          instrumented="$(env \
+            LD_PRELOAD="$PWD/stage308-build/libmap02-same-tls-stage308.so" \
+            VH_STAGE305_ALSA_COUNTER_PATH="$RUNNER_TEMP/stage308-test-PRIVATE.bin" \
+            stage308-build/stage308-two-thread-synthetic-null)"
+          test "$clean" = "$instrumented"
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json, mmap, os, struct
+          from research.tools.capture_map02_alsa_userspace_stage305 import snapshot,SIZE
+          counter=Path(os.environ["RUNNER_TEMP"])/"stage308-test-PRIVATE.bin"
+          with counter.open("rb") as f:
+              with mmap.mmap(f.fileno(),SIZE,access=mmap.ACCESS_READ) as mm:
+                  used,rows=snapshot(mm)
+                  marker=[struct.unpack_from("<Q",mm,32768+8*i)[0] for i in range(min(used,64))]
+          assert used==2,(used,rows,marker)
+          prep={alias:vals[0] for alias,op,*vals in rows if op=="prepare"}
+          assert sorted(prep.values())==[10,15],prep
+          marks={i:v for i,v in enumerate(marker) if v}
+          assert len(marks)==1 and list(marks.values())==[7],marks
+          tag_alias=next(iter(marks))
+          assert prep[tag_alias]==10,(marks,prep)
+          assert all(v==0 for i,v in enumerate(marker) if i!=tag_alias)
+          shared=Path("stage308-build/libmap02-same-tls-stage308.so").read_bytes()
+          assert shared[:4]==b"\x7fELF"
+          source=Path("upstream/nexium-runner/src/audio.rs").read_bytes()
+          manifest={
+              "schema":"vh-map02-stage308-direct-cpal-alsa-same-tls-source-preflight/v1",
+              "result":"PINNED_EXPERIMENTAL_SOURCE_PATCH_AND_SYNTHETIC_DIRECT_TLS_PARITY_VERIFIED",
+              "upstream_neXium_source_sha":"089562567a0a8760dfdd8420e1f57c35159a9219",
+              "original_stage298_host_elf_untouched":True,
+              "source_audio_rs_after_patch_sha256":hashlib.sha256(source).hexdigest(),
+              "interposer_so_sha256":hashlib.sha256(shared).hexdigest(),
+              "anonymous_tls_aliases":used,
+              "synthetic_marked_callback_alias_prep_count":prep[tag_alias],
+              "synthetic_marked_callback_entries":marker[tag_alias],
+              "synthetic_other_alias_prep_count":15,
+              "synthetic_unmarked_alias_callback_entries":0,
+              "ALSA_synthetic_null_return_code_parity":True,
+              "actual_experimental_neXium_ELF_compiled":False,
+              "actual_neXium_CPAL_callback_thread_identity_observed":False,
+              "physical_switch_audio_or_game_rom_used":False,
+              "no_cpal_alsa_root_cause_or_audio_fix_proven":True,
+          }
+          Path("stage308-receipt/stage308-source-synthetic-only.json").write_text(
+              json.dumps(manifest,sort_keys=True,indent=2)+"\n")
+          print(json.dumps(manifest,sort_keys=True,indent=2))
+          PY
+      - name: Archive only source hashes and synthetic anonymous counts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-stage308-source-patch-synthetic-same-tls-evidence
+          path: |
+            stage308-original-stage298-source-sha256.txt
+            stage308-opt-in-only-audio-sha256.txt
+            stage308-receipt/stage308-source-synthetic-only.json
+          if-no-files-found: warn
