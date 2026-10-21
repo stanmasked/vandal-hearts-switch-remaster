@@ -1,0 +1,88 @@
+name: MAP02 Stage306 reverify Stage305 real ALSA post-input per-alias deltas
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-alsa-guest-window-stage306.yml'
+      - 'tools/audit_map02_alsa_guest_window_stage306.py'
+      - 'tests/test_audit_map02_alsa_guest_window_stage306.py'
+      - 'docs/MAP02_ALSA_GUEST_WINDOW_STAGE306.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+env:
+  ORIGINAL_RUN: '39558740492'
+  STAGE305_PINNED_HEAD: '193cd92e75bebe31353d345ddc5b961ffa5f30d1'
+jobs:
+  source-verified-per-guest-alsa-window:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Reject nonresearch code and run synthetic negative tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess,os
+          files=set(subprocess.check_output(["git","diff","--name-only",
+                                             os.environ["STAGE305_PINNED_HEAD"],"HEAD"],
+                                             text=True).splitlines())
+          approved={
+              ".github/workflows/map02-alsa-guest-window-stage306.yml",
+              "tools/audit_map02_alsa_guest_window_stage306.py",
+              "tests/test_audit_map02_alsa_guest_window_stage306.py",
+              "docs/MAP02_ALSA_GUEST_WINDOW_STAGE306.md"}
+          assert files and files<=approved,sorted(files-approved)
+          PY
+          python3 -m unittest discover -s tests -p 'test_audit_map02_alsa_guest_window_stage306.py' -v
+          python3 -m unittest discover -s tests -p 'test_audit_map02_alsa_userspace_stage305.py' -v
+          python3 -m py_compile tools/audit_map02_alsa_guest_window_stage306.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-stage305-real-userspace-alsa-hint21-evidence
+          run-id: ${{ env.ORIGINAL_RUN }}
+          github-token: ${{ github.token }}
+          path: source/map02-stage305-real-userspace-alsa-hint21-evidence
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-stage305-real-userspace-alsa-hint22-evidence
+          run-id: ${{ env.ORIGINAL_RUN }}
+          github-token: ${{ github.token }}
+          path: source/map02-stage305-real-userspace-alsa-hint22-evidence
+      - name: Independently reparse both real Stage305 guest archives and actual post-input ALSA samples
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_map02_alsa_guest_window_stage306.py \
+            --root source --output result/stage306-real-stage305-alsa-guest-window.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("result/stage306-real-stage305-alsa-guest-window.json").read_text())
+          assert r["result"]=="REAL_STAGE305_PAIR_POST_INPUT_ALSA_SNAPSHOT_DELTAS_REPARSED"
+          assert r["original_source_github_actions_run_id"]==39558740492
+          assert [p["requested_pulse_hint_ms"] for p in r["trials"]]==[21,22]
+          assert all(p["retained_raw_cpal_P_L_and_alsa_reparsed"]
+                     and p["retained_pulse_event_csv_sha_rechecked"]
+                     and p["unuploaded_private_pulse_pcm_filelogger_not_reparsed"]
+                     and p["prior_stage305_pulse_pcm_filelogger_receipts_cross_checked"]
+                     for p in r["trials"])
+          assert r["raw_Pulse_snapshots_virtual_PCM_and_private_FileLogger_were_not_uploaded"] is True
+          for p in r["trials"]:
+              print("Source hint",p["requested_pulse_hint_ms"],
+                    "CPAL",p["actual_guest_CPAL_post_input_entries"],
+                    "CRC",p["actual_guest_optical_crc_8_of_8_verified"],
+                    "guest-window ALSA",p["delta_by_exported_symbol"])
+          assert r["no_audio_root_cause_or_production_fix_proven"]
+          PY
+      - name: Publish sanitized verification only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-stage306-real-source-bound-alsa-guest-window-comparison
+          path: result/stage306-real-stage305-alsa-guest-window.json
+          if-no-files-found: warn
