@@ -51,6 +51,8 @@ authentication, and independently measured offset flags **false**.
 
 ## Limits and next evidence gate
 
+The Lua probe accepts both unprefixed keys (`Start`) and controller-qualified keys (`P1 Start`) when BizHawk returns them, and fails closed if both disagree. The probe aborts if playback leaves `PLAY` mid-window. Its actual script logic is exercised by six synthetic Lua 5.4 mock cases on Linux CI; this executes Lua, **not** PS1 emulation. Separately, 17 Python tests check the offline verifier and malformed source baselines.
+
 The Lua API reads *inputs stored in the currently loaded BizHawk movie*.
 A byte-perfect comparison therefore establishes that the two readers agree
 on the movie controller data and candidate frame indexing; it **does not**

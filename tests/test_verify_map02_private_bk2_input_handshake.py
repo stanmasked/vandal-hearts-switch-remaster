@@ -142,6 +142,18 @@ class Map02PrivateInputHandshakeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             verify(self.report_path, link, self.log_path)
 
+    def test_impossible_first_window_press_without_held_button_refused(self):
+        self.change_rows[0] = (10, "Start", "", "")
+        self.write_files()
+        with self.assertRaises(ValueError):
+            verify(self.report_path, self.csv_path, self.log_path)
+
+    def test_impossible_first_window_release_while_still_held_refused(self):
+        self.change_rows[0] = (10, "", "Start", "Start")
+        self.write_files()
+        with self.assertRaises(ValueError):
+            verify(self.report_path, self.csv_path, self.log_path)
+
     def test_known_first_start_anchor_at_1661_is_required(self):
         self.report["input_log_frame_count"] = 2000
         self.report["window"] = {
@@ -169,7 +181,9 @@ class Map02PrivateInputHandshakeTests(unittest.TestCase):
         lua = (Path(__file__).resolve().parents[1] / "tools" /
                "map02_bizhawk_private_input_handshake.lua").read_text(encoding="utf-8")
         self.assertIn("movie.getinput(candidate, 1)", lua)
-        self.assertIn('movie.mode() == "PLAY"', lua)
+        self.assertIn("local mode = movie.mode()", lua)
+        self.assertIn('if mode == "PLAY" then', lua)
+        self.assertIn('movie_left_play_mode', lua)
         self.assertIn("emu.frameadvance()", lua)
         self.assertIn("START_INPUT = 1650", lua)
         self.assertIn("END_INPUT = 1690", lua)
