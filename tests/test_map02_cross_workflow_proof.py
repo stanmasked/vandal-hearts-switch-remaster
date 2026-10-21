@@ -136,7 +136,7 @@ class CrossWorkflowTests(unittest.TestCase):
     def test_rejects_tampered_candidate(self):
         self.candidate["steps"][10]["tree_sha"] = "0" * 40
         self.write_files()
-        with self.assertRaisesRegex(proof.CrossProofError, "digest"):
+        with self.assertRaisesRegex(proof.CrossProofError, "SHA-256 receipt mismatch"):
             self.validate()
 
     def test_rejects_forged_ref_seal(self):
