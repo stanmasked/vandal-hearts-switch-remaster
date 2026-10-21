@@ -1032,6 +1032,27 @@ jobs:
                   r["high_fanout_reloc_other_records"] >=
                   33 - r["high_fanout_reloc_no_relocation_record"])
           assert r["relocation_types_do_not_prove_function_or_data_semantics"] is True
+          provenance_kinds = ("pc32", "plt32", "abs32", "abs32s", "abs64", "gotpcrel", "other")
+          provenance_sections = ("text", "rodata", "data", "unwind", "other")
+          assert r["high_fanout_provenance_imports"] == 33
+          assert r["high_fanout_provenance_total_records"] == sum(
+              r["high_fanout_provenance_" + k + "_records"] for k in provenance_kinds)
+          assert r["high_fanout_provenance_total_records"] == sum(
+              r["high_fanout_provenance_section_" + k + "_records"] for k in provenance_sections)
+          assert r["high_fanout_provenance_total_records"] == (
+              r["high_fanout_reloc_pc32_records"] +
+              r["high_fanout_reloc_plt32_records"] +
+              r["high_fanout_reloc_other_records"])
+          assert r["high_fanout_provenance_pc32_records"] == r["high_fanout_reloc_pc32_records"]
+          assert r["high_fanout_provenance_plt32_records"] == r["high_fanout_reloc_plt32_records"]
+          assert (sum(r["high_fanout_provenance_" + k + "_records"] for k in
+                      ("abs32", "abs32s", "abs64", "gotpcrel", "other")) ==
+                  r["high_fanout_reloc_other_records"])
+          assert (r["high_fanout_provenance_without_relocation_records"] ==
+                  r["high_fanout_reloc_no_relocation_record"])
+          assert (r["high_fanout_provenance_nontext_only_imports"] ==
+                  r["high_fanout_only_nontext_relocation_names"])
+          assert r["source_section_and_relocation_type_do_not_prove_runtime_abi"] is True
           assert r["fanout_counts_distinct_source_objects_not_runtime_calls"] is True
           assert r["only_counts_and_hashes_published"] is True
           assert r["retail_asset_content_accessed"] is False
@@ -1059,6 +1080,16 @@ jobs:
                  for name in ("plt32_records", "pc32_records", "other_records")})
           print("Only non-.text relocations:",
                 r["high_fanout_only_nontext_relocation_names"])
+          print("Exact 33-name native relocation kind totals:",
+                {k: r["high_fanout_provenance_" + k + "_records"]
+                 for k in provenance_kinds})
+          print("Same relocation entries grouped by source patch section:",
+                {k: r["high_fanout_provenance_section_" + k + "_records"]
+                 for k in provenance_sections})
+          print("High-fanout names with non-PC32/PLT32 types:",
+                r["high_fanout_provenance_any_non_pc32_plt32_imports"])
+          print("High-fanout names referenced from both text and nontext:",
+                r["high_fanout_provenance_both_text_nontext_imports"])
           print("Per-source names and paths are kept private; no retail MAP02 executed.")
           PY
       - name: Fail closed on upstream rasterizer source drift
