@@ -10,7 +10,7 @@ import unittest
 from tools.verify_map02_private_start_candidate_order import (
     START_SCHEMA, HANDOFF_SCHEMA, verify,
 )
-from test_compare_map02_private_replay_rasters import TwoReplayRasterTests, tiny_png
+import test_compare_map02_private_replay_rasters as raster_fixtures
 
 
 def anchor_report():
@@ -34,7 +34,7 @@ def anchor_report():
 
 class HandoffTests(unittest.TestCase):
     def setUp(self):
-        source = TwoReplayRasterTests(
+        source = raster_fixtures.TwoReplayRasterTests(
             "test_decoded_pixels_equal_with_different_zlib_payloads")
         source.setUp()
         self.addCleanup(source.doCleanups)
