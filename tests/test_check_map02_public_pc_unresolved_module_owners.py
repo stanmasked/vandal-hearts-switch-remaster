@@ -14,6 +14,8 @@ from tools.check_map02_public_pc_unresolved_module_owners import (
     parse_readelf_abs64_data_patch_offsets,
     summarize_high_fanout_abs64_patch_layout,
     summarize_high_fanout_abs64_patch_gaps,
+    parse_readelf_abs64_data_patch_addends,
+    summarize_high_fanout_abs64_target_addends,
 )
 from tools.check_map02_public_reloc_link import _undefined_symbol_names
 
@@ -287,6 +289,93 @@ class ModuleOwnerTests(unittest.TestCase):
         ])
         self.assertNotIn("source", got)
         self.assertNotIn("other", got)
+
+    def test_native_rela_addend_decodes_hex_and_signed_values(self):
+        elf = (
+            "Relocation section '.rela.data' at offset 0xf0 contains 4 entries:\n"
+            "0000000000000000  0000000300000001 R_X86_64_64 0000000000000000 ext + 0\n"
+            "0000000000000008  0000000300000001 R_X86_64_64 0000000000000000 ext + 18\n"
+            "0000000000000010  0000000300000001 R_X86_64_64 0000000000000000 ext + 18\n"
+            "0000000000000018  0000000300000001 R_X86_64_64 0000000000000000 ext - 8\n"
+        )
+        self.assertEqual(parse_readelf_abs64_data_patch_addends(elf)["ext"], [
+            (".rela.data", 0, 0), (".rela.data", 8, 24),
+            (".rela.data", 16, 24), (".rela.data", 24, -8)])
+        broken = elf.replace("ext + 18", "ext + nothex")
+        with self.assertRaisesRegex(ValueError, "encoding invalid"):
+            parse_readelf_abs64_data_patch_addends(broken)
+
+    def test_addend_repeats_reconciled_across_distinct_source_objects(self):
+        game = [{"target", "shared"} for _ in range(8)]
+        first = {"target": [(".rela.data", 0, 0),
+                            (".rela.data", 8, 24),
+                            (".rela.data", 16, 24),
+                            (".rela.data", 24, -8)],
+                 "shared": [(".rela.data", 32, 1)]}
+        second = {"target": [(".rela.data", 0, 0),
+                             (".rela.data", 8, 40)]}
+        addends = [first, second] + [{} for _ in range(6)]
+        patches = [
+            {"target": [(".rela.data", 0), (".rela.data", 8),
+                        (".rela.data", 16), (".rela.data", 24)]},
+            {"target": [(".rela.data", 0), (".rela.data", 8)]},
+        ] + [{} for _ in range(6)]
+        summary = summarize_high_fanout_abs64_target_addends(
+            {"target", "shared"}, game, [{"shared"}], addends, patches)
+        self.assertEqual(summary["high_fanout_abs64_addend_total_records"], 6)
+        self.assertEqual(summary["high_fanout_abs64_addend_source_objects"], 2)
+        self.assertEqual(summary["high_fanout_abs64_addend_symbol_names"], 1)
+        self.assertEqual(summary["high_fanout_abs64_addend_distinct_values"], 4)
+        self.assertEqual(summary["high_fanout_abs64_addend_zero_records"], 2)
+        self.assertEqual(summary["high_fanout_abs64_addend_negative_records"], 1)
+        self.assertEqual(summary["high_fanout_abs64_addend_eight_aligned_records"], 6)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_distinct_repeated_values"], 2)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_records_with_reused_values"], 4)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_max_records_sharing_one_value"], 2)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_values_repeated_within_source_object"], 1)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_records_reused_within_source_object"], 2)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_values_shared_across_source_objects"], 1)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_records_with_cross_object_shared_values"], 2)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_max_records_same_value_in_one_object"], 2)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_min_distinct_values_per_source_object"], 2)
+        self.assertEqual(
+            summary["high_fanout_abs64_addend_max_distinct_values_per_source_object"], 3)
+
+    def test_addend_missing_original_relocation_witness_is_rejected(self):
+        game = [{"one"} for _ in range(8)]
+        patches = [{"one": [(".rela.data", 8)]}] + [{} for _ in range(7)]
+        addends = [{} for _ in range(8)]
+        with self.assertRaisesRegex(ValueError, "missing ABS64 addend witness"):
+            summarize_high_fanout_abs64_target_addends(
+                {"one"}, game, [], addends, patches)
+
+    def test_real_gcc_rela_addends_can_differ_from_patch_offsets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            src, obj = root / "addends.c", root / "addends.o"
+            src.write_text(
+                "extern char external_array[];\n"
+                "void *refs[] = {external_array, external_array+24, "
+                "external_array+24, external_array+48};\n")
+            subprocess.run(
+                ["cc", "-c", "-O0", "-fno-pie", "-o", str(obj), str(src)],
+                capture_output=True, check=True, timeout=30)
+            data = subprocess.run(
+                ["readelf", "-rW", str(obj)], capture_output=True,
+                text=True, check=True, timeout=30)
+            parsed = parse_readelf_abs64_data_patch_addends(data.stdout)
+            self.assertEqual(
+                [addend for _, _, addend in parsed["external_array"]],
+                [0, 24, 24, 48])
 
     def test_abs64_gap_histogram_separates_source_objects(self):
         game = [{"s"} for _ in range(8)]
