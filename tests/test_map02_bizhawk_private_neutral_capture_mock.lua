@@ -92,6 +92,11 @@ local function run(option)
     end,
   }
   emu = {
+    getsystemid = option == "missing-system-api" and nil or function()
+      if option == "wrong-system" then return "NES" end
+      if option == "system-changed" and counter >= 1664 then return "N64" end
+      return "PSX"
+    end,
     framecount = function() return counter end,
     frameadvance = function()
       assert(counter < 1700, "capture observer should terminate")
@@ -143,7 +148,8 @@ for _, option in ipairs({
   "mode-leaves", "skip-counter", "saved-exists", "missing-write",
   "malformed-png", "invalid-role", "late-attach",
   "early-start", "missing-start", "ambiguous-start", "unknown-start",
-  "nil-start-table", "git-root", "git-parent", "git-worktree"
+  "nil-start-table", "git-root", "git-parent", "git-worktree",
+  "wrong-system", "system-changed", "missing-system-api"
 }) do
   local lines, shots = run(option)
   local rejected = false
