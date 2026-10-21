@@ -26,7 +26,7 @@ namespace VhMap02CoreWitness
 
         public CoreWitnessForm()
         {
-            Text = WindowTitleStatic;
+            UpdateWindowTitle(); // BizHawk FormBase forbids direct Text assignment
             Width = 520;
             Height = 165;
             StartPosition = FormStartPosition.CenterParent;
