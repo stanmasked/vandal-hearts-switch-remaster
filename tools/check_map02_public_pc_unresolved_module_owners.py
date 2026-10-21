@@ -541,7 +541,7 @@ def summarize_high_fanout_abs64_patch_gaps(
                 groups.setdefault(section, []).append(offset)
                 owned_count += 1
                 total += 1
-            for locations in groups.values():
+            for section, locations in groups.items():
                 if len(locations) != len(set(locations)):
                     raise ValueError("MAP02 duplicate ABS64 gap offset in data section")
                 source_sections.add((index, section))
