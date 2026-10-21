@@ -42,7 +42,7 @@ MOVIE_SOURCE_PREFLIGHT = (
 # Neither API exposes the identity of the active PSX core or verifies its BIOS.
 RUNTIME_PREFLIGHT = re.compile(
     r"VH_PRIVATE_NEUTRAL_RUNTIME_PREFLIGHT "
-    r"bizhawk_version=([0-9]{1,3}\\.[0-9]{1,3}(?:\\.[0-9]{1,3})?) "
+    r"bizhawk_version=([0-9]{1,3}\.[0-9]{1,3}(?:\.[0-9]{1,3})?) "
     r"display=(NTSC|PAL) active_core=unverified"
 )
 START_PREFLIGHT = ("VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 "
