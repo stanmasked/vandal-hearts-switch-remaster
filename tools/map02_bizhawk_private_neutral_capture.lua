@@ -42,7 +42,7 @@ for i = 4, #lines do
   local g, role, ix, held = lines[i]:match("^(%d+),([a-z]+),(%d+),([a-z]+)$")
   g, ix = tonumber(g), tonumber(ix)
   if not g or not ix or g < 1 or g > n / 3
-      or ix <= 1663 or ix >= EXPECTED_LENGTH or ix <= last_frame
+      or ix < 1663 or ix >= EXPECTED_LENGTH or ix <= last_frame
       or (role ~= "before" and role ~= "middle" and role ~= "after")
       or held ~= ((role == "middle") and "neutral" or "held") then
     return fail("private_plan_row_invalid")
