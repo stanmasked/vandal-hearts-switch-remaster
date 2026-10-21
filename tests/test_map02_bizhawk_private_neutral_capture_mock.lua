@@ -62,6 +62,8 @@ local function run(option)
       assert(idx == 1660 or idx == 1661 or idx == 1663 or
              idx == 1664 or idx == 1666 or idx == 1669)
       if idx == 1660 or idx == 1661 then
+        if option == "sparse-start" and idx == 1660 then return {} end
+        if option == "nil-start-table" and idx == 1660 then return nil end
         local pressed = idx == 1661
         if option == "early-start" and idx == 1660 then pressed = true end
         if option == "missing-start" and idx == 1661 then pressed = false end
@@ -108,7 +110,7 @@ local function run(option)
   return lines, screenshots
 end
 
-for _, option in ipairs({"plain", "prefixed", "boundary", "zero-counter"}) do
+for _, option in ipairs({"plain", "prefixed", "boundary", "zero-counter", "sparse-start"}) do
   local lines, shots = run(option)
   assert(#shots == 3, option .. ": expected three screenshot calls")
   assert(#lines == 5, option .. ": Start preflight, three captures and summary")
@@ -131,7 +133,8 @@ for _, option in ipairs({
   "bad-header", "bad-count", "duplicate-index", "neutral-mismatch",
   "mode-leaves", "skip-counter", "saved-exists", "missing-write",
   "malformed-png", "invalid-role", "late-attach",
-  "early-start", "missing-start", "ambiguous-start", "unknown-start"
+  "early-start", "missing-start", "ambiguous-start", "unknown-start",
+  "nil-start-table"
 }) do
   local lines, shots = run(option)
   local rejected = false
