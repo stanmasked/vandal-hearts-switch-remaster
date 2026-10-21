@@ -1,0 +1,62 @@
+name: MAP02 Stage304 real Linux libasound symbol and uprobe capability audit
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-alsa-symbols-stage304.yml'
+      - 'tools/audit_map02_alsa_symbols_stage304.py'
+      - 'tests/test_audit_map02_alsa_symbols_stage304.py'
+      - 'docs/MAP02_ALSA_USERSPACE_SYMBOLS_STAGE304.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-backed-alsa-symbol-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Fail closed on game changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess
+          changed=set(subprocess.check_output(["git","diff","--name-only",
+              "c078f481cd9b58450bb2e591d27e6c0c14764736","HEAD"],text=True).splitlines())
+          allowed={".github/workflows/map02-alsa-symbols-stage304.yml",
+                   "tools/audit_map02_alsa_symbols_stage304.py",
+                   "tests/test_audit_map02_alsa_symbols_stage304.py",
+                   "docs/MAP02_ALSA_USERSPACE_SYMBOLS_STAGE304.md"}
+          assert changed and changed<=allowed,sorted(changed-allowed)
+          PY
+          python3 -m unittest discover -s tests -p 'test_audit_map02_alsa_symbols_stage304.py' -v
+      - name: Inspect actual libasound exports and nonprivileged probe permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libasound2t64 binutils
+          python3 tools/audit_map02_alsa_symbols_stage304.py \
+            --output result/stage304-real-alsa-symbol-preflight.json
+      - name: Check reported limits
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          r=json.loads(Path("result/stage304-real-alsa-symbol-preflight.json").read_text())
+          assert r["result"]=="REAL_RUNNER_ALSA_SYMBOL_EXPORTS_SOURCE_VERIFIED"
+          assert r["libasound"]["public_symbol_exports"]["snd_pcm_avail_delay"]
+          assert r["actual_snd_pcm_invocations_observed"] is False
+          assert r["actual_alsa_error_return_values_observed"] is False
+          assert r["guest_or_production_audio_fixed"] is False
+          print("Verified public symbol existence, NOT actual call/recovery")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map02-stage304-actual-libasound-symbol-preflight
+          path: result/
+          if-no-files-found: warn
