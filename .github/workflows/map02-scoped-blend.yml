@@ -1092,6 +1092,13 @@ jobs:
           assert 0 <= r["high_fanout_abs64_addend_distinct_repeated_values"] <= 111
           assert 0 <= r["high_fanout_abs64_addend_records_with_reused_values"] <= 222
           assert (1 <= r["high_fanout_abs64_addend_max_records_sharing_one_value"] <= 222)
+          assert 0 <= r["high_fanout_abs64_addend_values_repeated_within_source_object"] <= 111
+          assert 0 <= r["high_fanout_abs64_addend_records_reused_within_source_object"] <= 222
+          assert 0 <= r["high_fanout_abs64_addend_values_shared_across_source_objects"] <= r["high_fanout_abs64_addend_distinct_values"]
+          assert 0 <= r["high_fanout_abs64_addend_records_with_cross_object_shared_values"] <= 222
+          assert (1 <= r["high_fanout_abs64_addend_max_records_same_value_in_one_object"] <= 219)
+          assert (1 <= r["high_fanout_abs64_addend_min_distinct_values_per_source_object"] <=
+                  r["high_fanout_abs64_addend_max_distinct_values_per_source_object"] <= 222)
           assert r["addend_multiplicity_does_not_prove_game_data_structure"] is True
           assert r["fanout_counts_distinct_source_objects_not_runtime_calls"] is True
           assert r["only_counts_and_hashes_published"] is True
@@ -1152,7 +1159,14 @@ jobs:
                      "distinct_values", "zero_records", "negative_records",
                      "eight_aligned_records", "distinct_repeated_values",
                      "records_with_reused_values",
-                     "max_records_sharing_one_value")})
+                     "max_records_sharing_one_value",
+                     "values_repeated_within_source_object",
+                     "records_reused_within_source_object",
+                     "values_shared_across_source_objects",
+                     "records_with_cross_object_shared_values",
+                     "max_records_same_value_in_one_object",
+                     "min_distinct_values_per_source_object",
+                     "max_distinct_values_per_source_object")})
           print("Per-source names and paths are kept private; no retail MAP02 executed.")
           PY
       - name: Fail closed on upstream rasterizer source drift
