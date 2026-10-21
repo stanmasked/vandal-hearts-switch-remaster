@@ -32,6 +32,7 @@ LOG_ROW = re.compile(
     r"VH_PRIVATE_NEUTRAL_CAPTURE window=([0-9]+) "
     r"role=(before|middle|after) counter=([0-9]+) "
     r"candidate_input=([0-9]+) expected_buttons=(held|neutral) "
+    r"lag_count=(unavailable|0|[1-9][0-9]*) "
     r"png=written display_offset=unverified"
 )
 MOVIE_SOURCE_PREFLIGHT = (
@@ -113,6 +114,7 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
         raise ValueError("private plan was not reconstructed from source BK2")
     lines = read_private(private_log, LOG_LIMIT).splitlines()
     observed = []
+    lag_samples = []
     completed = 0
     preflight = False
     source_preflight = False
@@ -162,11 +164,25 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
             match = LOG_ROW.fullmatch(line)
             if match is None or not preflight or completed or len(observed) >= len(planned):
                 raise ValueError("malformed or late private capture record")
-            g, role, counter, candidate, held = match.groups()
+            g, role, counter, candidate, held, lag_value = match.groups()
             item = (int(g), role, int(candidate), held)
             if (item != planned[len(observed)]
                     or int(counter) != int(candidate) + 1):
                 raise ValueError("log counter, role or source frame differs")
+            # All candidate snapshots must use the same runtime lag API.
+            # A partial timeline could silently hide a desync or API failure.
+            if lag_value == "unavailable":
+                if lag_samples and lag_samples[0] is not None:
+                    raise ValueError("PSX lag telemetry availability changed mid-capture")
+                lag_samples.append(None)
+            else:
+                observed_lag = int(lag_value)
+                if (observed_lag > int(counter)
+                        or lag_samples and (
+                            lag_samples[0] is None
+                            or observed_lag < lag_samples[-1])):
+                    raise ValueError("PSX lag counter is unavailable, invalid or regressed")
+                lag_samples.append(observed_lag)
             observed.append(item)
     if (not source_preflight or runtime_profile is None
             or not preflight or completed != 1 or not process_exit
@@ -207,6 +223,11 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
         "screenshot_count": hash_count,
         "private_plan_rebuilt_from_direct_bk2": True,
         "capture_logs_match_each_planned_input_and_counter": True,
+        "psx_lag_timeline_available": bool(lag_samples and lag_samples[0] is not None),
+        "reported_psx_lag_counts_at_snapshots": (
+            lag_samples if lag_samples and lag_samples[0] is not None else None
+        ),
+        "psx_lag_timeline_authenticates_movie_sync": False,
         "owner_log_reports_live_first_start_anchor_before_screenshots": True,
         "owner_log_reports_poweron_movie_path_match": True,
         "owner_log_reports_input_poll_callback": core_poll_observed,
