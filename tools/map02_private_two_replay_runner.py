@@ -15,7 +15,8 @@ import stat
 import subprocess
 import sys
 
-from tools.map02_private_bk2_capture_plan import write_private_plan
+from tools.map02_private_bk2_capture_plan import plan_lines, write_private_plan
+from tools.map02_private_bizhawk_poweron_launch import SCRIPT
 from tools.map02_private_disc_movie_preflight import (
     inspect_pair, read_private_full_bin_sha256,
 )
@@ -60,18 +61,18 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     """
     workspace = _private_root(private_workspace)
     _no_existing_outputs(workspace)
-    if not isinstance(max_windows, int) or not 1 <= max_windows <= 10:
+    if type(max_windows) is not int or not 1 <= max_windows <= 10:
         raise ValueError("private capture window count must be 1..10")
-    if not start:
-        return {
-            "schema": SCHEMA,
-            "explicit_launch_requested": False,
-            "emulator_processes_started": 0,
-            "capture_attempts_audited": 0,
-            "owner_private_assets_uploaded": False,
-            "original_map02_scene_authenticated": False,
-        }
+    if type(start) is not bool:
+        raise ValueError("private execution opt-in must be boolean")
+    emulator = Path(private_emuhawk)
+    if (not emulator.is_absolute() or not emulator.is_file()
+            or not SCRIPT.is_absolute() or not SCRIPT.is_file()):
+        raise ValueError("absolute EmuHawk executable and capture Lua are required")
 
+    # Dry-run must genuinely inspect the source movie/disc rather than
+    # reporting a misleading success based on just an empty workspace.
+    # No output file or emulator process is created without --launch-two.
     digest = (read_private_full_bin_sha256(expected_digest_file)
               if expected_digest_file is not None else None)
     profile = inspect_pair(
@@ -81,6 +82,21 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     )
     if not profile["media_preflight_ready_for_owner_replay"]:
         raise ValueError("owner-private original media preflight failed")
+    if not start:
+        candidate = plan_lines(private_bk2, limit=max_windows)
+        if len(candidate) < 6 or (len(candidate) - 3) % 3:
+            raise ValueError("private BK2 candidate capture plan is malformed")
+        return {
+            "schema": SCHEMA,
+            "explicit_launch_requested": False,
+            "media_preflight_passed": True,
+            "private_capture_plan_rows_checked": len(candidate) - 3,
+            "full_bin_sha256_checked": digest is not None,
+            "emulator_processes_started": 0,
+            "capture_attempts_audited": 0,
+            "owner_private_assets_uploaded": False,
+            "original_map02_scene_authenticated": False,
+        }
 
     plan = workspace / PLAN_NAME
     count = write_private_plan(
