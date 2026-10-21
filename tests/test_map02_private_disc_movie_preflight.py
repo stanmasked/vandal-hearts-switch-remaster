@@ -11,6 +11,7 @@ import zipfile
 from tools.map02_private_disc_movie_preflight import (
     MAP02_BYTES, MAP02_LBA, PVD_LBA, SECTOR_BYTES, USER_DATA_BYTES,
     EXPECTED_BIN_BYTES, EXPECTED_VOLUME_ID, inspect_pair, _full_image_sha256,
+    read_private_full_bin_sha256,
 )
 
 SYNC = json.dumps({"o":{"FIOConfig":{
@@ -223,6 +224,37 @@ class DiscMoviePreflightTests(unittest.TestCase):
                 )
         finally:
             os.close(fd)
+
+    def test_read_owner_private_full_bin_digest_reference(self):
+        reference = self.root / "owner-only.sha256"
+        digest = hashlib.sha256(b"invented original-image substitute").hexdigest()
+        reference.write_text(digest + "\n", encoding="ascii")
+        reference.chmod(0o600)
+        self.assertEqual(read_private_full_bin_sha256(reference), digest)
+
+    def test_reject_world_readable_or_symlinked_digest_reference(self):
+        if os.name == "nt":
+            self.skipTest("POSIX mode bit enforcement not applicable")
+        reference = self.root / "unsafe.sha256"
+        reference.write_text("b" * 64 + "\n", encoding="ascii")
+        reference.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "user-private"):
+            read_private_full_bin_sha256(reference)
+        reference.chmod(0o600)
+        link = self.root / "link.sha256"
+        link.symlink_to(reference)
+        with self.assertRaisesRegex(ValueError, "nonsymlink"):
+            read_private_full_bin_sha256(link)
+
+    def test_reject_malformed_private_reference(self):
+        reference = self.root / "malformed.sha256"
+        reference.write_text("A" * 64, encoding="ascii")
+        reference.chmod(0o600)
+        with self.assertRaisesRegex(ValueError, "lowercase"):
+            read_private_full_bin_sha256(reference)
+        reference.write_text("invalid", encoding="ascii")
+        with self.assertRaisesRegex(ValueError, "64 hex"):
+            read_private_full_bin_sha256(reference)
 
     def test_different_volume_id_is_not_accepted(self):
         self._write_disc(volume_id="SLUS_99999")
