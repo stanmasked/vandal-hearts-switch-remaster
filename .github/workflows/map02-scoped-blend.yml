@@ -93,6 +93,8 @@ on:
       - 'tests/test_check_map02_public_grouped_x11_xcb.py'
       - 'tools/check_map02_public_four_archive_group.py'
       - 'tests/test_check_map02_public_four_archive_group.py'
+      - 'tools/check_map02_public_four_archive_import_origin.py'
+      - 'tests/test_check_map02_public_four_archive_import_origin.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -248,6 +250,8 @@ on:
       - 'tests/test_check_map02_public_grouped_x11_xcb.py'
       - 'tools/check_map02_public_four_archive_group.py'
       - 'tests/test_check_map02_public_four_archive_group.py'
+      - 'tools/check_map02_public_four_archive_import_origin.py'
+      - 'tests/test_check_map02_public_four_archive_import_origin.py'
       - 'tools/check_map02_private_archive_strategy_compare.py'
       - 'tests/test_check_map02_private_archive_strategy_compare.py'
       - 'tools/verify_map02_private_archive_comparison.py'
@@ -343,6 +347,7 @@ jobs:
             tests.test_check_map02_public_xcb_after_x11 \
             tests.test_check_map02_public_grouped_x11_xcb \
             tests.test_check_map02_public_four_archive_group \
+            tests.test_check_map02_public_four_archive_import_origin \
             tests.test_check_map02_private_archive_strategy_compare \
             tests.test_verify_map02_private_archive_comparison \
             tests.test_run_map02_private_link_gap_audit
@@ -774,6 +779,54 @@ jobs:
                 four["final_strong_undefined_after_four_archives"] -
                 grouped["final_strong_undefined_after_grouped_x11_xcb"])
           print("Only owner-private intermediate native ELF; no retail gameplay.")
+          PY
+      - name: Attribute original PC versus SDL2-added imports after true four-system-archive link
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m tools.check_map02_public_four_archive_import_origin \
+            "${RUNNER_TEMP}/map02-public-code-reloc/map02-unresolved-symbols.private.json" \
+            "${RUNNER_TEMP}/map02-public-code-reloc/map02-public-original-cd-gpu-reloc.o" \
+            "${RUNNER_TEMP}/map02-real-x11-native-provider/after-sdl2-unresolved.private.json" \
+            "${RUNNER_TEMP}/map02-real-sdl2-native-provider/linked/map02-private-candidate-linked.o" \
+            "${RUNNER_TEMP}/map02-real-four-archive-group/linked/map02-private-candidate-linked.o" \
+            | tee "${RUNNER_TEMP}/map02-real-four-archive-origin-aggregate.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          first = json.loads((root / "map02-real-sdl2-provider-aggregate.json").read_text())
+          four = json.loads((root / "map02-real-four-archive-aggregate.json").read_text())
+          origin = json.loads((root / "map02-real-four-archive-origin-aggregate.json").read_text())
+          assert origin["public_original_elf_sha256"] == first["public_source_elf_sha256"]
+          assert origin["public_after_sdl2_elf_sha256"] == first["linked_partial_elf_sha256"]
+          assert origin["public_four_group_elf_sha256"] == four["linked_four_archive_elf_sha256"]
+          assert origin["initial_original_strong"] == first["initial_strong_undefined"] == 520
+          assert origin["sdl2_stage_strong_total"] == 1085
+          assert origin["original_strong_still_after_sdl2"] == 493
+          assert origin["sdl2_new_strong_imports"] == 592
+          assert (origin["original_pc_strong_resolved_by_four_archives"] +
+                  origin["original_pc_strong_still_after_four_archives"] == 493)
+          assert (origin["sdl2_introduced_strong_resolved_by_four_archives"] +
+                  origin["sdl2_introduced_strong_still_after_four_archives"] == 592)
+          assert (origin["original_pc_strong_resolved_by_four_archives"] +
+                  origin["sdl2_introduced_strong_resolved_by_four_archives"] ==
+                  four["original_strong_imports_resolved"] == 150)
+          assert origin["four_archives_new_strong_imports"] == four["new_strong_imports_from_four_archives"] == 48
+          assert origin["four_archives_final_strong_total"] == four["final_strong_undefined_after_four_archives"] == 983
+          assert (origin["original_pc_strong_still_after_four_archives"] +
+                  origin["sdl2_introduced_strong_still_after_four_archives"] +
+                  origin["four_archives_new_strong_imports"] == 983)
+          assert origin["every_surviving_import_accounted_for"] is True
+          assert origin["retail_assets_linked"] is False
+          assert origin["fully_linked_game_executable"] is False
+          assert origin["authentic_map02_execution_proven"] is False
+          print("Original-PC imports still unresolved after four archives:",
+                origin["original_pc_strong_still_after_four_archives"])
+          print("SDL2-added imports still unresolved after four archives:",
+                origin["sdl2_introduced_strong_still_after_four_archives"])
+          print("All origin buckets independently verified using three actual private ET_REL files.")
           PY
       - name: Fail closed on upstream rasterizer source drift
         run: |
