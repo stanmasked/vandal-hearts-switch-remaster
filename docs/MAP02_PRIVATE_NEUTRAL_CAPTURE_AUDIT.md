@@ -82,3 +82,14 @@ plan offsets, fake Lua console records and synthetic 1x1 RGB PNG
 fixtures. Tests mock the source BK2 planner; no original private BK2,
 disc/BIOS, raw controller inputs or actual screenshots enter CI.
 Keep this PR Draft until owner-local observations are available.
+
+## Проверка начального Start при повторном аудите
+
+Текущий аудитор требует строго **одну** строку
+`VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 candidate_input=1661 first_start_pressed=yes ps1_input_delivery=unverified`
+до первой строки захвата PNG. Пропущенная, дублированная,
+переставленная или изменённая отметка вызывает отказ.
+Она показывает только то, что предоставленный журнал содержит
+предусмотренную отметку Lua-зонда. Она не подтверждает фактическую
+подачу кнопки на PS1, не доказывает отсутствие savestate или
+подделки журнала и не устанавливает связь ввода с кадром видеовывода.
