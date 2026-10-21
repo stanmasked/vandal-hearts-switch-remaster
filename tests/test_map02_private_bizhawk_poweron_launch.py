@@ -112,6 +112,48 @@ class PrivateBizHawkBootTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "owned by current user"):
                 self.call()
 
+    def test_optional_private_full_disc_digest_is_passed_to_media_gate(self):
+        digest = "a" * 64  # invented checksum, not a game-file hash
+        reference = self.root / "owner-only.sha256"
+        reference.write_text(digest + "\n", encoding="ascii")
+        reference.chmod(0o600)
+        with patch(
+            "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ) as media, patch(
+            "tools.map02_private_bizhawk_poweron_launch.plan_lines",
+            return_value=ROWS,
+        ):
+            _, _, count = build_launch(
+                self.program, self.disc, self.bk2, self.plan, self.output,
+                script=self.lua,
+                private_full_bin_sha256_file=reference,
+            )
+        self.assertEqual(count, 3)
+        media.assert_called_once_with(
+            self.disc.resolve(), self.bk2.resolve(),
+            verify_full_bin_sha256=True, expected_bin_sha256=digest,
+        )
+
+    def test_private_full_disc_digest_mismatch_blocks_launch(self):
+        reference = self.root / "owner-only.sha256"
+        reference.write_text("b" * 64 + "\n", encoding="ascii")
+        reference.chmod(0o600)
+        with patch(
+            "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": False},
+        ) as media, patch(
+            "tools.map02_private_bizhawk_poweron_launch.plan_lines",
+        ) as planner:
+            with self.assertRaisesRegex(ValueError, "disc/movie media preflight"):
+                build_launch(
+                    self.program, self.disc, self.bk2, self.plan, self.output,
+                    script=self.lua,
+                    private_full_bin_sha256_file=reference,
+                )
+        media.assert_called_once()
+        planner.assert_not_called()
+
     def test_disc_movie_profile_mismatch_blocks_plan_and_launch(self):
         with patch(
             "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
