@@ -8,6 +8,7 @@ on:
       - 'tools/map02_private_core_witness_audit.py'
       - 'tests/test_map02_private_core_witness_audit.py'
       - 'tools/map02_runtime_core_witness/**'
+      - 'docs/MAP02_RUNTIME_CORE_WITNESS.md'
       - 'tests/test_map02_private_psx_firmware_probe.py'
       - 'tools/map02_private_bin_digest_init.py'
       - 'tests/test_map02_private_bin_digest_init.py'
