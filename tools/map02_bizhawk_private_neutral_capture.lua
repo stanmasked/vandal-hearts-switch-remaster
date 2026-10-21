@@ -196,6 +196,9 @@ local configured_fallback = read_psx_core_preference()
 if configured_fallback == nil then
   return fail("psx_octoshock_core_preference_missing_or_wrong")
 end
+if configured_fallback ~= "blocked" then
+  return fail("psx_core_fallback_must_be_disabled")
+end
 emit("VH_PRIVATE_NEUTRAL_CORE_PREFERENCE preferred=Octoshock fallback=" ..
      configured_fallback .. " active_core=unverified")
 -- BizHawk exposes the loaded ROM's game-database hash. On PSX this may
