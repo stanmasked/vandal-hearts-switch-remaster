@@ -4,6 +4,7 @@ local SCRIPT = "tools/map02_bizhawk_private_neutral_capture.lua"
 local old_print, old_getenv, old_open = print, os.getenv, io.open
 local ROOT = "/private/fake-local-images"
 local PLAN = "/private/fake-capture-plan.txt"
+local LOG = ROOT .. "/vh_private_capture.log"
 local SIGNATURE = "\137PNG\r\n\26\n"
 local BASE = "VH_MAP02_CAPTURE_PLAN_V1\nmovie_frames=933949\ncapture_count=3\n" ..
              "1,before,1664,held\n1,middle,1666,neutral\n1,after,1669,held\n"
@@ -12,7 +13,7 @@ local scenarios = 0
 local function run(option)
   scenarios = scenarios + 1
   local counter = option == "late-attach" and 80 or (option == "zero-counter" and 0 or 1)
-  local lines, screenshots, saved = {}, {}, {}
+  local lines, screenshots, saved, log_lines = {}, {}, {}, {}
   local content = BASE
   if option == "boundary" then content = content:gsub("1,before,1664,held", "1,before,1663,held") end
   if option == "bad-header" then content = content:gsub("VH_MAP02_CAPTURE_PLAN_V1", "OTHER") end
@@ -26,10 +27,30 @@ local function run(option)
     if name == "VH_PRIVATE_PNG_DIR" then
       return option == "relative-root" and "fake-images" or ROOT
     end
+    if name == "VH_PRIVATE_CAPTURE_LOG" then
+      if option == "relative-log" then return "capture.log" end
+      if option == "outside-log" then return "/private/outside.log" end
+      return LOG
+    end
     error("unexpected environment variable")
   end
   io.open = function(path, mode)
-    assert(mode == "rb", "capture script must not write through Lua io")
+    if path == LOG and mode == "ab" then
+      return {
+        write = function(_, line, newline)
+          assert(newline == "\n", "private log records must be newline-delimited")
+          table.insert(log_lines, tostring(line))
+          return true
+        end,
+        flush = function() end,
+        close = function() end,
+      }
+    end
+    assert(mode == "rb", "only the private capture log may be opened for append")
+    if path == LOG then
+      if option == "missing-log" then return nil end
+      return { close = function() end }
+    end
     -- Simulate three public Git roots: inside the output root, an ancestor,
     -- and a worktree-style .git pointer file.
     local mark =
@@ -122,29 +143,34 @@ local function run(option)
   local ok, err = pcall(dofile, SCRIPT)
   print, os.getenv, io.open = old_print, old_getenv, old_open
   assert(ok, tostring(err))
-  return lines, screenshots
+  return lines, screenshots, log_lines
 end
 
 for _, option in ipairs({"plain", "prefixed", "boundary", "zero-counter", "sparse-start"}) do
-  local lines, shots = run(option)
+  local lines, shots, log_lines = run(option)
   assert(#shots == 3, option .. ": expected three screenshot calls")
-  assert(#lines == 5, option .. ": Start preflight, three captures and summary")
-  assert(lines[1] == "VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 candidate_input=1661 first_start_pressed=yes ps1_input_delivery=unverified", option .. ": wrong live anchor")
+  assert(#lines == 6, option .. ": log ready, Start preflight, three captures and summary")
+  assert(#log_lines == #lines, option .. ": private file log must mirror console markers")
+  for i = 1, #lines do
+    assert(log_lines[i] == lines[i], option .. ": private log differs from console marker")
+  end
+  assert(lines[1] == "VH_PRIVATE_CAPTURE_LOG_READY schema=1", option .. ": missing log-ready marker")
+  assert(lines[2] == "VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 candidate_input=1661 first_start_pressed=yes ps1_input_delivery=unverified", option .. ": wrong live anchor")
   local frames = {option == "boundary" and 1663 or 1664, 1666, 1669}
   local roles = {"before", "middle", "after"}
   for i = 1, 3 do
-    local group, role, counter, candidate, held = lines[i + 1]:match(
+    local group, role, counter, candidate, held = lines[i + 2]:match(
       "^VH_PRIVATE_NEUTRAL_CAPTURE window=(%d+) role=([a-z]+) counter=(%d+) candidate_input=(%d+) expected_buttons=([a-z]+) png=written display_offset=unverified$")
     assert(tonumber(group) == 1 and role == roles[i], option .. ": bad role/group")
     assert(tonumber(counter) == frames[i] + 1, option .. ": bad core counter")
     assert(tonumber(candidate) == frames[i], option .. ": off-by-one movie frame")
     assert(held == (i == 2 and "neutral" or "held"), option .. ": expected button state")
   end
-  assert(lines[5] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes actual_map02=unverified")
+  assert(lines[6] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes actual_map02=unverified")
 end
 
 for _, option in ipairs({
-  "relative-plan", "relative-root", "wrong-length", "not-readonly",
+  "relative-plan", "relative-root", "relative-log", "outside-log", "missing-log", "wrong-length", "not-readonly",
   "bad-header", "bad-count", "duplicate-index", "neutral-mismatch",
   "mode-leaves", "skip-counter", "saved-exists", "missing-write",
   "malformed-png", "invalid-role", "late-attach",
