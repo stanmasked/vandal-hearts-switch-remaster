@@ -199,7 +199,7 @@ PNG, журналы и локальные результаты анализа Н
 
     python3 -m tools.map02_private_two_replay_runner \
       /absolute/path/to/EmuHawkMono.sh \
-      /private/Vandal_Hearts_(RU)_v1.6.cue \
+      "/private/Vandal_Hearts_(RU)_v1.6.cue" \
       /private/vandalhearts.bk2 \
       /private/vh-map02-double-review
 
