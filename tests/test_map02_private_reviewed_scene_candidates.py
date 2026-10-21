@@ -211,7 +211,9 @@ class ReviewShortlistTests(unittest.TestCase):
         audit["matches_and_differences_by_review_position"][0][
             "same_decoded_rgb_pixels"] = "true"
         with self.assertRaisesRegex(ValueError, "cross-capture RGB"):
-            shortlist(POSITIONS, audit, self.labels, {1: True}, source_plan_sha256=PLAN_SHA)
+            shortlist(POSITIONS, audit, self.labels, {1: True},
+                      source_plan_sha256=PLAN_SHA,
+                      source_capture_evidence_sha256=audit["source_capture_evidence_sha256"])
 
     def test_report_binds_exact_capture_plan_sha256(self):
         report = self.call()
