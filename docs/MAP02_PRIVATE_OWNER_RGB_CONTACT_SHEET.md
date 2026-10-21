@@ -51,8 +51,11 @@ UNVERIFIED / NOT MAP02 PROOF.
 coordinates.** Never upload the output PNG to GitHub, a GitHub issue,
 Actions artifact or a public message. It is saved only to a new
 absolute PNG path in an existing non-symlink directory outside Git,
-with exclusive create and owner-only 0600 permissions. Existing files,
-symlink targets and Git directories are rejected. Public CI tests
+with exclusive create and owner-only 0600 permissions. Existing files, directly symlinked output directories, symlink targets,
+and Git directories are rejected. Standard macOS system ancestry such as
+/var resolving to /private/var is accepted, but the full canonicalized
+ancestry is also checked for Git checkouts, so that alias cannot be used
+to write private screenshots into a repository. Public CI tests
 only invented 2×1 PNGs and does not publish even those image fixtures.
 
 Use the private sheet for a human to label intervals as menus, dialogue,
