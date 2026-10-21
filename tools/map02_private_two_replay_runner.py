@@ -22,7 +22,10 @@ from tools.map02_private_bizhawk_poweron_launch import (
     MIN_EMULATOR_TIMEOUT_SECONDS, MAX_EMULATOR_TIMEOUT_SECONDS,
 )
 from tools.map02_private_disc_movie_preflight import (
-    _assert_stable, _open_stable, inspect_pair, read_private_full_bin_sha256,
+    _assert_stable, _identity, _open_stable, _parse_cue, _read_at,
+    _resolve_private_file, EXPECTED_BIN_BYTES, MAP02_BYTES, MAP02_LBA,
+    MAX_CUE_BYTES, PVD_LBA, SECTOR_BYTES, USER_DATA_BYTES,
+    inspect_pair, read_private_full_bin_sha256,
 )
 from tools.map02_private_two_capture_audit import _private_root, audit_pair
 from tools.verify_map02_private_neutral_capture_chain import verify
@@ -33,6 +36,52 @@ PLAN_NAME = "vh-map02-review-plan.txt"
 RUN_NAMES = ("vh-map02-cold-01", "vh-map02-cold-02")
 MAX_PRIVATE_MOVIE_BYTES = 8 * 1024 * 1024
 MOVIE_DIGEST_BLOCK_BYTES = 1024 * 1024
+# Only these source sectors are pinned automatically. A full-BIN private
+# SHA-256 reference is needed to check every sector of the original disc.
+MAP02_SECTOR_COUNT = (MAP02_BYTES + USER_DATA_BYTES - 1) // USER_DATA_BYTES
+
+
+def _disc_source_snapshot(cue_file: Path) -> tuple:
+    """Pin private CUE bytes, file identity and audited raw BIN sectors.
+
+    Deliberately does NOT claim whole-BIN content equality. No paths, source
+    bytes or digests are printed, serialized, or uploaded.
+    """
+    cue = _resolve_private_file(cue_file)
+    fd, before = _open_stable(cue)
+    try:
+        if not 0 < before.st_size <= MAX_CUE_BYTES:
+            raise ValueError("private CUE outside bounded size")
+        source = _read_at(fd, 0, before.st_size)
+        if len(source) != before.st_size:
+            raise ValueError("private CUE changed during read")
+        bin_name = _parse_cue(source.decode("ascii"))
+        _assert_stable(fd, cue, before)
+        cue_receipt = (str(cue), _identity(before),
+                       hashlib.sha256(source).digest())
+    finally:
+        os.close(fd)
+    bin_path = _resolve_private_file(cue.parent / bin_name)
+    fd, before = _open_stable(bin_path)
+    try:
+        if before.st_size != EXPECTED_BIN_BYTES:
+            raise ValueError("private BIN size no longer matches audited profile")
+        sampled = hashlib.sha256()
+        for lba in (PVD_LBA, *range(MAP02_LBA, MAP02_LBA + MAP02_SECTOR_COUNT)):
+            raw = _read_at(fd, lba * SECTOR_BYTES, SECTOR_BYTES)
+            if len(raw) != SECTOR_BYTES:
+                raise ValueError("private BIN sampled sector could not be read")
+            sampled.update(raw)
+        _assert_stable(fd, bin_path, before)
+        bin_receipt = (str(bin_path), _identity(before), sampled.digest())
+    finally:
+        os.close(fd)
+    return cue_receipt, bin_receipt
+
+
+def _require_disc_unchanged(cue_file: Path, original_snapshot: tuple) -> None:
+    if _disc_source_snapshot(cue_file) != original_snapshot:
+        raise ValueError("owner-private disc source changed between capture attempts")
 
 
 def _private_movie_identity(path: Path) -> bytes:
@@ -116,6 +165,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     # process or independent audit. Merely re-parsing a changed archive later
     # would not prove that both sessions used the same exact input movie.
     movie_identity = _private_movie_identity(private_bk2)
+    disc_identity = _disc_source_snapshot(private_disc)
     # Dry-run must genuinely inspect the source movie/disc rather than
     # reporting a misleading success based on just an empty workspace.
     # No output file or emulator process is created without --launch-two.
@@ -129,16 +179,19 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     if not profile["media_preflight_ready_for_owner_replay"]:
         raise ValueError("owner-private original media preflight failed")
     _require_movie_unchanged(private_bk2, movie_identity)
+    _require_disc_unchanged(private_disc, disc_identity)
     if not start:
         candidate = plan_lines(private_bk2, limit=max_windows)
         if len(candidate) < 6 or (len(candidate) - 3) % 3:
             raise ValueError("private BK2 candidate capture plan is malformed")
         _require_movie_unchanged(private_bk2, movie_identity)
+        _require_disc_unchanged(private_disc, disc_identity)
         return {
             "schema": SCHEMA,
             "explicit_launch_requested": False,
             "media_preflight_passed": True,
             "owner_bk2_stable_during_preflight": True,
+            "disc_source_stable_during_preflight": True,
             "private_capture_plan_rows_checked": len(candidate) - 3,
             "full_bin_sha256_checked": digest is not None,
             "emulator_timeout_seconds": (
@@ -159,9 +212,11 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     if count < 3 or count % 3:
         raise ValueError("private capture plan contains invalid number of frames")
     _require_movie_unchanged(private_bk2, movie_identity)
+    _require_disc_unchanged(private_disc, disc_identity)
 
     for name in RUN_NAMES:
         _require_movie_unchanged(private_bk2, movie_identity)
+        _require_disc_unchanged(private_disc, disc_identity)
         output = workspace / name
         _capture_dir(output)
         argv = [
@@ -182,23 +237,28 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         _require_movie_unchanged(private_bk2, movie_identity)
+        _require_disc_unchanged(private_disc, disc_identity)
         if process.returncode != 0:
             raise ValueError("one private emulator capture process failed")
         # Reject an emulator that returned zero without the exact expected
         # Lua markers and structurally intact PNGs before starting the next.
         verify(private_bk2, plan, output / "vh_private_capture.log", output)
         _require_movie_unchanged(private_bk2, movie_identity)
+        _require_disc_unchanged(private_disc, disc_identity)
 
     paired = audit_pair(
         private_bk2, plan, workspace / RUN_NAMES[0], workspace / RUN_NAMES[1],
     )
     _require_movie_unchanged(private_bk2, movie_identity)
+    _require_disc_unchanged(private_disc, disc_identity)
     return {
         "schema": SCHEMA,
         "explicit_launch_requested": True,
         "emulator_processes_started": 2,
         "capture_attempts_audited": 2,
         "same_bk2_bytes_across_capture_attempts": True,
+        "same_cue_and_sampled_bin_sectors_across_attempts": True,
+        "full_disc_content_equality_authenticated": False,
         "emulator_timeout_seconds": (
             emulator_timeout_seconds
             if emulator_timeout_seconds is not None
