@@ -142,6 +142,18 @@ class Map02PrivateInputHandshakeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             verify(self.report_path, link, self.log_path)
 
+    def test_impossible_first_window_press_without_held_button_refused(self):
+        self.change_rows[0] = (10, "Start", "", "")
+        self.write_files()
+        with self.assertRaises(ValueError):
+            verify(self.report_path, self.csv_path, self.log_path)
+
+    def test_impossible_first_window_release_while_still_held_refused(self):
+        self.change_rows[0] = (10, "", "Start", "Start")
+        self.write_files()
+        with self.assertRaises(ValueError):
+            verify(self.report_path, self.csv_path, self.log_path)
+
     def test_known_first_start_anchor_at_1661_is_required(self):
         self.report["input_log_frame_count"] = 2000
         self.report["window"] = {
