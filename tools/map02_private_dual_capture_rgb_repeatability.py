@@ -23,7 +23,7 @@ from tools.map02_private_png_visual_diff import (
 )
 from tools.map02_private_visual_diff_triage import save_private_report
 
-SCHEMA = "vh.map02.private-dual-bundle-rgb-repeatability.v1"
+SCHEMA = "vh.map02.private-dual-bundle-rgb-repeatability.v2"
 MAX_FRAMES = 30
 MAX_EVIDENCE_FILE_BYTES = 128 * 1024 * 1024
 ROLES = ("before", "middle", "after")
