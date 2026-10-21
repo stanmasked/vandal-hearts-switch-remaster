@@ -340,6 +340,9 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
             "tools.map02_private_two_replay_runner.subprocess.run",
             side_effect=alter_on_second,
         ) as launched, patch(
+            "tools.map02_private_two_replay_runner._full_image_sha256",
+            return_value="a" * 64,
+        ), patch(
             "tools.map02_private_two_replay_runner.verify",
             return_value={"screenshot_count": 3},
         ) as auditing, patch(
