@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 from pathlib import Path
 import unittest
@@ -12,6 +13,7 @@ from tools.map02_private_reviewed_scene_candidates import SCHEMA, shortlist, ver
 from tools.map02_private_human_review_ledger import HEADER, write_private_new
 
 POSITIONS = [(1, "before"), (1, "middle"), (1, "after")]
+PLAN_SHA = "a" * 64
 TRANSITION = [
     ("menu", "menu"),
     ("tactical_board", "tactical_board"),
@@ -149,9 +151,9 @@ class ReviewShortlistTests(unittest.TestCase):
     def test_forged_or_missing_intra_group_rgb_evidence_rejected(self):
         proof = self.sample.call()
         with self.assertRaisesRegex(ValueError, "incomplete source-validated"):
-            shortlist(POSITIONS, proof, self.labels, {1: "true"})
+            shortlist(POSITIONS, proof, self.labels, {1: "true"}, source_plan_sha256=PLAN_SHA)
         with self.assertRaisesRegex(ValueError, "incomplete source-validated"):
-            shortlist(POSITIONS, proof, self.labels, {})
+            shortlist(POSITIONS, proof, self.labels, {}, source_plan_sha256=PLAN_SHA)
 
     def test_corrupt_png_blocks_report_generation(self):
         self.sample.image(1, "after").write_bytes(b"not an image")
@@ -188,20 +190,44 @@ class ReviewShortlistTests(unittest.TestCase):
         row = audit["matches_and_differences_by_review_position"][0]
         audit["matches_and_differences_by_review_position"].append(dict(row))
         with self.assertRaisesRegex(ValueError, "source RGB witness"):
-            shortlist(POSITIONS, audit, self.labels, {1: True})
+            shortlist(POSITIONS, audit, self.labels, {1: True}, source_plan_sha256=PLAN_SHA)
 
     def test_forged_source_game_proof_is_rejected(self):
         audit = self.sample.call()
         audit["map02_start_frame_identified"] = True
         with self.assertRaisesRegex(ValueError, "source RGB witness"):
-            shortlist(POSITIONS, audit, self.labels, {1: True})
+            shortlist(POSITIONS, audit, self.labels, {1: True}, source_plan_sha256=PLAN_SHA)
 
     def test_non_boolean_rgb_agreement_rejected(self):
         audit = self.sample.call()
         audit["matches_and_differences_by_review_position"][0][
             "same_decoded_rgb_pixels"] = "true"
         with self.assertRaisesRegex(ValueError, "cross-capture RGB"):
-            shortlist(POSITIONS, audit, self.labels, {1: True})
+            shortlist(POSITIONS, audit, self.labels, {1: True}, source_plan_sha256=PLAN_SHA)
+
+    def test_report_binds_exact_capture_plan_sha256(self):
+        report = self.call()
+        self.assertEqual(
+            report["source_plan_sha256"],
+            hashlib.sha256(self.sample.plan.read_bytes()).hexdigest(),
+        )
+        self.assertNotIn(self.sample.plan.read_text(encoding="ascii"),
+                         json.dumps(report))
+
+    def test_capture_plan_mutation_during_audit_fails_closed(self):
+        def mutate_plan(*_args, **_kwargs):
+            self.sample.plan.write_text(
+                self.sample.plan.read_text(encoding="ascii") + "# changed\\n",
+                encoding="ascii",
+            )
+            return {1: True}
+
+        with patch(
+            "tools.map02_private_reviewed_scene_candidates._intra_group_visual_changes",
+            side_effect=mutate_plan,
+        ):
+            with self.assertRaisesRegex(ValueError, "changed during audit"):
+                self.call()
 
     def test_private_json_output_is_owner_only_and_cannot_be_overwritten(self):
         report = self.call()
