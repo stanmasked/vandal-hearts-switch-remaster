@@ -72,8 +72,12 @@ def audit_glibc_static_coverage(original_manifest, original_elf,
         root, _ = _private_output_dir(new_private_root)
         copies = [root / COPY_LIBC, root / COPY_LIBM]
         origins = (system_libc_archive, system_actual_libm_archive)
+        copy_digests = []
         for src, dst in zip(origins, copies):
-            _copy_system_archive(src, dst)
+            copy_digests.append(_copy_system_archive(src, dst))
+        # Two paths to the same bytes are not independent libc/libm providers.
+        if len(set(copy_digests)) != 2:
+            raise ValueError("MAP02 glibc libc/libm provider archives must differ")
         providers = []
         try:
             for candidate in copies:
@@ -82,6 +86,8 @@ def audit_glibc_static_coverage(original_manifest, original_elf,
                 _check_abi(p)
             if len({(p[2][0], p[2][1]) for p in providers}) != 2:
                 raise ValueError("MAP02 glibc candidate static inodes alias")
+            if any(p[3] != copied for p, copied in zip(providers, copy_digests)):
+                raise ValueError("MAP02 glibc system archive copy digest mismatch")
             libc_names = _candidate_strong_exports(copies[0])
             libm_names = _candidate_strong_exports(copies[1])
             for p in providers:
