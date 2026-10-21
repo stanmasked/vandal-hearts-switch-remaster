@@ -143,7 +143,7 @@ class PrivateDigestBootstrapTests(unittest.TestCase):
     def test_no_collision_overwrite_on_exclusive_open(self):
         real_open = os.open
         def collision(path, flags, mode=0o777):
-            if str(path) == str(self.reference):
+            if Path(path).resolve(strict=False) == self.reference.resolve(strict=False):
                 raise FileExistsError("fictional exclusive-create collision")
             return real_open(path, flags, mode)
         with patch(PREFIX + "os.open", side_effect=collision):
