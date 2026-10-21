@@ -71,6 +71,8 @@ class CaptureAuditTests(unittest.TestCase):
                 "source=poweron filename=matched core_identity=unverified",
                 "VH_PRIVATE_NEUTRAL_RUNTIME_PREFLIGHT "
                 "bizhawk_version=2.11 display=NTSC active_core=unverified",
+                "VH_PRIVATE_NEUTRAL_CORE_PREFERENCE "
+                "preferred=Octoshock fallback=allowed active_core=unverified",
                 "VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 "
                 "candidate_input=1661 first_start_pressed=yes "
                 "ps1_input_delivery=unverified"]
@@ -115,6 +117,9 @@ class CaptureAuditTests(unittest.TestCase):
         self.assertFalse(value["psx_lag_timeline_authenticates_movie_sync"])
         self.assertTrue(value["owner_log_reports_stable_game_rom_id_samples"])
         self.assertFalse(value["original_disc_full_hash_authenticated"])
+        self.assertTrue(value["owner_log_reports_octoshock_preference"])
+        self.assertEqual(value["reported_psx_core_fallback_configuration"], "allowed")
+        self.assertFalse(value["octoshock_preference_authenticates_active_core"])
         self.assertEqual(value["reported_bizhawk_version"], "2.11")
         self.assertEqual(value["reported_psx_display_standard"], "NTSC")
         self.assertFalse(value["active_octoshock_core_verified"])
@@ -220,6 +225,61 @@ class CaptureAuditTests(unittest.TestCase):
                 ), encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, "completion"):
                     self.call()
+
+    def test_psx_preference_marker_is_mandatory(self):
+        source = self.log.read_text(encoding="utf-8")
+        self.log.write_text("\n".join(
+            line for line in source.splitlines()
+            if not line.startswith("VH_PRIVATE_NEUTRAL_CORE_PREFERENCE")
+        ) + "\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "core preference"):
+            self.call()
+
+    def test_psx_preference_marker_duplicate_rejected(self):
+        with self.log.open("a", encoding="utf-8") as f:
+            f.write("VH_PRIVATE_NEUTRAL_CORE_PREFERENCE "
+                    "preferred=Octoshock fallback=allowed active_core=unverified\n")
+        with self.assertRaisesRegex(ValueError, "core preference"):
+            self.call()
+
+    def test_wrong_or_forged_core_identity_marker_rejected(self):
+        original = self.log.read_text(encoding="utf-8")
+        for mutation in ("preferred=Nymashock", "active_core=Octoshock",
+                         "fallback=maybe", "fallback=ALLOWED"):
+            with self.subTest(mutation=mutation):
+                self.log.write_text(original.replace(
+                    "preferred=Octoshock fallback=allowed active_core=unverified",
+                    mutation,
+                ), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "core preference"):
+                    self.call()
+
+    def test_core_preference_marker_misordered_rejected(self):
+        original = self.log.read_text(encoding="utf-8")
+        marker = ("VH_PRIVATE_NEUTRAL_CORE_PREFERENCE "
+                  "preferred=Octoshock fallback=allowed active_core=unverified\n")
+        self.log.write_text(marker + original.replace(marker, ""),
+                            encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "core preference"):
+            self.call()
+
+    def test_octoshock_fallback_blocked_is_valid_but_not_core_proof(self):
+        self.log.write_text(self.log.read_text(encoding="utf-8").replace(
+            "fallback=allowed active_core=unverified",
+            "fallback=blocked active_core=unverified",
+        ), encoding="utf-8")
+        report = self.call()
+        self.assertEqual(report["reported_psx_core_fallback_configuration"], "blocked")
+        self.assertFalse(report["active_octoshock_core_verified"])
+
+    def test_undetermined_fallback_is_explicitly_unverified(self):
+        self.log.write_text(self.log.read_text(encoding="utf-8").replace(
+            "fallback=allowed active_core=unverified",
+            "fallback=unverified active_core=unverified",
+        ), encoding="utf-8")
+        report = self.call()
+        self.assertEqual(report["reported_psx_core_fallback_configuration"], "unverified")
+        self.assertFalse(report["active_octoshock_core_verified"])
 
     def test_missing_live_runtime_profile_is_rejected(self):
         original = self.log.read_text(encoding="utf-8")
