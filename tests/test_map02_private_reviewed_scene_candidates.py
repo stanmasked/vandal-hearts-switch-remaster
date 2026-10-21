@@ -119,6 +119,39 @@ class ReviewShortlistTests(unittest.TestCase):
             fake.COLORS[1], metadata=True))
         self.assertEqual(self.call()["review_groups_requiring_game_state_witness"], 1)
 
+    def test_manual_scene_pattern_with_same_before_middle_pixels_is_rejected(self):
+        # Human category claims can disagree with actual decoded images:
+        # before/menu and middle/board share EXACT pixels in both runs.
+        for run in (0, 1):
+            self.sample.image(run, "middle").write_bytes(
+                fake.synthetic_png(fake.COLORS[0]))
+        report = self.call()
+        self.assertEqual(report["review_groups_requiring_game_state_witness"], 0)
+        self.assertEqual(report["review_groups_without_intra_group_pixel_change"], 1)
+        self.assertEqual(report["groups"][0]["state"],
+                         "no_observed_intra_group_pixel_change")
+
+    def test_manual_scene_pattern_with_same_before_after_pixels_is_rejected(self):
+        for run in (0, 1):
+            self.sample.image(run, "after").write_bytes(
+                fake.synthetic_png(fake.COLORS[0]))
+        self.assertEqual(self.call()["groups"][0]["state"],
+                         "no_observed_intra_group_pixel_change")
+
+    def test_cross_role_dimensions_must_match_for_visual_transition(self):
+        for run in (0, 1):
+            self.sample.image(run, "middle").write_bytes(
+                fake.synthetic_png(fake.COLORS[1], width=3))
+        with self.assertRaisesRegex(ValueError, "within-group frame dimensions"):
+            self.call()
+
+    def test_forged_or_missing_intra_group_rgb_evidence_rejected(self):
+        proof = self.sample.call()
+        with self.assertRaisesRegex(ValueError, "incomplete source-validated"):
+            shortlist(POSITIONS, proof, self.labels, {1: "true"})
+        with self.assertRaisesRegex(ValueError, "incomplete source-validated"):
+            shortlist(POSITIONS, proof, self.labels, {})
+
     def test_corrupt_png_blocks_report_generation(self):
         self.sample.image(1, "after").write_bytes(b"not an image")
         with self.assertRaises((OSError, ValueError)):
@@ -154,20 +187,20 @@ class ReviewShortlistTests(unittest.TestCase):
         row = audit["matches_and_differences_by_review_position"][0]
         audit["matches_and_differences_by_review_position"].append(dict(row))
         with self.assertRaisesRegex(ValueError, "source RGB witness"):
-            shortlist(POSITIONS, audit, self.labels)
+            shortlist(POSITIONS, audit, self.labels, {1: True})
 
     def test_forged_source_game_proof_is_rejected(self):
         audit = self.sample.call()
         audit["map02_start_frame_identified"] = True
         with self.assertRaisesRegex(ValueError, "source RGB witness"):
-            shortlist(POSITIONS, audit, self.labels)
+            shortlist(POSITIONS, audit, self.labels, {1: True})
 
     def test_non_boolean_rgb_agreement_rejected(self):
         audit = self.sample.call()
         audit["matches_and_differences_by_review_position"][0][
             "same_decoded_rgb_pixels"] = "true"
         with self.assertRaisesRegex(ValueError, "cross-capture RGB"):
-            shortlist(POSITIONS, audit, self.labels)
+            shortlist(POSITIONS, audit, self.labels, {1: True})
 
     def test_private_json_output_is_owner_only_and_cannot_be_overwritten(self):
         report = self.call()
