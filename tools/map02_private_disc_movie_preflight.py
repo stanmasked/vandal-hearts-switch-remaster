@@ -17,7 +17,7 @@ import stat
 import zipfile
 
 from tools.inspect_map02_private_bk2 import (
-    MAX_FRAMES, MAX_INPUT_BYTES, check_logkey, parse_header, parse_sync,
+    MAX_FRAMES, MAX_FRAME_LENGTH, MAX_INPUT_BYTES, check_logkey, parse_header, parse_sync,
     read_frame, read_small, safe_members,
 )
 
@@ -281,7 +281,14 @@ def _movie_metadata(movie_path: Path, expected_movie_frames: int
                 frames = 0
                 bytes_read = 0
                 ended = False
-                for raw_line in raw:
+                while True:
+                    # A malformed BK2 may contain a single giant line.
+                    # Never allocate that line before the size check.
+                    raw_line = raw.readline(MAX_FRAME_LENGTH + 3)
+                    if not raw_line:
+                        break
+                    if not raw_line.endswith(b"\n"):
+                        raise ValueError("BK2 input line exceeds bounded length")
                     bytes_read += len(raw_line)
                     if bytes_read > MAX_INPUT_BYTES:
                         raise ValueError("BK2 input expansion limit exceeded")
