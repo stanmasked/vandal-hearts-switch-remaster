@@ -42,15 +42,22 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.plan.write_text("\n".join(ROWS) + "\n", encoding="ascii")
 
     def call(self, **kwargs):
-        with patch("tools.map02_private_bizhawk_poweron_launch.plan_lines",
-                   return_value=kwargs.pop("source_rows", ROWS)) as source:
+        program = kwargs.pop("program", self.program)
+        disc = kwargs.pop("disc", self.disc)
+        movie = kwargs.pop("movie", self.bk2)
+        plan = kwargs.pop("plan", self.plan)
+        output = kwargs.pop("output", self.output)
+        lua = kwargs.pop("lua", self.lua)
+        rows = kwargs.pop("source_rows", ROWS)
+        with patch(
+            "tools.map02_private_bizhawk_poweron_launch.plan_lines",
+            return_value=rows,
+        ) as source, patch(
+            "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ) as media:
             result = build_launch(
-                kwargs.pop("program", self.program),
-                kwargs.pop("disc", self.disc),
-                kwargs.pop("movie", self.bk2),
-                kwargs.pop("plan", self.plan),
-                kwargs.pop("output", self.output),
-                script=kwargs.pop("lua", self.lua),
+                program, disc, movie, plan, output, script=lua,
                 minimum=kwargs.pop("minimum", 180),
                 maximum=kwargs.pop("maximum", 1800),
                 after=kwargs.pop("after", 1663),
@@ -58,6 +65,8 @@ class PrivateBizHawkBootTests(unittest.TestCase):
             )
         self.assertFalse(kwargs)
         self.assertEqual(source.call_args.kwargs["limit"], 1)
+        self.assertEqual(media.call_count, 1)
+        self.assertEqual(media.call_args.args, (Path(disc).resolve(), Path(movie).resolve()))
         return result
 
     def test_exact_bizhawk_argv_and_environment_without_shell(self):
@@ -75,17 +84,6 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                          str((self.output / "vh_emuhawk_process.log").resolve()))
         self.assertNotIn("github", str(argv).lower())
 
-    def test_owner_original_files_must_not_reside_in_git_checkout(self):
-        (self.root / ".git").mkdir()
-        with self.assertRaises(ValueError):
-            self.call()
-
-    def test_refuses_private_movie_symlink(self):
-        other = self.root / "shortcut.bk2"
-        other.symlink_to(self.bk2)
-        with self.assertRaises(ValueError):
-            self.call(movie=other)
-
     def test_refuses_cue_with_missing_track_file(self):
         self.track.unlink()
         with self.assertRaisesRegex(ValueError, "CUE track file is missing"):
@@ -98,6 +96,47 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "remain under descriptor directory"):
             self.call()
+
+    def test_refuses_group_or_world_accessible_png_root(self):
+        if os.name == "nt":
+            self.skipTest("POSIX directory mode bits are not Windows ACLs")
+        self.output.chmod(0o755)
+        with self.assertRaisesRegex(ValueError, "owner-only"):
+            self.call()
+
+    def test_refuses_png_root_owned_by_another_user(self):
+        if os.name == "nt":
+            self.skipTest("POSIX uid ownership is unavailable on Windows")
+        with patch("tools.map02_private_bizhawk_poweron_launch.os.geteuid",
+                   return_value=self.output.stat().st_uid + 1):
+            with self.assertRaisesRegex(ValueError, "owned by current user"):
+                self.call()
+
+    def test_disc_movie_profile_mismatch_blocks_plan_and_launch(self):
+        with patch(
+            "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": False},
+        ) as media, patch(
+            "tools.map02_private_bizhawk_poweron_launch.plan_lines"
+        ) as planner:
+            with self.assertRaisesRegex(ValueError, "disc/movie media preflight"):
+                build_launch(
+                    self.program, self.disc, self.bk2, self.plan, self.output,
+                    script=self.lua,
+                )
+        media.assert_called_once_with(self.disc.resolve(), self.bk2.resolve())
+        planner.assert_not_called()
+
+    def test_owner_original_files_must_not_reside_in_git_checkout(self):
+        (self.root / ".git").mkdir()
+        with self.assertRaises(ValueError):
+            self.call()
+
+    def test_refuses_private_movie_symlink(self):
+        other = self.root / "shortcut.bk2"
+        other.symlink_to(self.bk2)
+        with self.assertRaises(ValueError):
+            self.call(movie=other)
 
     def test_refuses_missing_private_disc(self):
         with self.assertRaises(ValueError):
@@ -131,21 +170,6 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         (self.output / "vh_emuhawk_process.log").symlink_to(victim)
         with self.assertRaises(ValueError):
             self.call()
-
-    def test_refuses_group_or_world_accessible_png_root(self):
-        if os.name == "nt":
-            self.skipTest("POSIX directory mode bits are not Windows ACLs")
-        self.output.chmod(0o755)
-        with self.assertRaisesRegex(ValueError, "owner-only"):
-            self.call()
-
-    def test_refuses_png_root_owned_by_another_user(self):
-        if os.name == "nt":
-            self.skipTest("POSIX uid ownership is unavailable on Windows")
-        with patch("tools.map02_private_bizhawk_poweron_launch.os.geteuid",
-                   return_value=self.output.stat().st_uid + 1):
-            with self.assertRaisesRegex(ValueError, "owned by current user"):
-                self.call()
 
     def test_refuses_already_existing_screenshot_output(self):
         (self.output / "vh_review_w01_middle_counter_0003251.png").write_bytes(b"old")
@@ -192,7 +216,10 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         ]
         with patch.object(sys, "argv", command):
             with patch("tools.map02_private_bizhawk_poweron_launch.plan_lines",
-                       return_value=ROWS):
+                       return_value=ROWS), patch(
+                    "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
+                    return_value={"media_preflight_ready_for_owner_replay": True},
+                ):
                 with patch("tools.map02_private_bizhawk_poweron_launch.subprocess.run") as run:
                     stream = io.StringIO()
                     with contextlib.redirect_stdout(stream):
@@ -213,7 +240,10 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         ]
         with patch.object(sys, "argv", args):
             with patch("tools.map02_private_bizhawk_poweron_launch.plan_lines",
-                       return_value=ROWS):
+                       return_value=ROWS), patch(
+                    "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
+                    return_value={"media_preflight_ready_for_owner_replay": True},
+                ):
                 with patch("tools.map02_private_bizhawk_poweron_launch.subprocess.run",
                            return_value=Mock(returncode=0)) as run:
                     stream = io.StringIO()
@@ -248,7 +278,10 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         ]
         with patch.object(sys, "argv", args):
             with patch("tools.map02_private_bizhawk_poweron_launch.plan_lines",
-                       return_value=ROWS):
+                       return_value=ROWS), patch(
+                    "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
+                    return_value={"media_preflight_ready_for_owner_replay": True},
+                ):
                 with patch("tools.map02_private_bizhawk_poweron_launch.subprocess.run",
                            side_effect=OSError("synthetic executable failure")):
                     stream = io.StringIO()
@@ -268,7 +301,10 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         ]
         with patch.object(sys, "argv", args):
             with patch("tools.map02_private_bizhawk_poweron_launch.plan_lines",
-                       return_value=ROWS):
+                       return_value=ROWS), patch(
+                    "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
+                    return_value={"media_preflight_ready_for_owner_replay": True},
+                ):
                 with patch("tools.map02_private_bizhawk_poweron_launch.subprocess.run",
                            return_value=Mock(returncode=9)):
                     with contextlib.redirect_stdout(io.StringIO()):

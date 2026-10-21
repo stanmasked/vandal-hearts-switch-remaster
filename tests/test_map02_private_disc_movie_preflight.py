@@ -1,0 +1,170 @@
+"""Fictional raw sectors and a tiny synthetic BK2 only; no retail bytes."""
+import hashlib
+import json
+from pathlib import Path
+import tempfile
+import unittest
+import zipfile
+
+from tools.map02_private_disc_movie_preflight import (
+    MAP02_BYTES, MAP02_LBA, PVD_LBA, SECTOR_BYTES, USER_DATA_BYTES,
+    EXPECTED_VOLUME_ID, inspect_pair,
+)
+
+SYNC = json.dumps({"o":{"FIOConfig":{
+    "Devices8":[2,0,0,0,0,0,0,0],
+    "Memcards":[False,False],
+    "Multitaps":[False,False],
+}}})
+
+
+def raw_sector(user):
+    payload = bytes(user).ljust(USER_DATA_BYTES, b"\x00")
+    if len(payload) != USER_DATA_BYTES:
+        raise ValueError("test payload too large")
+    sector = bytearray(SECTOR_BYTES)
+    sector[:12] = b"\x00" + b"\xff" * 10 + b"\x00"
+    sector[15] = 2
+    sector[24:24 + USER_DATA_BYTES] = payload
+    return bytes(sector)
+
+
+def write_movie(path, *, game="Vandal Hearts (USA)", core="Octoshock",
+                sync=SYNC):
+    header = ("MovieVersion SyntheticCIOnly\nPlatform PSX\n"
+              + "GameName " + game + "\nCore " + core + "\n")
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("Header.txt", header)
+        archive.writestr("SyncSettings.json", sync)
+        archive.writestr("Input Log.txt", "[Input]\nsynthetic only\n[/Input]\n")
+
+
+class DiscMoviePreflightTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.cue = self.root / "fictional.cue"
+        self.bin = self.root / "fictional.bin"
+        self.movie = self.root / "fictional.bk2"
+        self.map_data = (b"SYNTHETIC MAP02 PROFILE ONLY\n" * 900)[:MAP02_BYTES]
+        self.map_data = self.map_data.ljust(MAP02_BYTES, b"Z")
+        self._write_disc(volume_id=EXPECTED_VOLUME_ID)
+        self.cue.write_text(
+            'FILE "fictional.bin" BINARY\n'
+            '  TRACK 01 MODE2/2352\n'
+            '    INDEX 01 00:00:00\n',
+            encoding="ascii",
+        )
+        write_movie(self.movie)
+
+    def _write_disc(self, *, volume_id=EXPECTED_VOLUME_ID, valid_pvd=True):
+        sectors = MAP02_LBA + (MAP02_BYTES + USER_DATA_BYTES - 1) // USER_DATA_BYTES
+        with self.bin.open("wb") as handle:
+            handle.truncate(sectors * SECTOR_BYTES)
+        pvd = bytearray(USER_DATA_BYTES)
+        pvd[0] = 1
+        pvd[1:6] = b"CD001" if valid_pvd else b"NOPE!"
+        pvd[6] = 1
+        pvd[40:72] = volume_id.encode("ascii").ljust(32, b" ")
+        with self.bin.open("r+b") as handle:
+            handle.seek(PVD_LBA * SECTOR_BYTES)
+            handle.write(raw_sector(pvd))
+            remaining = self.map_data
+            for lba in range(MAP02_LBA, sectors):
+                block, remaining = remaining[:USER_DATA_BYTES], remaining[USER_DATA_BYTES:]
+                handle.seek(lba * SECTOR_BYTES)
+                handle.write(raw_sector(block))
+
+    def call(self, **kwargs):
+        return inspect_pair(
+            self.cue, self.movie,
+            expected_map02_sha256=kwargs.pop(
+                "expected_map02_sha256", hashlib.sha256(self.map_data).hexdigest()),
+            **kwargs,
+        )
+
+    def test_matching_disc_profile_and_movie_header_is_ready_for_owner_replay(self):
+        result = self.call()
+        self.assertTrue(result["disc_volume_id_matches_audited_profile"])
+        self.assertTrue(result["map02_prs_matches_expected_profile"])
+        self.assertTrue(result["movie_header_matches_vandal_hearts_usa_psx_octoshock"])
+        self.assertTrue(result["movie_sync_matches_one_controller_no_cards"])
+        self.assertTrue(result["media_preflight_ready_for_owner_replay"])
+        self.assertFalse(result["exact_disc_movie_compatibility_verified"])
+        self.assertFalse(result["actual_octoshock_playback_verified"])
+        self.assertFalse(result["map02_scene_identity_verified"])
+
+    def test_different_map02_resource_profile_is_not_accepted(self):
+        result = self.call(expected_map02_sha256=hashlib.sha256(b"other profile").hexdigest())
+        self.assertFalse(result["map02_prs_matches_expected_profile"])
+        self.assertFalse(result["media_preflight_ready_for_owner_replay"])
+
+    def test_different_volume_id_is_not_accepted(self):
+        self._write_disc(volume_id="SLUS_99999")
+        result = self.call()
+        self.assertFalse(result["disc_volume_id_matches_audited_profile"])
+        self.assertFalse(result["media_preflight_ready_for_owner_replay"])
+
+    def test_invalid_iso9660_pvd_is_rejected(self):
+        self._write_disc(valid_pvd=False)
+        with self.assertRaisesRegex(ValueError, "descriptor is invalid"):
+            self.call()
+
+    def test_audio_or_non_mode2_cue_layout_is_rejected(self):
+        self.cue.write_text(
+            'FILE "fictional.bin" BINARY\nTRACK 01 AUDIO\nINDEX 01 00:00:00\n',
+            encoding="ascii",
+        )
+        with self.assertRaisesRegex(ValueError, "unsupported CUE layout|expected one"):
+            self.call()
+
+    def test_cue_path_traversal_is_rejected(self):
+        self.cue.write_text(
+            'FILE "../fictional.bin" BINARY\n'
+            'TRACK 01 MODE2/2352\nINDEX 01 00:00:00\n',
+            encoding="ascii",
+        )
+        with self.assertRaisesRegex(ValueError, "sibling BIN"):
+            self.call()
+
+    def test_parent_directory_inside_git_checkout_is_rejected(self):
+        (self.root / ".git").mkdir()
+        with self.assertRaisesRegex(ValueError, "outside Git"):
+            self.call()
+
+    def test_symlinked_bin_is_rejected(self):
+        actual = self.root / "real.bin"
+        self.bin.rename(actual)
+        self.bin.symlink_to(actual)
+        with self.assertRaisesRegex(ValueError, "nonsymlink"):
+            self.call()
+
+    def test_wrong_movie_game_header_returns_not_ready(self):
+        write_movie(self.movie, game="Vandal Hearts (Japan)")
+        result = self.call()
+        self.assertFalse(result["movie_header_matches_vandal_hearts_usa_psx_octoshock"])
+        self.assertFalse(result["media_preflight_ready_for_owner_replay"])
+
+    def test_wrong_movie_sync_returns_not_ready(self):
+        wrong_sync = json.dumps({"o":{"FIOConfig":{
+            "Devices8":[2,1,0,0,0,0,0,0],
+            "Memcards":[False,False], "Multitaps":[False,False],
+        }}})
+        write_movie(self.movie, sync=wrong_sync)
+        result = self.call()
+        self.assertFalse(result["movie_sync_matches_one_controller_no_cards"])
+        self.assertFalse(result["media_preflight_ready_for_owner_replay"])
+
+    def test_report_contains_no_paths_hashes_or_asset_bytes(self):
+        result = self.call()
+        rendered = json.dumps(result)
+        self.assertNotIn(str(self.root), rendered)
+        self.assertNotIn(hashlib.sha256(self.map_data).hexdigest(), rendered)
+        self.assertNotIn("fictional.bin", rendered)
+        self.assertFalse(result["private_asset_paths_or_hashes_reported"])
+        self.assertFalse(result["private_assets_uploaded"])
+
+
+if __name__ == "__main__":
+    unittest.main()
