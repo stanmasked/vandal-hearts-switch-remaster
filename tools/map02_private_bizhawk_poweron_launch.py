@@ -36,6 +36,35 @@ CORE_ASSEMBLY_SHA256_ENV = "VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256"
 NATIVE_MODULE_SHA256_ENV = "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256"
 from tools.verify_map02_private_neutral_capture_chain import parse_plan
 
+
+def require_runtime_module_pins(*, required: bool = False) -> tuple[str | None, str | None]:
+    """Read strict owner-supplied hashes for the managed and native PSX core files.
+
+    A trust-pinned experimental External Tool is not enough by itself: when
+    its SHA-256 is supplied, the capture must also pin both official runtime
+    module files to values obtained independently from the same verified
+    BizHawk 2.11 release workflow. Hashes are never printed by this helper.
+    """
+    pins = []
+    for name, description in (
+        (CORE_ASSEMBLY_SHA256_ENV, "managed runtime core assembly"),
+        (NATIVE_MODULE_SHA256_ENV, "native Octoshock module"),
+    ):
+        value = os.environ.get(name)
+        if value is None:
+            if required:
+                raise ValueError(
+                    "trust-pinned owner capture requires an independent "
+                    + description + " SHA256 pin"
+                )
+            pins.append(None)
+            continue
+        if not isinstance(value, str) or not SHA256_HEX.fullmatch(value):
+            raise ValueError("supplied private " + description + " SHA256 pin is malformed")
+        pins.append(value.lower())
+    return pins[0], pins[1]
+
+
 MOVIE_LENGTH = 933949
 # A full owner movie has 933,949 input frames: capture must not be allowed to
 # hang forever after the final frame or on a missing/incompatible boot.
@@ -198,10 +227,13 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
     if core_witness_sha256 is not None and auto_core_witness_plugin is None:
         raise ValueError("owner core witness digest needs a matching DLL")
     plugin = None
+    runtime_core_pin = native_module_pin = None
     if auto_core_witness_plugin is not None:
         plugin = require_matching_core_plugin(executable, auto_core_witness_plugin)
         if core_witness_sha256 is not None:
             require_pinned_core_witness_dll(plugin, core_witness_sha256)
+        runtime_core_pin, native_module_pin = require_runtime_module_pins(
+            required=core_witness_sha256 is not None)
         target = root / AUTO_WITNESS_NAME
         if target.exists() or target.is_symlink():
             raise ValueError("owner private automatic core witness already exists")
@@ -225,8 +257,9 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
         env[AUTO_WITNESS_ENV] = str(root)
         if core_witness_sha256 is not None:
             env[AUTO_WITNESS_HASH_ENV] = core_witness_sha256.lower()
-        for name in (CORE_ASSEMBLY_SHA256_ENV, NATIVE_MODULE_SHA256_ENV):
-            pin = os.environ.get(name)
+        for name, pin in zip(
+                (CORE_ASSEMBLY_SHA256_ENV, NATIVE_MODULE_SHA256_ENV),
+                (runtime_core_pin, native_module_pin)):
             if pin is not None:
                 env[name] = pin
     env["VH_PRIVATE_CAPTURE_PLAN"] = str(plan)
