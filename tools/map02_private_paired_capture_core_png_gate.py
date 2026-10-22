@@ -62,6 +62,8 @@ def review_owner_capture(movie: Path, plan: Path, workspace: Path,
     if (first_core is None) != (second_core is None):
         raise ValueError("paired automatic/manual witness mode must be consistent")
     auto = first_core is None
+    if auto and paired.get("both_owner_logs_report_auto_core_witness_before_first_png") is not True:
+        raise ValueError("automatic core witness not independently observed before first PNG")
     if auto:
         first_core = first / AUTO_WITNESS_NAME
         second_core = second / AUTO_WITNESS_NAME
@@ -79,6 +81,7 @@ def review_owner_capture(movie: Path, plan: Path, workspace: Path,
         "owner_private_capture_chains_reaudited": 2,
         "manual_psx_octoshock_core_witnesses_process_matched": 0 if auto else 2,
         "auto_psx_octoshock_core_witnesses_process_matched": 2 if auto else 0,
+        "owner_logs_confirm_auto_core_receipt_before_png": auto,
         "reported_emuhawk_processes_distinct": True,
         "psx_core_fallback_reported_blocked_for_both_replays": True,
         "screenshot_pairs_checked": count,
