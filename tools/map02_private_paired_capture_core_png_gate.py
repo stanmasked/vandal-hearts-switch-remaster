@@ -18,6 +18,7 @@ from tools.map02_private_process_witness_binding import (
 )
 from tools.map02_private_two_capture_audit import _private_root, audit_pair
 from tools.map02_private_bizhawk_poweron_launch import AUTO_WITNESS_NAME
+from tools.map02_private_core_witness_audit import read_witness
 
 SCHEMA = "vh.map02.owner-paired-capture-core-png-gate.v1"
 RUN_NAMES = ("vh-map02-cold-01", "vh-map02-cold-02")
@@ -67,6 +68,12 @@ def review_owner_capture(movie: Path, plan: Path, workspace: Path,
     if auto:
         first_core = first / AUTO_WITNESS_NAME
         second_core = second / AUTO_WITNESS_NAME
+        earliest = paired.get("first_capture_counter")
+        if type(earliest) is not int or earliest < 1 or earliest > 933949:
+            raise ValueError("private plan first capture frame not independently audited")
+        for owner_witness in (first_core, second_core):
+            if read_witness(owner_witness)[2] > earliest:
+                raise ValueError("automatic witness core frame claims a later time than first PNG")
     bound = bind_owner_private_replays(
         first / PROCESS_RECEIPT_NAME, first_core,
         second / PROCESS_RECEIPT_NAME, second_core,
@@ -82,6 +89,7 @@ def review_owner_capture(movie: Path, plan: Path, workspace: Path,
         "manual_psx_octoshock_core_witnesses_process_matched": 0 if auto else 2,
         "auto_psx_octoshock_core_witnesses_process_matched": 2 if auto else 0,
         "owner_logs_confirm_auto_core_receipt_before_png": auto,
+        "auto_core_frame_no_later_than_first_capture_counter": auto,
         "reported_emuhawk_processes_distinct": True,
         "psx_core_fallback_reported_blocked_for_both_replays": True,
         "screenshot_pairs_checked": count,

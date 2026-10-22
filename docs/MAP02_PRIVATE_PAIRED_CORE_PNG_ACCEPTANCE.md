@@ -174,3 +174,33 @@ tests do **not** establish which original PS1 disc or BIOS was loaded,
 that the BK2 controller stream reached the emulated game, or that any
 pixel belongs to MAP02. The public CI uses fictional Lua/PNG/PSX mocks,
 never commercial assets or original gameplay.
+
+## Stage511 — witness frame-clock consistency with the first PNG
+
+The automatic PSX/Octoshock receipt includes C#'s `IEmulator.Frame`.
+Stage511 requires this claim to be **no later than** the Lua
+`emu.framecount()` sampled at each image capture. Thus an owner-local
+auto receipt claiming a **future emulated frame** can no longer satisfy
+the Lua pre-first-PNG gate, even if its system/core name is syntactically
+correct. Equality is deliberately accepted: the two public BizHawk API
+values can legitimately name the same current frame.
+
+Independently, the paired capture auditor calculates the exact counter
+of the **first planned screenshot** from the private BK2-derived capture
+plan. The combined process/core/PNG auditor then reads both complete
+canonical auto core receipts and requires each `frame_count` to be no
+greater than that counter. The PNG-audit report adds only that first
+frame count, not media identifiers, absolute paths, PID, birth-time
+ticks, hashes or pixel bytes.
+
+This is a **logical consistency** check of two editable owner-local
+sources, not a trusted wall-clock timestamp and not proof that the
+Octoshock emulator actually loaded the correct disc/BIOS or reached
+MAP02. Manual witness mode remains unchanged, as a manually exported
+witness may legitimately be saved after the screenshots.
+
+The pre-existing Intel macOS group-termination failure on Stage509's
+first CI attempt did not recur on the targeted rerun: all three
+launcher jobs then succeeded without changing process-kill behavior.
+A future recurrence should be investigated independently rather than
+silently ignoring POSIX process-cleanup errors.

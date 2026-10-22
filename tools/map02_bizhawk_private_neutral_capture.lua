@@ -105,7 +105,12 @@ local function core_only_receipt_bytes()
       .. "frame_count=%d+\nbios=unverified\n"
       .. "disc=unverified\nmovie_sync=unverified\n$"
   if not body:match(pattern) then return nil end
-  return body
+  local frame_text = body:match("\nframe_count=(%d+)\n")
+  if not frame_text or #frame_text > 7 then return nil end
+  local frame_count = tonumber(frame_text)
+  if not frame_count or frame_count < 0 or frame_count > 2000000
+      or frame_count % 1 ~= 0 then return nil end
+  return body, frame_count
 end
 local normalized_root = root:gsub("\\", "/"):gsub("/+$", "")
 local normalized_log = log_path:gsub("\\", "/"):gsub("/+$", "")
@@ -396,9 +401,17 @@ while true do
       return fail("movie_getinput_neutral_state_mismatch")
     end
     if auto_core_enabled then
-      local receipt = core_only_receipt_bytes()
+      local receipt, witness_frame = core_only_receipt_bytes()
       if receipt == nil then
         return fail("automatic_core_witness_absent_or_invalid_before_png")
+      end
+      -- BizHawk's C# tool samples IEmulator.Frame, Lua samples
+      -- emu.framecount. A claimed future C# frame cannot already have
+      -- existed when this PNG's emulated frame was about to be saved.
+      -- Equality is permitted because both APIs may see the same frame.
+      -- These are self-reported values, not an authenticated clock.
+      if witness_frame > counter then
+        return fail("automatic_core_witness_frame_after_png")
       end
       if first_auto_core_bytes == nil then
         first_auto_core_bytes = receipt
