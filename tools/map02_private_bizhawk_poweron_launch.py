@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import stat
 import subprocess
+import sys
 
 from tools.map02_private_bk2_capture_plan import plan_lines
 from tools.map02_private_disc_movie_preflight import (
@@ -121,12 +122,23 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
                  after: int = 1663, before: int = MOVIE_LENGTH,
                  private_full_bin_sha256_file: Path | None = None,
                  auto_core_witness_plugin: Path | None = None,
-                 core_witness_sha256: str | None = None):
+                 core_witness_sha256: str | None = None,
+                 mono_executable: Path | None = None):
     """Return argv/env without starting EmuHawk or exposing paths to stdout."""
     executable = Path(private_emuhawk)
     if not executable.is_absolute() or not executable.is_file():
         raise ValueError("EmuHawk executable requires a real absolute file path")
     executable = executable.resolve(strict=True)
+    mono = None
+    if mono_executable is not None:
+        mono_candidate = Path(mono_executable)
+        if (not sys.platform.startswith("linux")
+                or not mono_candidate.is_absolute()
+                or mono_candidate.is_symlink() or not mono_candidate.is_file()):
+            raise ValueError("Linux Mono executable requires an absolute regular file")
+        mono = mono_candidate.resolve(strict=True)
+        if not os.access(mono, os.X_OK):
+            raise ValueError("Linux Mono executable is not executable")
     lua = Path(script)
     if not lua.is_absolute() or not lua.is_file():
         raise ValueError("capture Lua script requires an existing absolute path")
@@ -239,7 +251,7 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
             raise ValueError("owner private automatic core witness already exists")
 
     args = [
-        str(executable),
+        *([str(mono), str(executable)] if mono is not None else [str(executable)]),
         "--movie=" + str(movie),
         "--lua=" + str(lua),
         *(["--open-ext-tool-dll=VhMap02CoreWitness.dll"] if plugin is not None else []),
@@ -348,11 +360,14 @@ def main() -> int:
     args = parser.parse_args()
     if not MIN_EMULATOR_TIMEOUT_SECONDS <= args.emulator_timeout_seconds <= MAX_EMULATOR_TIMEOUT_SECONDS:
         parser.error("EmuHawk timeout seconds must be within a bounded range")
+    linux_runtime = sys.platform.startswith("linux") and args.mono_executable is not None
+    if args.mono_executable is not None and not sys.platform.startswith("linux"):
+        parser.error("--mono-executable is supported only on Linux")
     if args.auto_core_witness_plugin is not None:
         if not args.record_process_identity:
-            parser.error("automatic witness requires matching Windows process identity receipt")
-        if args.launch and os.name != "nt":
-            parser.error("automatic witness execution requires Windows")
+            parser.error("automatic witness requires a matching OS process identity receipt")
+        if args.launch and os.name != "nt" and not linux_runtime:
+            parser.error("automatic witness execution requires Windows or Linux with explicit Mono")
     try:
         command, env, count = build_launch(
             args.absolute_emuhawk_executable, args.owner_private_ps1_disc,
@@ -362,12 +377,13 @@ def main() -> int:
             after=args.after_input_frame, before=args.before_input_frame,
             private_full_bin_sha256_file=args.private_full_bin_sha256_file,
             auto_core_witness_plugin=args.auto_core_witness_plugin,
-            core_witness_sha256=args.private_core_witness_sha256)
+            core_witness_sha256=args.private_core_witness_sha256,
+            mono_executable=args.mono_executable)
     except (OSError, ValueError, TypeError, UnicodeError, RuntimeError):
         parser.error("private BizHawk power-on launch preflight failed")
     if args.record_process_identity and args.launch:
-        if os.name != "nt":
-            parser.error("private EmuHawk process identity is supported on Windows only")
+        if os.name != "nt" and not linux_runtime:
+            parser.error("private process identity requires Windows or Linux with explicit Mono")
         output = Path(env["VH_PRIVATE_PNG_DIR"]) / OWNER_PROCESS_RECEIPT_NAME
         if output.exists() or output.is_symlink():
             parser.error("private emulator process identity receipt already exists")
@@ -413,11 +429,14 @@ def main() -> int:
                 private_dir = Path(env["VH_PRIVATE_PNG_DIR"])
                 extras["on_started_process"] = (
                     lambda process: record_started_process(
-                        process.pid, private_dir, process_handle=process._handle)
+                        process.pid, private_dir, process_handle=getattr(process, "_handle", None))
                 )
             result = run_owned_process(
                 command, env=env, stdout=private_output,
-                timeout=args.emulator_timeout_seconds, **extras)
+                timeout=args.emulator_timeout_seconds,
+                cwd=(Path(args.absolute_emuhawk_executable).resolve(strict=True).parent
+                     if args.mono_executable is not None else None),
+                **extras)
     except subprocess.TimeoutExpired:
         # On POSIX, the owned emulator process group has been sent TERM then
         # KILL, including descendants that remained in the session. A
