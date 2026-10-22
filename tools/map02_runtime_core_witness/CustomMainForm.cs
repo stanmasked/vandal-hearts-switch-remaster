@@ -223,7 +223,7 @@ namespace VhMap02CoreWitness
             {
                 var start = process.StartTime.ToUniversalTime().Ticks;
                 if (process.Id <= 0 || start <= 0) throw new InvalidOperationException();
-                return "VH_MAP02_RUNTIME_CORE_WITNESS_V1\n"
+                return "VH_MAP02_RUNTIME_CORE_WITNESS_V2\n"
                     + "system=PSX\n"
                     + "loaded_core=Octoshock\n"
                     + "core_source=IEmulator.Attributes.CoreName\n"
