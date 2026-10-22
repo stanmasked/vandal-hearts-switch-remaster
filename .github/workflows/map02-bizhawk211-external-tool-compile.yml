@@ -82,7 +82,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw 'BizHawk 2.11 external tool loader smoke rejected compiled DLL'
           }
-          $expected = 'VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_PASS metadata=1 activation=1 missing_core_fail_closed=1 fake_iemulator_positive=1 fake_negative_gates=4 in_memory_fake_witness_schema=1 emulator_process_started=0 original_disc=0 bios=0 bk2=0'
+          $expected = 'VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_PASS metadata=1 activation=1 missing_core_fail_closed=1 fake_iemulator_positive=1 fake_negative_gates=4 in_memory_fake_witness_schema=1 official_nullhawk_service_injected=1 official_nullhawk_snapshot_rejected=1 emulator_process_started=0 original_disc=0 bios=0 bk2=0'
           if (@($output).Count -ne 1 -or [string]$output -cne $expected) {
             throw 'strict synthetic IEmulator loader smoke marker mismatch'
           }
@@ -97,7 +97,7 @@ jobs:
           # A PowerShell script is not a native process: $LASTEXITCODE here
           # belongs to the last external executable launched *within it*.
           # Require one exact redacted genuine EmuHawk window observation.
-          $expected = 'VH_MAP02_REAL_EMUHAWK_NOMEDIA_PLUGIN_UI_PASS genuine_process=1 actual_tool_window=1 save_disabled_no_psx=1 rom=0 bios=0 bk2=0 png=0 active_octoshock=unverified'
+          $expected = 'VH_MAP02_REAL_EMUHAWK_NOMEDIA_PLUGIN_UI_PASS genuine_process=1 actual_tool_window=1 injected_nullhawk_service_observed=1 save_disabled_no_psx=1 rom=0 bios=0 bk2=0 png=0 active_octoshock=unverified'
           if (@($lines | Where-Object { $_ -ceq $expected }).Count -ne 1) {
             throw 'no-media EmuHawk core witness UI observation not confirmed'
           }

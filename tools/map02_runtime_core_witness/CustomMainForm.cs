@@ -44,47 +44,28 @@ namespace VhMap02CoreWitness
             _save.Click += SaveWitness;
             Controls.Add(_summary);
             Controls.Add(_save);
-            EmitNoMediaCiMarker("constructor");
-        }
-
-        // CI-only no-media diagnostic. In ordinary gameplay all three opt-in
-        // environment checks are false, so this never writes anything.
-        // Only fixed stage words are permitted: no BIOS, disc, movie,
-        // game hashes, input, window handles, process IDs or paths in data.
-        private static void EmitNoMediaCiMarker(string stage)
-        {
-            if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != "true"
-                || Environment.GetEnvironmentVariable("VH_MAP02_CI_NO_MEDIA_WITNESS") != "enabled")
-                return;
-            if (stage != "constructor" && stage != "restart") return;
-            var target = Environment.GetEnvironmentVariable("VH_MAP02_CI_NO_MEDIA_CANARY_PATH");
-            if (string.IsNullOrEmpty(target) || Path.GetFileName(target) != "vh-map02-test-inprocess-core.txt")
-                return;
-            try
-            {
-                var path = Path.GetFullPath(target);
-                var parent = Path.GetDirectoryName(path);
-                var temp = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar);
-                if (!string.Equals(parent, temp, StringComparison.OrdinalIgnoreCase)) return;
-                File.AppendAllText(path, stage + "\n", Encoding.ASCII);
-            }
-            catch (Exception)
-            {
-                // Optional CI-only probe cannot affect real plugin operation.
-            }
+            // Owner-visible status starts unverified until BizHawk injects a core.
         }
 
         // EmuHawk injects RequiredService after constructor. Restart is also
         // called after a new movie session starts; do not cache the core.
-        public override void Restart()
-        {
-            RefreshStatus();
-            EmitNoMediaCiMarker("restart");
-        }
+        public override void Restart() => RefreshStatus();
 
         private void RefreshStatus()
         {
             var core = Emulator;
+            // Genuine BizHawk uses a NullEmulator when no ROM is loaded.
+            // This exact *post-injection* status is only reached after
+            // ToolManager invokes Restart() with a live IEmulator service.
+            // It is UI-only; never claim PS1 or Octoshock authentication.
+            if (core is NullEmulator
+                && core.SystemId == VSystemID.Raw.NULL
+                && core.Attributes()?.CoreName == "NullHawk")
+            {
+                _summary.Text = "Injected IEmulator: NullHawk (no game); witness disabled.";
+                _save.Enabled = false;
+                return;
+            }
             if (core == null || core.SystemId != "PSX" || core.Frame < 0)
             {
                 _summary.Text = "No loaded PSX core; capture disabled.";

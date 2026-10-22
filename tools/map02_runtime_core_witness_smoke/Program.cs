@@ -61,6 +61,8 @@ namespace VhMap02LoaderSmoke
                     + " metadata=1 activation=1 missing_core_fail_closed=1"
                     + " fake_iemulator_positive=1 fake_negative_gates=4"
                     + " in_memory_fake_witness_schema=1"
+                    + " official_nullhawk_service_injected=1"
+                    + " official_nullhawk_snapshot_rejected=1"
                     + " emulator_process_started=0 original_disc=0 bios=0 bk2=0");
                 return 0;
             }
@@ -246,6 +248,39 @@ namespace VhMap02LoaderSmoke
                         || rows[9] != "movie_sync=unverified"
                         || rows[10] != "")
                         throw new InvalidOperationException("synthetic witness schema invalid");
+
+                    _stage = "official-nullhawk-service-injection";
+                    using (var genuineNoGameCore = new NullEmulator())
+                    {
+                        // Exercise BizHawk's own ServiceInjector with an actual
+                        // official no-media core; this remains outside EmuHawk.
+                        if (!ServiceInjector.UpdateServices(
+                                genuineNoGameCore.ServiceProvider, form)
+                            || !ReferenceEquals(
+                                property.GetValue(form), genuineNoGameCore))
+                            throw new InvalidOperationException(
+                                "official no-media IEmulator service injection rejected");
+                        ((IExternalToolForm)form).Restart();
+                        var labels = form.Controls.OfType<Label>().ToArray();
+                        if (labels.Length != 1
+                            || labels[0].Text !=
+                                "Injected IEmulator: NullHawk (no game); witness disabled."
+                            || saveButtons[0].Enabled)
+                            throw new InvalidOperationException(
+                                "real NullEmulator does not fail closed with distinct status");
+                        var rejected = false;
+                        try
+                        {
+                            snapshot.Invoke(null, new object[] { genuineNoGameCore });
+                        }
+                        catch (TargetInvocationException ex)
+                        {
+                            rejected = ex.InnerException is InvalidOperationException;
+                        }
+                        if (!rejected)
+                            throw new InvalidOperationException(
+                                "real NullHawk must never export a PSX witness");
+                    }
 
                     _stage = "synthetic-negative-core-gates";
                     AssertBlocked(form, property, snapshot, new SyntheticNymashock());

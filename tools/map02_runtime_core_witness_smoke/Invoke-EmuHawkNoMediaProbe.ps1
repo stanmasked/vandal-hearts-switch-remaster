@@ -97,9 +97,10 @@ public static class VhNoMediaWindows {
     // 0=all top-level process windows, 1=visible, 2=matching tool windows,
     // 3=matching Save buttons, 4=matching disabled Save buttons,
     // 5=visible, process-owned first-load trust dialogs,
-    // 6=exact "BizHawk" main title, 7=any visible native modal.
+    // 6=exact "BizHawk" main title, 7=any visible native modal,
+    // 8=exact post-ToolManager injection status for real NullEmulator.
     public static int[] Probe(int processId) {
-        var counts = new int[8];
+        var counts = new int[9];
         EnumWindows((window, param) => {
             uint owner;
             GetWindowThreadProcessId(window, out owner);
@@ -117,6 +118,10 @@ public static class VhNoMediaWindows {
             EnumChildWindows(window, (child, arg) => {
                 var classname = new StringBuilder(40);
                 GetClassName(child, classname, classname.Capacity);
+                if ((classname.ToString().StartsWith("WindowsForms10.STATIC.")
+                     || classname.ToString() == "Static")
+                    && Title(child) == "Injected IEmulator: NullHawk (no game); witness disabled.")
+                    counts[8]++;
                 if (classname.ToString().StartsWith("WindowsForms10.BUTTON.")
                     || classname.ToString() == "Button") {
                     if (Title(child) == "Write private core witness...") {
@@ -153,11 +158,6 @@ if ([System.IO.Path]::GetFullPath($PluginFile) -cne [System.IO.Path]::GetFullPat
 $ciConfig = Join-Path $env:RUNNER_TEMP 'vh-map02-only-nomedia-bizhawk211.json'
 $settings = '{"LastWrittenFrom":"2.11","SoundOutputMethod":3}'
 [System.IO.File]::WriteAllText($ciConfig, $settings, [System.Text.Encoding]::UTF8)
-$canary = Join-Path ([System.IO.Path]::GetTempPath()) 'vh-map02-test-inprocess-core.txt'
-Remove-Item -LiteralPath $canary -Force -ErrorAction SilentlyContinue
-$env:VH_MAP02_CI_NO_MEDIA_WITNESS = 'enabled'
-$env:VH_MAP02_CI_NO_MEDIA_CANARY_PATH = $canary
-
 $stdout = Join-Path $env:RUNNER_TEMP 'vh-map02-gameless-emuhawk-output.txt'
 $stderr = Join-Path $env:RUNNER_TEMP 'vh-map02-gameless-emuhawk-error.txt'
 $hosted = Start-Process -FilePath $emulator -WorkingDirectory $root `
@@ -166,7 +166,7 @@ $hosted = Start-Process -FilePath $emulator -WorkingDirectory $root `
     -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
 try {
     $observed = $false
-    $diagnostic = @(0, 0, 0, 0, 0, 0, 0, 0)
+    $diagnostic = @(0, 0, 0, 0, 0, 0, 0, 0, 0)
     $ownPromptApproved = $false
     for ($i=0; $i -lt 60; $i++) {
         $hosted.Refresh()
@@ -175,7 +175,7 @@ try {
             $ownPromptApproved = [VhNoMediaWindows]::ApproveOnlyKnownToolTrustPrompt($hosted.Id)
         }
         $diagnostic = [VhNoMediaWindows]::Probe($hosted.Id)
-        if ($diagnostic[2] -eq 1 -and $diagnostic[3] -eq 1 -and $diagnostic[4] -eq 1) {
+        if (($diagnostic[2] -eq 1) -and ($diagnostic[3] -eq 1) -and ($diagnostic[4] -eq 1) -and ($diagnostic[8] -eq 1)) {
             $observed = $true
             break
         }
@@ -194,11 +194,7 @@ try {
         $hasMainWindow = [int]($diagnostic[6] -gt 0)
         $hasNativeModal = [int]($diagnostic[7] -gt 0)
         $nativeModalCaptionClass = [VhNoMediaWindows]::ClassifyVisibleNativeModal($hosted.Id)
-        $phases = if (Test-Path -LiteralPath $canary -PathType Leaf) {
-            @(Get-Content -LiteralPath $canary -ErrorAction SilentlyContinue)
-        } else { @() }
-        $constructed = [int]($phases -contains 'constructor')
-        $restarted = [int]($phases -contains 'restart')
+        $injectedNullHawk = [int]($diagnostic[8] -eq 1)
         $status = @(
             "VH_MAP02_REAL_EMUHAWK_NOMEDIA_DIAGNOSTIC"
             "same_windows_session=$sameSession"
@@ -207,8 +203,7 @@ try {
             "plugin_window_found=$hasTool"
             "save_button_found=$hasButton"
             "disabled_save_found=$hasDisabledButton"
-            "inprocess_constructor_seen=$constructed"
-            "inprocess_restart_seen=$restarted"
+            "injected_nullhawk_label_observed=$injectedNullHawk"
             "tool_trust_prompt_seen=$hasTrustPrompt"
             "bizhawk_main_window_seen=$hasMainWindow"
             "native_modal_dialog_seen=$hasNativeModal"
@@ -220,7 +215,7 @@ try {
         throw 'no-media EmuHawk tool window was not witnessed'
     }
 
-    Write-Output 'VH_MAP02_REAL_EMUHAWK_NOMEDIA_PLUGIN_UI_PASS genuine_process=1 actual_tool_window=1 save_disabled_no_psx=1 rom=0 bios=0 bk2=0 png=0 active_octoshock=unverified'
+    Write-Output 'VH_MAP02_REAL_EMUHAWK_NOMEDIA_PLUGIN_UI_PASS genuine_process=1 actual_tool_window=1 injected_nullhawk_service_observed=1 save_disabled_no_psx=1 rom=0 bios=0 bk2=0 png=0 active_octoshock=unverified'
 } finally {
     try {
         if (-not $hosted.HasExited) {
@@ -246,9 +241,7 @@ try {
     } catch {
         Write-Output 'VH_MAP02_EMUHAWK_CLI_SANITIZED_DIAGNOSTIC unavailable=1'
     } finally {
-        Remove-Item -LiteralPath $stdout, $stderr, $canary, $ciConfig -Force -ErrorAction SilentlyContinue
-        Remove-Item Env:VH_MAP02_CI_NO_MEDIA_WITNESS -ErrorAction SilentlyContinue
-        Remove-Item Env:VH_MAP02_CI_NO_MEDIA_CANARY_PATH -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $stdout, $stderr, $ciConfig -Force -ErrorAction SilentlyContinue
         $hosted.Dispose()
     }
 }
