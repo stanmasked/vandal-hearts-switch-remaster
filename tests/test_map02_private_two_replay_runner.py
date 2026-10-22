@@ -58,7 +58,7 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         self.args = (self.program, self.disc, self.movie, self.workspace)
 
     def run_mocked(self, *, processes=None, match=True, digest=None,
-                   emulator_timeout_seconds=None):
+                   emulator_timeout_seconds=None, run_count=2):
         subprocess_mock = (processes if processes is not None else [
             Mock(returncode=0), Mock(returncode=0),
         ])
@@ -84,6 +84,7 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
                 report = capture_twice(
                     *self.args, start=True,
                     emulator_timeout_seconds=emulator_timeout_seconds,
+                    run_count=run_count,
                 )
             else:
                 with patch(
@@ -96,6 +97,7 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
                     report = capture_twice(
                         *self.args, start=True, expected_digest_file=digest,
                         emulator_timeout_seconds=emulator_timeout_seconds,
+                        run_count=run_count,
                     )
                     self.assertGreaterEqual(reference.call_count, 2)
                     for call in reference.call_args_list:
@@ -926,6 +928,98 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         self.assertEqual(list(self.workspace.iterdir()), [])
         process.assert_not_called()
 
+
+    def test_owner_one_run_audits_only_first_emulator_and_no_pixel_parity(self):
+        single, _, _, subprocess_mock, audit, pair = self.run_mocked(
+            processes=[Mock(returncode=0)], run_count=1)
+        self.assertEqual(single["planned_emulator_processes"], 1)
+        self.assertEqual(single["emulator_processes_started"], 1)
+        self.assertEqual(single["capture_attempts_audited"], 1)
+        self.assertTrue(single["first_private_capture_log_and_png_chain_passed"])
+        self.assertEqual(single["first_private_capture_screenshot_count"], 3)
+        self.assertFalse(single["two_run_pixel_repeatability_authenticated"])
+        self.assertFalse(single["original_map02_scene_authenticated"])
+        self.assertFalse(single["independent_cold_boots_authenticated"])
+        self.assertEqual(subprocess_mock.call_count, 1)
+        audit.assert_called_once()
+        pair.assert_not_called()
+        self.assertTrue((self.workspace / RUN_NAMES[0]).is_dir())
+        self.assertFalse((self.workspace / RUN_NAMES[1]).exists())
+        self.assertNotIn(str(self.root), str(single))
+
+    def test_owner_one_run_failure_does_not_start_second_emulator(self):
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_two_replay_runner.write_private_plan",
+            side_effect=self._write_plan,
+        ), patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+            return_value=Mock(returncode=1),
+        ) as process, patch(
+            "tools.map02_private_two_replay_runner.audit_pair",
+        ) as pair:
+            with self.assertRaisesRegex(ValueError, "capture process failed"):
+                capture_twice(*self.args, start=True, run_count=1)
+        self.assertEqual(process.call_count, 1)
+        pair.assert_not_called()
+        self.assertFalse((self.workspace / RUN_NAMES[1]).exists())
+
+    def test_owner_one_run_dry_run_never_creates_outputs(self):
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_two_replay_runner.plan_lines",
+            return_value=["h", "l", "c", "a", "b", "c"],
+        ), patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+        ) as process:
+            report = capture_twice(*self.args, start=False, run_count=1)
+        self.assertEqual(report["planned_emulator_processes"], 1)
+        self.assertEqual(report["emulator_processes_started"], 0)
+        self.assertEqual(list(self.workspace.iterdir()), [])
+        process.assert_not_called()
+
+    def test_one_run_rejects_invalid_requested_count_before_any_output(self):
+        for invalid in (0, -1, 3, True, "one", None):
+            with self.subTest(value=invalid), self.assertRaisesRegex(
+                ValueError, "exactly one or two"
+            ):
+                capture_twice(*self.args, run_count=invalid)
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_launch_one_and_launch_two_are_mutually_exclusive(self):
+        cmd = ["owner", *(str(p) for p in self.args),
+               "--launch-one", "--launch-two"]
+        with patch.object(sys, "argv", cmd), patch(
+            "tools.map02_private_two_replay_runner.capture_twice",
+        ) as launcher, contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                main()
+        launcher.assert_not_called()
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_launch_one_cli_never_emits_paths_or_pair_claims(self):
+        data = {
+            "schema": "vh.map02.private-two-sequential-replays.v1",
+            "emulator_processes_started": 1,
+            "capture_attempts_audited": 1,
+            "original_map02_scene_authenticated": False,
+            "two_run_pixel_repeatability_authenticated": False,
+            "owner_private_assets_uploaded": False,
+        }
+        cmd = ["owner", *(str(p) for p in self.args), "--launch-one"]
+        with patch.object(sys, "argv", cmd), patch(
+            "tools.map02_private_two_replay_runner.capture_twice",
+            return_value=data,
+        ) as launcher, contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(main(), 0)
+        self.assertTrue(launcher.call_args.kwargs["start"])
+        self.assertEqual(launcher.call_args.kwargs["run_count"], 1)
+        self.assertNotIn(str(self.root), output.getvalue())
+        self.assertNotIn("all_supported_png_pixel_content_equal", output.getvalue())
 
 
 if __name__ == "__main__":
