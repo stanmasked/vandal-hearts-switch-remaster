@@ -93,7 +93,13 @@ local function run(option)
         return nil
       end
       local bytes = CORE_ONLY
-      if option == "auto-badcore" then
+      if option == "auto-equal" then
+        bytes = bytes:gsub("frame_count=1662", "frame_count=1665")
+      elseif option == "auto-future" then
+        bytes = bytes:gsub("frame_count=1662", "frame_count=1765")
+      elseif option == "auto-frame-outside-range" then
+        bytes = bytes:gsub("frame_count=1662", "frame_count=2000001")
+      elseif option == "auto-badcore" then
         bytes = bytes:gsub("loaded_core=Octoshock", "loaded_core=Nymashock")
       elseif option == "auto-bad-format" then
         bytes = bytes:gsub("\n", "\r\n")
@@ -319,9 +325,17 @@ do
   assert(lines[7]:match("^VH_PRIVATE_NEUTRAL_CAPTURE window=1 role=before "))
   assert(#exits == 1 and exits[1] == 0)
 end
+do
+  local lines, shots, _, exits = run("auto-equal")
+  assert(#shots == 3 and #lines == 10)
+  assert(lines[6] == AUTO_MARK,
+         "same-frame Octoshock witness should precede the first PNG")
+  assert(#exits == 1 and exits[1] == 0)
+end
 for _, option in ipairs({
     "auto-wrong-root", "auto-missing", "auto-late", "auto-badcore",
-    "auto-bad-format", "auto-oversized", "auto-mutate", "auto-disappear"
+    "auto-bad-format", "auto-oversized", "auto-mutate", "auto-disappear",
+    "auto-future", "auto-frame-outside-range"
 }) do
   local lines, shots, _, exits = run(option)
   assert(#shots < 3, option .. ": unsafe auto capture was accepted")
@@ -334,7 +348,8 @@ for _, option in ipairs({
   assert(#exits == 1 and exits[1] == 1)
   if option == "auto-wrong-root" or option == "auto-missing"
       or option == "auto-late" or option == "auto-badcore"
-      or option == "auto-bad-format" or option == "auto-oversized" then
+      or option == "auto-bad-format" or option == "auto-oversized"
+      or option == "auto-future" or option == "auto-frame-outside-range" then
     assert(#shots == 0, option .. ": first PNG must be blocked")
   end
 end
