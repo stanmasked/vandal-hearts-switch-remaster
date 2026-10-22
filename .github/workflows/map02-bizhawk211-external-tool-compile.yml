@@ -107,11 +107,9 @@ jobs:
             }
             $plugin = Join-Path $env:VH_BIZHAWK_RELEASE_ROOT 'ExternalTools/VhMap02CoreWitness.dll'
             if (Test-Path -LiteralPath $plugin) { throw 'dry-run created a witness DLL' }
-            $bad = @( & powershell.exe @args[0..($args.Length-2)] '0' )
-            # Argument-array shorthand is intentionally not used for the
-            # actual corruption negative case below; always test a complete
-            # individually named argument list.
-            $invalid = @( & powershell.exe @args -Install -ExpectedDllSha256 ('0' * 64) )
+            $wrong = @($args.Clone())
+            $wrong[$wrong.Length - 1] = ('0' * 64)
+            $invalid = @( & powershell.exe @wrong -Install )
             if ($LASTEXITCODE -eq 0 -or @($invalid).Count -ne 1 -or
                 [string]$invalid -cne 'VH_MAP02_OWNER_BIZHAWK_PLUGIN_INSTALL_REJECTED media=0' -or
                 (Test-Path -LiteralPath $plugin)) {
