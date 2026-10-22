@@ -8,7 +8,7 @@ try {
     if (-not [System.IO.Path]::IsPathRooted($Directory)) { throw 'absolute path required' }
     $item = Get-Item -LiteralPath $Directory -Force -ErrorAction Stop
     if (-not $item.PSIsContainer) { throw 'directory required' }
-    $acl = Get-Acl -LiteralPath $item.FullName -ErrorAction Stop
+    $acl = [System.IO.Directory]::GetAccessControl($item.FullName)
     $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
     if ($null -eq $user) { throw 'identity unavailable' }
     $owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier])
