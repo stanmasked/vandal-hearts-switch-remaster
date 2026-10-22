@@ -167,6 +167,7 @@ class OwnerCombinedGateTests(unittest.TestCase):
                     self.review(dict(PAIR, screenshot_pairs_checked=invalid))
 
     def test_reject_missing_or_insecure_private_run_dir(self):
+        (self.runs[1] / START_NAME).unlink()
         self.runs[1].rmdir()
         with self.assertRaisesRegex(ValueError, "existing absolute"):
             self.review()
