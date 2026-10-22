@@ -24,7 +24,7 @@ def _kill_owned_group(pid: int, sig: int) -> None:
 
 
 def run_owned_process(command: list[str], *, env: dict[str, str],
-                      stdout, timeout: int):
+                      stdout, timeout: int, on_started=None):
     """Wait for emulator; on timeout stop its POSIX group and fail closed.
 
     EmuHawk's stderr is redirected into the caller's owner-private stream;
@@ -33,16 +33,35 @@ def run_owned_process(command: list[str], *, env: dict[str, str],
     available. The return value only describes the direct process status.
     """
     if os.name == "nt":
-        return subprocess.run(
-            command, env=env, shell=False, check=False,
-            stdout=stdout, stderr=subprocess.STDOUT, timeout=timeout,
+        # Preserve the original launcher path unless the owner explicitly
+        # opted in to a private process identity receipt. Recording MUST occur
+        # while the direct child is alive; subprocess.run hides its PID.
+        if on_started is None:
+            return subprocess.run(
+                command, env=env, shell=False, check=False,
+                stdout=stdout, stderr=subprocess.STDOUT, timeout=timeout,
+            )
+        process = subprocess.Popen(
+            command, env=env, shell=False,
+            stdout=stdout, stderr=subprocess.STDOUT,
         )
+        try:
+            on_started(process.pid)
+            return subprocess.CompletedProcess(command, process.wait(timeout=timeout))
+        except BaseException:
+            try:
+                process.kill()
+            finally:
+                process.wait()
+            raise
     process = subprocess.Popen(
         command, env=env, shell=False,
         stdout=stdout, stderr=subprocess.STDOUT,
         start_new_session=True,
     )
     try:
+        if on_started is not None:
+            on_started(process.pid)
         code = process.wait(timeout=timeout)
     except BaseException:
         # TimeoutExpired, Ctrl-C and unexpected wait errors must not leave
