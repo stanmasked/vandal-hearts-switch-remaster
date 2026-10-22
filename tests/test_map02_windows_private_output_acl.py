@@ -32,6 +32,8 @@ class WindowsPrivateOutputAclTests(unittest.TestCase):
         self.assertEqual(params.args[0][-2:], ["-Directory", str(self.folder)])
         self.assertIs(params.kwargs["shell"], False)
         self.assertIs(params.kwargs["stderr"], subprocess.DEVNULL)
+        self.assertIs(params.kwargs["stdin"], subprocess.DEVNULL)
+        self.assertIs(params.kwargs["stdout"], subprocess.PIPE)
         self.assertEqual(params.kwargs["timeout"], 30)
 
     def test_acl_failure_rejected(self):
@@ -85,6 +87,26 @@ class WindowsPrivateOutputAclTests(unittest.TestCase):
     def test_windows_script_is_public_source_not_a_game_asset(self):
         self.assertTrue(SCRIPT.is_file())
         self.assertTrue(SCRIPT.name.endswith(".ps1"))
+
+
+    def test_headless_windows_guard_requires_exact_allow_marker_and_zero_exit(self):
+        # Invalid stdout and a failed headless child must always reject. A
+        # convenient "assume yes" path here would disclose private pixels.
+        for rc, signal in (
+            (1, SUCCESS.encode("ascii") + b"\\n"),
+            (0, b""),
+            (0, SUCCESS.encode("ascii") + b"\\nEXTRA"),
+            (23, b""),
+        ):
+            with self.subTest(rc=rc, signal=signal), patch(
+                "tools.map02_windows_private_output_acl.subprocess.run",
+                return_value=Mock(returncode=rc, stdout=signal),
+            ) as process:
+                with self.assertRaisesRegex(ValueError, "not owner-only"):
+                    require_windows_private_output(self.folder, platform="nt")
+                self.assertIs(process.call_args.kwargs["stdin"], subprocess.DEVNULL)
+                self.assertFalse(process.call_args.kwargs["shell"])
+
 
 
 if __name__ == "__main__":

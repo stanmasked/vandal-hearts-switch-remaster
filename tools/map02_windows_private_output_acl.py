@@ -37,6 +37,11 @@ def require_windows_private_output(directory: Path, *, platform: str | None = No
             ["powershell.exe", "-NoProfile", "-NonInteractive",
              "-ExecutionPolicy", "Bypass", "-File", str(SCRIPT),
              "-Directory", str(target)],
+            # A console-less Windows child must not inherit a potentially
+            # invalid CI/GUI stdin HANDLE. Prevents interactive prompts,
+            # and keeps the PowerShell ACL decision entirely independent
+            # of the launching terminal or GUI state.
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             shell=False, check=False, timeout=30,
