@@ -62,6 +62,39 @@ def main() -> int:
                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                         check=False, timeout=30,
                     )
+                    # Validate path normalization and stderr category only.
+                    # All fixture paths are invented, and none are emitted.
+                    absolute = SCRIPT.resolve(strict=True)
+                    original = workspace
+                    resolved = workspace.resolve(strict=True)
+                    exact = subprocess.run(
+                        ["powershell.exe", "-NoProfile", "-NonInteractive",
+                         "-ExecutionPolicy", "Bypass", "-File", str(absolute),
+                         "-Directory", str(original)],
+                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE, check=False, timeout=30,
+                    )
+                    canonical = subprocess.run(
+                        ["powershell.exe", "-NoProfile", "-NonInteractive",
+                         "-ExecutionPolicy", "Bypass", "-File", str(absolute),
+                         "-Directory", str(resolved)],
+                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE, check=False, timeout=30,
+                    )
+                    print("VH_MAP02_WIN_ACL_PATH_DIAG"
+                          + " script_is_absolute=" + str(SCRIPT.is_absolute()).lower()
+                          + " original_equals_resolved=" + str(original == resolved).lower()
+                          + " absolute_file_original_success="
+                          + str(exact.returncode == 0 and exact.stdout.strip()
+                              == SUCCESS.encode("ascii")).lower()
+                          + " absolute_file_canonical_success="
+                          + str(canonical.returncode == 0 and canonical.stdout.strip()
+                              == SUCCESS.encode("ascii")).lower()
+                          + " absolute_file_original_stderr_present="
+                          + str(bool(exact.stderr)).lower()
+                          + " absolute_file_canonical_stderr_present="
+                          + str(bool(canonical.stderr)).lower(),
+                          file=sys.stderr, flush=True)
                     raw = probe.stdout
                     print("VH_MAP02_WIN_PYTHON_ACL_DIAG "
                           + " no_window_off_exit_zero=" + str(plain.returncode == 0).lower()
