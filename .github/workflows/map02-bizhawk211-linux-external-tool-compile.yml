@@ -12,6 +12,8 @@ on:
       - 'tests/test_map02_private_core_witness_audit.py'
       - 'tests/test_map02_private_bizhawk_poweron_launch.py'
       - 'tests/test_map02_private_two_replay_runner.py'
+      - 'tools/map02_owner_core_witness_install_linux.py'
+      - 'tests/test_map02_owner_core_witness_install_linux.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -125,6 +127,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_map02_private_core_witness_audit.py' -v
           python -m unittest discover -s tests -p 'test_map02_private_bizhawk_poweron_launch.py' -v
           python -m unittest discover -s tests -p 'test_map02_private_two_replay_runner.py' -v
+          python -m unittest discover -s tests -p 'test_map02_owner_core_witness_install_linux.py' -v
           echo 'VH_MAP02_LINUX_OWNER_CAPTURE_SYNTHETIC_TESTS_PASS original_disc=0 original_bk2=0 bios=0'
       - name: Publish only the game-free experimental Linux witness assembly
         uses: actions/upload-artifact@v4
