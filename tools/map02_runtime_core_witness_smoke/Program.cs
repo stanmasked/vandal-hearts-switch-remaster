@@ -244,8 +244,11 @@ namespace VhMap02LoaderSmoke
         // An invented Octoshock-named IEmulator must never create a receipt,
         // even when automatic writes are explicitly opted in.
         private static void AuditSyntheticAutomaticWitness(
-            Type entrypoint, PropertyInfo property, MethodInfo snapshot)
+            Type entrypoint, PropertyInfo property)
         {
+            var snapshot = entrypoint.GetMethod(
+                "Snapshot", BindingFlags.NonPublic | BindingFlags.Static);
+            if (snapshot == null) throw new InvalidOperationException();
             var key = "VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR";
             var hashKey = "VH_MAP02_CORE_EXPECTED_DLL_SHA256";
             var prior = Environment.GetEnvironmentVariable(key);
@@ -417,7 +420,7 @@ namespace VhMap02LoaderSmoke
                         throw new InvalidOperationException("save not disabled after clearing core");
                 }
                 _stage = "synthetic-optin-fake-core-rejection";
-                AuditSyntheticAutomaticWitness(entrypoint, property, snapshot);
+                AuditSyntheticAutomaticWitness(entrypoint, property);
 
         }
     }
