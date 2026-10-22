@@ -608,7 +608,7 @@ class CaptureAuditTests(unittest.TestCase):
         original = self.log.read_text(encoding="utf-8")
         first = log_row(*PICKS[0])
         self.log.write_text(original.replace(
-            first, AUTO_CORE_PREFLIGHT + "\\n" + first, 1,
+            first, AUTO_CORE_PREFLIGHT + "\n" + first, 1,
         ), encoding="utf-8")
         report = self.call()
         self.assertTrue(report["owner_log_reports_auto_core_witness_before_first_png"])
@@ -619,13 +619,13 @@ class CaptureAuditTests(unittest.TestCase):
         source = self.log.read_text(encoding="utf-8")
         first, second = (log_row(*PICKS[k]) for k in (0, 1))
         variants = [
-            source.replace(second, AUTO_CORE_PREFLIGHT + "\\n" + second, 1),
-            source.replace(first, AUTO_CORE_PREFLIGHT + "\\n" + first, 1)
-                  .replace(second, AUTO_CORE_PREFLIGHT + "\\n" + second, 1),
-            AUTO_CORE_PREFLIGHT + "\\n" + source,
-            source + AUTO_CORE_PREFLIGHT + "\\n",
+            source.replace(second, AUTO_CORE_PREFLIGHT + "\n" + second, 1),
+            source.replace(first, AUTO_CORE_PREFLIGHT + "\n" + first, 1)
+                  .replace(second, AUTO_CORE_PREFLIGHT + "\n" + second, 1),
+            AUTO_CORE_PREFLIGHT + "\n" + source,
+            source + AUTO_CORE_PREFLIGHT + "\n",
             source.replace(first, AUTO_CORE_PREFLIGHT.replace("receipt=present",
-                      "receipt=verified") + "\\n" + first, 1),
+                      "receipt=verified") + "\n" + first, 1),
         ]
         for changed in variants:
             with self.subTest(variant=variants.index(changed)):
