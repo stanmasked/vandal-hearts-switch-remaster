@@ -104,7 +104,7 @@ def read_witness_record(source: Path) -> tuple[int, int, int, str, str, str]:
         if fields[key] != expected:
             raise ValueError("private core witness has unsupported evidence claim")
     if fields["native_core_module_name"] not in NATIVE_CORE_MODULE_NAMES:
-        raise ValueError("private core witness has unsupported native module name")
+        raise ValueError("private core witness has unsupported evidence: native module name")
     digests = {}
     for key in (
         "tool_assembly_sha256",
