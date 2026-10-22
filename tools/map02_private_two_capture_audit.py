@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import stat
 
+from tools.map02_windows_private_output_acl import require_windows_private_output
 from tools.verify_map02_private_neutral_capture_chain import (
     FRAME_COUNT, parse_plan, verify,
 )
@@ -36,6 +37,7 @@ def _private_root(directory: Path) -> Path:
     if os.name != "nt":
         if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o077:
             raise ValueError("owner capture directory must have owner-only permissions")
+    require_windows_private_output(root)
     return root
 
 
