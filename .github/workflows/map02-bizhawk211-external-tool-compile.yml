@@ -68,6 +68,9 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $report = @( & tools/map02_windows_private_acl_ci_probe.ps1 )
+          if ($LASTEXITCODE -ne 0) {
+            throw 'private Windows ACL fixture command failed'
+          }
           $expected = 'VH_MAP02_WINDOWS_OUTPUT_ACL_REAL_FIXTURE_PASS private=accepted everyone=denied media=0'
           if (@($report).Count -ne 1 -or [string]$report -cne $expected) {
             throw 'actual Windows NTFS ACL owner-only fixture failed'
