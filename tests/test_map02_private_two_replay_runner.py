@@ -848,6 +848,33 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         report, *_ = self.run_mocked(match=False)
         self.assertFalse(report["all_supported_png_pixel_content_equal"])
 
+    def test_private_process_receipt_optin_is_rejected_on_posix_before_output(self):
+        if os.name == "nt":
+            self.skipTest("Windows process receipts are supported")
+        with self.assertRaisesRegex(ValueError, "requires Windows"):
+            capture_twice(*self.args, start=True,
+                          record_windows_process_identity=True)
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_private_process_receipt_dry_run_never_starts_or_writes(self):
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_two_replay_runner.plan_lines",
+            return_value=["h", "l", "c", "a", "b", "c"],
+        ), patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+        ) as process:
+            report = capture_twice(
+                *self.args, start=False,
+                record_windows_process_identity=True,
+            )
+        self.assertFalse(report["private_windows_process_start_receipts_requested"])
+        self.assertFalse(report["process_to_manual_core_witness_bound"])
+        self.assertEqual(list(self.workspace.iterdir()), [])
+        process.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
