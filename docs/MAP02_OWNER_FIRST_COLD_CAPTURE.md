@@ -143,3 +143,44 @@ screenshots, Windows PIDs or private machine paths. Its passing result
 still does not prove that the original MAP02 appeared, that the correct
 BIOS/disc was mounted, that BK2 controller input arrived in-game or that
 a Switch renderer matches the original.
+
+## Stage515 — prepare one new owner-only Windows NTFS workspace
+
+Before the local dry-run or `--launch-one`, create a **brand-new empty**
+output folder using the owner-local PowerShell helper. This avoids
+manual ACL mistakes. The helper does not touch original PS1 media or
+start any emulator. It never prints private paths, SID values or ACLs.
+
+Run these commands on your own Windows workstation in **Windows PowerShell
+5.1**. The parent directory must already exist, and both the parent and
+chosen workspace must be **outside a Git checkout**. The example folder
+names are fictional:
+
+```powershell
+$workspace = 'C:\\ExamplePrivate\\MAP02-first-check'
+
+# No folder is created by the default preflight.
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\\tools\\map02_owner_private_workspace_prepare.ps1 -Workspace $workspace
+
+# Only this explicit switch creates an empty owner-exclusive folder.
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\\tools\\map02_owner_private_workspace_prepare.ps1 -Workspace $workspace -Create
+```
+
+The preflight prints a fixed marker with `created=0`. Successful
+creation prints `created=1 acl=owner_only original_media=0`, only
+**after** assigning a protected owner-only NTFS DACL and passing the
+same strict ACL guard the capture tools use.
+
+It deliberately refuses an existing directory (even if empty),
+missing intermediate parents, drive-root locations, reparse-point
+ancestors, paths within Git, and unsafe relative paths. **Never**
+repeat `-Create` against a previously used capture workspace.
+For a second independent capture, choose a different new private
+folder and run the preparation again. The helper will not open,
+copy, modify, rename, delete or checksum your original game or BK2.
+
+The helper has no ability to install the experimental
+`VhMap02CoreWitness.dll`, configure PSX firmware in BizHawk,
+or authenticate which original disc loads. Those are still
+separate owner-local prerequisites. A passing workspace check
+alone is not evidence of original MAP02 graphics or Switch gameplay.
