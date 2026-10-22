@@ -23,6 +23,7 @@ PAIR = {
     "two_private_capture_chains_passed": True,
     "both_runs_reported_psx_core_fallback_disabled": True,
     "screenshot_pairs_checked": 3,
+    "first_capture_counter": 3001,
     "decoded_pixel_equal_pairs": 3,
     "decoded_pixel_different_pairs": 0,
     "decoded_pixel_unsupported_pairs": 0,
@@ -254,6 +255,51 @@ class OwnerCombinedGateTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(ValueError, "before first PNG"):
                 review_owner_capture(self.movie, self.plan, self.workspace)
+
+
+    def test_auto_core_receipt_frame_after_first_png_refused(self):
+        from tools.map02_private_bizhawk_poweron_launch import AUTO_WITNESS_NAME
+        for run, witness in zip(self.runs, self.witness):
+            (run / AUTO_WITNESS_NAME).write_bytes(
+                witness.read_bytes().replace(b"frame_count=1800", b"frame_count=3002"))
+        with patch(
+            "tools.map02_private_paired_capture_core_png_gate.audit_pair",
+            return_value=dict(
+                PAIR, both_owner_logs_report_auto_core_witness_before_first_png=True),
+        ):
+            with self.assertRaisesRegex(ValueError, "later time"):
+                review_owner_capture(self.movie, self.plan, self.workspace)
+
+    def test_auto_core_receipt_equal_to_first_png_frame_allowed_but_not_authentication(self):
+        from tools.map02_private_bizhawk_poweron_launch import AUTO_WITNESS_NAME
+        for run, witness in zip(self.runs, self.witness):
+            (run / AUTO_WITNESS_NAME).write_bytes(
+                witness.read_bytes().replace(b"frame_count=1800", b"frame_count=3001"))
+        with patch(
+            "tools.map02_private_paired_capture_core_png_gate.audit_pair",
+            return_value=dict(
+                PAIR, both_owner_logs_report_auto_core_witness_before_first_png=True),
+        ):
+            report = review_owner_capture(self.movie, self.plan, self.workspace)
+        self.assertTrue(report["auto_core_frame_no_later_than_first_capture_counter"])
+        self.assertFalse(report["authentic_map02_scene_identified"])
+        self.assertFalse(report["actual_emuhawk_mounted_disc_authenticated"])
+
+    def test_auto_core_receipt_missing_or_invalid_first_png_counter_refused(self):
+        from tools.map02_private_bizhawk_poweron_launch import AUTO_WITNESS_NAME
+        for run, witness in zip(self.runs, self.witness):
+            (run / AUTO_WITNESS_NAME).write_bytes(witness.read_bytes())
+        for invalid in (None, 0, True, -1, 933950, "3001"):
+            with self.subTest(invalid=invalid), patch(
+                "tools.map02_private_paired_capture_core_png_gate.audit_pair",
+                return_value=dict(
+                    PAIR,
+                    both_owner_logs_report_auto_core_witness_before_first_png=True,
+                    first_capture_counter=invalid,
+                ),
+            ):
+                with self.assertRaisesRegex(ValueError, "first capture frame"):
+                    review_owner_capture(self.movie, self.plan, self.workspace)
 
 
 if __name__ == "__main__":
