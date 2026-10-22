@@ -175,8 +175,7 @@ try {
             $ownPromptApproved = [VhNoMediaWindows]::ApproveOnlyKnownToolTrustPrompt($hosted.Id)
         }
         $diagnostic = [VhNoMediaWindows]::Probe($hosted.Id)
-        if ($diagnostic[2] -eq 1 -and $diagnostic[3] -eq 1
-            -and $diagnostic[4] -eq 1 -and $diagnostic[8] -eq 1) {
+        if (($diagnostic[2] -eq 1) -and ($diagnostic[3] -eq 1) -and ($diagnostic[4] -eq 1) -and ($diagnostic[8] -eq 1)) {
             $observed = $true
             break
         }
