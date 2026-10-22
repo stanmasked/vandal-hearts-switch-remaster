@@ -366,14 +366,39 @@ BizHawk 2.11 installation whose official release ZIP has been verified with
 the SHA-256 above; install the V2 artifact there using the digest from that
 same run. Do not overwrite or silently replace the Stage517 installation.
 
-Set `$knownDllSha256` to that Stage518 digest and add
-`--private-core-witness-sha256 $knownDllSha256` to the owner-local capture
-arguments. Run the dry-run preflight first, then perform only the explicit
-`--launch-one` capture. Afterward, pass the same digest to the offline audit:
+The same successful compile job also emits
+`VH_BIZHAWK211_CORE_ASSEMBLY_SHA256=<digest>` and
+`VH_BIZHAWK211_NATIVE_OCTOSHOCK_SHA256=<digest>`. Use these values from the
+**same exact successful run** as the DLL artifact. For the verified Stage518
+run [#39849650956](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39849650956), the three values are:
+
+- Experimental DLL: `A522B1E7D614F68306C9AD045CCCBD8A923F77CB6E459A48B4D9E9BF698B4E5D`
+- Managed core assembly: `0144e6e236be68ce126eb771dcb5a9ae7c153a083fa0333f345ac37b4a60acf7`
+- Native Octoshock module: `466a6a1f9d958a4d365b10fcf9b4bde5aeb80cc9c4d4fd00da9ad05930569b41`
+
+If using a different build, do not reuse these historical values; use the three
+markers from that exact trusted run. Set the following variables before the
+dry-run and capture. A trust-pinned run now refuses to launch if either runtime
+module pin is missing or malformed:
 
 ```powershell
+$knownDllSha256 = 'A522B1E7D614F68306C9AD045CCCBD8A923F77CB6E459A48B4D9E9BF698B4E5D'
+$knownCoreAssemblySha256 = '0144e6e236be68ce126eb771dcb5a9ae7c153a083fa0333f345ac37b4a60acf7'
+$knownNativeModuleSha256 = '466a6a1f9d958a4d365b10fcf9b4bde5aeb80cc9c4d4fd00da9ad05930569b41'
+$env:VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256 = $knownCoreAssemblySha256
+$env:VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256 = $knownNativeModuleSha256
+$common += @('--private-core-witness-sha256', $knownDllSha256)
+
+# First validate without launching or creating capture files.
+python -m tools.map02_private_two_replay_runner @common
+# Only after the preflight succeeds, launch exactly one capture.
+python -m tools.map02_private_two_replay_runner @common --launch-one
+
+# Independently audit the saved first capture, using the same three pins.
 python -m tools.map02_private_first_run_audit $bk2 $workspace `
-  --private-core-witness-sha256 $knownDllSha256
+  --private-core-witness-sha256 $knownDllSha256 `
+  --private-core-assembly-sha256 $knownCoreAssemblySha256 `
+  --private-native-module-sha256 $knownNativeModuleSha256
 ```
 
 A Stage517/V1 DLL or V1 witness receipt is not compatible with the Stage518/V2
