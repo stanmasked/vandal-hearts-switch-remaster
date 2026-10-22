@@ -127,6 +127,13 @@ jobs:
             if ((Get-FileHash -LiteralPath $plugin -Algorithm SHA256).Hash -cne $hash) {
               throw 'installed DLL differs from verified compiled witness'
             }
+            # The same launcher path validator used by the owner must accept
+            # this installed DLL under exactly this EmuHawk/ExternalTools.
+            $emuhawk = Join-Path $env:VH_BIZHAWK_RELEASE_ROOT 'EmuHawk.exe'
+            python -c "from pathlib import Path; from tools.map02_private_bizhawk_poweron_launch import require_matching_core_plugin; import sys; assert require_matching_core_plugin(Path(sys.argv[1]), Path(sys.argv[2])) == Path(sys.argv[2]).resolve(strict=True)" $emuhawk $plugin
+            if ($LASTEXITCODE -ne 0) {
+              throw 'owner launcher rejects installed matching external DLL'
+            }
             $repeat = @( & powershell.exe @args -Install )
             if ($LASTEXITCODE -eq 0 -or @($repeat).Count -ne 1 -or
                 [string]$repeat -cne 'VH_MAP02_OWNER_BIZHAWK_PLUGIN_INSTALL_REJECTED media=0') {
