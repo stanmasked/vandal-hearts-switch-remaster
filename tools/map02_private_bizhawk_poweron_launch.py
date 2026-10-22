@@ -26,11 +26,12 @@ from tools.map02_private_process_witness_binding import (
     NAME as OWNER_PROCESS_RECEIPT_NAME, record_started_process,
     read_started_process,
 )
-from tools.map02_private_core_witness_audit import read_witness
+from tools.map02_private_core_witness_audit import read_witness_record
 from tools.map02_private_witness_plugin_digest import require_pinned_core_witness_dll
 
 AUTO_WITNESS_NAME = "vh-map02-runtime-core-auto.txt"
 AUTO_WITNESS_ENV = "VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR"
+AUTO_WITNESS_HASH_ENV = "VH_MAP02_CORE_EXPECTED_DLL_SHA256"
 from tools.verify_map02_private_neutral_capture_chain import parse_plan
 
 MOVIE_LENGTH = 933949
@@ -213,8 +214,11 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
     env = os.environ.copy()
     # Environment inheritance alone MUST NOT enable sensitive file writes.
     env.pop(AUTO_WITNESS_ENV, None)
+    env.pop(AUTO_WITNESS_HASH_ENV, None)
     if plugin is not None:
         env[AUTO_WITNESS_ENV] = str(root)
+        if core_witness_sha256 is not None:
+            env[AUTO_WITNESS_HASH_ENV] = core_witness_sha256.lower()
     env["VH_PRIVATE_CAPTURE_PLAN"] = str(plan)
     env["VH_PRIVATE_PNG_DIR"] = str(root)
     env["VH_PRIVATE_CAPTURE_LOG"] = str(log_path)
@@ -225,13 +229,20 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
     return args, env, len(positions)
 
 
-def verify_private_auto_witness(root: Path) -> None:
-    """Reject an absent/stale auto-witness before accepting the local process."""
+def verify_private_auto_witness(
+        root: Path, expected_sha256: str | None = None) -> None:
+    """Reject absent/stale receipts and, when pinned, a self-reported DLL mismatch."""
     source = Path(root)
-    witness = read_witness(source / AUTO_WITNESS_NAME)
+    witness = read_witness_record(source / AUTO_WITNESS_NAME)
     launch = read_started_process(source / OWNER_PROCESS_RECEIPT_NAME)
     if witness[:2] != launch:
         raise ValueError("private automatic core witness does not match launched process")
+    if expected_sha256 is not None:
+        if (len(expected_sha256) != 64
+                or any(c not in "0123456789abcdefABCDEF" for c in expected_sha256)
+                or witness[3] != expected_sha256.lower()):
+            raise ValueError(
+                "private automatic core witness tool hash differs from pinned DLL")
 
 
 def _append_private_log(path: Path, line: str) -> None:
@@ -386,7 +397,8 @@ def main() -> int:
         # Never accept a zero process exit without the receipt from THIS
         # exact EmuHawk PID + native process-birth time.
         try:
-            verify_private_auto_witness(Path(env["VH_PRIVATE_PNG_DIR"]))
+            verify_private_auto_witness(
+                Path(env["VH_PRIVATE_PNG_DIR"]), args.private_core_witness_sha256)
         except (OSError, ValueError, TypeError, RuntimeError):
             success = False
     try:
