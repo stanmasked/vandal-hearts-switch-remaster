@@ -202,6 +202,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
                   auto_core_witness_plugin: Path | None = None,
                   max_windows: int = 4,
                   emulator_timeout_seconds: int | None = None,
+                  run_count: int = 2,
                   start: bool = False) -> dict:
     """Require explicit opt-in; run separate fresh emulator subprocesses.
 
@@ -214,6 +215,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     _no_existing_outputs(workspace)
     if type(max_windows) is not int or not 1 <= max_windows <= 10:
         raise ValueError("private capture window count must be 1..10")
+    if type(run_count) is not int or run_count not in (1, 2):
+        raise ValueError("owner capture run count must be exactly one or two")
     if type(start) is not bool:
         raise ValueError("private execution opt-in must be boolean")
     if type(record_windows_process_identity) is not bool:
@@ -282,6 +285,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
                 else DEFAULT_EMULATOR_TIMEOUT_SECONDS
             ),
             "emulator_processes_started": 0,
+            "planned_emulator_processes": run_count,
             "private_windows_process_start_receipts_requested": False,
             "process_to_manual_core_witness_bound": False,
             "automatic_core_witness_requested": auto_core_witness_plugin is not None,
@@ -301,7 +305,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     _require_disc_unchanged(private_disc, disc_identity)
     _require_digest_reference_unchanged(expected_digest_file, digest)
 
-    for name in RUN_NAMES:
+    for name in RUN_NAMES[:run_count]:
         _require_movie_unchanged(private_bk2, movie_identity)
         _require_disc_unchanged(private_disc, disc_identity)
         _require_digest_reference_unchanged(expected_digest_file, digest)
@@ -356,9 +360,47 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             observed = read_witness(output / AUTO_WITNESS_NAME)
             if started != observed[:2]:
                 raise ValueError("owner automatic core witness differs from captured process")
+            from tools.verify_map02_private_neutral_capture_chain import parse_plan
+            _, planned_rows = parse_plan(plan)
+            if not planned_rows or observed[2] > planned_rows[0][2] + 1:
+                raise ValueError("owner auto core witness frame after first screenshot")
         _require_movie_unchanged(private_bk2, movie_identity)
         _require_disc_unchanged(private_disc, disc_identity)
         _require_digest_reference_unchanged(expected_digest_file, digest)
+
+    if run_count == 1:
+        # This is owner-private first-run evidence only, never evidence of
+        # a second emulator process, repeatability, or scene identity.
+        _require_full_bin_unchanged(private_disc, digest)
+        _require_digest_reference_unchanged(expected_digest_file, digest)
+        _require_firmware_candidate_matches(private_bk2, private_psx_bios_candidate)
+        return {
+            "schema": SCHEMA,
+            "explicit_launch_requested": True,
+            "planned_emulator_processes": 1,
+            "emulator_processes_started": 1,
+            "capture_attempts_audited": 1,
+            "first_private_capture_log_and_png_chain_passed": True,
+            "first_private_capture_screenshot_count": chain["screenshot_count"],
+            "automatic_core_witness_requested": auto_core_witness_plugin is not None,
+            "first_auto_core_witness_bound_to_launched_process":
+                auto_core_witness_plugin is not None,
+            "first_auto_core_frame_not_later_than_first_png":
+                auto_core_witness_plugin is not None,
+            "same_bk2_bytes_across_capture_attempts": False,
+            "same_cue_and_sampled_bin_sectors_across_attempts": False,
+            "full_bin_reference_stable_during_capture": digest is not None,
+            "full_bin_postprocess_checks_performed": 2 if digest is not None else 0,
+            "on_disk_full_bin_matched_private_reference_at_checkpoints":
+                digest is not None,
+            "actual_emuhawk_loaded_bios_authenticated": False,
+            "emulator_mounted_disc_identity_authenticated": False,
+            "original_bk2_controller_delivery_authenticated": False,
+            "independent_cold_boots_authenticated": False,
+            "two_run_pixel_repeatability_authenticated": False,
+            "original_map02_scene_authenticated": False,
+            "owner_private_assets_uploaded": False,
+        }
 
     paired = audit_pair(
         private_bk2, plan, workspace / RUN_NAMES[0], workspace / RUN_NAMES[1],
@@ -383,6 +425,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         "schema": SCHEMA,
         "explicit_launch_requested": True,
         "emulator_processes_started": 2,
+        "planned_emulator_processes": 2,
         "private_windows_process_start_receipts_requested":
             record_windows_process_identity,
         "process_to_manual_core_witness_bound": False,
@@ -446,8 +489,11 @@ def main() -> int:
         "--emulator-timeout-seconds", type=int,
         help="Optional EmuHawk watchdog, between 300 and 86400 seconds",
     )
-    parser.add_argument("--launch-two", action="store_true",
-                        help="Actually run TWO sequential local EmuHawk processes")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--launch-one", action="store_true",
+                       help="Run and audit only ONE local EmuHawk; no replay comparison")
+    modes.add_argument("--launch-two", action="store_true",
+                       help="Actually run TWO sequential local EmuHawk processes")
     args = parser.parse_args()
     try:
         report = capture_twice(
@@ -460,7 +506,8 @@ def main() -> int:
             auto_core_witness_plugin=args.auto_core_witness_plugin,
             max_windows=args.max_windows,
             emulator_timeout_seconds=args.emulator_timeout_seconds,
-            start=args.launch_two,
+            run_count=1 if args.launch_one else 2,
+            start=args.launch_one or args.launch_two,
         )
     except (OSError, ValueError, TypeError, RuntimeError, KeyError):
         parser.error("private two-replay execution or capture audit failed")
