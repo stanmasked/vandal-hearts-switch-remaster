@@ -34,10 +34,11 @@ only that the supplied local logs/receipts passed these limited checks.
    through the C# External Tool, into an owner-only, non-Git folder.
    Do not reuse an older witness. If the emulator exits before the
    witness can be saved, the attempt **cannot** satisfy this gate.
-4. Verify owner-private NTFS folder permissions. PR #490 contains a
-   stricter Windows NTFS ACL verifier, but is a **sibling** of the
-   Stage506 process-binding PR #491. Until those branches are integrated,
-   do not assume Stage507 includes that ACL enforcement.
+4. Stage508 integrates the strict Windows owner-only NTFS checks from
+   sibling PR #490 with Stage506 process binding and Stage507 PNG review.
+   Restricted Windows folder ACLs are mandatory at workspace, capture
+   and manual core-witness output locations. The verifier refuses
+   public/shared Windows directories; it does not change ACLs.
 
 ## Local command (illustrative paths only)
 
