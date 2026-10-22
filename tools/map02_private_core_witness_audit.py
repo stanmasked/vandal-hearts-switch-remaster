@@ -115,15 +115,19 @@ def compare_witnesses(first: Path, second: Path) -> dict:
     """Report limited evidence only; distinct processes, not linked gameplay."""
     if Path(first) == Path(second):
         raise ValueError("two independent private witness paths are required")
-    a = read_witness(first)
-    b = read_witness(second)
+    a = read_witness_record(first)
+    b = read_witness_record(second)
     if a[:2] == b[:2]:
         raise ValueError("two private witnesses report the same emulator process")
+    if a[3] != b[3]:
+        raise ValueError("two private witnesses report different tool assembly file hashes")
     return {
         "schema": SCHEMA,
         "runtime_iemulator_core_witnesses_read": 2,
         "both_witnesses_report_psx_octoshock": True,
         "reported_emuhawk_process_identities_distinct": True,
+        "both_witnesses_report_same_tool_assembly_file_hash": True,
+        "tool_assembly_file_hash_independently_pinned": False,
         "process_or_witness_origin_cryptographically_authenticated": False,
         "witnesses_tied_to_specific_bk2_or_png_capture": False,
         "actual_loaded_bios_authenticated": False,
