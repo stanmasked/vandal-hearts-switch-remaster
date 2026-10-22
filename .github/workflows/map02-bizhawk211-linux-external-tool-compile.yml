@@ -1,0 +1,135 @@
+name: MAP02 real BizHawk 2.11 Linux External Tool compile (no game media)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-bizhawk211-linux-external-tool-compile.yml'
+      - 'tools/map02_runtime_core_witness/**'
+      - 'tools/map02_private_process_witness_binding.py'
+      - 'tools/map02_private_core_witness_audit.py'
+      - 'tools/map02_private_bizhawk_poweron_launch.py'
+      - 'tools/map02_private_two_replay_runner.py'
+      - 'tests/test_map02_private_process_witness_binding.py'
+      - 'tests/test_map02_private_core_witness_audit.py'
+      - 'tests/test_map02_private_bizhawk_poweron_launch.py'
+      - 'tests/test_map02_private_two_replay_runner.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux-witness-real-assembly-compile:
+    name: Compile and smoke-test against official BizHawk 2.11 Linux x64 (no game)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: x64
+      - name: Install the official Linux runtime dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y mono-complete libopenal1 liblua5.4-0 lsb-release xvfb libgl1
+          test -d /usr/lib/mono/4.8-api
+          posix="$(find /usr/lib/mono -type f -name Mono.Posix.dll | sort | grep '/4\.5-api/' | head -n 1)"
+          test -n "$posix"
+          echo "VH_MONO_POSIX_PATH=$posix" >> "$GITHUB_ENV"
+          echo 'VH_MAP02_LINUX_MONO_DEPENDENCIES_READY no_game_assets=0'
+      - name: Download and verify the exact official BizHawk 2.11 Linux x64 release
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/BizHawk-2.11-linux-x64.tar.gz"
+          root="$RUNNER_TEMP/bizhawk211-linux-x64"
+          expected='cdaf9650d880bae660d63a388430f630b8d8a96b1ba59ebf0e0195a645c3bab8'
+          curl --fail --location --silent --show-error \
+            'https://github.com/TASEmulators/BizHawk/releases/download/2.11/BizHawk-2.11-linux-x64.tar.gz' \
+            --output "$archive"
+          actual="$(sha256sum "$archive" | awk '{print $1}')"
+          test "$actual" = "$expected"
+          mkdir -p "$root"
+          tar -xzf "$archive" -C "$root"
+          mapfile -t emuhawk_files < <(find "$root" -type f -name EmuHawk.exe -print)
+          test "${#emuhawk_files[@]}" -eq 1
+          bizhawk_root="$(dirname "${emuhawk_files[0]}")"
+          test -f "$bizhawk_root/EmuHawkMono.sh"
+          test -f "$bizhawk_root/dll/BizHawk.Emulation.Common.dll"
+          mapfile -t core_files < <(find "$bizhawk_root" -type f -name BizHawk.Emulation.Cores.dll -print | sort)
+          test "${#core_files[@]}" -ge 1
+          core_hashes="$(sha256sum "${core_files[@]}" | awk '{print $1}' | sort -u)"
+          test "$(printf '%s\n' "$core_hashes" | wc -l)" -eq 1
+          mapfile -t native_files < <(find "$bizhawk_root" -type f \
+            \( -name 'liboctoshock.dll.so' -o -name 'liboctoshock.so' -o -name 'octoshock.dll' \) -print | sort)
+          test "${#native_files[@]}" -ge 1
+          native_hashes="$(sha256sum "${native_files[@]}" | awk '{print $1}' | sort -u)"
+          test "$(printf '%s\n' "$native_hashes" | wc -l)" -eq 1
+          core_hash="$(printf '%s\n' "$core_hashes" | head -n 1)"
+          native_hash="$(printf '%s\n' "$native_hashes" | head -n 1)"
+          native_name="$(basename "${native_files[0]}")"
+          case "$native_name" in
+            liboctoshock.dll.so|liboctoshock.so|octoshock.dll) ;;
+            *) exit 1 ;;
+          esac
+          echo "VH_BIZHAWK_LINUX_ROOT=$bizhawk_root" >> "$GITHUB_ENV"
+          echo "VH_BIZHAWK_LINUX_CORE_SHA256=$core_hash" >> "$GITHUB_ENV"
+          echo "VH_BIZHAWK_LINUX_NATIVE_SHA256=$native_hash" >> "$GITHUB_ENV"
+          echo "VH_BIZHAWK_LINUX_NATIVE_NAME=$native_name" >> "$GITHUB_ENV"
+          echo 'VH_MAP02_OFFICIAL_BIZHAWK211_LINUX_PIN_VERIFIED original_disc=0 original_bk2=0 bios=0'
+          echo "VH_BIZHAWK211_LINUX_CORE_ASSEMBLY_SHA256=$core_hash"
+          echo "VH_BIZHAWK211_LINUX_NATIVE_OCTOSHOCK_SHA256=$native_hash"
+      - name: Compile the actual witness project against official Linux assemblies
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FrameworkPathOverride=/usr/lib/mono/4.8-api
+          dotnet build tools/map02_runtime_core_witness/VhMap02CoreWitness.csproj \
+            -c Release --nologo -v:minimal \
+            -p:VH_BIZHAWK_RELEASE_ROOT="$VH_BIZHAWK_LINUX_ROOT" \
+            -p:VH_MAP02_UNIX_BUILD=true \
+            -p:VH_MONO_POSIX_PATH="$VH_MONO_POSIX_PATH"
+          dll='tools/map02_runtime_core_witness/bin/Release/net48/VhMap02CoreWitness.dll'
+          test -f "$dll"
+          digest="$(sha256sum "$dll" | awk '{print toupper($1)}')"
+          echo "VH_MAP02_LINUX_EXPERIMENTAL_DLL_SHA256=$digest"
+          echo 'VH_MAP02_REAL_BIZHAWK211_LINUX_ASSEMBLY_COMPILE_PASS original_disc=0 original_bk2=0 bios=0 emulator_launched=0'
+      - name: Smoke-test real EmuHawkMono startup without game data
+        shell: bash
+        run: |
+          set -euo pipefail
+          private_home="$(mktemp -d)"
+          chmod 700 "$private_home"
+          trap 'rm -rf "$private_home"' EXIT
+          set +e
+          HOME="$private_home" timeout 45s xvfb-run -a \
+            "$VH_BIZHAWK_LINUX_ROOT/EmuHawkMono.sh" --help \
+            > "$RUNNER_TEMP/vh-map02-linux-emuhawk-help.log" 2>&1
+          result=$?
+          set -e
+          if [ "$result" -ne 0 ]; then
+            tail -n 30 "$RUNNER_TEMP/vh-map02-linux-emuhawk-help.log"
+            exit 1
+          fi
+          echo 'VH_MAP02_OFFICIAL_LINUX_EMUHAWK_SMOKE_PASS game_loaded=0 psx=0 map02=unverified'
+      - name: Test Linux process identity and private capture preflight logic with invented inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_map02_private_process_witness_binding.py' -v
+          python -m unittest discover -s tests -p 'test_map02_private_core_witness_audit.py' -v
+          python -m unittest discover -s tests -p 'test_map02_private_bizhawk_poweron_launch.py' -v
+          python -m unittest discover -s tests -p 'test_map02_private_two_replay_runner.py' -v
+          echo 'VH_MAP02_LINUX_OWNER_CAPTURE_SYNTHETIC_TESTS_PASS original_disc=0 original_bk2=0 bios=0'
+      - name: Publish only the game-free experimental Linux witness assembly
+        uses: actions/upload-artifact@v4
+        with:
+          name: vh-map02-bizhawk211-linux-experimental-core-witness
+          path: tools/map02_runtime_core_witness/bin/Release/net48/VhMap02CoreWitness.dll
+          if-no-files-found: error
+          retention-days: 14
