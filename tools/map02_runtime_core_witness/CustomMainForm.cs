@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Security.AccessControl;
 using System.Security.Principal;
+using System.Security.Cryptography;
 using System.Text;
 using System.Windows.Forms;
 using BizHawk.Client.Common;
@@ -29,6 +30,7 @@ namespace VhMap02CoreWitness
         private bool _automaticWitnessAttempted;
         private const string AutomaticWitnessFile = "vh-map02-runtime-core-auto.txt";
         private const string AutomaticWitnessEnvironment = "VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR";
+        private const string ExpectedAssemblySha256Environment = "VH_MAP02_CORE_EXPECTED_DLL_SHA256";
         protected override string WindowTitleStatic => "VH MAP02 PSX core witness";
 
         public CoreWitnessForm()
@@ -172,6 +174,31 @@ namespace VhMap02CoreWitness
             }
         }
 
+        private static string ExecutingAssemblyFileSha256()
+        {
+            // This hashes the file at the executing assembly location. It is
+            // an in-process self-check, NOT cryptographic proof of in-memory
+            // module bytes or an independent OS attestation of the loaded DLL.
+            var location = typeof(CoreWitnessForm).Assembly.Location;
+            if (string.IsNullOrEmpty(location) || !Path.IsPathRooted(location)
+                || !File.Exists(location)) throw new InvalidOperationException();
+            using (var input = new FileStream(
+                location, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var sha = SHA256.Create())
+                return BitConverter.ToString(sha.ComputeHash(input))
+                    .Replace("-", "").ToLowerInvariant();
+        }
+
+        private static bool IsSha256Hex(string value)
+        {
+            if (value == null || value.Length != 64) return false;
+            foreach (var c in value)
+                if (!((c >= '0' && c <= '9')
+                    || (c >= 'a' && c <= 'f')
+                    || (c >= 'A' && c <= 'F'))) return false;
+            return true;
+        }
+
         private static string Snapshot(IEmulator actualCore)
         {
             // A recorded BK2 Core header or configured preferred core is NOT
@@ -179,6 +206,18 @@ namespace VhMap02CoreWitness
             if (actualCore == null || actualCore.SystemId != "PSX"
                 || actualCore.Attributes()?.CoreName != "Octoshock"
                 || actualCore.Frame < 0) throw new InvalidOperationException();
+
+            var executingAssemblySha256 = ExecutingAssemblyFileSha256();
+            var expectedAssemblySha256 = Environment.GetEnvironmentVariable(
+                ExpectedAssemblySha256Environment);
+            // The private launcher sets this only when the owner supplies the
+            // independently trusted exact-run artifact digest. Fail closed on
+            // malformed or mismatching pins before writing any witness.
+            if (!string.IsNullOrEmpty(expectedAssemblySha256)
+                && (!IsSha256Hex(expectedAssemblySha256)
+                    || !string.Equals(executingAssemblySha256,
+                        expectedAssemblySha256, StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException();
 
             using (var process = Process.GetCurrentProcess())
             {
@@ -188,6 +227,7 @@ namespace VhMap02CoreWitness
                     + "system=PSX\n"
                     + "loaded_core=Octoshock\n"
                     + "core_source=IEmulator.Attributes.CoreName\n"
+                    + "tool_assembly_sha256=" + executingAssemblySha256 + "\n"
                     + "process_id=" + process.Id + "\n"
                     + "process_start_utc_ticks=" + start + "\n"
                     + "frame_count=" + actualCore.Frame + "\n"
