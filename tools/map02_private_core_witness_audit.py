@@ -29,6 +29,7 @@ KEYS = (
     "system",
     "loaded_core",
     "core_source",
+    "tool_assembly_sha256",
     "process_id",
     "process_start_utc_ticks",
     "frame_count",
@@ -37,6 +38,7 @@ KEYS = (
     "movie_sync",
 )
 DECIMAL = re.compile(r"(?:0|[1-9][0-9]*)\Z")
+SHA256_HEX = re.compile(r"[0-9a-fA-F]{64}\\Z")
 
 
 def _decimal(value: str, *, maximum: int, minimum: int = 0) -> int:
@@ -48,8 +50,8 @@ def _decimal(value: str, *, maximum: int, minimum: int = 0) -> int:
     return number
 
 
-def read_witness(source: Path) -> tuple[int, int, int]:
-    """Verify strict little textual witness; keep process IDs local."""
+def read_witness_record(source: Path) -> tuple[int, int, int, str]:
+    """Read a strict runtime witness; keep process IDs and tool hash local."""
     path = _resolve_private_file(source)
     fd, before = _open_stable(path)
     try:
@@ -91,13 +93,22 @@ def read_witness(source: Path) -> tuple[int, int, int]:
     ):
         if fields[key] != expected:
             raise ValueError("private core witness has unsupported evidence claim")
+    tool_sha256 = fields["tool_assembly_sha256"]
+    if not SHA256_HEX.fullmatch(tool_sha256):
+        raise ValueError("private core witness tool SHA256 malformed")
     return (
         _decimal(fields["process_id"], maximum=2_147_483_647, minimum=1),
         _decimal(fields["process_start_utc_ticks"],
                  maximum=MAX_WINDOWS_UTC_TICKS,
                  minimum=MIN_WINDOWS_UTC_TICKS),
         _decimal(fields["frame_count"], maximum=MAX_FRAME_COUNT),
+        tool_sha256.lower(),
     )
+
+
+def read_witness(source: Path) -> tuple[int, int, int]:
+    """Compatibility view of the PID, birth time and frame count only."""
+    return read_witness_record(source)[:3]
 
 
 def compare_witnesses(first: Path, second: Path) -> dict:
