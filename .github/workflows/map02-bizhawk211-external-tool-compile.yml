@@ -135,6 +135,10 @@ jobs:
             if ((Get-FileHash -LiteralPath $plugin -Algorithm SHA256).Hash -cne $hash) {
               throw 'existing witness DLL changed on refused second install'
             }
+            # The last child intentionally failed (reinstall refused);
+            # do not propagate that EXPECTED negative-case exit as the
+            # successful parent Actions step result.
+            $global:LASTEXITCODE = 0
             Write-Output 'VH_MAP02_OWNER_WITNESS_DLL_INSTALL_FAKE_PASS dry=1 sha256=1 new=1 no_overwrite=1 original_media=0'
           } finally {
             Remove-Item -LiteralPath $sourceRoot -Recurse -Force -ErrorAction SilentlyContinue
