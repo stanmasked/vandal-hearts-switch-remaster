@@ -368,11 +368,15 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             from tools.map02_private_process_witness_binding import (
                 read_started_process,
             )
-            from tools.map02_private_core_witness_audit import read_witness
+            from tools.map02_private_core_witness_audit import read_witness_record
             started = read_started_process(output / PROCESS_RECEIPT_NAME)
-            observed = read_witness(output / AUTO_WITNESS_NAME)
+            observed = read_witness_record(output / AUTO_WITNESS_NAME)
             if started != observed[:2]:
                 raise ValueError("owner automatic core witness differs from captured process")
+            if (core_witness_sha256 is not None
+                    and observed[3] != core_witness_sha256.lower()):
+                raise ValueError(
+                    "runtime witness tool hash differs from pinned DLL digest")
             from tools.verify_map02_private_neutral_capture_chain import parse_plan
             _, planned_rows = parse_plan(plan)
             if not planned_rows or observed[2] > planned_rows[0][2] + 1:
@@ -399,6 +403,9 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             "first_private_capture_screenshot_count": chain["screenshot_count"],
             "automatic_core_witness_requested": auto_core_witness_plugin is not None,
             "installed_core_witness_sha256_pinned": core_witness_sha256 is not None,
+            "runtime_tool_file_hash_self_reported": auto_core_witness_plugin is not None,
+            "runtime_tool_file_hash_reported_by_witness_matches_pin":
+                auto_core_witness_plugin is not None and core_witness_sha256 is not None,
             "first_auto_core_witness_bound_to_launched_process":
                 auto_core_witness_plugin is not None,
             "first_auto_core_frame_not_later_than_first_png":
@@ -449,6 +456,9 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         "process_to_manual_core_witness_bound": False,
         "automatic_core_witness_requested": auto_core_witness_plugin is not None,
         "installed_core_witness_sha256_pinned": core_witness_sha256 is not None,
+        "runtime_tool_file_hash_self_reported": auto_core_witness_plugin is not None,
+        "runtime_tool_file_hash_reported_by_witness_matches_pin":
+            auto_core_witness_plugin is not None and core_witness_sha256 is not None,
         "automatic_core_witness_process_bound": auto_core_witness_plugin is not None,
         "capture_attempts_audited": 2,
         "same_reported_bizhawk_runtime_profile":
