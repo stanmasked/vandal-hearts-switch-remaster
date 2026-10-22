@@ -144,3 +144,33 @@ the capture's Lua exit. A matching editable text file attests neither
 correct BIOS nor mounted CUE/BIN, actual BK2 controller delivery, original
 MAP02 scene, real cold boot nor Switch renderer parity. The owner must
 run and examine authentic screenshots locally. Do not publish them.
+
+## Stage510 — pre-first-PNG receipt gate
+
+When Stage509 automatic mode is enabled, the exact Lua script that calls
+`client.screenshot()` must first see a small, schema-checked, owner-private
+`vh-map02-runtime-core-auto.txt` file in that same output folder. The
+receipt must explicitly report `system=PSX`, `loaded_core=Octoshock`
+and `bios=unverified`, `disc=unverified`,
+`movie_sync=unverified`. If absent, malformed, over 512 bytes, or stored
+under a different folder selected by the child environment, the Lua
+capture fails with a redacted diagnostic **before writing the first PNG**.
+It checks the exact receipt bytes again before each later screenshot
+and rejects changes during the capture.
+
+Only successful owner-opted-in mode emits the fixed redacted
+`VH_PRIVATE_NEUTRAL_AUTOWITNESS_PREFLIGHT` marker **before** the first
+`VH_PRIVATE_NEUTRAL_CAPTURE` marker. The independent Python parser
+validates the order and the combined two-run audit requires this
+observation on **both** runs before it will treat automatic witness
+mode as accepted. Manual mode does not require an auto witness and
+cannot accidentally acquire this claim.
+
+This temporal ordering is based on editable local files and Lua logs,
+not a trusted timestamp or cryptographic attestation. The Python owner
+launcher independently requires both receipts to match the recorded
+EmuHawk Windows PID and creation-time identities; even together the
+tests do **not** establish which original PS1 disc or BIOS was loaded,
+that the BK2 controller stream reached the emulated game, or that any
+pixel belongs to MAP02. The public CI uses fictional Lua/PNG/PSX mocks,
+never commercial assets or original gameplay.
