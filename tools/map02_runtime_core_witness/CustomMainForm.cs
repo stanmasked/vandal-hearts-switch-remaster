@@ -9,6 +9,11 @@ using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Security.Cryptography;
 using System.Text;
+using System.Globalization;
+using System.Collections.Generic;
+#if VH_MAP02_UNIX_BUILD
+using Mono.Unix.Native;
+#endif
 using System.Windows.Forms;
 using BizHawk.Client.Common;
 using BizHawk.Client.EmuHawk;
@@ -34,7 +39,12 @@ namespace VhMap02CoreWitness
         private const string ExpectedCoreAssemblySha256Environment = "VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256";
         private const string ExpectedNativeModuleSha256Environment = "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256";
         private const string ExpectedRuntimeCoreType = "BizHawk.Emulation.Cores.Sony.PSX.Octoshock";
-        private const string NativeCoreModuleName = "octoshock.dll";
+#if VH_MAP02_UNIX_BUILD
+        private static readonly string[] NativeCoreModuleNames =
+            { "liboctoshock.dll.so", "liboctoshock.so" };
+#else
+        private static readonly string[] NativeCoreModuleNames = { "octoshock.dll" };
+#endif
         protected override string WindowTitleStatic => "VH MAP02 PSX core witness";
 
         public CoreWitnessForm()
@@ -169,6 +179,15 @@ namespace VhMap02CoreWitness
                 if (File.Exists(marker) || Directory.Exists(marker))
                     throw new InvalidOperationException();
             }
+#if VH_MAP02_UNIX_BUILD
+            // Linux x86_64 uses POSIX owner/mode checks. The Python launcher
+            // repeats these checks before creating output; the tool independently
+            // refuses group/world access and folders owned by another UID.
+            if (Syscall.stat(directory.FullName, out var unixStat) != 0
+                || unixStat.st_uid != Syscall.geteuid()
+                || (unixStat.st_mode & (FilePermissions.S_IRWXG | FilePermissions.S_IRWXO)) != 0)
+                throw new InvalidOperationException();
+#else
             // A Windows folder can be publicly readable despite chmod(0700)
             // semantics elsewhere. Check the effective NTFS DACL, including
             // inherited ALLOW ACEs. No ACL or SID is ever logged or exported.
@@ -198,17 +217,47 @@ namespace VhMap02CoreWitness
                 }
                 if (!writableByOwner) throw new InvalidOperationException();
             }
+#endif
         }
 
         private static string FindLoadedNativeCoreModulePath()
         {
+#if VH_MAP02_UNIX_BUILD
+            // Process.Modules is not consistently implemented by Mono on Unix.
+            // The kernel maps file is the authoritative list of this process's
+            // mapped shared objects. Reject deleted/missing or ambiguous modules.
+            var found = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var line in File.ReadLines("/proc/self/maps"))
+            {
+                var columns = line.Split(new[] { ' ' }, 6,
+                    StringSplitOptions.RemoveEmptyEntries);
+                if (columns.Length < 6) continue;
+                var mapped = DecodeProcMapsPath(columns[5]);
+                var deletedSuffix = " (deleted)";
+                if (mapped.EndsWith(deletedSuffix, StringComparison.Ordinal))
+                {
+                    var deletedName = Path.GetFileName(mapped.Substring(
+                        0, mapped.Length - deletedSuffix.Length));
+                    if (Array.IndexOf(NativeCoreModuleNames, deletedName) >= 0)
+                        throw new InvalidOperationException();
+                    continue;
+                }
+                if (Array.IndexOf(NativeCoreModuleNames, Path.GetFileName(mapped)) < 0)
+                    continue;
+                if (!Path.IsPathRooted(mapped) || !File.Exists(mapped))
+                    throw new InvalidOperationException();
+                found.Add(Path.GetFullPath(mapped));
+            }
+            if (found.Count != 1) throw new InvalidOperationException();
+            foreach (var path in found) return path;
+            throw new InvalidOperationException();
+#else
             string? found = null;
             using (var process = Process.GetCurrentProcess())
             {
                 foreach (ProcessModule module in process.Modules)
                 {
-                    if (!string.Equals(module.ModuleName, NativeCoreModuleName,
-                            StringComparison.OrdinalIgnoreCase))
+                    if (Array.IndexOf(NativeCoreModuleNames, module.ModuleName) < 0)
                         continue;
                     if (!string.IsNullOrEmpty(found))
                         throw new InvalidOperationException();
@@ -219,7 +268,30 @@ namespace VhMap02CoreWitness
                 || !File.Exists(found))
                 throw new InvalidOperationException();
             return found!;
+#endif
         }
+
+#if VH_MAP02_UNIX_BUILD
+        private static string DecodeProcMapsPath(string value)
+        {
+            var result = new StringBuilder(value.Length);
+            for (var i = 0; i < value.Length; i++)
+            {
+                if (value[i] == '\\\\' && i + 3 < value.Length
+                    && value[i + 1] >= '0' && value[i + 1] <= '7'
+                    && value[i + 2] >= '0' && value[i + 2] <= '7'
+                    && value[i + 3] >= '0' && value[i + 3] <= '7')
+                {
+                    var code = (value[i + 1] - '0') * 64
+                        + (value[i + 2] - '0') * 8 + value[i + 3] - '0';
+                    result.Append((char)code);
+                    i += 3;
+                }
+                else result.Append(value[i]);
+            }
+            return result.ToString();
+        }
+#endif
 
         private static string FileSha256(string location)
         {
@@ -276,7 +348,9 @@ namespace VhMap02CoreWitness
                 throw new InvalidOperationException();
 
             var coreAssemblySha256 = FileSha256(runtimeType.Assembly.Location);
-            var nativeModuleSha256 = FileSha256(FindLoadedNativeCoreModulePath());
+            var nativeModulePath = FindLoadedNativeCoreModulePath();
+            var nativeModuleName = Path.GetFileName(nativeModulePath);
+            var nativeModuleSha256 = FileSha256(nativeModulePath);
             var executingAssemblySha256 = ExecutingAssemblyFileSha256();
 
             // Pins are optional, independently supplied local values. If set,
@@ -291,7 +365,11 @@ namespace VhMap02CoreWitness
 
             using (var process = Process.GetCurrentProcess())
             {
+#if VH_MAP02_UNIX_BUILD
+                var start = LinuxProcessStartUtcTicks(process.Id);
+#else
                 var start = process.StartTime.ToUniversalTime().Ticks;
+#endif
                 if (process.Id <= 0 || start <= 0) throw new InvalidOperationException();
                 return "VH_MAP02_RUNTIME_CORE_WITNESS_V3\n"
                     + "system=PSX\n"
@@ -299,7 +377,7 @@ namespace VhMap02CoreWitness
                     + "core_source=IEmulator.Attributes.CoreName\n"
                     + "runtime_core_type=" + ExpectedRuntimeCoreType + "\n"
                     + "core_assembly_sha256=" + coreAssemblySha256 + "\n"
-                    + "native_core_module_name=" + NativeCoreModuleName + "\n"
+                    + "native_core_module_name=" + nativeModuleName + "\n"
                     + "native_core_module_sha256=" + nativeModuleSha256 + "\n"
                     + "tool_assembly_sha256=" + executingAssemblySha256 + "\n"
                     + "process_id=" + process.Id + "\n"
@@ -310,6 +388,48 @@ namespace VhMap02CoreWitness
                     + "movie_sync=unverified\n";
             }
         }
+
+#if VH_MAP02_UNIX_BUILD
+        [System.Runtime.InteropServices.DllImport("libc", EntryPoint = "sysconf", SetLastError = true)]
+        private static extern long LinuxSysconf(int name);
+
+        private static long LinuxProcessStartUtcTicks(int pid)
+        {
+            var stat = File.ReadAllText("/proc/self/stat");
+            var close = stat.LastIndexOf(')');
+            if (close < 0) throw new InvalidOperationException();
+            var fields = stat.Substring(close + 1).Trim().Split(
+                new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (fields.Length <= 19) throw new InvalidOperationException();
+            var pidText = stat.Substring(0, stat.IndexOf(' '));
+            if (!int.TryParse(pidText, NumberStyles.None,
+                    CultureInfo.InvariantCulture, out var observedPid)
+                || observedPid != pid) throw new InvalidOperationException();
+            if (!ulong.TryParse(fields[19], NumberStyles.None,
+                    CultureInfo.InvariantCulture, out var startClockTicks))
+                throw new InvalidOperationException();
+            ulong bootTime = 0;
+            var foundBootTime = false;
+            foreach (var line in File.ReadLines("/proc/stat"))
+            {
+                if (!line.StartsWith("btime ", StringComparison.Ordinal)) continue;
+                var parts = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length != 2 || !ulong.TryParse(parts[1], NumberStyles.None,
+                        CultureInfo.InvariantCulture, out bootTime))
+                    throw new InvalidOperationException();
+                foundBootTime = true;
+                break;
+            }
+            var hz = LinuxSysconf(2); // POSIX _SC_CLK_TCK on Linux.
+            if (!foundBootTime || hz <= 0) throw new InvalidOperationException();
+            var rate = checked((ulong)hz);
+            var start = checked(((checked(bootTime * rate + startClockTicks))
+                * 10000000UL) / rate);
+            if (start < 621355968000000000UL || start > 725811840000000000UL)
+                throw new InvalidOperationException();
+            return checked((long)start);
+        }
+#endif
 
         private void SaveWitness(object sender, EventArgs args)
         {
