@@ -59,6 +59,7 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
         ):
             self.assertFalse(result[label])
         self.assertNotIn(str(self.root), json.dumps(result))
+        self.assertNotIn("a" * 64, json.dumps(result))
         self.assertNotIn("3001", json.dumps(result))
         self.assertNotIn("639000000000000001", json.dumps(result))
 
