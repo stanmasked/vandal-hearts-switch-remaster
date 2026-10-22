@@ -20,6 +20,8 @@ on:
       - 'tools/map02_private_bin_digest_init.py'
       - 'tests/test_map02_private_bin_digest_init.py'
       - 'tests/test_map02_private_disc_movie_preflight.py'
+      - 'tools/map02_private_disc_parts.py'
+      - 'tests/test_map02_private_disc_parts.py'
       - 'docs/MAP02_PRIVATE_DISC_MOVIE_PREFLIGHT.md'
   workflow_dispatch:
 permissions:
@@ -64,6 +66,23 @@ jobs:
           fi
           grep -qx 'OK' /tmp/vh-map02-media-preflight-test.log
           echo "VH_MAP02_MEDIA_PREFLIGHT_PASS synthetic=${count} original_bin=0 original_bk2=0 bios=0 replay=0"
+      - name: Verify split/reassembly using only fictional media bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_map02_private_disc_parts.py' -v \
+            2>&1 | tee /tmp/vh-map02-private-disc-parts.log
+          count=$(sed -nE 's/^Ran ([1-9][0-9]*) tests? in .*$/\1/p' /tmp/vh-map02-private-disc-parts.log)
+          if [[ "$count" != "6" ]]; then
+            echo 'unexpected fictional private disc-parts test count' >&2
+            exit 1
+          fi
+          if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-private-disc-parts.log; then
+            exit 1
+          fi
+          grep -qx 'OK' /tmp/vh-map02-private-disc-parts.log
+          echo "VH_MAP02_PRIVATE_DISC_PARTS_SYNTHETIC_PASS cases=$count original_bin=0 public_media=0"
       - name: Verify secure fictional full-BIN digest reference bootstrap
         shell: bash
         run: |
