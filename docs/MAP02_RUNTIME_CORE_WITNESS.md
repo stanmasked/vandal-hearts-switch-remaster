@@ -360,6 +360,11 @@ receipt and is never printed in public-safe reports.
 The two-witness auditors also require both receipts to report the same tool
 file digest. This catches accidental DLL drift across cold runs, but the paired
 digest remains self-reported unless compared to an independently supplied pin.
+The offline one-run re-audit also accepts `--private-core-witness-sha256` so an
+owner can compare one saved receipt with a separately trusted expected digest.
+Its report contains only pin-supplied/matched booleans. Without that argument,
+the one-run audit checks schema and process/frame consistency, not independent
+pin equality.
 
 This is a self-check of the file at the reported location, **not** an
 independent OS attestation of the CLR's in-memory module bytes. A malicious
