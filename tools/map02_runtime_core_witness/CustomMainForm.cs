@@ -277,7 +277,7 @@ namespace VhMap02CoreWitness
             var result = new StringBuilder(value.Length);
             for (var i = 0; i < value.Length; i++)
             {
-                if (value[i] == '\\\\' && i + 3 < value.Length
+                if (value[i] == (char)92 && i + 3 < value.Length
                     && value[i + 1] >= '0' && value[i + 1] <= '7'
                     && value[i + 2] >= '0' && value[i + 2] <= '7'
                     && value[i + 3] >= '0' && value[i + 3] <= '7')
