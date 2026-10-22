@@ -357,6 +357,10 @@ that file hash differs, and the Python coordinator independently checks the
 reported digest against the same pin. The digest itself stays in the private
 receipt and is never printed in public-safe reports.
 
+The two-witness auditors also require both receipts to report the same tool
+file digest. This catches accidental DLL drift across cold runs, but the paired
+digest remains self-reported unless compared to an independently supplied pin.
+
 This is a self-check of the file at the reported location, **not** an
 independent OS attestation of the CLR's in-memory module bytes. A malicious
 assembly could falsify its own receipt. Do not treat this as cryptographic
