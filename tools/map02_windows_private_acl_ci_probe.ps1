@@ -47,6 +47,9 @@ try {
     if ($LASTEXITCODE -eq 0 -or @($unexpected).Count -gt 0) {
         throw 'Everyone-readable Windows capture directory was accepted'
     }
+    # A *successful* negative test just ran a child process that exited 1.
+    # Do not leak that intentional failure as this parent CI-step exit code.
+    $global:LASTEXITCODE = 0
     Write-Output 'VH_MAP02_WINDOWS_OUTPUT_ACL_REAL_FIXTURE_PASS private=accepted everyone=denied media=0'
 } finally {
     Remove-Item -LiteralPath $base -Recurse -Force -ErrorAction SilentlyContinue
