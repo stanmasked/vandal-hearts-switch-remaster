@@ -202,7 +202,7 @@ namespace VhMap02CoreWitness
 
         private static string FindLoadedNativeCoreModulePath()
         {
-            string found = null;
+            string? found = null;
             using (var process = Process.GetCurrentProcess())
             {
                 foreach (ProcessModule module in process.Modules)
@@ -218,7 +218,7 @@ namespace VhMap02CoreWitness
             if (string.IsNullOrEmpty(found) || !Path.IsPathRooted(found)
                 || !File.Exists(found))
                 throw new InvalidOperationException();
-            return found;
+            return found!;
         }
 
         private static string FileSha256(string location)
