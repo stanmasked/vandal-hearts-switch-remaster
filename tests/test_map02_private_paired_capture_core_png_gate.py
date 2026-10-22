@@ -210,5 +210,40 @@ class OwnerCombinedGateTests(unittest.TestCase):
             "all_reviewed_decoded_png_pixels_equal"])
 
 
+    def test_automatic_core_witnesses_in_run_folders_are_locally_bound(self):
+        from tools.map02_private_bizhawk_poweron_launch import AUTO_WITNESS_NAME
+        for run, witness in zip(self.runs, self.witness):
+            (run / AUTO_WITNESS_NAME).write_bytes(witness.read_bytes())
+        with patch(
+            "tools.map02_private_paired_capture_core_png_gate.audit_pair",
+            return_value=dict(PAIR),
+        ):
+            report = review_owner_capture(self.movie, self.plan, self.workspace)
+        self.assertEqual(report["auto_psx_octoshock_core_witnesses_process_matched"], 2)
+        self.assertEqual(report["manual_psx_octoshock_core_witnesses_process_matched"], 0)
+        self.assertFalse(report["authentic_map02_scene_identified"])
+
+    def test_partial_manual_witness_pair_is_rejected(self):
+        with patch(
+            "tools.map02_private_paired_capture_core_png_gate.audit_pair",
+            return_value=dict(PAIR),
+        ):
+            with self.assertRaisesRegex(ValueError, "must be consistent"):
+                review_owner_capture(
+                    self.movie, self.plan, self.workspace, self.witness[0], None
+                )
+
+    def test_automatic_core_witness_missing_from_second_run_rejected(self):
+        from tools.map02_private_bizhawk_poweron_launch import AUTO_WITNESS_NAME
+        (self.runs[0] / AUTO_WITNESS_NAME).write_bytes(self.witness[0].read_bytes())
+        with patch(
+            "tools.map02_private_paired_capture_core_png_gate.audit_pair",
+            return_value=dict(PAIR),
+        ):
+            with self.assertRaises((OSError, ValueError)):
+                review_owner_capture(self.movie, self.plan, self.workspace)
+
+
+
 if __name__ == "__main__":
     unittest.main()
