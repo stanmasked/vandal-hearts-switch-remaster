@@ -293,7 +293,7 @@ namespace VhMap02LoaderSmoke
                     if (!File.Exists(destination))
                         throw new InvalidOperationException("opted-in fake core autowrite absent");
                     var body = File.ReadAllText(destination);
-                    if (!body.StartsWith("VH_MAP02_RUNTIME_CORE_WITNESS_V1\n"
+                    if (!body.StartsWith("VH_MAP02_RUNTIME_CORE_WITNESS_V2\n"
                         + "system=PSX\nloaded_core=Octoshock\n")
                         || !body.Contains("tool_assembly_sha256=" + assemblyHash + "\n")
                         || !body.Contains("bios=unverified\n")
@@ -407,7 +407,7 @@ namespace VhMap02LoaderSmoke
                     // ID/start time, any original SHA1, paths or game data.
                     var rows = witness?.Split('\n');
                     if (rows == null || rows.Length != 12
-                        || rows[0] != "VH_MAP02_RUNTIME_CORE_WITNESS_V1"
+                        || rows[0] != "VH_MAP02_RUNTIME_CORE_WITNESS_V2"
                         || rows[1] != "system=PSX"
                         || rows[2] != "loaded_core=Octoshock"
                         || rows[3] != "core_source=IEmulator.Attributes.CoreName"
