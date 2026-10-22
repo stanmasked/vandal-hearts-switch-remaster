@@ -157,6 +157,9 @@ def audit_pair(movie: Path, plan: Path, first: Path, second: Path, *,
         "distinct_capture_directories": True,
         "cross_run_png_inodes_distinct": True,
         "screenshot_pairs_checked": len(rows),
+        # Derived from the owner-private plan after both full chain audits;
+        # it is only an emulated-frame number, not a media-derived secret.
+        "first_capture_counter": rows[0][2] + 1,
         "byte_identical_png_pairs": equal,
         "byte_different_png_pairs": len(rows) - equal,
         "all_png_file_bytes_identical": equal == len(rows),
