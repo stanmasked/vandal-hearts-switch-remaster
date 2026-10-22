@@ -61,6 +61,25 @@ def _reject_git(path: Path) -> None:
             raise ValueError("never open owner-private BK2/disc/plan/images inside Git checkout")
 
 
+
+def require_matching_core_plugin(emuhawk: Path, plugin: Path) -> Path:
+    """Require the sole owner-installed external tool next to this EmuHawk."""
+    emulator = Path(emuhawk)
+    candidate = Path(plugin)
+    if (not emulator.is_absolute() or not emulator.is_file()
+            or emulator.is_symlink() or not candidate.is_absolute()
+            or candidate.is_symlink() or not candidate.is_file()
+            or candidate.name != "VhMap02CoreWitness.dll"
+            or candidate.parent.name != "ExternalTools"
+            or candidate.parent.is_symlink()
+            or candidate.parent.parent.resolve(strict=True)
+               != emulator.parent.resolve(strict=True)):
+        raise ValueError(
+            "owner private automatic core witness DLL is not a matching installed external tool")
+    _reject_git(candidate)
+    return candidate.resolve(strict=True)
+
+
 def build_launch(private_emuhawk: Path, private_disc: Path,
                  private_bk2: Path, private_plan: Path,
                  private_png_root: Path, *,
@@ -173,16 +192,7 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
 
     plugin = None
     if auto_core_witness_plugin is not None:
-        candidate = Path(auto_core_witness_plugin)
-        # Official BizHawk 2.11 loads only a basename in ExternalTools. No
-        # accidental third-party DLL path, symlink, or shared install accepted.
-        if (not candidate.is_absolute() or candidate.is_symlink()
-                or not candidate.is_file()
-                or candidate.name != "VhMap02CoreWitness.dll"
-                or candidate.parent.name != "ExternalTools"
-                or candidate.parent.parent.resolve(strict=True) != executable.parent):
-            raise ValueError("owner private automatic core witness DLL is not a matching installed external tool")
-        plugin = candidate.resolve(strict=True)
+        plugin = require_matching_core_plugin(executable, auto_core_witness_plugin)
         target = root / AUTO_WITNESS_NAME
         if target.exists() or target.is_symlink():
             raise ValueError("owner private automatic core witness already exists")
