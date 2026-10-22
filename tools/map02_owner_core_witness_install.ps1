@@ -43,6 +43,13 @@ try {
         } else {
             [System.IO.FileInfo]::new($start)
         }
+        if ($candidate -is [System.IO.FileInfo]) {
+            if (($candidate.Attributes -band
+                [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw 'source DLL cannot be a reparse point'
+            }
+            $candidate = $candidate.Directory
+        }
         for ($cur = $candidate; $null -ne $cur; $cur = $cur.Parent) {
             if (($cur.Attributes -band
                 [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
