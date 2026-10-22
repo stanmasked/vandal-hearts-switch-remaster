@@ -29,6 +29,17 @@ try {
     [void][System.IO.Directory]::CreateDirectory($first)
     Set-OwnerOnlyDacl $first $owner
 
+    # Assert both real NTFS DACLs *before* invoking Python. The guard prints
+    # only a fixed accept marker or exits 1, never local paths or SIDs.
+    $guard = Join-Path $PSScriptRoot 'map02_windows_private_output_acl.ps1'
+    foreach ($folder in @($workspace, $first)) {
+        $check = @( & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $guard -Directory $folder )
+        if ($LASTEXITCODE -ne 0 -or @($check).Count -ne 1 -or
+            [string]$check -cne 'VH_MAP02_OWNER_PRIVATE_NTFS_ACL_OK') {
+            throw 'direct real NTFS guard rejected a synthetic owner-only directory'
+        }
+    }
+
     $utf8 = [System.Text.UTF8Encoding]::new($false)
     [System.IO.File]::WriteAllText((Join-Path $base 'fake-movie.bk2'),
         'FICTIONAL_NO_GAME_MOVIE', $utf8)
