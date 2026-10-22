@@ -342,8 +342,10 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             raise ValueError("one private emulator capture process failed")
         # Reject an emulator that returned zero without the exact expected
         # Lua markers and structurally intact PNGs before starting the next.
-        verify(private_bk2, plan, output / "vh_private_capture.log", output)
+        chain = verify(private_bk2, plan, output / "vh_private_capture.log", output)
         if auto_core_witness_plugin is not None:
+            if chain.get("owner_log_reports_auto_core_witness_before_first_png") is not True:
+                raise ValueError("private auto core witness did not precede first PNG")
             # Fail before creating a second emulator if this capture is not
             # independently tied to its OWN launched process.
             from tools.map02_private_process_witness_binding import (

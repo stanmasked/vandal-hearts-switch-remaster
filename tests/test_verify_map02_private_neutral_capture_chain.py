@@ -9,7 +9,7 @@ from unittest.mock import patch
 import zlib
 
 from tools.verify_map02_private_neutral_capture_chain import (
-    parse_plan, verify,
+    parse_plan, verify, AUTO_CORE_PREFLIGHT,
 )
 
 LINES = [
@@ -598,6 +598,41 @@ class CaptureAuditTests(unittest.TestCase):
             "VH_MAP02_CAPTURE_PLAN_V1", "VH_MAP02_CAPTURE_PLAN_V2"))
         with self.assertRaises(ValueError):
             self.call()
+
+
+    def test_legacy_manual_mode_has_no_automatic_pre_png_claim(self):
+        report = self.call()
+        self.assertFalse(report["owner_log_reports_auto_core_witness_before_first_png"])
+
+    def test_automatic_core_receipt_marker_must_precede_first_png(self):
+        original = self.log.read_text(encoding="utf-8")
+        first = log_row(*PICKS[0])
+        self.log.write_text(original.replace(
+            first, AUTO_CORE_PREFLIGHT + "\n" + first, 1,
+        ), encoding="utf-8")
+        report = self.call()
+        self.assertTrue(report["owner_log_reports_auto_core_witness_before_first_png"])
+        self.assertFalse(report["active_octoshock_core_verified"])
+        self.assertFalse(report["map02_frame_identified"])
+
+    def test_late_or_duplicate_automatic_core_marker_rejected(self):
+        source = self.log.read_text(encoding="utf-8")
+        first, second = (log_row(*PICKS[k]) for k in (0, 1))
+        variants = [
+            source.replace(second, AUTO_CORE_PREFLIGHT + "\n" + second, 1),
+            source.replace(first, AUTO_CORE_PREFLIGHT + "\n" + first, 1)
+                  .replace(second, AUTO_CORE_PREFLIGHT + "\n" + second, 1),
+            AUTO_CORE_PREFLIGHT + "\n" + source,
+            source + AUTO_CORE_PREFLIGHT + "\n",
+            source.replace(first, AUTO_CORE_PREFLIGHT.replace("receipt=present",
+                      "receipt=verified") + "\n" + first, 1),
+        ]
+        for changed in variants:
+            with self.subTest(variant=variants.index(changed)):
+                self.log.write_text(changed, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "automatic core receipt"):
+                    self.call()
+
 
 
 if __name__ == "__main__":

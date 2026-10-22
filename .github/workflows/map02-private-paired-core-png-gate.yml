@@ -43,7 +43,7 @@ jobs:
             -p 'test_map02_private_paired_capture_core_png_gate.py' -v \
             2>&1 | tee /tmp/vh-map02-private-paired-acceptance.log
           count=$(sed -nE 's/^Ran ([1-9][0-9]*) tests? in .*$/\1/p' /tmp/vh-map02-private-paired-acceptance.log)
-          test "$count" = "20"
+          test "$count" = "21"
           if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-private-paired-acceptance.log; then exit 1; fi
           grep -qx 'OK' /tmp/vh-map02-private-paired-acceptance.log
           echo "VH_MAP02_OWNER_PAIRED_CORE_PNG_FICTIONAL_PASS tests=$count private_assets=0 real_ps1=0 map02=unverified"

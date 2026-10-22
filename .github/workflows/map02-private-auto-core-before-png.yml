@@ -1,0 +1,53 @@
+name: MAP02 pre-first-PNG auto core witness (fictional)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-private-auto-core-before-png.yml'
+      - 'tools/map02_bizhawk_private_neutral_capture.lua'
+      - 'tests/test_map02_bizhawk_private_neutral_capture_mock.lua'
+      - 'tools/verify_map02_private_neutral_capture_chain.py'
+      - 'tests/test_verify_map02_private_neutral_capture_chain.py'
+      - 'tools/map02_private_two_capture_audit.py'
+      - 'tools/map02_private_two_replay_runner.py'
+      - 'tools/map02_private_paired_capture_core_png_gate.py'
+      - 'tests/test_map02_private_paired_capture_core_png_gate.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fake-lua-core-before-png:
+    name: Invented Lua core receipt order (Ubuntu)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Lua runtime for executable fake API tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lua5.4
+          lua5.4 -v
+      - name: Simulate real Lua script with invented PSX APIs and no game
+        shell: bash
+        run: |
+          set -euo pipefail
+          lua5.4 tests/test_map02_bizhawk_private_neutral_capture_mock.lua \
+            | tee /tmp/vh-map02-early-core-lua.log
+          grep -Eq '^VH_MAP02_NEUTRAL_CAPTURE_LUA_MOCK_PASS cases=[1-9][0-9]* owner_bk2=0 actual_bizhawk=0 map02_verified=0$' \
+            /tmp/vh-map02-early-core-lua.log
+          echo 'VH_MAP02_AUTO_CORE_PRE_PNG_LUA_FAKE_PASS real_ps1=0 map02=unverified'
+      - name: Verify independent Python log and combined receipt validators
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in test_verify_map02_private_neutral_capture_chain.py \
+                      test_map02_private_paired_capture_core_png_gate.py; do
+            python -m unittest discover -s tests -p "$name" -v
+          done
+          echo 'VH_MAP02_AUTO_CORE_PRE_PNG_PYTHON_FAKE_PASS real_ps1=0 map02=unverified'

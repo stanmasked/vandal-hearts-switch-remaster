@@ -216,7 +216,7 @@ class OwnerCombinedGateTests(unittest.TestCase):
             (run / AUTO_WITNESS_NAME).write_bytes(witness.read_bytes())
         with patch(
             "tools.map02_private_paired_capture_core_png_gate.audit_pair",
-            return_value=dict(PAIR),
+            return_value=dict(PAIR, both_owner_logs_report_auto_core_witness_before_first_png=True),
         ):
             report = review_owner_capture(self.movie, self.plan, self.workspace)
         self.assertEqual(report["auto_psx_octoshock_core_witnesses_process_matched"], 2)
@@ -226,7 +226,7 @@ class OwnerCombinedGateTests(unittest.TestCase):
     def test_partial_manual_witness_pair_is_rejected(self):
         with patch(
             "tools.map02_private_paired_capture_core_png_gate.audit_pair",
-            return_value=dict(PAIR),
+            return_value=dict(PAIR, both_owner_logs_report_auto_core_witness_before_first_png=True),
         ):
             with self.assertRaisesRegex(ValueError, "must be consistent"):
                 review_owner_capture(
@@ -238,11 +238,22 @@ class OwnerCombinedGateTests(unittest.TestCase):
         (self.runs[0] / AUTO_WITNESS_NAME).write_bytes(self.witness[0].read_bytes())
         with patch(
             "tools.map02_private_paired_capture_core_png_gate.audit_pair",
-            return_value=dict(PAIR),
+            return_value=dict(PAIR, both_owner_logs_report_auto_core_witness_before_first_png=True),
         ):
             with self.assertRaises((OSError, ValueError)):
                 review_owner_capture(self.movie, self.plan, self.workspace)
 
+
+    def test_auto_core_witness_requires_audited_pre_png_marker(self):
+        from tools.map02_private_bizhawk_poweron_launch import AUTO_WITNESS_NAME
+        for run, witness in zip(self.runs, self.witness):
+            (run / AUTO_WITNESS_NAME).write_bytes(witness.read_bytes())
+        with patch(
+            "tools.map02_private_paired_capture_core_png_gate.audit_pair",
+            return_value=dict(PAIR, both_owner_logs_report_auto_core_witness_before_first_png=False),
+        ):
+            with self.assertRaisesRegex(ValueError, "before first PNG"):
+                review_owner_capture(self.movie, self.plan, self.workspace)
 
 
 if __name__ == "__main__":

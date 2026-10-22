@@ -77,6 +77,36 @@ end
 if capture_root_in_git_checkout(log_path) then
   return fail("private_log_inside_git_checkout")
 end
+-- Stage510: require a bounded, strictly formatted core-only witness before
+-- the FIRST screenshot in the owner's explicitly enabled auto-witness mode.
+-- This is a local file observation, not cryptographic/process/disc proof.
+local auto_core_dir = os.getenv("VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR")
+local auto_core_enabled = auto_core_dir ~= nil and auto_core_dir ~= ""
+if auto_core_enabled then
+  if not absolute_private_path(auto_core_dir)
+      or auto_core_dir:gsub("\\", "/"):gsub("/+$", "")
+         ~= root:gsub("\\", "/"):gsub("/+$", "") then
+    return fail("automatic_core_witness_directory_mismatch")
+  end
+end
+local auto_core_path = root:gsub("\\", "/"):gsub("/+$", "")
+    .. "/vh-map02-runtime-core-auto.txt"
+local first_auto_core_bytes = nil
+local function core_only_receipt_bytes()
+  local file = io.open(auto_core_path, "rb")
+  if not file then return nil end
+  local body = file:read(513)
+  file:close()
+  if type(body) ~= "string" or #body == 0 or #body > 512 then return nil end
+  local pattern = "^VH_MAP02_RUNTIME_CORE_WITNESS_V1\n"
+      .. "system=PSX\nloaded_core=Octoshock\n"
+      .. "core_source=IEmulator%.Attributes%.CoreName\n"
+      .. "process_id=[1-9]%d*\nprocess_start_utc_ticks=[1-9]%d*\n"
+      .. "frame_count=%d+\nbios=unverified\n"
+      .. "disc=unverified\nmovie_sync=unverified\n$"
+  if not body:match(pattern) then return nil end
+  return body
+end
 local normalized_root = root:gsub("\\", "/"):gsub("/+$", "")
 local normalized_log = log_path:gsub("\\", "/"):gsub("/+$", "")
 if normalized_log ~= normalized_root .. "/vh_private_capture.log" then
@@ -364,6 +394,20 @@ while true do
     local state = any_held(movie.getinput(index, 1))
     if state == nil or state ~= (wanted.held == "held") then
       return fail("movie_getinput_neutral_state_mismatch")
+    end
+    if auto_core_enabled then
+      local receipt = core_only_receipt_bytes()
+      if receipt == nil then
+        return fail("automatic_core_witness_absent_or_invalid_before_png")
+      end
+      if first_auto_core_bytes == nil then
+        first_auto_core_bytes = receipt
+        emit("VH_PRIVATE_NEUTRAL_AUTOWITNESS_PREFLIGHT "
+          .. "stage=before_first_png receipt=present core_only=yes "
+          .. "actual_disc=unverified")
+      elseif receipt ~= first_auto_core_bytes then
+        return fail("automatic_core_witness_changed_during_capture")
+      end
     end
     local name = string.format(
       "vh_review_w%02d_%s_counter_%07d.png", wanted.group, wanted.role, counter)

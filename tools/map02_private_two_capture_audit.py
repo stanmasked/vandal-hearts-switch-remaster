@@ -65,6 +65,10 @@ def audit_pair(movie: Path, plan: Path, first: Path, second: Path, *,
                second_root, **parameters)
     if a["screenshot_count"] != b["screenshot_count"]:
         raise ValueError("independent capture screenshot counts differ")
+    pre_first_a = a.get("owner_log_reports_auto_core_witness_before_first_png") is True
+    pre_first_b = b.get("owner_log_reports_auto_core_witness_before_first_png") is True
+    if pre_first_a != pre_first_b:
+        raise ValueError("two capture sessions used different automatic core witness modes")
     # A different BizHawk frontend version or PSX TV standard means the two
     # screenshot sets are not directly comparable as one runtime profile.
     # These are self-reported Lua values, not independent core/BIOS proof.
@@ -141,6 +145,7 @@ def audit_pair(movie: Path, plan: Path, first: Path, second: Path, *,
     return {
         "schema": SCHEMA,
         "two_private_capture_chains_passed": True,
+        "both_owner_logs_report_auto_core_witness_before_first_png": pre_first_a,
         "same_reported_bizhawk_runtime_profile": True,
         "same_reported_psx_core_fallback_configuration": True,
         "both_runs_reported_psx_core_fallback_disabled": True,
