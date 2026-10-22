@@ -95,6 +95,10 @@ jobs:
           try {
             Copy-Item -LiteralPath $builder -Destination $source -ErrorAction Stop
             $hash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+            # This public experimental DLL contains NO owner PS1 or BK2 data.
+            # The log allows an owner to independently verify an extracted
+            # Actions artifact before installing it on a personal PC.
+            Write-Output "VH_MAP02_EXPERIMENTAL_DLL_PUBLIC_SHA256=$hash"
             $helper = 'tools/map02_owner_core_witness_install.ps1'
             $args = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
                       '-File', $helper,
