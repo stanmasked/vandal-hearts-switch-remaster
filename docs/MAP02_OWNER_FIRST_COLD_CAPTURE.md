@@ -281,7 +281,7 @@ and is **not** the game's disc hash.
 **Historical Stage517/V1 pin only:** the value above identifies the pre-Stage518
 DLL from the cited run. Stage518 changes the compiled assembly and switches
 the receipt to V2, so this value is **not valid for the Stage518 DLL** and
-must not be used for a current V2 capture. For any other CI run, obtain the
+must not be used for the current Stage518 capture. For any other CI run, obtain the
 DLL digest printed by that exact trusted successful run; do not infer or reuse
 a hash from an unrelated artifact.
 
@@ -315,7 +315,7 @@ remain on the owner's private workstation.
 
 ## Stage518 — compare the witness's executing-tool file hash to the pin
 
-Stage518 adds a tool_assembly_sha256 field to the private runtime receipt (V2 schema).
+Stage518 adds a tool_assembly_sha256 field and independently checks the runtime module files in the private runtime receipt (V3 schema).
 The external tool computes SHA-256 for the file at its own executing assembly
 location. When --private-core-witness-sha256 is supplied, the launcher passes
 that exact pin to the child EmuHawk process through a dedicated environment
@@ -349,11 +349,11 @@ does not authenticate the original disc, BIOS, movie synchronization, MAP02
 scene, or Nintendo Switch gameplay.
 
 
-### Obtain and install the current V2 artifact before owner-local capture
+### Obtain and install the Stage518 artifact before owner-local capture
 
 The Stage518 source changes the compiled DLL, so the Stage516/Stage517 digest
 above cannot authenticate the current V2 binary. Do not launch EmuHawk using
-the old V1 DLL or the historical Stage517 hash. First require the
+the older Stage517 DLL or its historical hash. First require the
 **MAP02 real BizHawk 2.11 External Tool compile (no game media)** workflow to
 finish successfully for the exact Stage518 source revision.
 
@@ -401,7 +401,7 @@ python -m tools.map02_private_first_run_audit $bk2 $workspace `
   --private-native-module-sha256 $knownNativeModuleSha256
 ```
 
-A Stage517/V1 DLL or V1 witness receipt is not compatible with the Stage518/V2
+A Stage517/V1 DLL or V1 witness receipt is not compatible with the Stage518/V3
 parser. Until the exact Stage518 build has a successful CI result and its
 matching artifact digest has been verified, the real owner-local capture
 remains blocked. Keep all original media, screenshots, owner-local receipts,
