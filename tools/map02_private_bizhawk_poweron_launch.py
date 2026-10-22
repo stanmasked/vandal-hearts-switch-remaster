@@ -256,6 +256,22 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
         str(disc),  # BizHawk expects the ROM/disc as final positional argument.
     ]
     env = os.environ.copy()
+    if mono is not None:
+        # Match the upstream EmuHawkMono.sh runtime environment without running
+        # that wrapper: it writes extra stdout/stderr files beside the package,
+        # while this launcher must keep all emulator logs in the private capture.
+        if Path("/usr/lib/x86_64-linux-gnu").is_dir():
+            system_library_dir = Path("/usr/lib/x86_64-linux-gnu")
+        elif Path("/usr/lib64").is_dir():
+            system_library_dir = Path("/usr/lib64")
+        else:
+            system_library_dir = Path("/usr/lib")
+        env["LD_LIBRARY_PATH"] = os.pathsep.join((
+            str(executable.parent / "dll"), str(executable.parent),
+            str(system_library_dir),
+        ))
+        env["MONO_CRASH_NOFILE"] = "1"
+        env["MONO_WINFORMS_XIM_STYLE"] = "disabled"
     # Environment inheritance alone MUST NOT enable sensitive file writes or
     # carry core-file pins into an unrelated launch without the explicit plugin.
     for name in (
