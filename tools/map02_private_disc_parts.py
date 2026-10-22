@@ -196,7 +196,7 @@ def join_parts(manifest_path: Path, parts_dir: Path, output_path: Path) -> dict[
                         part_hash.update(block)
                         part_bytes += len(block)
                         written += len(block)
-                    if part_bytes != item["size_bytes"] or part_hash.hexdigest() != item["sha256":
+                    if part_bytes != item["size_bytes"] or part_hash.hexdigest() != item["sha256"]:
                         raise ValueError("split part size or SHA-256 mismatch")
             output.flush()
             os.fsync(output.fileno())
@@ -218,7 +218,7 @@ def main() -> int:
     split_parser.add_argument("source", type=Path)
     split_parser.add_argument("output_dir", type=Path)
     split_parser.add_argument("--chunk-size-mib", type=int, default=220)
-    join_parser = commands.add_parser(join", help="verify and reconstruct private split parts")
+    join_parser = commands.add_parser("join", help="verify and reconstruct private split parts")
     join_parser.add_argument("manifest", type=Path)
     join_parser.add_argument("parts_dir", type=Path)
     join_parser.add_argument("output", type=Path)
