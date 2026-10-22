@@ -1182,8 +1182,8 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
             "tools.map02_private_process_witness_binding.read_started_process",
             return_value=(123, 456),
         ), patch(
-            "tools.map02_private_core_witness_audit.read_witness",
-            return_value=(123, 456, observed_frame),
+            "tools.map02_private_core_witness_audit.read_witness_record",
+            return_value=(123, 456, observed_frame, "a" * 64),
         ), patch(
             "tools.verify_map02_private_neutral_capture_chain.parse_plan",
             return_value=("fictional-plan", [
