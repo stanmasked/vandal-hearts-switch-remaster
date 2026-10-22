@@ -26,7 +26,9 @@ SCHEMA = "vh.map02.owner-one-capture-offline-reaudit.v1"
 
 def review_first_capture(private_movie: Path, private_workspace: Path,
                          manual_core_witness: Path | None = None,
-                         expected_core_witness_sha256: str | None = None) -> dict:
+                         expected_core_witness_sha256: str | None = None,
+                         expected_core_assembly_sha256: str | None = None,
+                         expected_native_module_sha256: str | None = None) -> dict:
     """Re-read source BK2, plan, log, PNG and in-process PSX identity locally.
 
     A valid report confirms ONLY that the supplied owner-local *files* have
@@ -69,12 +71,18 @@ def review_first_capture(private_movie: Path, private_workspace: Path,
     observed = read_witness_record(witness)
     if observed[:2] != started:
         raise ValueError("one-run core identity does not match launch PID/birth time")
-    if expected_core_witness_sha256 is not None:
-        if not isinstance(expected_core_witness_sha256, str) or not SHA256_HEX.fullmatch(
-                expected_core_witness_sha256):
-            raise ValueError("supplied runtime tool SHA256 pin is malformed")
-        if observed[3] != expected_core_witness_sha256.lower():
-            raise ValueError("one-run runtime tool file hash differs from supplied pin")
+    pins = (
+        (expected_core_witness_sha256, observed[3], "runtime tool"),
+        (expected_core_assembly_sha256, observed[4], "runtime core assembly"),
+        (expected_native_module_sha256, observed[5], "native core module"),
+    )
+    for expected, actual, description in pins:
+        if expected is None:
+            continue
+        if not isinstance(expected, str) or not SHA256_HEX.fullmatch(expected):
+            raise ValueError("supplied " + description + " SHA256 pin is malformed")
+        if actual != expected.lower():
+            raise ValueError("one-run " + description + " file hash differs from supplied pin")
 
     first_counter = rows[0][2] + 1
     if is_auto and observed[2] > first_counter:
@@ -93,6 +101,14 @@ def review_first_capture(private_movie: Path, private_workspace: Path,
             expected_core_witness_sha256 is not None
             and observed[3] == expected_core_witness_sha256.lower()),
         "runtime_tool_file_hash_pin_supplied": expected_core_witness_sha256 is not None,
+        "runtime_core_assembly_file_hash_matches_supplied_pin": (
+            expected_core_assembly_sha256 is not None
+            and observed[4] == expected_core_assembly_sha256.lower()),
+        "runtime_core_assembly_file_hash_pin_supplied": expected_core_assembly_sha256 is not None,
+        "native_core_module_file_hash_matches_supplied_pin": (
+            expected_native_module_sha256 is not None
+            and observed[5] == expected_native_module_sha256.lower()),
+        "native_core_module_file_hash_pin_supplied": expected_native_module_sha256 is not None,
         "two_run_repeatability_audited": False,
         "original_ps1_disc_or_bios_authenticated": False,
         "bk2_controller_delivery_authenticated": False,
@@ -111,12 +127,18 @@ def main() -> int:
                         help="Use one owner-exported PSX witness instead of automatic mode")
     parser.add_argument("--private-core-witness-sha256",
                         help="Compare the private witness digest to a separately trusted SHA-256 pin")
+    parser.add_argument("--private-core-assembly-sha256",
+                        help="Compare the reported managed core file digest to a trusted SHA-256 pin")
+    parser.add_argument("--private-native-module-sha256",
+                        help="Compare the reported native module file digest to a trusted SHA-256 pin")
     args = parser.parse_args()
     try:
         report = review_first_capture(
             args.owner_private_bk2, args.owner_private_one_run_workspace,
             args.manual_core_witness,
             args.private_core_witness_sha256,
+            args.private_core_assembly_sha256,
+            args.private_native_module_sha256,
         )
     except (OSError, ValueError, TypeError, KeyError, UnicodeError, RuntimeError):
         parser.error("private first-run offline audit rejected")

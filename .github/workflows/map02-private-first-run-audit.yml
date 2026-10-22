@@ -60,7 +60,7 @@ jobs:
             -p 'test_map02_private_first_run_audit.py' -v \
             2>&1 | tee /tmp/vh-map02-fictional-first-capture-audit.log
           count="$(sed -nE 's/^Ran ([1-9][0-9]*) tests? in .*$/\1/p' /tmp/vh-map02-fictional-first-capture-audit.log)"
-          test "$count" = "20"
+          test "$count" = "23"
           grep -qx 'OK' /tmp/vh-map02-fictional-first-capture-audit.log
           if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-fictional-first-capture-audit.log; then exit 1; fi
           echo "VH_MAP02_OWNER_FIRST_CAPTURE_OFFLINE_FAKE_PASS cases=$count real_psx=0 original_bk2=0 private_png=0 map02=unverified"
