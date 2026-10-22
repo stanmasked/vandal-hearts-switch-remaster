@@ -33,6 +33,7 @@ from tools.map02_private_process_witness_binding import (
     bind_owner_private_replays, NAME as PROCESS_RECEIPT_NAME,
 )
 from tools.map02_windows_private_output_acl import require_windows_private_output
+from tools.map02_private_witness_plugin_digest import require_pinned_core_witness_dll
 from tools.map02_private_two_capture_audit import _private_root, audit_pair
 from tools.verify_map02_private_neutral_capture_chain import verify
 
@@ -200,6 +201,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
                   private_psx_bios_candidate: Path | None = None,
                   record_windows_process_identity: bool = False,
                   auto_core_witness_plugin: Path | None = None,
+                  core_witness_sha256: str | None = None,
                   max_windows: int = 4,
                   emulator_timeout_seconds: int | None = None,
                   run_count: int = 2,
@@ -223,6 +225,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         raise ValueError("process binding request must be boolean")
     if auto_core_witness_plugin is not None and not record_windows_process_identity:
         raise ValueError("owner private automatic core witness requires process identity recording")
+    if core_witness_sha256 is not None and auto_core_witness_plugin is None:
+        raise ValueError("private plugin hash requires the automatic core witness DLL")
     if auto_core_witness_plugin is not None and start and os.name != "nt":
         raise ValueError("owner private automatic core witness requires Windows")
     if record_windows_process_identity and start and os.name != "nt":
@@ -238,6 +242,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         raise ValueError("absolute EmuHawk executable and capture Lua are required")
     if auto_core_witness_plugin is not None:
         require_matching_core_plugin(emulator, auto_core_witness_plugin)
+    if core_witness_sha256 is not None:
+        require_pinned_core_witness_dll(auto_core_witness_plugin, core_witness_sha256)
 
     # Pin the BK2 bytes before any preflight, capture plan, emulator
     # process or independent audit. Merely re-parsing a changed archive later
@@ -289,6 +295,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             "private_windows_process_start_receipts_requested": False,
             "process_to_manual_core_witness_bound": False,
             "automatic_core_witness_requested": auto_core_witness_plugin is not None,
+            "installed_core_witness_sha256_pinned": core_witness_sha256 is not None,
             "automatic_core_witness_process_bound": False,
             "capture_attempts_audited": 0,
             "owner_private_assets_uploaded": False,
@@ -306,6 +313,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     _require_digest_reference_unchanged(expected_digest_file, digest)
 
     for name in RUN_NAMES[:run_count]:
+        if core_witness_sha256 is not None:
+            require_pinned_core_witness_dll(auto_core_witness_plugin, core_witness_sha256)
         _require_movie_unchanged(private_bk2, movie_identity)
         _require_disc_unchanged(private_disc, disc_identity)
         _require_digest_reference_unchanged(expected_digest_file, digest)
@@ -325,6 +334,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             argv.append("--record-process-identity")
         if auto_core_witness_plugin is not None:
             argv += ["--auto-core-witness-plugin", str(auto_core_witness_plugin)]
+        if core_witness_sha256 is not None:
+            argv += ["--private-core-witness-sha256", core_witness_sha256]
         argv.append("--launch")
         # The child wrapper redirects EmuHawk stdout/stderr (which contain
         # absolute private paths) into files in the private capture folder.
@@ -333,6 +344,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             argv, check=False, shell=False,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
+        if core_witness_sha256 is not None:
+            require_pinned_core_witness_dll(auto_core_witness_plugin, core_witness_sha256)
         _require_movie_unchanged(private_bk2, movie_identity)
         _require_disc_unchanged(private_disc, disc_identity)
         _require_digest_reference_unchanged(expected_digest_file, digest)
@@ -367,6 +380,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         _require_movie_unchanged(private_bk2, movie_identity)
         _require_disc_unchanged(private_disc, disc_identity)
         _require_digest_reference_unchanged(expected_digest_file, digest)
+        if core_witness_sha256 is not None:
+            require_pinned_core_witness_dll(auto_core_witness_plugin, core_witness_sha256)
 
     if run_count == 1:
         # This is owner-private first-run evidence only, never evidence of
@@ -383,6 +398,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             "first_private_capture_log_and_png_chain_passed": True,
             "first_private_capture_screenshot_count": chain["screenshot_count"],
             "automatic_core_witness_requested": auto_core_witness_plugin is not None,
+            "installed_core_witness_sha256_pinned": core_witness_sha256 is not None,
             "first_auto_core_witness_bound_to_launched_process":
                 auto_core_witness_plugin is not None,
             "first_auto_core_frame_not_later_than_first_png":
@@ -418,6 +434,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         if bound.get("runtime_core_witnesses_bound_to_launched_process_identity") is not True:
             raise ValueError("automatic core witness binding rejected")
     # Third parent-side full read: the final PNG/pair audit may take time.
+    if core_witness_sha256 is not None:
+        require_pinned_core_witness_dll(auto_core_witness_plugin, core_witness_sha256)
     _require_full_bin_unchanged(private_disc, digest)
     _require_digest_reference_unchanged(expected_digest_file, digest)
     _require_firmware_candidate_matches(private_bk2, private_psx_bios_candidate)
@@ -430,6 +448,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             record_windows_process_identity,
         "process_to_manual_core_witness_bound": False,
         "automatic_core_witness_requested": auto_core_witness_plugin is not None,
+        "installed_core_witness_sha256_pinned": core_witness_sha256 is not None,
         "automatic_core_witness_process_bound": auto_core_witness_plugin is not None,
         "capture_attempts_audited": 2,
         "same_reported_bizhawk_runtime_profile":
@@ -480,6 +499,8 @@ def main() -> int:
     parser.add_argument("--private-psx-bios-candidate", type=Path)
     parser.add_argument("--auto-core-witness-plugin", type=Path,
                         help="Owner opt-in: matching EmuHawk ExternalTools DLL auto-saves private PSX-only core evidence")
+    parser.add_argument("--private-core-witness-sha256", type=str,
+                        help="Owner opt-in: independently pinned SHA256 for the installed experimental DLL")
     parser.add_argument(
         "--record-windows-process-identity", action="store_true",
         help="Opt-in owner-private launch receipts for later comparison to the core witness files",
@@ -504,6 +525,7 @@ def main() -> int:
             private_psx_bios_candidate=args.private_psx_bios_candidate,
             record_windows_process_identity=args.record_windows_process_identity,
             auto_core_witness_plugin=args.auto_core_witness_plugin,
+            core_witness_sha256=args.private_core_witness_sha256,
             max_windows=args.max_windows,
             emulator_timeout_seconds=args.emulator_timeout_seconds,
             run_count=1 if args.launch_one else 2,

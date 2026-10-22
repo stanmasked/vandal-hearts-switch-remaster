@@ -1,5 +1,6 @@
 """Invented-only BizHawk CLI launch preflight and privacy tests."""
 import contextlib
+import hashlib
 import io
 import os
 from pathlib import Path
@@ -63,6 +64,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                 after=kwargs.pop("after", 1663),
                 before=kwargs.pop("before", 933949),
                 auto_core_witness_plugin=kwargs.pop("auto_core_witness_plugin", None),
+                core_witness_sha256=kwargs.pop("core_witness_sha256", None),
             )
         self.assertFalse(kwargs)
         self.assertEqual(source.call_args.kwargs["limit"], 1)
@@ -575,6 +577,72 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported evidence"):
             verify_private_auto_witness(self.output)
 
+
+
+    def test_private_pin_accepts_only_installed_matching_fake_dll(self):
+        plugin = self.make_auto_plugin()
+        digest = hashlib.sha256(plugin.read_bytes()).hexdigest()
+        argv, env, count = self.call(
+            auto_core_witness_plugin=plugin,
+            core_witness_sha256=digest.upper(),
+        )
+        self.assertEqual(count, 3)
+        self.assertTrue(any(x.startswith("--open-ext-tool-dll=") for x in argv))
+        self.assertNotIn("VH_BIZHAWK_CORE_PLUGIN_PINNED_FILE", env)
+        self.assertNotIn(str(plugin), " ".join(argv))
+
+    def test_private_pin_blocks_installed_fake_dll_swapped_after_install(self):
+        plugin = self.make_auto_plugin()
+        original = hashlib.sha256(plugin.read_bytes()).hexdigest()
+        plugin.write_bytes(b"CHANGED-FICTIONAL-BIZHAWK-DLL-STAGE517")
+        with self.assertRaisesRegex(ValueError, "differs from pinned build"):
+            self.call(auto_core_witness_plugin=plugin, core_witness_sha256=original)
+        self.assertFalse((self.output / "vh_private_capture.log").exists())
+
+    def test_private_pin_requires_auto_mode(self):
+        with self.assertRaisesRegex(ValueError, "digest needs"):
+            self.call(core_witness_sha256="a" * 64)
+        self.assertFalse((self.output / "vh_emuhawk_process.log").exists())
+
+
+    def test_child_rejects_plugin_changed_during_fictional_emuhawk_process(self):
+        plugin = self.make_auto_plugin()
+        digest = hashlib.sha256(plugin.read_bytes()).hexdigest()
+        fake_windows = type(
+            "FakeOs", (), {
+                "name": "nt",
+                "__getattr__": lambda _self, attr: getattr(os, attr),
+            },
+        )()
+        command = [
+            "launcher", str(self.program), str(self.disc), str(self.bk2),
+            str(self.plan), str(self.output),
+            "--capture-lua", str(self.lua),
+            "--auto-core-witness-plugin", str(plugin),
+            "--private-core-witness-sha256", digest,
+            "--record-process-identity", "--launch",
+        ]
+        def imaginary_process(*_args, **_kwargs):
+            plugin.write_bytes(b"FICTIONAL_CORE_DLL_MODIFIED_WHILE_EMUHAWK_WOULD_RUN")
+            return Mock(returncode=0)
+        with patch.object(sys, "argv", command), patch(
+            "tools.map02_private_bizhawk_poweron_launch.os", fake_windows,
+        ), patch(
+            "tools.map02_private_bizhawk_poweron_launch.plan_lines",
+            return_value=ROWS,
+        ), patch(
+            "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_bizhawk_poweron_launch.run_owned_process",
+            side_effect=imaginary_process,
+        ) as launched, contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(main(), 1)
+        launched.assert_called_once()
+        self.assertIn("exit_success=0", output.getvalue())
+        self.assertIn("original_ps1_authenticated=0", output.getvalue())
+        self.assertNotIn(str(self.root), output.getvalue())
+        self.assertFalse((self.output / "vh-map02-runtime-core-auto.txt").exists())
 
 
 if __name__ == "__main__":

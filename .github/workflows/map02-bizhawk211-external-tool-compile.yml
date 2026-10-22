@@ -5,6 +5,8 @@ on:
       - '.github/workflows/map02-bizhawk211-external-tool-compile.yml'
       - 'tools/map02_runtime_core_witness/**'
       - 'tools/map02_owner_core_witness_install.ps1'
+      - 'tools/map02_private_witness_plugin_digest.py'
+      - 'tests/test_map02_private_witness_plugin_digest.py'
       - 'tools/map02_runtime_core_witness_smoke/**'
       - 'tools/map02_windows_private_output_acl.ps1'
       - 'tools/map02_windows_private_output_acl.py'
@@ -130,9 +132,9 @@ jobs:
             # The same launcher path validator used by the owner must accept
             # this installed DLL under exactly this EmuHawk/ExternalTools.
             $emuhawk = Join-Path $env:VH_BIZHAWK_RELEASE_ROOT 'EmuHawk.exe'
-            python -c "from pathlib import Path; from tools.map02_private_bizhawk_poweron_launch import require_matching_core_plugin; import sys; assert require_matching_core_plugin(Path(sys.argv[1]), Path(sys.argv[2])) == Path(sys.argv[2]).resolve(strict=True)" $emuhawk $plugin
+            python -c "from pathlib import Path; from tools.map02_private_bizhawk_poweron_launch import require_matching_core_plugin; from tools.map02_private_witness_plugin_digest import require_pinned_core_witness_dll; import sys; assert require_matching_core_plugin(Path(sys.argv[1]), Path(sys.argv[2])) == Path(sys.argv[2]).resolve(strict=True); require_pinned_core_witness_dll(Path(sys.argv[2]), sys.argv[3])" $emuhawk $plugin $hash
             if ($LASTEXITCODE -ne 0) {
-              throw 'owner launcher rejects installed matching external DLL'
+              throw 'owner launcher rejects installed pinned external DLL'
             }
             $repeat = @( & powershell.exe @args -Install )
             if ($LASTEXITCODE -eq 0 -or @($repeat).Count -ne 1 -or

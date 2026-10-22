@@ -1022,5 +1022,204 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         self.assertNotIn("all_supported_png_pixel_content_equal", output.getvalue())
 
 
+    def test_pinned_core_requires_an_explicit_installed_plugin(self):
+        with self.assertRaisesRegex(ValueError, "hash requires"):
+            capture_twice(*self.args, core_witness_sha256="a" * 64)
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_pinned_core_dry_run_verifies_real_fake_dll_bytes_without_launch(self):
+        external = self.root / "ExternalTools"
+        external.mkdir()
+        plugin = external / "VhMap02CoreWitness.dll"
+        plugin.write_bytes(b"FICTIONAL_CSHARP_PLUGIN_STAGE517")
+        sha = hashlib.sha256(plugin.read_bytes()).hexdigest()
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_two_replay_runner.plan_lines",
+            return_value=["h", "l", "c", "a", "b", "c"],
+        ), patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+        ) as launched:
+            report = capture_twice(
+                *self.args, start=False,
+                record_windows_process_identity=True,
+                auto_core_witness_plugin=plugin,
+                core_witness_sha256=sha.upper(),
+            )
+        self.assertTrue(report["installed_core_witness_sha256_pinned"])
+        self.assertTrue(report["automatic_core_witness_requested"])
+        self.assertEqual(report["emulator_processes_started"], 0)
+        self.assertEqual(list(self.workspace.iterdir()), [])
+        launched.assert_not_called()
+
+    def test_wrong_pinned_core_dll_hash_blocks_even_private_dry_run(self):
+        external = self.root / "ExternalTools"
+        external.mkdir()
+        plugin = external / "VhMap02CoreWitness.dll"
+        plugin.write_bytes(b"FICTIONAL_CSHARP_PLUGIN_STAGE517")
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+        ) as profile, patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+        ) as launched:
+            with self.assertRaisesRegex(ValueError, "differs from pinned build"):
+                capture_twice(
+                    *self.args, start=False,
+                    record_windows_process_identity=True,
+                    auto_core_witness_plugin=plugin,
+                    core_witness_sha256="0" * 64,
+                )
+        launched.assert_not_called()
+        profile.assert_not_called()
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_pinned_core_without_digest_keeps_legacy_dry_run_unpinned(self):
+        external = self.root / "ExternalTools"
+        external.mkdir()
+        plugin = external / "VhMap02CoreWitness.dll"
+        plugin.write_bytes(b"FICTIONAL_CSHARP_PLUGIN_STAGE517")
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_two_replay_runner.plan_lines",
+            return_value=["h", "l", "c", "a", "b", "c"],
+        ), patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+        ) as launched:
+            result = capture_twice(
+                *self.args, start=False,
+                record_windows_process_identity=True,
+                auto_core_witness_plugin=plugin,
+            )
+        self.assertFalse(result["installed_core_witness_sha256_pinned"])
+        launched.assert_not_called()
+
+
+    def test_pinned_core_changed_by_first_emulator_blocks_png_audit_and_second_run(self):
+        # Fake just the Windows OS indicator for the synthetic process
+        # contract. Paths and source-file mutation stay real/local POSIX.
+        fake_windows = type(
+            "FakeOs", (), {
+                "name": "nt",
+                "__getattr__": lambda _self, attr: getattr(os, attr),
+            },
+        )()
+        external = self.root / "ExternalTools"
+        external.mkdir()
+        plugin = external / "VhMap02CoreWitness.dll"
+        plugin.write_bytes(b"FICTIONAL_CSHARP_PLUGIN_BEFORE_LAUNCH")
+        sha = hashlib.sha256(plugin.read_bytes()).hexdigest()
+        def fake_process(*_args, **_kwargs):
+            plugin.write_bytes(b"FICTIONAL_CSHARP_PLUGIN_AFTER_LAUNCH")
+            return Mock(returncode=0)
+        with patch(
+            "tools.map02_private_two_replay_runner.os", fake_windows,
+        ), patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_two_replay_runner.write_private_plan",
+            side_effect=self._write_plan,
+        ), patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+            side_effect=fake_process,
+        ) as launched, patch(
+            "tools.map02_private_two_replay_runner.verify",
+        ) as audit, patch(
+            "tools.map02_private_two_replay_runner.audit_pair",
+        ) as pair:
+            with self.assertRaisesRegex(ValueError, "differs from pinned build"):
+                capture_twice(
+                    *self.args, start=True, run_count=2,
+                    record_windows_process_identity=True,
+                    auto_core_witness_plugin=plugin,
+                    core_witness_sha256=sha,
+                )
+        launched.assert_called_once()
+        audit.assert_not_called()
+        pair.assert_not_called()
+        self.assertFalse((self.workspace / RUN_NAMES[1]).exists())
+
+
+    def _exercise_first_png_frame_boundary(self, observed_frame):
+        fake_windows = type(
+            "FakeOs", (), {
+                "name": "nt",
+                "__getattr__": lambda _self, attr: getattr(os, attr),
+            },
+        )()
+        external = self.root / "ExternalTools"
+        external.mkdir(exist_ok=True)
+        plugin = external / "VhMap02CoreWitness.dll"
+        plugin.write_bytes(b"FICTIONAL_FRAME_BOUNDARY_PLUGIN")
+        with patch(
+            "tools.map02_private_two_replay_runner.os", fake_windows,
+        ), patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_two_replay_runner.plan_lines",
+            return_value=["fictional-header", "fictional-length",
+                          "fictional-count", "frame1", "frame2", "frame3"],
+        ), patch(
+            "tools.map02_private_two_replay_runner.write_private_plan",
+            side_effect=self._write_plan,
+        ), patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+            return_value=Mock(returncode=0),
+        ) as process, patch(
+            "tools.map02_private_two_replay_runner.verify",
+            return_value={
+                "screenshot_count": 3,
+                "owner_log_reports_auto_core_witness_before_first_png": True,
+            },
+        ) as audit, patch(
+            "tools.map02_private_two_replay_runner.audit_pair",
+        ) as pair, patch(
+            "tools.map02_private_process_witness_binding.read_started_process",
+            return_value=(123, 456),
+        ), patch(
+            "tools.map02_private_core_witness_audit.read_witness",
+            return_value=(123, 456, observed_frame),
+        ), patch(
+            "tools.verify_map02_private_neutral_capture_chain.parse_plan",
+            return_value=("fictional-plan", [
+                (1, "before", 3000, "held"),
+                (1, "middle", 3250, "neutral"),
+                (1, "after", 3500, "held"),
+            ]),
+        ):
+            try:
+                result = capture_twice(
+                    *self.args, start=True, run_count=1,
+                    record_windows_process_identity=True,
+                    auto_core_witness_plugin=plugin,
+                )
+            except ValueError as exc:
+                result = exc
+        return result, process, audit, pair
+
+    def test_auto_core_witness_at_first_png_frame_boundary_is_accepted(self):
+        report, process, audit, pair = self._exercise_first_png_frame_boundary(3001)
+        self.assertIsInstance(report, dict)
+        self.assertTrue(report["first_auto_core_frame_not_later_than_first_png"])
+        self.assertEqual(report["emulator_processes_started"], 1)
+        process.assert_called_once()
+        audit.assert_called_once()
+        pair.assert_not_called()
+
+    def test_auto_core_witness_after_first_png_frame_is_rejected(self):
+        result, process, audit, pair = self._exercise_first_png_frame_boundary(3002)
+        self.assertIsInstance(result, ValueError)
+        self.assertRegex(str(result), "witness frame after first screenshot")
+        self.assertEqual(process.call_count, 1)
+        audit.assert_called_once()
+        pair.assert_not_called()
+        self.assertFalse((self.workspace / RUN_NAMES[1]).exists())
+
+
 if __name__ == "__main__":
     unittest.main()

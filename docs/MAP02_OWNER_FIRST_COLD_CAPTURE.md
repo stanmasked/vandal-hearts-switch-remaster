@@ -254,3 +254,55 @@ with the separate owner-private directory preparation in Stage515 and
 the Stage512 non-launching preflight before any explicit
 `--launch-one`. The owner-local Octoshock/BK2/BIOS capture itself remains
 unverified until run with the owner's original private files.
+
+## Stage517 — pin the *installed* DLL through the first real capture
+
+Stage516 established a **known compiled** experimental DLL and checked it
+at installation. A DLL can still be accidentally replaced later, without
+changing its installed filename. Stage517 adds the opt-in
+`--private-core-witness-sha256` flag to both owner-local capture launchers.
+It rereads the installed DLL at preflight, immediately before the child
+EmuHawk launch and after process return, and again around PNG/capture
+auditing. Both the coordinator and its child enforce the same independent
+expected SHA-256. If the file changes at any of these checkpoints, the
+owner process fails closed without accepting the evidence.
+
+For the exact experimental DLL built in the successful **Stage516**
+[BizHawk 2.11 CI run #39822878309](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39822878309),
+the observed **DLL file** SHA-256 was:
+
+```text
+BA44578D78135CF32DEAAB7C21A76E299567488510FDF34C002C0161C1C8B8B5
+```
+
+This pin belongs to the *unpacked DLL*, not the ZIP archive containing it,
+and is **not** the game's disc hash. If using an artifact from any other
+CI run, get the DLL digest printed by **that exact trusted successful
+run**, not from an unknown file or an unrelated artifact.
+
+For the first-owner run, augment the Stage512 `$common` array:
+
+```powershell
+$knownDllSha256 = 'BA44578D78135CF32DEAAB7C21A76E299567488510FDF34C002C0161C1C8B8B5'
+$common += @('--private-core-witness-sha256', $knownDllSha256)
+
+# No game launched and no new files created on this first invocation.
+python -m tools.map02_private_two_replay_runner @common
+
+# Use this ONLY when all private source, movie, BIOS and output checks pass.
+python -m tools.map02_private_two_replay_runner @common --launch-one
+```
+
+If you downloaded the **exact** Stage516 CI artifact and installed it
+under the official BizHawk 2.11 `ExternalTools` folder without modification,
+the pin should match. If the DLL differs, **do not** disable the check or
+invent a new expected hash to force success; verify the provenance of the
+installed DLL or replace it through a fresh, separately verified installation
+outside any existing capture workspace.
+
+This is a check on the local experimental C# tool file and its stability,
+not cryptographic attestation of the emulator process or its loaded modules.
+In particular it does **not** authenticate a mounted CUE/BIN, BIOS,
+BK2 controller delivery, original MAP02 scene, a second cold boot or
+Nintendo Switch gameplay. Original game files and local screenshots must
+remain on the owner's private workstation.
