@@ -25,7 +25,7 @@ def _kill_owned_group(pid: int, sig: int) -> None:
 
 def run_owned_process(command: list[str], *, env: dict[str, str],
                       stdout, timeout: int, on_started=None,
-                      on_started_process=None):
+                      on_started_process=None, cwd=None):
     """Wait for emulator; on timeout stop its POSIX group and fail closed.
 
     The PID-only observer is preserved. The process observer receives the
@@ -45,10 +45,11 @@ def run_owned_process(command: list[str], *, env: dict[str, str],
             return subprocess.run(
                 command, env=env, shell=False, check=False,
                 stdout=stdout, stderr=subprocess.STDOUT, timeout=timeout,
+                cwd=cwd,
             )
         process = subprocess.Popen(
             command, env=env, shell=False,
-            stdout=stdout, stderr=subprocess.STDOUT,
+            stdout=stdout, stderr=subprocess.STDOUT, cwd=cwd,
         )
         try:
             if on_started is not None:
@@ -65,7 +66,7 @@ def run_owned_process(command: list[str], *, env: dict[str, str],
     process = subprocess.Popen(
         command, env=env, shell=False,
         stdout=stdout, stderr=subprocess.STDOUT,
-        start_new_session=True,
+        start_new_session=True, cwd=cwd,
     )
     try:
         if on_started is not None:
