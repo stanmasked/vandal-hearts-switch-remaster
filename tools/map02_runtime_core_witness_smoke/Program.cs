@@ -5,6 +5,8 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Runtime.CompilerServices;
 using System.Windows.Forms;
 using BizHawk.Client.Common;
@@ -63,6 +65,8 @@ namespace VhMap02LoaderSmoke
                     + " in_memory_fake_witness_schema=1"
                     + " official_nullhawk_service_injected=1"
                     + " official_nullhawk_snapshot_rejected=1"
+                    + " owner_only_ntfs_folder_accepted=1"
+                    + " publicly_readable_ntfs_folder_rejected=1"
                     + " emulator_process_started=0 original_disc=0 bios=0 bk2=0");
                 return 0;
             }
@@ -169,6 +173,61 @@ namespace VhMap02LoaderSmoke
             throw new InvalidOperationException("invalid fake core exported a witness");
         }
 
+        // Two invented output folders: owner-only versus explicit Everyone.
+        // The production GUI must reject the latter before FileMode.CreateNew.
+        private static void AuditRealWitnessFolderAcl(Type entrypoint)
+        {
+            var check = entrypoint.GetMethod("RequireNonGitPrivateFolder",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            if (check == null)
+                throw new InvalidOperationException("private folder ACL gate absent");
+            var dir = Path.Combine(Path.GetTempPath(),
+                "vh-map02-owner-acl-test-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            try
+            {
+                using (var identity = WindowsIdentity.GetCurrent())
+                {
+                    var owner = identity.User;
+                    if (owner == null)
+                        throw new InvalidOperationException("Windows user SID missing");
+                    var acl = new DirectorySecurity();
+                    acl.SetOwner(owner);
+                    acl.SetAccessRuleProtection(true, false);
+                    acl.AddAccessRule(new FileSystemAccessRule(
+                        owner, FileSystemRights.FullControl,
+                        InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                        PropagationFlags.None, AccessControlType.Allow));
+                    Directory.SetAccessControl(dir, acl);
+                    check.Invoke(null, new object[] { dir });
+
+                    var everyone = new SecurityIdentifier("S-1-1-0");
+                    acl.AddAccessRule(new FileSystemAccessRule(
+                        everyone, FileSystemRights.ReadAndExecute,
+                        InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                        PropagationFlags.None, AccessControlType.Allow));
+                    Directory.SetAccessControl(dir, acl);
+                    var refused = false;
+                    try
+                    {
+                        check.Invoke(null, new object[] { dir });
+                    }
+                    catch (TargetInvocationException ex)
+                    {
+                        refused = ex.InnerException is InvalidOperationException;
+                    }
+                    if (!refused)
+                        throw new InvalidOperationException(
+                            "private witness folder accepted Everyone NTFS access");
+                }
+            }
+            finally
+            {
+                // The current owner still has FullControl in this fake test.
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+
         // Defer JIT resolution of BizHawk types until AssemblyResolve is hooked.
         [MethodImpl(MethodImplOptions.NoInlining)]
         private static void RunSmoke(string plug)
@@ -189,6 +248,8 @@ namespace VhMap02LoaderSmoke
                 if (candidates.Length != 1 || candidates[0].IsAbstract)
                     throw new InvalidOperationException("not exactly one external entrypoint");
                 var entrypoint = candidates[0];
+                _stage = "private-ntfs-acl-guard";
+                AuditRealWitnessFolderAcl(entrypoint);
                 var attribute = entrypoint.GetCustomAttributes(
                     typeof(ExternalToolAttribute), true
                 ).Cast<ExternalToolAttribute>().Single();

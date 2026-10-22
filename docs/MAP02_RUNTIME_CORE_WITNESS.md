@@ -192,6 +192,48 @@ has been injected, let alone verify original BIOS, Russian source disc,
 USA BK2 synchronization, MAP02 pixels or a Switch remake. Those still
 require the owner's private real-disc replay.
 
+## Stage506: owner-private NTFS ACL required for all capture outputs
+
+The genuine owner-local EmuHawk can run on Windows, where the traditional
+POSIX `chmod 0700` permission test **does not establish** that a folder
+is invisible to other Windows accounts. A private workspace inherited
+from `Users`, `Authenticated Users`, `Everyone`, `CREATOR OWNER` or
+a domain group might otherwise expose actual original-game screenshots,
+capture logs, process evidence or a BIOS candidate digest.
+
+Stage506 therefore adds a **fail-closed Windows output-directory check**
+in the two-replay coordinator, per-run capture directories, and
+independent pair auditor, plus an equivalent gate in the C# witness
+Save dialog. The Python code calls the bundled Windows PowerShell
+`Get-Acl` / `SecurityIdentifier` auditor; it does not parse
+localized output from `icacls`, change ACL permissions, or print SIDs,
+paths or ACE text. When no Windows PowerShell process is available,
+or when the effective NTFS directory DACL grants *any* positive access
+to a principal outside the current user, LOCAL SYSTEM and BUILTIN
+Administrators, capture is refused. The owner SID must be the current
+user and an explicit current-user write grant must exist. This includes
+checking inherited access rules. POSIX ownership/mode checks on
+Linux/macOS are retained.
+
+For local Windows use, create the owner-private capture folder in
+your account's protected area and configure it using the normal
+Windows **Properties → Security → Advanced** interface. Remove
+unnecessary inherited access for other accounts; keep your own full
+control, and optionally SYSTEM and Administrators for recovery.
+Do **not** weaken this check or store genuine captures under GitHub
+checkouts, public folders, or an ACL shared with other users. For
+inherited/shared folders, select another folder instead of
+granting exceptions. This step does **not** automatically edit ACLs,
+source game assets or the user's security configuration.
+
+Two real synthetic NTFS test folders are created by Windows CI:
+one owner-only, the other explicitly readable by `Everyone`.
+The owner-only test **must pass**, the readable fixture **must fail**.
+The actual compiled C# plugin's private folder guard is also invoked
+with both fixtures. Separate Python fake-process regression tests run
+on Ubuntu and macOS. These are **output privacy checks only**,
+not proof of PS1 core, game replay, BIOS authenticity or MAP02.
+
 ## Owner-local build (requires a matching, unmodified BizHawk source tree)
 
 1. Use your own BizHawk **2.11** source tree and local EmuHawk build/output.
