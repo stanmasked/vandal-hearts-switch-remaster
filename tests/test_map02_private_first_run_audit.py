@@ -41,9 +41,10 @@ def launch_bytes(pid=PID, ticks=TICKS):
 
 
 def witness_bytes(pid=PID, ticks=TICKS, frame=1800):
-    return ("VH_MAP02_RUNTIME_CORE_WITNESS_V1\n"
+    return ("VH_MAP02_RUNTIME_CORE_WITNESS_V2\n"
             "system=PSX\nloaded_core=Octoshock\n"
             "core_source=IEmulator.Attributes.CoreName\n"
+            "tool_assembly_sha256=" + "a" * 64 + "\n"
             f"process_id={pid}\nprocess_start_utc_ticks={ticks}\n"
             f"frame_count={frame}\nbios=unverified\ndisc=unverified\n"
             "movie_sync=unverified\n").encode("ascii")
