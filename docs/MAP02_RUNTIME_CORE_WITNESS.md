@@ -345,7 +345,23 @@ times, original paths, hashes or media data.
 The export records the system, **active core name sampled by the
 external tool**, frame count, and process identity (PID/start time) in
 a private file. All BIOS, disc and movie-sync fields MUST remain
-`unverified`.
+ \`unverified\`.
+
+### Stage518 — executing-tool file digest (receipt schema V2)
+
+The V2 receipt also contains tool_assembly_sha256: a lowercase SHA-256
+of the file at the executing assembly's reported location. In the owner-private
+automatic launch path, an independently supplied --private-core-witness-sha256
+pin is passed to the child process; the tool refuses to write a receipt if
+that file hash differs, and the Python coordinator independently checks the
+reported digest against the same pin. The digest itself stays in the private
+receipt and is never printed in public-safe reports.
+
+This is a self-check of the file at the reported location, **not** an
+independent OS attestation of the CLR's in-memory module bytes. A malicious
+assembly could falsify its own receipt. Do not treat this as cryptographic
+authentication of the loaded module, BIOS, mounted disc, movie synchronization,
+MAP02 graphics, or Switch gameplay.
 
 ### What this does and does not prove
 
