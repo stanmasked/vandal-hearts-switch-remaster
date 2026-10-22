@@ -209,6 +209,15 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
     return args, env, len(positions)
 
 
+def verify_private_auto_witness(root: Path) -> None:
+    """Reject an absent/stale auto-witness before accepting the local process."""
+    source = Path(root)
+    witness = read_witness(source / AUTO_WITNESS_NAME)
+    launch = read_started_process(source / OWNER_PROCESS_RECEIPT_NAME)
+    if witness[:2] != launch:
+        raise ValueError("private automatic core witness does not match launched process")
+
+
 def _append_private_log(path: Path, line: str) -> None:
     flags = os.O_WRONLY | os.O_APPEND
     if hasattr(os, "O_NOFOLLOW"):
@@ -351,11 +360,7 @@ def main() -> int:
         # Never accept a zero process exit without the receipt from THIS
         # exact EmuHawk PID + native process-birth time.
         try:
-            witness = read_witness(Path(env["VH_PRIVATE_PNG_DIR"]) / AUTO_WITNESS_NAME)
-            start_receipt = read_started_process(
-                Path(env["VH_PRIVATE_PNG_DIR"]) / OWNER_PROCESS_RECEIPT_NAME)
-            if witness[:2] != start_receipt:
-                success = False
+            verify_private_auto_witness(Path(env["VH_PRIVATE_PNG_DIR"]))
         except (OSError, ValueError, TypeError, RuntimeError):
             success = False
     try:
