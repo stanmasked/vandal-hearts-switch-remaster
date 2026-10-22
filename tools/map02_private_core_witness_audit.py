@@ -24,6 +24,9 @@ MAGIC = "VH_MAP02_RUNTIME_CORE_WITNESS_V3"
 MAX_RECEIPT_BYTES = 768
 RUNTIME_CORE_TYPE = "BizHawk.Emulation.Cores.Sony.PSX.Octoshock"
 NATIVE_CORE_MODULE_NAME = "octoshock.dll"
+NATIVE_CORE_MODULE_NAMES = frozenset((
+    "octoshock.dll", "liboctoshock.dll.so", "liboctoshock.so",
+))
 MAX_FRAME_COUNT = 2_000_000
 MIN_WINDOWS_UTC_TICKS = 621355968000000000  # 1970-01-01 UTC
 MAX_WINDOWS_UTC_TICKS = 725811840000000000  # 2300-01-01 UTC
@@ -94,13 +97,14 @@ def read_witness_record(source: Path) -> tuple[int, int, int, str, str, str]:
         ("loaded_core", "Octoshock"),
         ("core_source", "IEmulator.Attributes.CoreName"),
         ("runtime_core_type", RUNTIME_CORE_TYPE),
-        ("native_core_module_name", NATIVE_CORE_MODULE_NAME),
         ("bios", "unverified"),
         ("disc", "unverified"),
         ("movie_sync", "unverified"),
     ):
         if fields[key] != expected:
             raise ValueError("private core witness has unsupported evidence claim")
+    if fields["native_core_module_name"] not in NATIVE_CORE_MODULE_NAMES:
+        raise ValueError("private core witness has unsupported native module name")
     digests = {}
     for key in (
         "tool_assembly_sha256",
