@@ -1033,7 +1033,18 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         plugin = external / "VhMap02CoreWitness.dll"
         plugin.write_bytes(b"FICTIONAL_CSHARP_PLUGIN_STAGE517")
         sha = hashlib.sha256(plugin.read_bytes()).hexdigest()
-        with patch(
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(ValueError, "requires an independent managed runtime core assembly SHA256 pin"):
+                capture_twice(
+                    *self.args, start=False,
+                    record_windows_process_identity=True,
+                    auto_core_witness_plugin=plugin,
+                    core_witness_sha256=sha.upper(),
+                )
+        with patch.dict(os.environ, {
+            "VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256": "b" * 64,
+            "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256": "c" * 64,
+        }), patch(
             "tools.map02_private_two_replay_runner.inspect_pair",
             return_value={"media_preflight_ready_for_owner_replay": True},
         ), patch(
@@ -1115,7 +1126,10 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         def fake_process(*_args, **_kwargs):
             plugin.write_bytes(b"FICTIONAL_CSHARP_PLUGIN_AFTER_LAUNCH")
             return Mock(returncode=0)
-        with patch(
+        with patch.dict(os.environ, {
+            "VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256": "b" * 64,
+            "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256": "c" * 64,
+        }), patch(
             "tools.map02_private_two_replay_runner.os", fake_windows,
         ), patch(
             "tools.map02_private_two_replay_runner.inspect_pair",
@@ -1195,15 +1209,20 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
                 (1, "after", 3500, "held"),
             ]),
         ):
-            try:
-                result = capture_twice(
-                    *self.args, start=True, run_count=1,
-                    record_windows_process_identity=True,
-                    auto_core_witness_plugin=plugin,
-                    core_witness_sha256=pinned_sha256,
-                )
-            except ValueError as exc:
-                result = exc
+            pin_context = patch.dict(os.environ, {
+                "VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256": "b" * 64,
+                "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256": "c" * 64,
+            }) if pinned else contextlib.nullcontext()
+            with pin_context:
+                try:
+                    result = capture_twice(
+                        *self.args, start=True, run_count=1,
+                        record_windows_process_identity=True,
+                        auto_core_witness_plugin=plugin,
+                        core_witness_sha256=pinned_sha256,
+                    )
+                except ValueError as exc:
+                    result = exc
         return result, process, audit, pair
 
     def test_auto_core_witness_at_first_png_frame_boundary_is_accepted(self):

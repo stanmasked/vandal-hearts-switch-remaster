@@ -21,6 +21,7 @@ from tools.map02_private_bizhawk_poweron_launch import (
     SCRIPT, DEFAULT_EMULATOR_TIMEOUT_SECONDS,
     MIN_EMULATOR_TIMEOUT_SECONDS, MAX_EMULATOR_TIMEOUT_SECONDS,
     AUTO_WITNESS_NAME, require_matching_core_plugin,
+    require_runtime_module_pins,
 )
 from tools.map02_private_disc_movie_preflight import (
     _assert_stable, _identity, _open_stable, _parse_cue, _read_at,
@@ -244,6 +245,9 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         require_matching_core_plugin(emulator, auto_core_witness_plugin)
     if core_witness_sha256 is not None:
         require_pinned_core_witness_dll(auto_core_witness_plugin, core_witness_sha256)
+        # Fail before creating a plan or launching EmuHawk unless the same
+        # independently trusted build supplies both runtime module pins.
+        require_runtime_module_pins(required=auto_core_witness_plugin is not None)
 
     # Pin the BK2 bytes before any preflight, capture plan, emulator
     # process or independent audit. Merely re-parsing a changed archive later
