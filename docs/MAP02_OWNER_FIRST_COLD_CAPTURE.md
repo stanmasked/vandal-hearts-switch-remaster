@@ -184,3 +184,73 @@ The helper has no ability to install the experimental
 or authenticate which original disc loads. Those are still
 separate owner-local prerequisites. A passing workspace check
 alone is not evidence of original MAP02 graphics or Switch gameplay.
+
+## Stage516 — safely install the experimental Octoshock core-witness DLL
+
+The Windows compiler workflow for Stage516 retrieves the **official
+BizHawk 2.11 x64 ZIP**, verifies the pinned release SHA-256, builds
+`VhMap02CoreWitness.dll` against its original assemblies, and uploads
+**only** that public experimental DLL as a GitHub Actions artifact.
+The owner can download the artifact from the successful
+**MAP02 real BizHawk 2.11 External Tool compile (no game media)**
+workflow; it contains NO original disc, BIOS, BK2, PNG or game data.
+
+On the owner's Windows machine, verify the original BizHawk ZIP itself
+before extracting it. The pinned 2.11 release ZIP SHA-256 is:
+
+```text
+722b5aac5e1d89f890b2875b0150f4a86f5762d211f7cd47029cac70434955c0
+```
+
+The extracted BizHawk folder must include `EmuHawk.exe` plus
+`dll/BizHawk.Client.Common.dll` and
+`dll/BizHawk.Emulation.Common.dll`. Keep it outside the project Git
+checkout. This protects against mixing different release versions, but
+checking the DLL alone cannot authenticate every file in a user-modified
+BizHawk installation.
+
+The successful Stage516 compilation workflow prints
+`VH_MAP02_EXPERIMENTAL_DLL_PUBLIC_SHA256=<digest>`. Obtain that value
+from the **same trusted CI run** where you downloaded the
+`vh-map02-bizhawk211-experimental-core-witness` artifact. Do **not**
+use a hash calculated solely from an untrusted download as its own
+trusted comparison.
+
+Extract the DLL from the Actions artifact into a temporary, private
+folder outside Git. Run from the project checkout in Windows
+PowerShell 5.1; only the following explicit `-Install` switch writes:
+
+```powershell
+$bizhawk = 'C:\\ExamplePrivate\\BizHawk-2.11'
+$sourceDll = 'C:\\ExamplePrivate\\Staging\\VhMap02CoreWitness.dll'
+$expectedDllSha256 = '<64-hex-digit-SHA256-from-the-matching-CI-run>'
+$installer = '.\\tools\\map02_owner_core_witness_install.ps1'
+$installArgs = @(
+  '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+  '-File', $installer,
+  '-BizHawkRoot', $bizhawk,
+  '-SourceDll', $sourceDll,
+  '-ExpectedDllSha256', $expectedDllSha256
+)
+
+# Preflight without creating any files.
+powershell.exe @installArgs
+# Explicit, first-time-only installation. Existing plugins are never replaced.
+powershell.exe @installArgs -Install
+```
+
+The installer checks the file's .NET assembly name, filename and
+bounded size, absolute non-reparse local paths outside Git, expected
+BizHawk assembly layout, and the caller-supplied SHA-256. It installs
+using exclusive `FileMode.CreateNew` and rechecks both source and copied
+DLL hashes before reporting a **fixed, redacted** success marker. It
+refuses existing `ExternalTools/VhMap02CoreWitness.dll` even when
+identical. It never overwrites the existing emulator, DLLs, BIOS,
+configuration, game or captured images. Default mode is read-only.
+
+This is a **local component preparation**, not a real PS1 startup or
+authentication of the loaded original disc. After installation, proceed
+with the separate owner-private directory preparation in Stage515 and
+the Stage512 non-launching preflight before any explicit
+`--launch-one`. The owner-local Octoshock/BK2/BIOS capture itself remains
+unverified until run with the owner's original private files.
