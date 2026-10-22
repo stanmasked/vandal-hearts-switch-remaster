@@ -90,7 +90,8 @@ def record_started_process(pid: int, owner_private_dir: Path) -> None:
     ).encode("ascii")
     if len(payload) > MAX_BYTES:
         raise ValueError("private process receipt outside size bound")
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    # Binary mode is required on Windows so line terminators stay exact LF.
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     fd = os.open(path, flags, 0o600)
