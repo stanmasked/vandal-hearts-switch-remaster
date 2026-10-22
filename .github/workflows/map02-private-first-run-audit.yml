@@ -49,7 +49,7 @@ jobs:
             2>&1 | tee /tmp/map02-runtime-core-witness-v3-tests.log
           grep -qx 'OK' /tmp/map02-runtime-core-witness-v3-tests.log
           count=$(sed -nE 's/^Ran ([1-9][0-9]*) tests? in .*$/\1/p' /tmp/map02-runtime-core-witness-v3-tests.log)
-          test "$count" = "27"
+          test "$count" = "28"
           echo "VH_MAP02_RUNTIME_CORE_WITNESS_V3_AUDIT_PASS cases=$count original_ps1=0 bios=0 bk2=0"
 
       - name: Reject stale/late/private/false one-run evidence using invented files
