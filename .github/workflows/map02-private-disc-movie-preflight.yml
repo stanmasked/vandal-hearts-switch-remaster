@@ -4,6 +4,13 @@ on:
     paths:
       - '.github/workflows/map02-private-disc-movie-preflight.yml'
       - 'tools/map02_private_disc_movie_preflight.py'
+      - 'tools/map02_windows_private_output_acl.py'
+      - 'tools/map02_windows_private_output_acl.ps1'
+      - 'tools/map02_windows_private_acl_ci_probe.ps1'
+      - 'tests/test_map02_windows_private_output_acl.py'
+      - 'tools/map02_private_two_capture_audit.py'
+      - 'tools/map02_private_two_replay_runner.py'
+      - 'tools/map02_private_bizhawk_poweron_launch.py'
       - 'tools/map02_private_psx_firmware_probe.py'
       - 'tools/map02_private_core_witness_audit.py'
       - 'tests/test_map02_private_core_witness_audit.py'
@@ -108,3 +115,20 @@ jobs:
           fi
           grep -qx 'OK' /tmp/vh-map02-runtime-core-witness.log
           echo "VH_MAP02_RUNTIME_CORE_WITNESS_SYNTHETIC_PASS cases=$count real_emuhawk=0 loaded_core_authenticated=0"
+      - name: Reject invented unsafe Windows private capture ACLs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_map02_windows_private_output_acl.py' -v \
+            2>&1 | tee /tmp/vh-map02-windows-output-acl.log
+          count=$(sed -nE 's/^Ran ([1-9][0-9]*) tests? in .*$/\\1/p' /tmp/vh-map02-windows-output-acl.log)
+          if [[ "$count" != "10" ]]; then
+            echo 'unexpected synthetic NTFS ACL preflight test count' >&2
+            exit 1
+          fi
+          if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-windows-output-acl.log; then
+            exit 1
+          fi
+          grep -qx 'OK' /tmp/vh-map02-windows-output-acl.log
+          echo "VH_MAP02_WINDOWS_OUTPUT_ACL_SYNTHETIC_PASS cases=$count ps1_original=0"
