@@ -49,7 +49,7 @@ try {
     $process = "VH_MAP02_OWNER_EMUHAWK_PROCESS_START_V1`nprocess_id=4041`nprocess_start_utc_ticks=639000000000000123`n"
     [System.IO.File]::WriteAllText((Join-Path $first 'vh_emuhawk_process_identity.txt'),
         $process, $utf8)
-    $witness = "VH_MAP02_RUNTIME_CORE_WITNESS_V1`nsystem=PSX`nloaded_core=Octoshock`ncore_source=IEmulator.Attributes.CoreName`nprocess_id=4041`nprocess_start_utc_ticks=639000000000000123`nframe_count=1800`nbios=unverified`ndisc=unverified`nmovie_sync=unverified`n"
+    $witness = "VH_MAP02_RUNTIME_CORE_WITNESS_V2`nsystem=PSX`nloaded_core=Octoshock`ncore_source=IEmulator.Attributes.CoreName`ntool_assembly_sha256=$('a' * 64)`nprocess_id=4041`nprocess_start_utc_ticks=639000000000000123`nframe_count=1800`nbios=unverified`ndisc=unverified`nmovie_sync=unverified`n"
     [System.IO.File]::WriteAllText((Join-Path $first 'vh-map02-runtime-core-auto.txt'),
         $witness, $utf8)
 
