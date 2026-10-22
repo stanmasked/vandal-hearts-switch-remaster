@@ -876,5 +876,57 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         process.assert_not_called()
 
 
+    def test_automatic_core_mode_requires_process_receipts_before_output(self):
+        with self.assertRaisesRegex(ValueError, "requires process identity"):
+            capture_twice(
+                *self.args, start=True,
+                auto_core_witness_plugin=self.root / "missing.dll",
+            )
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_automatic_core_mode_rejects_missing_installed_dll_dry_run(self):
+        with self.assertRaisesRegex(ValueError, "matching installed external tool"):
+            capture_twice(
+                *self.args, start=False, record_windows_process_identity=True,
+                auto_core_witness_plugin=self.root / "not-installed.dll",
+            )
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_automatic_core_mode_never_starts_on_posix(self):
+        if os.name == "nt":
+            self.skipTest("Windows opt-in will run only with owner game locally")
+        with self.assertRaisesRegex(ValueError, "requires Windows"):
+            capture_twice(
+                *self.args, start=True, record_windows_process_identity=True,
+                auto_core_witness_plugin=self.root / "not-installed.dll",
+            )
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_automatic_core_mode_dry_run_does_not_create_witness(self):
+        # The exact installed fictional DLL is matched without executing it.
+        external = self.root / "ExternalTools"
+        external.mkdir()
+        plugin = external / "VhMap02CoreWitness.dll"
+        plugin.write_bytes(b"synthetic DLL placeholder")
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_two_replay_runner.plan_lines",
+            return_value=["h", "l", "c", "a", "b", "c"],
+        ), patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+        ) as process:
+            report = capture_twice(
+                *self.args, start=False, record_windows_process_identity=True,
+                auto_core_witness_plugin=plugin,
+            )
+        self.assertTrue(report["automatic_core_witness_requested"])
+        self.assertFalse(report["automatic_core_witness_process_bound"])
+        self.assertEqual(list(self.workspace.iterdir()), [])
+        process.assert_not_called()
+
+
+
 if __name__ == "__main__":
     unittest.main()
