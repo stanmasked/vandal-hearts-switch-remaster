@@ -73,7 +73,7 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
         self.assertFalse(result["witnesses_linked_to_lua_or_png_by_cryptography"])
         self.assertFalse(result["actual_bios_and_mounted_disc_authenticated"])
         self.assertFalse(result["original_bk2_input_or_map02_scene_authenticated"])
-        for private in ("3011", str(BIRTH_A), str(self.root)):
+        for private in ("3011", str(BIRTH_A), str(self.root), "a" * 64):
             self.assertNotIn(private, json.dumps(result))
 
     def test_read_receipt_returns_local_only_pid_and_birth(self):
