@@ -432,6 +432,29 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                         status = main()
         self.assertEqual(status, 1)
 
+    def test_process_receipt_option_rejects_posix_execution_before_process(self):
+        if os.name == "nt":
+            self.skipTest("this guard exists only on non-Windows platforms")
+        args = [
+            "program", str(self.program.resolve()), str(self.disc.resolve()),
+            str(self.bk2.resolve()), str(self.plan.resolve()),
+            str(self.output.resolve()), "--capture-lua",
+            str(self.lua.resolve()), "--record-process-identity", "--launch",
+        ]
+        with patch.object(sys, "argv", args), patch(
+            "tools.map02_private_bizhawk_poweron_launch.plan_lines",
+            return_value=ROWS,
+        ), patch(
+            "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_bizhawk_poweron_launch.run_owned_process",
+        ) as process:
+            with self.assertRaises(SystemExit):
+                main()
+        process.assert_not_called()
+        self.assertFalse((self.output / "vh_emuhawk_process_identity.txt").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

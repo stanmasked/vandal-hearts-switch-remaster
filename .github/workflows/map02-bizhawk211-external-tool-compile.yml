@@ -5,6 +5,8 @@ on:
       - '.github/workflows/map02-bizhawk211-external-tool-compile.yml'
       - 'tools/map02_runtime_core_witness/**'
       - 'tools/map02_runtime_core_witness_smoke/**'
+      - 'tools/map02_private_process_witness_binding.py'
+      - 'tests/test_map02_private_process_witness_binding.py'
       - 'docs/MAP02_RUNTIME_CORE_WITNESS.md'
   workflow_dispatch:
 permissions:
@@ -21,6 +23,24 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: x64
+      - name: Validate Windows GetProcessTimes and owner-only fictional core witness binding
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path $env:RUNNER_TEMP 'vh-map02-win-process-binding.log'
+          python -m unittest discover -s tests -p 'test_map02_private_process_witness_binding.py' -v 2>&1 | Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) { throw 'owner process-witness binding tests failed' }
+          $joined = Get-Content -LiteralPath $log -Raw
+          if ($joined -notmatch 'Ran 19 tests' -or
+              $joined -notmatch 'test_real_windows_owned_child_creation_time.*ok') {
+            throw 'Windows kernel process birth-time probe was not executed'
+          }
+          Write-Output 'VH_MAP02_REAL_WINDOWS_PROCESS_START_CLOCK_PASS cases=19 real_ps1=0 bios=0 bk2=0'
+
       - name: Fetch exact official BizHawk 2.11 Windows release, verify SHA-256
         shell: pwsh
         run: |

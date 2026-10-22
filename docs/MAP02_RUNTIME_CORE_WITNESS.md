@@ -192,6 +192,67 @@ has been injected, let alone verify original BIOS, Russian source disc,
 USA BK2 synchronization, MAP02 pixels or a Switch remake. Those still
 require the owner's private real-disc replay.
 
+## Stage506: bind actual process start to manual Octoshock witness
+
+Stage505 verified a **real** BizHawk 2.11 no-game `NullHawk` service injection.
+That does not show which process produces a future owner-private Octoshock
+witness when genuine PS1 gameplay is used.
+
+The opt-in two-runner flag
+
+    --record-windows-process-identity
+
+records the **real direct child EmuHawk PID and OS creation time** when
+each owner-local process is first spawned, using Windows
+`OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)` and
+`GetProcessTimes`. The native UTC `FILETIME` counter is converted
+exactly to the .NET `Process.StartTime.ToUniversalTime().Ticks` unit
+used by our External Tool. An **exclusive** local mode-0600 text file
+`vh_emuhawk_process_identity.txt` is created in each newly allocated
+owner-private capture directory, never committed to GitHub. If the
+receipt cannot be written, the wrapper terminates the newly started
+emulator rather than continuing without the requested binding.
+
+The flag is accepted only for a genuine Windows `--launch-two`
+request. Dry runs create **nothing**; non-Windows actual launches with
+it are rejected before starting any emulator. Windows folder ACLs
+must be restricted by the owner separately; POSIX mode 0600 alone is
+not an NTFS access-control guarantee.
+
+After opening the External Tool **inside the same EmuHawk processes**,
+the owner manually saves one **actual PSX/Octoshock** witness during
+each run to a separate private folder. If a run finishes before the
+owner can save its witness, there is no valid witness to bind: do NOT
+reuse an older process receipt or call the session authenticated.
+
+The owner then performs a fully local comparison (illustrative
+paths only, no real identifiers shown):
+
+    python3 -m tools.map02_private_process_witness_binding \
+      /private/capture/vh-map02-cold-01/vh_emuhawk_process_identity.txt \
+      /private/witness-01.txt \
+      /private/capture/vh-map02-cold-02/vh_emuhawk_process_identity.txt \
+      /private/witness-02.txt
+
+The checker requires exact PID **and** process birth-time equality for
+each pair and different process identities between both runs.
+It rejects swapped, copied, stale and unrelated receipts; parses
+witnesses using the existing strict Octoshock schema; and reports
+only booleans. **No PID, timestamp, firmware hash, disc path, private
+witness location, BK2, screenshot or image bytes are published.**
+
+This is useful cross-checking, not a cryptographic proof. Both receipts
+are editable owner-local text; the check alone does **not** prove that
+the correct BIOS or CUE was mounted, the USA BK2 input reached the
+controller, or screenshots depict MAP02. A filename or PID is not a
+complete trace of the running emulator. The existing independently
+verified Lua capture and PNG review remain mandatory.
+
+CI verifies fictional process/witness pairs on Ubuntu and macOS, and
+uses a **real harmless Python child process on Windows** to test
+`GetProcessTimes` conversion; it does not launch a PS1 game or publish
+a private process identifier.
+
 ## Owner-local build (requires a matching, unmodified BizHawk source tree)
 
 1. Use your own BizHawk **2.11** source tree and local EmuHawk build/output.

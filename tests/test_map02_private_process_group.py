@@ -114,6 +114,35 @@ class OwnerProcessGroupTests(unittest.TestCase):
                         env=os.environ.copy(), stdout=stream, timeout=0.2,
                     )
 
+    def test_optional_start_observer_runs_with_real_child_alive(self):
+        observed = []
+        def on_started(pid):
+            self.assertIsInstance(pid, int)
+            self.assertGreater(pid, 0)
+            observed.append(pid)
+            if os.name != "nt":
+                os.kill(pid, 0)  # prove the observed child is still alive
+        result = run_owned_process(
+            [sys.executable, "-c", "import time;time.sleep(0.1)"],
+            env=os.environ.copy(), stdout=subprocess.DEVNULL, timeout=10,
+            on_started=on_started,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(len(observed), 1)
+
+    def test_start_observer_failure_terminates_real_child(self):
+        pid = []
+        def reject(child_pid):
+            pid.append(child_pid)
+            raise ValueError("fictional private receipt could not be written")
+        with self.assertRaisesRegex(ValueError, "fictional private receipt"):
+            run_owned_process(
+                [sys.executable, "-c", "import time;time.sleep(20)"],
+                env=os.environ.copy(), stdout=subprocess.DEVNULL,
+                timeout=10, on_started=reject,
+            )
+        self.assertEqual(len(pid), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -21,6 +21,9 @@ from tools.map02_private_disc_movie_preflight import (
     inspect_pair, read_private_full_bin_sha256,
 )
 from tools.map02_private_process_group import run_owned_process
+from tools.map02_private_process_witness_binding import (
+    NAME as OWNER_PROCESS_RECEIPT_NAME, record_started_process,
+)
 from tools.verify_map02_private_neutral_capture_chain import parse_plan
 
 MOVIE_LENGTH = 933949
@@ -210,6 +213,10 @@ def main() -> int:
         "--private-full-bin-sha256-file", type=Path,
         help="Privately hash the entire BIN against a user-local 0600 digest file",
     )
+    parser.add_argument(
+        "--record-process-identity", action="store_true",
+        help="Windows only: create a private 0600 actual EmuHawk PID/start-time receipt",
+    )
     parser.add_argument("--launch", action="store_true",
                         help="open BizHawk locally; without this, validate only")
     args = parser.parse_args()
@@ -225,6 +232,12 @@ def main() -> int:
             private_full_bin_sha256_file=args.private_full_bin_sha256_file)
     except (OSError, ValueError, TypeError, UnicodeError, RuntimeError):
         parser.error("private BizHawk power-on launch preflight failed")
+    if args.record_process_identity and args.launch:
+        if os.name != "nt":
+            parser.error("private EmuHawk process identity is supported on Windows only")
+        output = Path(env["VH_PRIVATE_PNG_DIR"]) / OWNER_PROCESS_RECEIPT_NAME
+        if output.exists() or output.is_symlink():
+            parser.error("private emulator process identity receipt already exists")
     if not args.launch:
         print("VH_PRIVATE_BIZHAWK_LAUNCH_PREFLIGHT_OK planned_png=%d "
               "emulator_started=0 original_ps1_authenticated=0" % count)
@@ -262,9 +275,15 @@ def main() -> int:
             os.close(process_fd)
             raise OSError("private process log is not regular")
         with os.fdopen(process_fd, "ab") as private_output:
+            extras = {}
+            if args.record_process_identity:
+                private_dir = Path(env["VH_PRIVATE_PNG_DIR"])
+                extras["on_started"] = (
+                    lambda pid: record_started_process(pid, private_dir)
+                )
             result = run_owned_process(
                 command, env=env, stdout=private_output,
-                timeout=args.emulator_timeout_seconds)
+                timeout=args.emulator_timeout_seconds, **extras)
     except subprocess.TimeoutExpired:
         # On POSIX, the owned emulator process group has been sent TERM then
         # KILL, including descendants that remained in the session. A
