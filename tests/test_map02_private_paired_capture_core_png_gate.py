@@ -80,7 +80,8 @@ class OwnerCombinedGateTests(unittest.TestCase):
                 self.witness[0], self.witness[1],
             )
         paired.assert_called_once_with(
-            self.movie, self.plan, self.runs[0], self.runs[1],
+            self.movie, self.plan, self.runs[0].resolve(strict=True),
+            self.runs[1].resolve(strict=True),
         )
         return result
 
