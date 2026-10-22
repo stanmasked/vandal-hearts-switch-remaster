@@ -50,6 +50,11 @@ CORE_PREFERENCE = re.compile(
     r"VH_PRIVATE_NEUTRAL_CORE_PREFERENCE preferred=Octoshock "
     r"fallback=(blocked) active_core=unverified"
 )
+AUTO_CORE_PREFLIGHT = (
+    "VH_PRIVATE_NEUTRAL_AUTOWITNESS_PREFLIGHT "
+    "stage=before_first_png receipt=present core_only=yes "
+    "actual_disc=unverified"
+)
 START_PREFLIGHT = ("VH_PRIVATE_NEUTRAL_START_PREFLIGHT counter=1662 "
                    "candidate_input=1661 first_start_pressed=yes "
                    "ps1_input_delivery=unverified")
@@ -124,6 +129,7 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
     source_preflight = False
     runtime_profile = None
     core_preference = None
+    auto_core_preflight = False
     process_exit = False
     core_poll_observed = False
     stable_game_rom_id_sampled = False
@@ -154,6 +160,11 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
                     or preflight or completed or observed or process_exit):
                 raise ValueError("malformed, duplicate or misplaced PSX core preference")
             core_preference = match.group(1)
+        if line.startswith("VH_PRIVATE_NEUTRAL_AUTOWITNESS_PREFLIGHT"):
+            if (line != AUTO_CORE_PREFLIGHT or auto_core_preflight
+                    or not preflight or observed or completed or process_exit):
+                raise ValueError("automatic core receipt marker absent, duplicated or too late")
+            auto_core_preflight = True
         if line.startswith("VH_PRIVATE_NEUTRAL_START_PREFLIGHT"):
             if not source_preflight or runtime_profile is None or core_preference is None:
                 raise ValueError("missing source, runtime or core preference before live Start")
@@ -242,6 +253,7 @@ def verify(private_bk2: Path, private_plan: Path, private_log: Path,
         ),
         "psx_lag_timeline_authenticates_movie_sync": False,
         "owner_log_reports_live_first_start_anchor_before_screenshots": True,
+        "owner_log_reports_auto_core_witness_before_first_png": auto_core_preflight,
         "owner_log_reports_poweron_movie_path_match": True,
         "owner_log_reports_input_poll_callback": core_poll_observed,
         "owner_log_reports_stable_game_rom_id_samples": stable_game_rom_id_sampled,
