@@ -38,6 +38,11 @@ def core(pid, ticks, frame=1666):
     )
 
 
+def _lf_fixture(path: Path, text: str) -> None:
+    """Model owner-local process receipts as exact LF bytes on every OS."""
+    path.write_bytes(text.encode("ascii"))
+
+
 class PrivateProcessWitnessBindingTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
@@ -47,10 +52,10 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
         self.b_start = self.root / "cold-02-process.txt"
         self.a_core = self.root / "cold-01-core.txt"
         self.b_core = self.root / "cold-02-core.txt"
-        self.a_start.write_text(started(3011, BIRTH_A), encoding="ascii")
-        self.b_start.write_text(started(3012, BIRTH_B), encoding="ascii")
-        self.a_core.write_text(core(3011, BIRTH_A), encoding="ascii")
-        self.b_core.write_text(core(3012, BIRTH_B), encoding="ascii")
+        _lf_fixture(self.a_start, started(3011, BIRTH_A))
+        _lf_fixture(self.b_start, started(3012, BIRTH_B))
+        _lf_fixture(self.a_core, core(3011, BIRTH_A))
+        _lf_fixture(self.b_core, core(3012, BIRTH_B))
 
     def bind(self):
         return bind_owner_private_replays(
@@ -77,22 +82,22 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
                                        self.b_start, self.a_core)
 
     def test_stale_birth_time_rejected_even_when_pid_reused(self):
-        self.a_core.write_text(core(3011, BIRTH_B), encoding="ascii")
+        _lf_fixture(self.a_core, core(3011, BIRTH_B))
         with self.assertRaisesRegex(ValueError, "does not match"):
             self.bind()
 
     def test_witness_from_unrelated_process_rejected(self):
-        self.b_core.write_text(core(9009, BIRTH_B), encoding="ascii")
+        _lf_fixture(self.b_core, core(9009, BIRTH_B))
         with self.assertRaisesRegex(ValueError, "does not match"):
             self.bind()
 
     def test_duplicate_launch_process_identity_rejected(self):
-        self.b_start.write_text(started(3011, BIRTH_A), encoding="ascii")
+        _lf_fixture(self.b_start, started(3011, BIRTH_A))
         with self.assertRaisesRegex(ValueError, "reuse"):
             self.bind()
 
     def test_duplicate_witness_process_identity_rejected(self):
-        self.b_core.write_text(core(3011, BIRTH_A), encoding="ascii")
+        _lf_fixture(self.b_core, core(3011, BIRTH_A))
         with self.assertRaisesRegex(ValueError, "reuse"):
             self.bind()
 
@@ -105,7 +110,7 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
             started(3011, BIRTH_A).replace("process_id=3011", "process_id=03011"),
         ):
             with self.subTest(text_length=len(value)):
-                self.a_start.write_text(value, encoding="ascii")
+                _lf_fixture(self.a_start, value)
                 with self.assertRaises(ValueError):
                     read_started_process(self.a_start)
 
@@ -113,7 +118,7 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
         for pid, ticks in ((0, BIRTH_A), (2147483648, BIRTH_A),
                            (3011, 0), (3011, 725811840000000001)):
             with self.subTest(pid=pid, ticks=ticks):
-                self.a_start.write_text(started(pid, ticks), encoding="ascii")
+                _lf_fixture(self.a_start, started(pid, ticks))
                 with self.assertRaises(ValueError):
                     read_started_process(self.a_start)
 
@@ -188,9 +193,8 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
             proc.wait()
 
     def test_unsafe_core_witness_false_bios_claim_rejected(self):
-        self.a_core.write_text(
-            core(3011, BIRTH_A).replace("bios=unverified", "bios=verified"),
-            encoding="ascii",
+        _lf_fixture(
+            self.a_core, core(3011, BIRTH_A).replace("bios=unverified", "bios=verified")
         )
         with self.assertRaisesRegex(ValueError, "unsupported evidence"):
             self.bind()
