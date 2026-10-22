@@ -306,3 +306,28 @@ In particular it does **not** authenticate a mounted CUE/BIN, BIOS,
 BK2 controller delivery, original MAP02 scene, a second cold boot or
 Nintendo Switch gameplay. Original game files and local screenshots must
 remain on the owner's private workstation.
+
+
+## Stage518 — compare the witness's executing-tool file hash to the pin
+
+Stage518 adds a tool_assembly_sha256 field to the private runtime receipt.
+The external tool computes SHA-256 for the file at its own executing assembly
+location. When --private-core-witness-sha256 is supplied, the launcher passes
+that exact pin to the child EmuHawk process through a dedicated environment
+variable. Before writing an automatic witness, the tool checks its observed
+file hash against the pin; after capture, the Python verifier also requires
+the receipt's digest field to match the same expected value. Malformed,
+missing, or mismatching digest evidence fails closed.
+
+The raw tool digest remains local: it is not copied into public JSON reports,
+logs, GitHub artifacts, or screenshots. The existing Stage517 checks still
+re-hash the installed DLL before and after launch and audit checkpoints.
+
+**Evidence limit:** this is an additional in-process self-check of the file at
+the executing assembly's reported location. It is **not** independent OS
+attestation of the loaded module's in-memory bytes; a malicious or modified
+assembly could falsify its own receipt. A passing result therefore means the
+self-reported file hash matches the externally pinned DLL digest, not that
+the CLR's loaded module has been cryptographically authenticated. It also
+does not authenticate the original disc, BIOS, movie synchronization, MAP02
+scene, or Nintendo Switch gameplay.
