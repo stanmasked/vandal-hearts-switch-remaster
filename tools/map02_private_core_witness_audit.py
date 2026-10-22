@@ -38,7 +38,7 @@ KEYS = (
     "movie_sync",
 )
 DECIMAL = re.compile(r"(?:0|[1-9][0-9]*)\Z")
-SHA256_HEX = re.compile(r"[0-9a-fA-F]{64}\\Z")
+SHA256_HEX = re.compile(r"[0-9a-fA-F]{64}\Z")
 
 
 def _decimal(value: str, *, maximum: int, minimum: int = 0) -> int:
