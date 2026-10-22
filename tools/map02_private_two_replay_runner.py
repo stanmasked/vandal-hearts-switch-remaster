@@ -20,7 +20,7 @@ from tools.map02_private_bk2_capture_plan import plan_lines, write_private_plan
 from tools.map02_private_bizhawk_poweron_launch import (
     SCRIPT, DEFAULT_EMULATOR_TIMEOUT_SECONDS,
     MIN_EMULATOR_TIMEOUT_SECONDS, MAX_EMULATOR_TIMEOUT_SECONDS,
-    AUTO_WITNESS_NAME,
+    AUTO_WITNESS_NAME, require_matching_core_plugin,
 )
 from tools.map02_private_disc_movie_preflight import (
     _assert_stable, _identity, _open_stable, _parse_cue, _read_at,
@@ -233,6 +233,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     if (not emulator.is_absolute() or not emulator.is_file()
             or not SCRIPT.is_absolute() or not SCRIPT.is_file()):
         raise ValueError("absolute EmuHawk executable and capture Lua are required")
+    if auto_core_witness_plugin is not None:
+        require_matching_core_plugin(emulator, auto_core_witness_plugin)
 
     # Pin the BK2 bytes before any preflight, capture plan, emulator
     # process or independent audit. Merely re-parsing a changed archive later
