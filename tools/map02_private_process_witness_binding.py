@@ -16,7 +16,7 @@ from pathlib import Path
 import re
 import stat
 
-from tools.map02_private_core_witness_audit import read_witness
+from tools.map02_private_core_witness_audit import read_witness_record
 from tools.map02_private_disc_movie_preflight import (
     _assert_stable, _open_stable, _resolve_private_file,
 )
@@ -161,9 +161,11 @@ def bind_owner_private_replays(
     if len(set(paths)) != 4:
         raise ValueError("four distinct private receipts are required")
     started = (read_started_process(paths[0]), read_started_process(paths[2]))
-    witness = (read_witness(paths[1]), read_witness(paths[3]))
+    witness = (read_witness_record(paths[1]), read_witness_record(paths[3]))
     if started[0] == started[1] or witness[0][:2] == witness[1][:2]:
         raise ValueError("private capture attempts reuse the same reported process")
+    if witness[0][3] != witness[1][3]:
+        raise ValueError("runtime tool assembly file hash differs across witnesses")
     for expected, actual in zip(started, witness):
         if expected != actual[:2]:
             raise ValueError("runtime core witness does not match launched EmuHawk PID and birth time")
@@ -172,6 +174,8 @@ def bind_owner_private_replays(
         "owner_private_capture_attempts": 2,
         "runtime_core_witnesses_bound_to_launched_process_identity": True,
         "reported_emuhawk_processes_distinct": True,
+        "both_witnesses_report_same_tool_assembly_file_hash": True,
+        "tool_assembly_file_hash_independently_pinned": False,
         "binding_authenticated_against_os_without_editable_receipts": False,
         "witnesses_linked_to_lua_or_png_by_cryptography": False,
         "active_core_claim_observed_via_manual_private_witnesses": True,
