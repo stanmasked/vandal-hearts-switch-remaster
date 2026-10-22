@@ -10,6 +10,9 @@ from pathlib import Path
 import sys
 from unittest.mock import patch
 
+# Running this file directly via Python sets sys.path[0] to the tests folder;
+# resolve only the public repository source root, never any private inputs.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.map02_private_first_run_audit import review_first_capture
 
 def main() -> int:
