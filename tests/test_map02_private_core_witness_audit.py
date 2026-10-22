@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from tools.map02_private_core_witness_audit import (
     MAGIC, MAX_RECEIPT_BYTES, compare_witnesses, main, read_witness,
+    read_witness_record,
 )
 
 
@@ -19,6 +20,7 @@ def receipt(*, pid=3001, start=639000000000000001, frame=1666, **changes):
     values = dict(
         system="PSX", loaded_core="Octoshock",
         core_source="IEmulator.Attributes.CoreName",
+        tool_assembly_sha256="a" * 64,
         process_id=str(pid), process_start_utc_ticks=str(start),
         frame_count=str(frame), bios="unverified",
         disc="unverified", movie_sync="unverified",
@@ -89,6 +91,17 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
         ), encoding="ascii")
         with self.assertRaisesRegex(ValueError, "unsupported evidence"):
             compare_witnesses(self.first, self.second)
+
+    def test_tool_assembly_hash_is_validated_and_normalized(self):
+        self.first.write_text(receipt(tool_assembly_sha256="A" * 64), encoding="ascii")
+        self.assertEqual(read_witness_record(self.first)[3], "a" * 64)
+
+    def test_malformed_tool_assembly_hash_is_rejected(self):
+        for digest in ("a" * 63, "a" * 65, "g" * 64, "a" * 63 + "\\n"):
+            with self.subTest(digest=digest):
+                self.first.write_text(receipt(tool_assembly_sha256=digest), encoding="ascii")
+                with self.assertRaisesRegex(ValueError, "tool SHA256 malformed"):
+                    read_witness(self.first)
 
     def test_bios_claim_is_rejected(self):
         self.first.write_text(receipt(bios="verified"), encoding="ascii")
