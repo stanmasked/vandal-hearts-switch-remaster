@@ -6,6 +6,15 @@ local ROOT = "/private/fake-local-images"
 local PLAN = "/private/fake-capture-plan.txt"
 local LOG = ROOT .. "/vh_private_capture.log"
 local SIGNATURE = "\137PNG\r\n\26\n"
+local AUTO_FILE = ROOT .. "/vh-map02-runtime-core-auto.txt"
+local CORE_ONLY = "VH_MAP02_RUNTIME_CORE_WITNESS_V1\n"
+  .. "system=PSX\nloaded_core=Octoshock\n"
+  .. "core_source=IEmulator.Attributes.CoreName\n"
+  .. "process_id=123\nprocess_start_utc_ticks=639000000000000001\n"
+  .. "frame_count=1662\nbios=unverified\ndisc=unverified\n"
+  .. "movie_sync=unverified\n"
+local AUTO_MARK = "VH_PRIVATE_NEUTRAL_AUTOWITNESS_PREFLIGHT "
+  .. "stage=before_first_png receipt=present core_only=yes actual_disc=unverified"
 local BASE = "VH_MAP02_CAPTURE_PLAN_V1\nmovie_frames=933949\ncapture_count=3\n" ..
              "1,before,1664,held\n1,middle,1666,neutral\n1,after,1669,held\n"
 local scenarios = 0
@@ -38,6 +47,11 @@ local function run(option)
       if option == "outside-log" then return "/private/outside.log" end
       return LOG
     end
+    if name == "VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR" then
+      if option == "auto-wrong-root" then return "/private/not-this-run" end
+      if option:match("^auto%-") then return ROOT end
+      return nil
+    end
     error("unexpected environment variable")
   end
   io.open = function(path, mode)
@@ -69,6 +83,30 @@ local function run(option)
     if path == PLAN then
       return {
         read = function(_, size) assert(size == 8193); return content end,
+        close = function() end,
+      }
+    end
+    if path == AUTO_FILE then
+      if option == "auto-missing"
+          or (option == "auto-late" and counter < 1667)
+          or (option == "auto-disappear" and counter >= 1667) then
+        return nil
+      end
+      local bytes = CORE_ONLY
+      if option == "auto-badcore" then
+        bytes = bytes:gsub("loaded_core=Octoshock", "loaded_core=Nymashock")
+      elseif option == "auto-bad-format" then
+        bytes = bytes:gsub("\n", "\r\n")
+      elseif option == "auto-oversized" then
+        bytes = bytes .. string.rep("X", 600)
+      elseif option == "auto-mutate" and counter >= 1667 then
+        bytes = bytes:gsub("frame_count=1662", "frame_count=1667")
+      end
+      return {
+        read = function(_, size)
+          assert(size == 513)
+          return bytes:sub(1, size)
+        end,
         close = function() end,
       }
     end
@@ -271,6 +309,34 @@ for _, option in ipairs({"plain", "prefixed", "boundary", "zero-counter", "spars
   assert(lines[9] == "VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE snapshots=3 movie_input_only=yes game_rom_id_sampled=stable core_input_poll_observed=yes actual_map02=unverified")
   assert(#exit_codes == 1 and exit_codes[1] == 0,
          option .. ": successful bounded capture must close EmuHawk with exit code 0")
+end
+
+do
+  local lines, shots, _, exits = run("auto-pass")
+  assert(#shots == 3 and #lines == 10)
+  assert(lines[6] == AUTO_MARK,
+         "auto witness observation must appear before first screenshot marker")
+  assert(lines[7]:match("^VH_PRIVATE_NEUTRAL_CAPTURE window=1 role=before "))
+  assert(#exits == 1 and exits[1] == 0)
+end
+for _, option in ipairs({
+    "auto-wrong-root", "auto-missing", "auto-late", "auto-badcore",
+    "auto-bad-format", "auto-oversized", "auto-mutate", "auto-disappear"
+}) do
+  local lines, shots, _, exits = run(option)
+  assert(#shots < 3, option .. ": unsafe auto capture was accepted")
+  local rejected = false
+  for _, line in ipairs(lines) do
+    if line:match("^VH_PRIVATE_NEUTRAL_CAPTURE_ERROR ") then rejected = true end
+    assert(not line:match("^VH_PRIVATE_NEUTRAL_CAPTURE_COMPLETE"))
+  end
+  assert(rejected, option .. ": fail-closed auto receipt error missing")
+  assert(#exits == 1 and exits[1] == 1)
+  if option == "auto-wrong-root" or option == "auto-missing"
+      or option == "auto-late" or option == "auto-badcore"
+      or option == "auto-bad-format" or option == "auto-oversized" then
+    assert(#shots == 0, option .. ": first PNG must be blocked")
+  end
 end
 
 for _, option in ipairs({
