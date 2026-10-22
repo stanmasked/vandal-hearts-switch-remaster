@@ -1,0 +1,39 @@
+name: MAP02 owner-private NTFS empty workspace bootstrap (no media)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-owner-private-workspace-bootstrap.yml'
+      - 'tools/map02_owner_private_workspace_prepare.ps1'
+      - 'tools/map02_owner_private_workspace_prepare_ci_probe.ps1'
+      - 'tools/map02_windows_private_output_acl.ps1'
+      - 'tools/map02_windows_private_output_acl.py'
+      - 'docs/MAP02_OWNER_FIRST_COLD_CAPTURE.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  owner-private-workspace:
+    name: Real NTFS workspace provision / no-overwrite (Windows 2022)
+    runs-on: windows-2022
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: x64
+      - name: Test dry-run and explicit owner-only folder preparation with invented data
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $lines = @( & tools/map02_owner_private_workspace_prepare_ci_probe.ps1 )
+          if ($LASTEXITCODE -ne 0) {
+            throw 'real Windows owner-private workspace preparation fixture failed'
+          }
+          $expected = 'VH_MAP02_OWNER_PRIVATE_WORKSPACE_NTFS_FAKE_PASS dry=1 create=1 python_acl=1 existing_denied=1 git_denied=1 missing_parent_denied=1 relative_denied=1 everyone_denied=1 original_media=0'
+          if (@($lines).Count -ne 1 -or [string]$lines -cne $expected) {
+            throw 'synthetic NTFS bootstrap output not exact redacted marker'
+          }
+          Write-Output $expected
