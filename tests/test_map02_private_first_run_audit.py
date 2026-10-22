@@ -146,9 +146,7 @@ class OwnerFirstCaptureAuditTests(unittest.TestCase):
             expected_native_sha256="c" * 64,
         )
         self.assertTrue(result["runtime_core_assembly_file_hash_matches_supplied_pin"])
-        self.assertTrue(result["runtime_native_module_file_hash_matches_supplied_pin"]
-                        if "runtime_native_module_file_hash_matches_supplied_pin" in result
-                        else result["native_core_module_file_hash_matches_supplied_pin"])
+        self.assertTrue(result["native_core_module_file_hash_matches_supplied_pin"])
         self.assertTrue(result["runtime_core_assembly_file_hash_pin_supplied"])
         self.assertTrue(result["native_core_module_file_hash_pin_supplied"])
         report = json.dumps(result)
@@ -299,7 +297,7 @@ class OwnerFirstCaptureAuditTests(unittest.TestCase):
             },
         ) as reviewer, contextlib.redirect_stdout(io.StringIO()) as out:
             self.assertEqual(main(), 0)
-        reviewer.assert_called_once_with(self.movie, self.workspace, None, None)
+        reviewer.assert_called_once_with(self.movie, self.workspace, None, None, None, None)
         serialized = out.getvalue()
         self.assertNotIn(str(self.root), serialized)
         self.assertFalse(json.loads(serialized)["authentic_map02_scene_identified"])
