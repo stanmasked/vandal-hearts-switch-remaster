@@ -63,7 +63,7 @@ def main() -> int:
                               raw.decode("utf-16-le", "ignore").strip("\\ufeff \\r\\n")
                               == SUCCESS).lower()
                           + " nonempty=" + str(bool(raw)).lower(),
-                          flush=True)
+                          file=sys.stderr, flush=True)
                 raise
             if (result["owner_private_capture_attempts_reaudited"] != 1
                     or not result["private_octoshock_core_witness_matches_launched_pid_and_birth"]
