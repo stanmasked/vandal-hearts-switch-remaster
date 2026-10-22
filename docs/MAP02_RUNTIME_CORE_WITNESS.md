@@ -345,7 +345,7 @@ times, original paths, hashes or media data.
 The export records the system, **active core name sampled by the
 external tool**, frame count, and process identity (PID/start time) in
 a private file. All BIOS, disc and movie-sync fields MUST remain
- \`unverified\`.
+`unverified`.
 
 ### Stage518 — executing-tool file digest (receipt schema V2)
 
