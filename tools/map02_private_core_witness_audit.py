@@ -20,7 +20,7 @@ from tools.map02_private_disc_movie_preflight import (
 )
 
 SCHEMA = "vh.map02.private-runtime-core-witness-review.v1"
-MAGIC = "VH_MAP02_RUNTIME_CORE_WITNESS_V1"
+MAGIC = "VH_MAP02_RUNTIME_CORE_WITNESS_V2"
 MAX_RECEIPT_BYTES = 512
 MAX_FRAME_COUNT = 2_000_000
 MIN_WINDOWS_UTC_TICKS = 621355968000000000  # 1970-01-01 UTC
