@@ -9,7 +9,6 @@ on:
       - 'tests/test_map02_private_first_run_audit.py'
       - 'tests/map02_windows_first_capture_acl_probe.py'
       - 'tools/map02_windows_first_capture_acl_ci_probe.ps1'
-      - 'tools/map02_windows_acl_child_stage_probe.ps1'
       - 'tools/map02_private_two_capture_audit.py'
       - 'tools/map02_private_process_witness_binding.py'
       - 'tools/map02_private_core_witness_audit.py'
