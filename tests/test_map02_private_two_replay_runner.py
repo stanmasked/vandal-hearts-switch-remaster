@@ -1022,5 +1022,81 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         self.assertNotIn("all_supported_png_pixel_content_equal", output.getvalue())
 
 
+    def test_pinned_core_requires_an_explicit_installed_plugin(self):
+        with self.assertRaisesRegex(ValueError, "hash requires"):
+            capture_twice(*self.args, core_witness_sha256="a" * 64)
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_pinned_core_dry_run_verifies_real_fake_dll_bytes_without_launch(self):
+        external = self.root / "ExternalTools"
+        external.mkdir()
+        plugin = external / "VhMap02CoreWitness.dll"
+        plugin.write_bytes(b"FICTIONAL_CSHARP_PLUGIN_STAGE517")
+        sha = hashlib.sha256(plugin.read_bytes()).hexdigest()
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_two_replay_runner.plan_lines",
+            return_value=["h", "l", "c", "a", "b", "c"],
+        ), patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+        ) as launched:
+            report = capture_twice(
+                *self.args, start=False,
+                record_windows_process_identity=True,
+                auto_core_witness_plugin=plugin,
+                core_witness_sha256=sha.upper(),
+            )
+        self.assertTrue(report["installed_core_witness_sha256_pinned"])
+        self.assertTrue(report["automatic_core_witness_requested"])
+        self.assertEqual(report["emulator_processes_started"], 0)
+        self.assertEqual(list(self.workspace.iterdir()), [])
+        launched.assert_not_called()
+
+    def test_wrong_pinned_core_dll_hash_blocks_even_private_dry_run(self):
+        external = self.root / "ExternalTools"
+        external.mkdir()
+        plugin = external / "VhMap02CoreWitness.dll"
+        plugin.write_bytes(b"FICTIONAL_CSHARP_PLUGIN_STAGE517")
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+        ) as profile, patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+        ) as launched:
+            with self.assertRaisesRegex(ValueError, "differs from pinned build"):
+                capture_twice(
+                    *self.args, start=False,
+                    record_windows_process_identity=True,
+                    auto_core_witness_plugin=plugin,
+                    core_witness_sha256="0" * 64,
+                )
+        launched.assert_not_called()
+        profile.assert_not_called()
+        self.assertEqual(list(self.workspace.iterdir()), [])
+
+    def test_pinned_core_without_digest_keeps_legacy_dry_run_unpinned(self):
+        external = self.root / "ExternalTools"
+        external.mkdir()
+        plugin = external / "VhMap02CoreWitness.dll"
+        plugin.write_bytes(b"FICTIONAL_CSHARP_PLUGIN_STAGE517")
+        with patch(
+            "tools.map02_private_two_replay_runner.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_two_replay_runner.plan_lines",
+            return_value=["h", "l", "c", "a", "b", "c"],
+        ), patch(
+            "tools.map02_private_two_replay_runner.subprocess.run",
+        ) as launched:
+            result = capture_twice(
+                *self.args, start=False,
+                record_windows_process_identity=True,
+                auto_core_witness_plugin=plugin,
+            )
+        self.assertFalse(result["installed_core_witness_sha256_pinned"])
+        launched.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
