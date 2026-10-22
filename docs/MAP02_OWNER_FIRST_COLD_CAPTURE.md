@@ -324,7 +324,12 @@ logs, GitHub artifacts, or screenshots. Paired witness audits also require both
 cold-run receipts to report the same tool-file digest, even if no independent
 pin is supplied; this detects drift but does not authenticate the digest. The
 existing Stage517 checks still re-hash the installed DLL before and after launch
-and audit checkpoints.
+and audit checkpoints. The offline one-run re-audit also accepts the optional
+`--private-core-witness-sha256` argument to compare the saved V2 receipt against
+a separately trusted digest. It reports only whether a pin was supplied and
+whether it matched; it never emits the digest. Without that argument, the
+one-run re-audit validates receipt structure and process/frame consistency but
+does not claim the file hash was independently pinned.
 
 **Evidence limit:** this is an additional in-process self-check of the file at
 the executing assembly's reported location. It is **not** independent OS
