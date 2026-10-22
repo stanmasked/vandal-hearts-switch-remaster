@@ -1,0 +1,76 @@
+name: MAP02 owner-only offline first-run re-audit (fictional CI)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-private-first-run-audit.yml'
+      - 'tools/map02_private_first_run_audit.py'
+      - 'tests/test_map02_private_first_run_audit.py'
+      - 'tests/map02_windows_first_capture_acl_probe.py'
+      - 'tools/map02_windows_first_capture_acl_ci_probe.ps1'
+      - 'tools/map02_private_two_capture_audit.py'
+      - 'tools/map02_private_process_witness_binding.py'
+      - 'tools/map02_private_core_witness_audit.py'
+      - 'tools/verify_map02_private_neutral_capture_chain.py'
+      - 'docs/MAP02_OWNER_FIRST_COLD_CAPTURE.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fictional-first-owner-audit:
+    name: Read-only first-run review (${{ matrix.os }} Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.9'
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: macos-15-intel
+            python: '3.11'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Reject stale/late/private/false one-run evidence using invented files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_map02_private_first_run_audit.py' -v \
+            2>&1 | tee /tmp/vh-map02-fictional-first-capture-audit.log
+          count="$(sed -nE 's/^Ran ([1-9][0-9]*) tests? in .*$/\1/p' /tmp/vh-map02-fictional-first-capture-audit.log)"
+          test "$count" = "17"
+          grep -qx 'OK' /tmp/vh-map02-fictional-first-capture-audit.log
+          if grep -E '^(FAILED|ERROR)' /tmp/vh-map02-fictional-first-capture-audit.log; then exit 1; fi
+          echo "VH_MAP02_OWNER_FIRST_CAPTURE_OFFLINE_FAKE_PASS cases=$count real_psx=0 original_bk2=0 private_png=0 map02=unverified"
+
+  fictional-first-owner-ntfs:
+    name: Genuine NTFS first-run guard (Windows, no game)
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: x64
+      - name: Reject Everyone-readable one-run output using real NTFS ACL and fake process receipts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $found = @( & tools/map02_windows_first_capture_acl_ci_probe.ps1 )
+          if ($LASTEXITCODE -ne 0) { throw 'Windows first-capture ACL fixture rejected' }
+          $expected = 'VH_MAP02_WINDOWS_FIRST_CAPTURE_REAL_NTFS_FAKE_PASS owner_only=accepted everyone=denied real_psx=0 original_bk2=0 screenshot=0'
+          if (@($found).Count -ne 1 -or [string]$found -cne $expected) {
+            throw 'real Windows NTFS first-run acceptance mismatch'
+          }
+          Write-Output $expected
