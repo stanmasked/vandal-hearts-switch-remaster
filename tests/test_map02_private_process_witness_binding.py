@@ -27,12 +27,12 @@ def started(pid, ticks):
             f"process_start_utc_ticks={ticks}\n")
 
 
-def core(pid, ticks, frame=1666):
+def core(pid, ticks, frame=1666, tool_hash="a" * 64):
     return (
         "VH_MAP02_RUNTIME_CORE_WITNESS_V2\n"
         "system=PSX\nloaded_core=Octoshock\n"
         "core_source=IEmulator.Attributes.CoreName\n"
-        "tool_assembly_sha256=" + "a" * 64 + "\n"
+        "tool_assembly_sha256=" + tool_hash + "\n"
         f"process_id={pid}\nprocess_start_utc_ticks={ticks}\n"
         f"frame_count={frame}\nbios=unverified\n"
         "disc=unverified\nmovie_sync=unverified\n"
@@ -67,6 +67,8 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
         result = self.bind()
         self.assertTrue(result["runtime_core_witnesses_bound_to_launched_process_identity"])
         self.assertTrue(result["reported_emuhawk_processes_distinct"])
+        self.assertTrue(result["both_witnesses_report_same_tool_assembly_file_hash"])
+        self.assertFalse(result["tool_assembly_file_hash_independently_pinned"])
         self.assertFalse(result["binding_authenticated_against_os_without_editable_receipts"])
         self.assertFalse(result["witnesses_linked_to_lua_or_png_by_cryptography"])
         self.assertFalse(result["actual_bios_and_mounted_disc_authenticated"])
@@ -76,6 +78,11 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
 
     def test_read_receipt_returns_local_only_pid_and_birth(self):
         self.assertEqual(read_started_process(self.a_start), (3011, BIRTH_A))
+
+    def test_different_tool_assembly_hash_across_cold_runs_is_rejected(self):
+        _lf_fixture(self.b_core, core(3012, BIRTH_B, tool_hash="b" * 64))
+        with self.assertRaisesRegex(ValueError, "tool assembly file hash differs"):
+            self.bind()
 
     def test_swapped_run_witness_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "does not match"):
