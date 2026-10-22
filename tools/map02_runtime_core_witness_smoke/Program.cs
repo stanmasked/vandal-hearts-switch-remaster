@@ -277,10 +277,10 @@ namespace VhMap02LoaderSmoke
                     if (!File.Exists(destination))
                         throw new InvalidOperationException("opted-in fake core autowrite absent");
                     var body = File.ReadAllText(destination);
-                    if (!body.StartsWith("VH_MAP02_RUNTIME_CORE_WITNESS_V1\\n"
-                        + "system=PSX\\nloaded_core=Octoshock\\n")
-                        || !body.Contains("bios=unverified\\n")
-                        || !body.Contains("movie_sync=unverified\\n"))
+                    if (!body.StartsWith("VH_MAP02_RUNTIME_CORE_WITNESS_V1\n"
+                        + "system=PSX\nloaded_core=Octoshock\n")
+                        || !body.Contains("bios=unverified\n")
+                        || !body.Contains("movie_sync=unverified\n"))
                         throw new InvalidOperationException("synthetic auto witness incorrect");
                     ((IExternalToolForm)optedIn).Restart();
                     if (File.ReadAllText(destination) != body)
