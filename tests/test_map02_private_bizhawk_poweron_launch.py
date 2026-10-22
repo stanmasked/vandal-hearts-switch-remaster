@@ -605,5 +605,45 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.assertFalse((self.output / "vh_emuhawk_process.log").exists())
 
 
+    def test_child_rejects_plugin_changed_during_fictional_emuhawk_process(self):
+        plugin = self.make_auto_plugin()
+        digest = hashlib.sha256(plugin.read_bytes()).hexdigest()
+        fake_windows = type(
+            "FakeOs", (), {
+                "name": "nt",
+                "__getattr__": lambda _self, attr: getattr(os, attr),
+            },
+        )()
+        command = [
+            "launcher", str(self.program), str(self.disc), str(self.bk2),
+            str(self.plan), str(self.output),
+            "--capture-lua", str(self.lua),
+            "--auto-core-witness-plugin", str(plugin),
+            "--private-core-witness-sha256", digest,
+            "--record-process-identity", "--launch",
+        ]
+        def imaginary_process(*_args, **_kwargs):
+            plugin.write_bytes(b"FICTIONAL_CORE_DLL_MODIFIED_WHILE_EMUHAWK_WOULD_RUN")
+            return Mock(returncode=0)
+        with patch.object(sys, "argv", command), patch(
+            "tools.map02_private_bizhawk_poweron_launch.os", fake_windows,
+        ), patch(
+            "tools.map02_private_bizhawk_poweron_launch.plan_lines",
+            return_value=ROWS,
+        ), patch(
+            "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_bizhawk_poweron_launch.run_owned_process",
+            side_effect=imaginary_process,
+        ) as launched, contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(main(), 1)
+        launched.assert_called_once()
+        self.assertIn("exit_success=0", output.getvalue())
+        self.assertIn("original_ps1_authenticated=0", output.getvalue())
+        self.assertNotIn(str(self.root), output.getvalue())
+        self.assertFalse((self.output / "vh-map02-runtime-core-auto.txt").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
