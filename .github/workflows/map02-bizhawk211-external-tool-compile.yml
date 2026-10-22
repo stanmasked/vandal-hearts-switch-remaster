@@ -41,11 +41,11 @@ jobs:
           python -m unittest discover -s tests -p 'test_map02_private_process_witness_binding.py' -v 2>&1 | Tee-Object -FilePath $log
           if ($LASTEXITCODE -ne 0) { throw 'owner process-witness binding tests failed' }
           $joined = Get-Content -LiteralPath $log -Raw
-          if ($joined -notmatch 'Ran 19 tests' -or
+          if ($joined -notmatch 'Ran 20 tests' -or
               $joined -notmatch 'test_real_windows_owned_child_creation_time.*ok') {
             throw 'Windows kernel process birth-time probe was not executed'
           }
-          Write-Output 'VH_MAP02_REAL_WINDOWS_PROCESS_START_CLOCK_PASS cases=19 real_ps1=0 bios=0 bk2=0'
+          Write-Output 'VH_MAP02_REAL_WINDOWS_PROCESS_START_CLOCK_PASS cases=20 real_ps1=0 bios=0 bk2=0'
 
       - name: Fetch exact official BizHawk 2.11 Windows release, verify SHA-256
         shell: pwsh

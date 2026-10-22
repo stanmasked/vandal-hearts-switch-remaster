@@ -276,11 +276,18 @@ BA44578D78135CF32DEAAB7C21A76E299567488510FDF34C002C0161C1C8B8B5
 ```
 
 This pin belongs to the *unpacked DLL*, not the ZIP archive containing it,
-and is **not** the game's disc hash. If using an artifact from any other
-CI run, get the DLL digest printed by **that exact trusted successful
-run**, not from an unknown file or an unrelated artifact.
+and is **not** the game's disc hash.
 
-For the first-owner run, augment the Stage512 `$common` array:
+**Historical Stage517/V1 pin only:** the value above identifies the pre-Stage518
+DLL from the cited run. Stage518 changes the compiled assembly and switches
+the receipt to V2, so this value is **not valid for the Stage518 DLL** and
+must not be used for a current V2 capture. For any other CI run, obtain the
+DLL digest printed by that exact trusted successful run; do not infer or reuse
+a hash from an unrelated artifact.
+
+**Historical Stage517 example only — do not copy this hash for Stage518/V2.**
+
+For the Stage517/V1 first-owner run, augment the Stage512 `$common` array:
 
 ```powershell
 $knownDllSha256 = 'BA44578D78135CF32DEAAB7C21A76E299567488510FDF34C002C0161C1C8B8B5'
@@ -293,12 +300,10 @@ python -m tools.map02_private_two_replay_runner @common
 python -m tools.map02_private_two_replay_runner @common --launch-one
 ```
 
-If you downloaded the **exact** Stage516 CI artifact and installed it
-under the official BizHawk 2.11 `ExternalTools` folder without modification,
-the pin should match. If the DLL differs, **do not** disable the check or
-invent a new expected hash to force success; verify the provenance of the
-installed DLL or replace it through a fresh, separately verified installation
-outside any existing capture workspace.
+That check-and-run example applies only to the historical Stage516/Stage517
+V1 DLL. It must not be used for Stage518/V2. For the current source, follow
+the Stage518 artifact procedure below. Never disable the check or invent a
+new expected hash to force success.
 
 This is a check on the local experimental C# tool file and its stability,
 not cryptographic attestation of the emulator process or its loaded modules.
@@ -339,3 +344,37 @@ self-reported file hash matches the externally pinned DLL digest, not that
 the CLR's loaded module has been cryptographically authenticated. It also
 does not authenticate the original disc, BIOS, movie synchronization, MAP02
 scene, or Nintendo Switch gameplay.
+
+
+### Obtain and install the current V2 artifact before owner-local capture
+
+The Stage518 source changes the compiled DLL, so the Stage516/Stage517 digest
+above cannot authenticate the current V2 binary. Do not launch EmuHawk using
+the old V1 DLL or the historical Stage517 hash. First require the
+**MAP02 real BizHawk 2.11 External Tool compile (no game media)** workflow to
+finish successfully for the exact Stage518 source revision.
+
+From that one successful run, take the
+`VH_MAP02_EXPERIMENTAL_DLL_PUBLIC_SHA256=<digest>` marker and download the
+`vh-map02-bizhawk211-experimental-core-witness` artifact from the **same run**.
+Verify the downloaded DLL's SHA-256 against the marker locally. Because the
+installer refuses to overwrite an existing plugin, use a fresh private
+BizHawk 2.11 installation whose official release ZIP has been verified with
+the SHA-256 above; install the V2 artifact there using the digest from that
+same run. Do not overwrite or silently replace the Stage517 installation.
+
+Set `$knownDllSha256` to that Stage518 digest and add
+`--private-core-witness-sha256 $knownDllSha256` to the owner-local capture
+arguments. Run the dry-run preflight first, then perform only the explicit
+`--launch-one` capture. Afterward, pass the same digest to the offline audit:
+
+```powershell
+python -m tools.map02_private_first_run_audit $bk2 $workspace `
+  --private-core-witness-sha256 $knownDllSha256
+```
+
+A Stage517/V1 DLL or V1 witness receipt is not compatible with the Stage518/V2
+parser. Until the exact Stage518 build has a successful CI result and its
+matching artifact digest has been verified, the real owner-local capture
+remains blocked. Keep all original media, screenshots, local receipts and
+the digest itself out of GitHub comments and artifacts.

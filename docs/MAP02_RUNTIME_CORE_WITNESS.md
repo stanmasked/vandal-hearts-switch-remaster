@@ -357,6 +357,12 @@ that file hash differs, and the Python coordinator independently checks the
 reported digest against the same pin. The digest itself stays in the private
 receipt and is never printed in public-safe reports.
 
+The Stage516/Stage517 digest identifies the older V1 assembly and must not be
+reused for this changed Stage518 binary. Obtain the current pin from the
+`VH_MAP02_EXPERIMENTAL_DLL_PUBLIC_SHA256` marker in the exact successful
+Stage518 compile workflow run, and verify the downloaded DLL against that
+same-run marker before installing or capturing.
+
 The two-witness auditors also require both receipts to report the same tool
 file digest. This catches accidental DLL drift across cold runs, but the paired
 digest remains self-reported unless compared to an independently supplied pin.
@@ -388,7 +394,7 @@ stronger than observing only the preferred core. However:
   checks remain mandatory before authentic gameplay or remake fidelity
   can be claimed.
 
-The Python CI suite exercises **20 invented witness pairs**; the
+The Python CI suite exercises **23 synthetic witness-audit cases**; the
 Stage501 Windows CI additionally **compiles** the plugin against
 official SHA-256-verified BizHawk 2.11 binaries. Neither CI workflow
 runs EmuHawk, authenticates a live core or touches original game

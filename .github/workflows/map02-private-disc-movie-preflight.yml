@@ -98,7 +98,7 @@ jobs:
           fi
           grep -qx 'OK' /tmp/vh-map02-psx-firmware-probe.log
           echo "VH_MAP02_PRIVATE_PSX_FIRMWARE_METADATA_PASS cases=$count actual_bios=0 original_bk2=0 emuhawk=0"
-      - name: Audit 22 fictional in-process PSX runtime core witnesses
+      - name: Audit 23 fictional in-process PSX runtime core witnesses
         shell: bash
         run: |
           set -euo pipefail
