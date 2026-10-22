@@ -28,15 +28,16 @@ def started(pid, ticks):
             f"process_start_utc_ticks={ticks}\n")
 
 
-def core(pid, ticks, frame=1666, tool_hash="a" * 64):
+def core(pid, ticks, frame=1666, tool_hash="a" * 64,
+         core_hash="b" * 64, native_hash="c" * 64):
     return (
         "VH_MAP02_RUNTIME_CORE_WITNESS_V3\n"
         "system=PSX\nloaded_core=Octoshock\n"
         "core_source=IEmulator.Attributes.CoreName\n"
         "runtime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock\n"
-        "core_assembly_sha256=" + "b" * 64 + "\n"
+        "core_assembly_sha256=" + core_hash + "\n"
         "native_core_module_name=octoshock.dll\n"
-        "native_core_module_sha256=" + "c" * 64 + "\n"
+        "native_core_module_sha256=" + native_hash + "\n"
         "tool_assembly_sha256=" + tool_hash + "\n"
         f"process_id={pid}\nprocess_start_utc_ticks={ticks}\n"
         f"frame_count={frame}\nbios=unverified\n"
@@ -73,7 +74,11 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
         self.assertTrue(result["runtime_core_witnesses_bound_to_launched_process_identity"])
         self.assertTrue(result["reported_emuhawk_processes_distinct"])
         self.assertTrue(result["both_witnesses_report_same_tool_assembly_file_hash"])
+        self.assertTrue(result["both_witnesses_report_same_runtime_core_assembly_file_hash"])
+        self.assertTrue(result["both_witnesses_report_same_native_core_module_file_hash"])
         self.assertFalse(result["tool_assembly_file_hash_independently_pinned"])
+        self.assertFalse(result["runtime_core_assembly_file_hash_independently_pinned"])
+        self.assertFalse(result["native_core_module_file_hash_independently_pinned"])
         self.assertFalse(result["binding_authenticated_against_os_without_editable_receipts"])
         self.assertFalse(result["witnesses_linked_to_lua_or_png_by_cryptography"])
         self.assertFalse(result["actual_bios_and_mounted_disc_authenticated"])
@@ -87,6 +92,16 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
     def test_different_tool_assembly_hash_across_cold_runs_is_rejected(self):
         _lf_fixture(self.b_core, core(3012, BIRTH_B, tool_hash="b" * 64))
         with self.assertRaisesRegex(ValueError, "tool assembly file hash differs"):
+            self.bind()
+
+    def test_different_runtime_core_assembly_hash_across_cold_runs_is_rejected(self):
+        _lf_fixture(self.b_core, core(3012, BIRTH_B, core_hash="d" * 64))
+        with self.assertRaisesRegex(ValueError, "runtime core assembly file hash differs"):
+            self.bind()
+
+    def test_different_native_module_hash_across_cold_runs_is_rejected(self):
+        _lf_fixture(self.b_core, core(3012, BIRTH_B, native_hash="e" * 64))
+        with self.assertRaisesRegex(ValueError, "native core module file hash differs"):
             self.bind()
 
     def test_swapped_run_witness_is_rejected(self):

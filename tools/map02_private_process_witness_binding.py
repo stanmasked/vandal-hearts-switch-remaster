@@ -21,7 +21,7 @@ from tools.map02_private_disc_movie_preflight import (
     _assert_stable, _open_stable, _resolve_private_file,
 )
 
-SCHEMA = "vh.map02.owner-process-to-core-witness-review.v1"
+SCHEMA = "vh.map02.owner-process-to-core-witness-review.v2"
 MAGIC = "VH_MAP02_OWNER_EMUHAWK_PROCESS_START_V1"
 NAME = "vh_emuhawk_process_identity.txt"
 FILETIME_UNIX_EPOCH_OFFSET = 504911232000000000
@@ -192,6 +192,10 @@ def bind_owner_private_replays(
         raise ValueError("private capture attempts reuse the same reported process")
     if witness[0][3] != witness[1][3]:
         raise ValueError("runtime tool assembly file hash differs across witnesses")
+    if witness[0][4] != witness[1][4]:
+        raise ValueError("runtime core assembly file hash differs across witnesses")
+    if witness[0][5] != witness[1][5]:
+        raise ValueError("native core module file hash differs across witnesses")
     for expected, actual in zip(started, witness):
         if expected != actual[:2]:
             raise ValueError("runtime core witness does not match launched EmuHawk PID and birth time")
@@ -202,6 +206,10 @@ def bind_owner_private_replays(
         "reported_emuhawk_processes_distinct": True,
         "both_witnesses_report_same_tool_assembly_file_hash": True,
         "tool_assembly_file_hash_independently_pinned": False,
+        "both_witnesses_report_same_runtime_core_assembly_file_hash": True,
+        "runtime_core_assembly_file_hash_independently_pinned": False,
+        "both_witnesses_report_same_native_core_module_file_hash": True,
+        "native_core_module_file_hash_independently_pinned": False,
         "binding_authenticated_against_os_without_editable_receipts": False,
         "witnesses_linked_to_lua_or_png_by_cryptography": False,
         "active_core_claim_observed_via_manual_private_witnesses": True,
