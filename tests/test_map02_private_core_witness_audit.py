@@ -97,7 +97,7 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
         self.assertEqual(read_witness_record(self.first)[3], "a" * 64)
 
     def test_malformed_tool_assembly_hash_is_rejected(self):
-        for digest in ("a" * 63, "a" * 65, "g" * 64, "a" * 63 + "\\n"):
+        for digest in ("a" * 63, "a" * 65, "g" * 64, "a" * 63 + "!"):
             with self.subTest(digest=digest):
                 self.first.write_text(receipt(tool_assembly_sha256=digest), encoding="ascii")
                 with self.assertRaisesRegex(ValueError, "tool SHA256 malformed"):
