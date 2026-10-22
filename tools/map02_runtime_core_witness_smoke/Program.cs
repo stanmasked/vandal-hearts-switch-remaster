@@ -64,7 +64,7 @@ namespace VhMap02LoaderSmoke
                     "VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_PASS"
                     + " metadata=1 activation=1 missing_core_fail_closed=1"
                     + " fake_iemulator_positive=1 fake_negative_gates=4"
-                    + " in_memory_fake_witness_schema=1"
+                    + " in_memory_fake_witness_schema=2"
                     + " official_nullhawk_service_injected=1"
                     + " official_nullhawk_snapshot_rejected=1"
                     + " owner_only_ntfs_folder_accepted=1"
