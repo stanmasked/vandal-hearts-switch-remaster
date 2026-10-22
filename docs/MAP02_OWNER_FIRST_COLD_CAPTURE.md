@@ -280,12 +280,12 @@ and is **not** the game's disc hash.
 
 **Historical Stage517/V1 pin only:** the value above identifies the pre-Stage518
 DLL from the cited run. Stage518 changes the compiled assembly and switches
-the receipt to V2, so this value is **not valid for the Stage518 DLL** and
+the receipt to V3, so this value is **not valid for the Stage518 DLL** and
 must not be used for the current Stage518 capture. For any other CI run, obtain the
 DLL digest printed by that exact trusted successful run; do not infer or reuse
 a hash from an unrelated artifact.
 
-**Historical Stage517 example only — do not copy this hash for Stage518/V2.**
+**Historical Stage517 example only — do not copy this hash for Stage518/V3.**
 
 For the Stage517/V1 first-owner run, augment the Stage512 `$common` array:
 
@@ -301,7 +301,7 @@ python -m tools.map02_private_two_replay_runner @common --launch-one
 ```
 
 That check-and-run example applies only to the historical Stage516/Stage517
-V1 DLL. It must not be used for Stage518/V2. For the current source, follow
+V1 DLL. It must not be used for Stage518/V3. For the current source, follow
 the Stage518 artifact procedure below. Never disable the check or invent a
 new expected hash to force success.
 
@@ -333,7 +333,7 @@ tool-file digest, even if no independent pin is supplied; this detects drift
 but does not authenticate the digest. The
 existing Stage517 checks still re-hash the installed DLL before and after launch
 and audit checkpoints. The offline one-run re-audit also accepts the optional
-`--private-core-witness-sha256` argument to compare the saved V2 receipt against
+`--private-core-witness-sha256` argument to compare the saved V3 receipt against
 a separately trusted digest. It reports only whether a pin was supplied and
 whether it matched; it never emits the digest. Without that argument, the
 one-run re-audit validates receipt structure and process/frame consistency but
@@ -352,7 +352,7 @@ scene, or Nintendo Switch gameplay.
 ### Obtain and install the Stage518 artifact before owner-local capture
 
 The Stage518 source changes the compiled DLL, so the Stage516/Stage517 digest
-above cannot authenticate the current V2 binary. Do not launch EmuHawk using
+above cannot authenticate the current Stage518 binary. Do not launch EmuHawk using
 the older Stage517 DLL or its historical hash. First require the
 **MAP02 real BizHawk 2.11 External Tool compile (no game media)** workflow to
 finish successfully for the exact Stage518 source revision.
@@ -363,7 +363,7 @@ From that one successful run, take the
 Verify the downloaded DLL's SHA-256 against the marker locally. Because the
 installer refuses to overwrite an existing plugin, use a fresh private
 BizHawk 2.11 installation whose official release ZIP has been verified with
-the SHA-256 above; install the V2 artifact there using the digest from that
+the SHA-256 above; install the Stage518 artifact there using the digest from that
 same run. Do not overwrite or silently replace the Stage517 installation.
 
 The same successful compile job also emits
