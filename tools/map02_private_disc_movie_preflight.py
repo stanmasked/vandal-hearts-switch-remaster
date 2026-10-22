@@ -64,7 +64,9 @@ def _resolve_private_file(value: Path) -> Path:
 
 
 def _open_stable(path: Path) -> tuple[int, os.stat_result]:
-    flags = os.O_RDONLY
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+    # Windows C runtime otherwise translates CRLF and treats 0x1A as EOF.
+    # Disc sectors, BK2 ZIPs, screenshots and owner receipts must be byte-exact.
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     fd = os.open(path, flags)
