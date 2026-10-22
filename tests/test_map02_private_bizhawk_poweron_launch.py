@@ -50,6 +50,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         output = kwargs.pop("output", self.output)
         lua = kwargs.pop("lua", self.lua)
         rows = kwargs.pop("source_rows", ROWS)
+        mono = kwargs.pop("mono_executable", None)
         with patch(
             "tools.map02_private_bizhawk_poweron_launch.plan_lines",
             return_value=rows,
@@ -65,6 +66,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                 before=kwargs.pop("before", 933949),
                 auto_core_witness_plugin=kwargs.pop("auto_core_witness_plugin", None),
                 core_witness_sha256=kwargs.pop("core_witness_sha256", None),
+                mono_executable=mono,
             )
         self.assertFalse(kwargs)
         self.assertEqual(source.call_args.kwargs["limit"], 1)
@@ -87,6 +89,18 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.assertEqual(env["VH_PRIVATE_PROCESS_LOG"],
                          str((self.output / "vh_emuhawk_process.log").resolve()))
         self.assertNotIn("github", str(argv).lower())
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux Mono command only")
+    def test_linux_launch_uses_explicit_mono_without_shell(self):
+        mono = self.root / "mono"
+        mono.write_bytes(b"fictional mono launcher")
+        mono.chmod(0o700)
+        argv, env, count = self.call(mono_executable=mono)
+        self.assertEqual(count, 3)
+        self.assertEqual(argv[:2], [str(mono.resolve()), str(self.program.resolve())])
+        self.assertEqual(argv[-1], str(self.disc.resolve()))
+        self.assertNotIn("sh", argv[0].lower())
+        self.assertEqual(env["VH_PRIVATE_EXPECTED_MOVIE"], str(self.bk2.resolve()))
 
     def test_refuses_cue_with_missing_track_file(self):
         self.track.unlink()
