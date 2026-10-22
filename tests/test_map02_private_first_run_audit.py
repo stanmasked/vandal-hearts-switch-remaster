@@ -252,7 +252,7 @@ class OwnerFirstCaptureAuditTests(unittest.TestCase):
             },
         ) as reviewer, contextlib.redirect_stdout(io.StringIO()) as out:
             self.assertEqual(main(), 0)
-        reviewer.assert_called_once_with(self.movie, self.workspace, None)
+        reviewer.assert_called_once_with(self.movie, self.workspace, None, None)
         serialized = out.getvalue()
         self.assertNotIn(str(self.root), serialized)
         self.assertFalse(json.loads(serialized)["authentic_map02_scene_identified"])
