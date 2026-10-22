@@ -17,6 +17,7 @@ from tools.map02_private_process_witness_binding import (
     MAGIC, NAME, bind_owner_private_replays, main, read_started_process,
     record_started_process, windows_process_start_ticks,
 )
+from tools.map02_private_process_group import run_owned_process
 
 BIRTH_A = 639000000000000001
 BIRTH_B = 639000000000000002
@@ -178,6 +179,27 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
             self.skipTest("valid Windows query tested separately")
         with self.assertRaisesRegex(ValueError, "requires Windows"):
             windows_process_start_ticks(3011)
+
+    @unittest.skipUnless(os.name == "nt", "Windows Popen handle identity only")
+    def test_process_object_observer_records_the_owned_child_handle(self):
+        observed = []
+
+        def record(process):
+            observed.append(process.pid)
+            record_started_process(
+                process.pid, self.root, process_handle=process._handle)
+
+        result = run_owned_process(
+            [sys.executable, "-c", "import time;time.sleep(0.5)"],
+            env=os.environ.copy(), stdout=subprocess.DEVNULL, timeout=10,
+            on_started_process=record,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(len(observed), 1)
+        pid, ticks = read_started_process(self.root / NAME)
+        self.assertEqual(pid, observed[0])
+        self.assertGreaterEqual(ticks, 621355968000000000)
+        self.assertLessEqual(ticks, 725811840000000000)
 
     @unittest.skipUnless(os.name == "nt", "Windows process identity API only")
     def test_real_windows_owned_child_creation_time(self):

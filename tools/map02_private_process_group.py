@@ -41,7 +41,7 @@ def run_owned_process(command: list[str], *, env: dict[str, str],
         # Preserve the original launcher path unless the owner explicitly
         # opted in to a private process identity receipt. Recording MUST occur
         # while the direct child is alive; subprocess.run hides its PID.
-        if on_started is None:
+        if on_started is None and on_started_process is None:
             return subprocess.run(
                 command, env=env, shell=False, check=False,
                 stdout=stdout, stderr=subprocess.STDOUT, timeout=timeout,
