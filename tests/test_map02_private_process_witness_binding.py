@@ -16,6 +16,7 @@ from unittest.mock import patch
 from tools.map02_private_process_witness_binding import (
     MAGIC, NAME, bind_owner_private_replays, main, read_started_process,
     record_started_process, windows_process_start_ticks,
+    linux_process_start_ticks, process_start_utc_ticks,
 )
 from tools.map02_private_process_group import run_owned_process
 
@@ -168,7 +169,7 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
 
     def test_writer_exclusive_file_and_private_mode(self):
         with patch(
-            "tools.map02_private_process_witness_binding.windows_process_start_ticks",
+            "tools.map02_private_process_witness_binding.process_start_utc_ticks",
             return_value=BIRTH_A,
         ):
             record_started_process(3011, self.root)
@@ -182,7 +183,7 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
     def test_writer_never_overwrites_symlink(self):
         (self.root / NAME).symlink_to(self.a_start)
         with patch(
-            "tools.map02_private_process_witness_binding.windows_process_start_ticks",
+            "tools.map02_private_process_witness_binding.process_start_utc_ticks",
             return_value=BIRTH_A,
         ):
             with self.assertRaises(FileExistsError):
@@ -198,6 +199,62 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
             self.skipTest("valid Windows query tested separately")
         with self.assertRaisesRegex(ValueError, "requires Windows"):
             windows_process_start_ticks(3011)
+
+    def test_linux_start_clock_ticks_uses_proc_field_22_and_strict_boot_time(self):
+        with tempfile.TemporaryDirectory() as temp:
+            proc = Path(temp)
+            (proc / "stat").write_text("cpu 1 2 3\\nbtime 1700000000\\n", encoding="ascii")
+            pid_dir = proc / "3011"
+            pid_dir.mkdir()
+            tail = ["S"] + ["0"] * 18 + ["12345"]
+            (pid_dir / "stat").write_text(
+                "3011 (worker ) with parens) " + " ".join(tail) + "\\n",
+                encoding="ascii",
+            )
+            expected = ((1700000000 * 100 + 12345) * 10_000_000) // 100
+            self.assertEqual(
+                linux_process_start_ticks(3011, proc_root=proc,
+                                          clock_ticks_per_second=100),
+                expected,
+            )
+
+    def test_linux_start_clock_rejects_pid_mismatch_and_changed_start_tick(self):
+        with tempfile.TemporaryDirectory() as temp:
+            proc = Path(temp)
+            (proc / "stat").write_text("btime 1700000000\\n", encoding="ascii")
+            pid_dir = proc / "3011"
+            pid_dir.mkdir()
+            tail = ["S"] + ["0"] * 18 + ["12345"]
+            (pid_dir / "stat").write_text(
+                "9999 (worker) " + " ".join(tail) + "\\n", encoding="ascii")
+            with self.assertRaisesRegex(ValueError, "identity is inconsistent"):
+                linux_process_start_ticks(3011, proc_root=proc,
+                                          clock_ticks_per_second=100)
+            (pid_dir / "stat").write_text(
+                "3011 (worker) " + " ".join(tail) + "\\n", encoding="ascii")
+            with patch(
+                "tools.map02_private_process_witness_binding._linux_proc_start_clock_ticks",
+                side_effect=[12345, 12346],
+            ):
+                with self.assertRaisesRegex(ValueError, "changed during observation"):
+                    linux_process_start_ticks(3011, proc_root=proc,
+                                              clock_ticks_per_second=100)
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux procfs identity only")
+    def test_linux_real_child_start_time_round_trips_to_private_receipt(self):
+        proc = subprocess.Popen(
+            [sys.executable, "-c", "import time;time.sleep(2)"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        try:
+            expected = linux_process_start_ticks(proc.pid)
+            self.assertEqual(process_start_utc_ticks(proc.pid), expected)
+            record_started_process(proc.pid, self.root)
+            self.assertEqual(read_started_process(self.root / NAME),
+                             (proc.pid, expected))
+        finally:
+            proc.terminate()
+            proc.wait()
 
     @unittest.skipUnless(os.name == "nt", "Windows Popen handle identity only")
     def test_process_object_observer_records_the_owned_child_handle(self):
