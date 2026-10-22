@@ -94,7 +94,7 @@ def main() -> int:
                     code = stage.returncode
                     print("VH_MAP02_WIN_ACL_STAGE_DIAG"
                           + " guard_stage=" + str(code if code in (
-                              0, 11, 12, 13, 14, 15, 16, 19) else 99),
+                              0, 11, 12, 13, 14, 15, 16, 21, 22, 23, 24, 25, 26, 27) else 99),
                           file=sys.stderr, flush=True)
                     print("VH_MAP02_WIN_ACL_PATH_DIAG"
                           + " script_is_absolute=" + str(SCRIPT.is_absolute()).lower()
