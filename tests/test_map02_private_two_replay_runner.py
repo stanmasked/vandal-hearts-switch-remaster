@@ -1144,7 +1144,8 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         self.assertFalse((self.workspace / RUN_NAMES[1]).exists())
 
 
-    def _exercise_first_png_frame_boundary(self, observed_frame):
+    def _exercise_first_png_frame_boundary(
+            self, observed_frame, *, pinned=False, witness_hash=None):
         fake_windows = type(
             "FakeOs", (), {
                 "name": "nt",
@@ -1155,6 +1156,8 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         external.mkdir(exist_ok=True)
         plugin = external / "VhMap02CoreWitness.dll"
         plugin.write_bytes(b"FICTIONAL_FRAME_BOUNDARY_PLUGIN")
+        pinned_sha256 = hashlib.sha256(plugin.read_bytes()).hexdigest() if pinned else None
+        reported_sha256 = witness_hash or pinned_sha256 or ("a" * 64)
         with patch(
             "tools.map02_private_two_replay_runner.os", fake_windows,
         ), patch(
@@ -1183,7 +1186,7 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
             return_value=(123, 456),
         ), patch(
             "tools.map02_private_core_witness_audit.read_witness_record",
-            return_value=(123, 456, observed_frame, "a" * 64),
+            return_value=(123, 456, observed_frame, reported_sha256),
         ), patch(
             "tools.verify_map02_private_neutral_capture_chain.parse_plan",
             return_value=("fictional-plan", [
@@ -1197,6 +1200,7 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
                     *self.args, start=True, run_count=1,
                     record_windows_process_identity=True,
                     auto_core_witness_plugin=plugin,
+                    core_witness_sha256=pinned_sha256,
                 )
             except ValueError as exc:
                 result = exc
@@ -1210,6 +1214,23 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         process.assert_called_once()
         audit.assert_called_once()
         pair.assert_not_called()
+
+    def test_runtime_tool_hash_matches_installed_pin(self):
+        report, process, audit, pair = self._exercise_first_png_frame_boundary(
+            3001, pinned=True)
+        self.assertIsInstance(report, dict)
+        self.assertTrue(report["runtime_tool_file_hash_reported_by_witness_matches_pin"])
+        self.assertEqual(process.call_count, 1)
+        pair.assert_not_called()
+
+    def test_runtime_tool_hash_mismatch_blocks_capture_acceptance(self):
+        result, process, audit, pair = self._exercise_first_png_frame_boundary(
+            3001, pinned=True, witness_hash="f" * 64)
+        self.assertIsInstance(result, ValueError)
+        self.assertRegex(str(result), "runtime witness tool hash differs")
+        self.assertEqual(process.call_count, 1)
+        pair.assert_not_called()
+        self.assertFalse((self.workspace / RUN_NAMES[1]).exists())
 
     def test_auto_core_witness_after_first_png_frame_is_rejected(self):
         result, process, audit, pair = self._exercise_first_png_frame_boundary(3002)
