@@ -27,6 +27,7 @@ from tools.map02_private_process_witness_binding import (
     read_started_process,
 )
 from tools.map02_private_core_witness_audit import read_witness
+from tools.map02_private_witness_plugin_digest import require_pinned_core_witness_dll
 
 AUTO_WITNESS_NAME = "vh-map02-runtime-core-auto.txt"
 AUTO_WITNESS_ENV = "VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR"
@@ -87,7 +88,8 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
                  minimum: int = 180, maximum: int = 1800,
                  after: int = 1663, before: int = MOVIE_LENGTH,
                  private_full_bin_sha256_file: Path | None = None,
-                 auto_core_witness_plugin: Path | None = None):
+                 auto_core_witness_plugin: Path | None = None,
+                 core_witness_sha256: str | None = None):
     """Return argv/env without starting EmuHawk or exposing paths to stdout."""
     executable = Path(private_emuhawk)
     if not executable.is_absolute() or not executable.is_file():
@@ -190,9 +192,13 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
     if process_log_path.exists() or process_log_path.is_symlink():
         raise ValueError("private EmuHawk process log already exists: no overwrite")
 
+    if core_witness_sha256 is not None and auto_core_witness_plugin is None:
+        raise ValueError("owner core witness digest needs a matching DLL")
     plugin = None
     if auto_core_witness_plugin is not None:
         plugin = require_matching_core_plugin(executable, auto_core_witness_plugin)
+        if core_witness_sha256 is not None:
+            require_pinned_core_witness_dll(plugin, core_witness_sha256)
         target = root / AUTO_WITNESS_NAME
         if target.exists() or target.is_symlink():
             raise ValueError("owner private automatic core witness already exists")
@@ -209,6 +215,9 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
     env.pop(AUTO_WITNESS_ENV, None)
     if plugin is not None:
         env[AUTO_WITNESS_ENV] = str(root)
+        # Set only by an explicit option; never accept ambient path as proof.
+        if core_witness_sha256 is not None:
+            env["VH_BIZHAWK_CORE_PLUGIN_PINNED_FILE"] = str(plugin)
     env["VH_PRIVATE_CAPTURE_PLAN"] = str(plan)
     env["VH_PRIVATE_PNG_DIR"] = str(root)
     env["VH_PRIVATE_CAPTURE_LOG"] = str(log_path)
@@ -264,6 +273,8 @@ def main() -> int:
     )
     parser.add_argument("--auto-core-witness-plugin", type=Path,
                         help="Owner opt-in: installed BizHawk 2.11 external DLL creates one private early PSX core-only receipt")
+    parser.add_argument("--private-core-witness-sha256", type=str,
+                        help="Owner opt-in: trust-pinned 64-hex digest of installed experimental C# DLL")
     parser.add_argument(
         "--record-process-identity", action="store_true",
         help="Windows only: create a private 0600 actual EmuHawk PID/start-time receipt",
@@ -286,7 +297,8 @@ def main() -> int:
             minimum=args.min_neutral_frames, maximum=args.max_neutral_frames,
             after=args.after_input_frame, before=args.before_input_frame,
             private_full_bin_sha256_file=args.private_full_bin_sha256_file,
-            auto_core_witness_plugin=args.auto_core_witness_plugin)
+            auto_core_witness_plugin=args.auto_core_witness_plugin,
+            core_witness_sha256=args.private_core_witness_sha256)
     except (OSError, ValueError, TypeError, UnicodeError, RuntimeError):
         parser.error("private BizHawk power-on launch preflight failed")
     if args.record_process_identity and args.launch:
@@ -366,6 +378,13 @@ def main() -> int:
               "original_ps1_authenticated=0 map02_identified=0")
         return 1
     success = result.returncode == 0
+    if args.private_core_witness_sha256 is not None:
+        try:
+            require_pinned_core_witness_dll(
+                Path(env["VH_BIZHAWK_CORE_PLUGIN_PINNED_FILE"]),
+                args.private_core_witness_sha256)
+        except (OSError, ValueError, TypeError):
+            success = False
     if success and args.auto_core_witness_plugin is not None:
         # Never accept a zero process exit without the receipt from THIS
         # exact EmuHawk PID + native process-birth time.
