@@ -503,6 +503,26 @@ class PrivateBizHawkBootTests(unittest.TestCase):
             _, env, _ = self.call(auto_core_witness_plugin=plugin)
         self.assertEqual(env["VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256"], "b" * 64)
         self.assertEqual(env["VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256"], "c" * 64)
+        with patch.dict(os.environ, {
+            "VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256": "invalid",
+            "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256": "c" * 64,
+        }):
+            with self.assertRaisesRegex(ValueError, "SHA256 pin is malformed"):
+                self.call(auto_core_witness_plugin=plugin)
+
+    def test_trust_pinned_capture_requires_both_runtime_module_pins(self):
+        plugin = self.make_auto_plugin()
+        digest = hashlib.sha256(plugin.read_bytes()).hexdigest()
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(ValueError, "requires an independent managed runtime core assembly SHA256 pin"):
+                self.call(auto_core_witness_plugin=plugin, core_witness_sha256=digest)
+        with patch.dict(os.environ, {
+            "VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256": "b" * 64,
+            "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256": "c" * 64,
+        }):
+            _, env, _ = self.call(auto_core_witness_plugin=plugin, core_witness_sha256=digest)
+        self.assertEqual(env["VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256"], "b" * 64)
+        self.assertEqual(env["VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256"], "c" * 64)
 
     def test_refuse_auto_plugin_from_unrelated_directory(self):
         plugin = self.root / "wrong" / "VhMap02CoreWitness.dll"
@@ -617,10 +637,14 @@ class PrivateBizHawkBootTests(unittest.TestCase):
     def test_private_pin_accepts_only_installed_matching_fake_dll(self):
         plugin = self.make_auto_plugin()
         digest = hashlib.sha256(plugin.read_bytes()).hexdigest()
-        argv, env, count = self.call(
-            auto_core_witness_plugin=plugin,
-            core_witness_sha256=digest.upper(),
-        )
+        with patch.dict(os.environ, {
+            "VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256": "b" * 64,
+            "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256": "c" * 64,
+        }):
+            argv, env, count = self.call(
+                auto_core_witness_plugin=plugin,
+                core_witness_sha256=digest.upper(),
+            )
         self.assertEqual(count, 3)
         self.assertTrue(any(x.startswith("--open-ext-tool-dll=") for x in argv))
         self.assertNotIn("VH_BIZHAWK_CORE_PLUGIN_PINNED_FILE", env)
@@ -661,7 +685,10 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         def imaginary_process(*_args, **_kwargs):
             plugin.write_bytes(b"FICTIONAL_CORE_DLL_MODIFIED_WHILE_EMUHAWK_WOULD_RUN")
             return Mock(returncode=0)
-        with patch.object(sys, "argv", command), patch(
+        with patch.dict(os.environ, {
+            "VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256": "b" * 64,
+            "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256": "c" * 64,
+        }), patch.object(sys, "argv", command), patch(
             "tools.map02_private_bizhawk_poweron_launch.os", fake_windows,
         ), patch(
             "tools.map02_private_bizhawk_poweron_launch.plan_lines",
