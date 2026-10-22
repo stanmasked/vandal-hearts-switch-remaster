@@ -81,6 +81,21 @@ def main() -> int:
                         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE, check=False, timeout=30,
                     )
+                    stage_file = SCRIPT.with_name(
+                        "map02_windows_acl_child_stage_probe.ps1")
+                    stage = subprocess.run(
+                        ["powershell.exe", "-NoProfile", "-NonInteractive",
+                         "-ExecutionPolicy", "Bypass", "-File",
+                         str(stage_file.resolve(strict=True)),
+                         "-Directory", str(workspace.resolve(strict=True))],
+                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL, check=False, timeout=30,
+                    )
+                    code = stage.returncode
+                    print("VH_MAP02_WIN_ACL_STAGE_DIAG"
+                          + " guard_stage=" + str(code if code in (
+                              0, 11, 12, 13, 14, 15, 16, 19) else 99),
+                          file=sys.stderr, flush=True)
                     print("VH_MAP02_WIN_ACL_PATH_DIAG"
                           + " script_is_absolute=" + str(SCRIPT.is_absolute()).lower()
                           + " original_equals_resolved=" + str(original == resolved).lower()
