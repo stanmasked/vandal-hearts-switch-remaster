@@ -28,6 +28,7 @@ from tools.map02_private_disc_movie_preflight import (
     inspect_pair, read_private_full_bin_sha256, _full_image_sha256, _read_cue,
 )
 from tools.map02_private_psx_firmware_probe import compare_firmware
+from tools.map02_windows_private_output_acl import require_windows_private_output
 from tools.map02_private_two_capture_audit import _private_root, audit_pair
 from tools.verify_map02_private_neutral_capture_chain import verify
 
@@ -186,6 +187,7 @@ def _capture_dir(path: Path) -> None:
         info = path.stat()
         if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o077:
             raise ValueError("private capture output directory must be owner-only")
+    require_windows_private_output(path)
 
 
 def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
