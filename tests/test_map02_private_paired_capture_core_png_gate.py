@@ -37,7 +37,7 @@ def start_receipt(pid: int, birth: int) -> bytes:
 
 
 def core_receipt(pid: int, birth: int) -> bytes:
-    return ("VH_MAP02_RUNTIME_CORE_WITNESS_V1\n"
+    return ("VH_MAP02_RUNTIME_CORE_WITNESS_V2\n"
             "system=PSX\nloaded_core=Octoshock\n"
             "core_source=IEmulator.Attributes.CoreName\n"
             "tool_assembly_sha256=" + "a" * 64 + "\n"
