@@ -562,7 +562,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         witness = self.output / "vh-map02-runtime-core-auto.txt"
         def core(when):
             return (
-                "VH_MAP02_RUNTIME_CORE_WITNESS_V1\nsystem=PSX\n"
+                "VH_MAP02_RUNTIME_CORE_WITNESS_V2\nsystem=PSX\n"
                 "loaded_core=Octoshock\n"
                 "core_source=IEmulator.Attributes.CoreName\n"
                 "tool_assembly_sha256=" + "a" * 64 + "\n"
