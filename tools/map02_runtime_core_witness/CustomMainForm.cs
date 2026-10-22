@@ -31,6 +31,10 @@ namespace VhMap02CoreWitness
         private const string AutomaticWitnessFile = "vh-map02-runtime-core-auto.txt";
         private const string AutomaticWitnessEnvironment = "VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR";
         private const string ExpectedAssemblySha256Environment = "VH_MAP02_CORE_EXPECTED_DLL_SHA256";
+        private const string ExpectedCoreAssemblySha256Environment = "VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256";
+        private const string ExpectedNativeModuleSha256Environment = "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256";
+        private const string ExpectedRuntimeCoreType = "BizHawk.Emulation.Cores.Sony.PSX.Octoshock";
+        private const string NativeCoreModuleName = "octoshock.dll";
         protected override string WindowTitleStatic => "VH MAP02 PSX core witness";
 
         public CoreWitnessForm()
@@ -88,7 +92,29 @@ namespace VhMap02CoreWitness
                 _save.Enabled = false;
                 return;
             }
-            _summary.Text = "Loaded IEmulator reports PSX / Octoshock."
+            var runtimeType = core.GetType();
+            if (!string.Equals(runtimeType.FullName, ExpectedRuntimeCoreType,
+                    StringComparison.Ordinal)
+                || !string.Equals(runtimeType.Assembly.GetName().Name,
+                    "BizHawk.Emulation.Cores", StringComparison.Ordinal))
+            {
+                _summary.Text = "Octoshock name does not match the concrete BizHawk runtime type.";
+                _save.Enabled = false;
+                return;
+            }
+            try
+            {
+                // Core identity alone is insufficient: Octoshock's native
+                // library must also be mapped in this exact EmuHawk process.
+                FindLoadedNativeCoreModulePath();
+            }
+            catch (Exception)
+            {
+                _summary.Text = "Octoshock native module is not present; capture disabled.";
+                _save.Enabled = false;
+                return;
+            }
+            _summary.Text = "Concrete BizHawk PSX/Octoshock and native module are loaded."
                 + Environment.NewLine
                 + "BIOS, disc image and BK2 replay are NOT verified.";
             _save.Enabled = true;
@@ -174,12 +200,31 @@ namespace VhMap02CoreWitness
             }
         }
 
-        private static string ExecutingAssemblyFileSha256()
+        private static string FindLoadedNativeCoreModulePath()
         {
-            // This hashes the file at the executing assembly location. It is
-            // an in-process self-check, NOT cryptographic proof of in-memory
-            // module bytes or an independent OS attestation of the loaded DLL.
-            var location = typeof(CoreWitnessForm).Assembly.Location;
+            string found = null;
+            using (var process = Process.GetCurrentProcess())
+            {
+                foreach (ProcessModule module in process.Modules)
+                {
+                    if (!string.Equals(module.ModuleName, NativeCoreModuleName,
+                            StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (!string.IsNullOrEmpty(found))
+                        throw new InvalidOperationException();
+                    found = module.FileName;
+                }
+            }
+            if (string.IsNullOrEmpty(found) || !Path.IsPathRooted(found)
+                || !File.Exists(found))
+                throw new InvalidOperationException();
+            return found;
+        }
+
+        private static string FileSha256(string location)
+        {
+            // Hash the mapped module's on-disk file, not its in-memory pages.
+            // FileShare.Read blocks ordinary concurrent writes while hashing.
             if (string.IsNullOrEmpty(location) || !Path.IsPathRooted(location)
                 || !File.Exists(location)) throw new InvalidOperationException();
             using (var input = new FileStream(
@@ -187,6 +232,22 @@ namespace VhMap02CoreWitness
             using (var sha = SHA256.Create())
                 return BitConverter.ToString(sha.ComputeHash(input))
                     .Replace("-", "").ToLowerInvariant();
+        }
+
+        private static string ExecutingAssemblyFileSha256()
+        {
+            // This hashes the file at the executing assembly location. It is
+            // NOT cryptographic proof of CLR in-memory module bytes.
+            return FileSha256(typeof(CoreWitnessForm).Assembly.Location);
+        }
+
+        private static void RequireOptionalSha256Pin(string environmentName, string actual)
+        {
+            var expected = Environment.GetEnvironmentVariable(environmentName);
+            if (string.IsNullOrEmpty(expected)) return;
+            if (!IsSha256Hex(expected)
+                || !string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException();
         }
 
         private static bool IsSha256Hex(string value)
@@ -207,26 +268,39 @@ namespace VhMap02CoreWitness
                 || actualCore.Attributes()?.CoreName != "Octoshock"
                 || actualCore.Frame < 0) throw new InvalidOperationException();
 
-            var executingAssemblySha256 = ExecutingAssemblyFileSha256();
-            var expectedAssemblySha256 = Environment.GetEnvironmentVariable(
-                ExpectedAssemblySha256Environment);
-            // The private launcher sets this only when the owner supplies the
-            // independently trusted exact-run artifact digest. Fail closed on
-            // malformed or mismatching pins before writing any witness.
-            if (!string.IsNullOrEmpty(expectedAssemblySha256)
-                && (!IsSha256Hex(expectedAssemblySha256)
-                    || !string.Equals(executingAssemblySha256,
-                        expectedAssemblySha256, StringComparison.OrdinalIgnoreCase)))
+            var runtimeType = actualCore.GetType();
+            if (!string.Equals(runtimeType.FullName, ExpectedRuntimeCoreType,
+                    StringComparison.Ordinal)
+                || !string.Equals(runtimeType.Assembly.GetName().Name,
+                    "BizHawk.Emulation.Cores", StringComparison.Ordinal))
                 throw new InvalidOperationException();
+
+            var coreAssemblySha256 = FileSha256(runtimeType.Assembly.Location);
+            var nativeModuleSha256 = FileSha256(FindLoadedNativeCoreModulePath());
+            var executingAssemblySha256 = ExecutingAssemblyFileSha256();
+
+            // Pins are optional, independently supplied local values. If set,
+            // each must match before a witness is written. Missing pins do not
+            // become implicit claims of official-file authenticity.
+            RequireOptionalSha256Pin(ExpectedAssemblySha256Environment,
+                executingAssemblySha256);
+            RequireOptionalSha256Pin(ExpectedCoreAssemblySha256Environment,
+                coreAssemblySha256);
+            RequireOptionalSha256Pin(ExpectedNativeModuleSha256Environment,
+                nativeModuleSha256);
 
             using (var process = Process.GetCurrentProcess())
             {
                 var start = process.StartTime.ToUniversalTime().Ticks;
                 if (process.Id <= 0 || start <= 0) throw new InvalidOperationException();
-                return "VH_MAP02_RUNTIME_CORE_WITNESS_V2\n"
+                return "VH_MAP02_RUNTIME_CORE_WITNESS_V3\n"
                     + "system=PSX\n"
                     + "loaded_core=Octoshock\n"
                     + "core_source=IEmulator.Attributes.CoreName\n"
+                    + "runtime_core_type=" + ExpectedRuntimeCoreType + "\n"
+                    + "core_assembly_sha256=" + coreAssemblySha256 + "\n"
+                    + "native_core_module_name=" + NativeCoreModuleName + "\n"
+                    + "native_core_module_sha256=" + nativeModuleSha256 + "\n"
                     + "tool_assembly_sha256=" + executingAssemblySha256 + "\n"
                     + "process_id=" + process.Id + "\n"
                     + "process_start_utc_ticks=" + start + "\n"

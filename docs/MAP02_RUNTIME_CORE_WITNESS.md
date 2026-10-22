@@ -313,7 +313,8 @@ a private process identifier.
 While the original PS1 game is running in each independently launched
 EmuHawk process:
 
-- Verify that the tool says the injected `IEmulator` reports PSX/Octoshock.
+- Verify that the tool confirms the concrete BizHawk `Octoshock` runtime
+  type and that `octoshock.dll` is mapped in the same EmuHawk process.
 - Choose **Write private core witness...** and select an **existing,
   owner-private folder outside any Git repository or symlinked directory**.
   The tool creates a new uniquely named plain-text file without overwriting.
@@ -322,10 +323,10 @@ EmuHawk process:
   same owner-private folder. Two clicks in one process are not independent
   replays and the verifier rejects them.
 
-**Privacy:** the folder chooser uses the operating system's permissions.
-On Windows, restrict the selected folder to the owner in Windows security
-properties. The tool does not grant or validate NTFS ACLs. It does not
-attempt to read/write BIOS, BIN, BK2 or PNG content.
+**Privacy:** the tool does not grant NTFS permissions. It checks the selected
+folder's owner and effective allow-list before writing, and rejects unexpected
+allow ACEs, symlink/reparse paths and Git worktrees. It does not attempt to
+read/write BIOS, BIN, BK2 or PNG content.
 
 ## Local paired audit
 
@@ -409,3 +410,39 @@ Official sources consulted: BizHawk
 ### Stage521 — bind the receipt to the direct child handle
 
 The Windows launcher now passes the direct Popen process handle to the process-start receipt writer. The writer asks GetProcessId to confirm that the handle belongs to the recorded PID and reads GetProcessTimes from that same handle. This avoids the avoidable race in which a child exits and its numeric PID is reused before a separate OpenProcess call. The older PID-only query remains available for standalone owner-local use, but the paired capture path uses the owned handle. This narrows an accidental mismatch window; the editable local text receipts are still not cryptographic or OS attestation.
+
+
+### Stage522 — require the concrete Octoshock implementation and fingerprint its native module
+
+The previous V2 schema accepted any injected `IEmulator` whose system ID,
+core-name attribute and frame counter looked like PSX/Octoshock. The loader
+smoke test exposed this as a meaningful false-positive: a synthetic test double
+could satisfy those interface-level checks and cause a witness to be written.
+V3 now fails closed unless the injected object's concrete type is exactly
+`BizHawk.Emulation.Cores.Sony.PSX.Octoshock` from the `BizHawk.Emulation.Cores`
+assembly.
+
+Before enabling the save control or writing a receipt, the tool also requires
+`octoshock.dll` to be present in the current EmuHawk process module list. V3
+records three local file digests: the External Tool assembly, the managed core
+assembly, and the on-disk file identified by the loaded native module path.
+The independent Python audit validates the exact type and module name and
+rejects paired captures if any of those file digests differ.
+
+The verified BizHawk 2.11 release workflow now prints two additional
+public-safe markers, `VH_BIZHAWK211_CORE_ASSEMBLY_SHA256` and
+`VH_BIZHAWK211_NATIVE_OCTOSHOCK_SHA256`. Their values are derived from the
+SHA-256-verified upstream release archive and can be supplied privately as
+`VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256` and
+`VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256` when launching the owner-local
+capture. The External Tool rejects malformed or mismatching supplied pins.
+If no pin is supplied, the audit only checks that the reported hashes match
+between independent receipts; it explicitly reports both core-file pins as
+not independently verified.
+
+These are hashes of files on disk, not a measurement of the native module's
+in-memory pages. The receipt remains editable text and is not OS attestation.
+No original PS1, BIOS, BK2 or screenshots are included in CI. The no-media
+loader test now proves that a fake Octoshock-named `IEmulator` is rejected,
+rather than treating a synthetic positive receipt as evidence of real core
+execution.
