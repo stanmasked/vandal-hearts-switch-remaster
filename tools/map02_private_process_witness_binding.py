@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Owner-local process-start receipt and offline PSX core-witness binding.
 
-Only links the PID + Windows process creation time of an EmuHawk process
+Only links the PID + OS-backed Windows/Linux process creation time of an EmuHawk process
 launched by our private wrapper to an owner-saved External Tool receipt.
 No ROM, BIOS, BK2, screenshot bytes or identifying values reach public
 stdout/GitHub. This DOES NOT cryptographically authenticate the receipts.
@@ -182,6 +182,11 @@ def record_started_process(
     # as owner-only and rejects any Git checkout input/output directories.
     if (directory / ".git").exists():
         raise ValueError("process identity receipt must be outside Git")
+    if os.name != "nt":
+        info = directory.stat()
+        if (info.st_uid != os.geteuid()
+                or stat.S_IMODE(info.st_mode) & 0o077):
+            raise ValueError("process identity receipt directory must be owner-only")
     ticks = process_start_utc_ticks(pid, process_handle=process_handle)
     path = directory / NAME
     payload = (
