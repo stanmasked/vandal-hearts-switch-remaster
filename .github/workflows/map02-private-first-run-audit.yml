@@ -4,6 +4,8 @@ on:
     paths:
       - '.github/workflows/map02-private-first-run-audit.yml'
       - 'tools/map02_private_first_run_audit.py'
+      - 'tools/map02_windows_private_output_acl.py'
+      - 'tests/test_map02_windows_private_output_acl.py'
       - 'tests/test_map02_private_first_run_audit.py'
       - 'tests/map02_windows_first_capture_acl_probe.py'
       - 'tools/map02_windows_first_capture_acl_ci_probe.ps1'
@@ -63,6 +65,12 @@ jobs:
         with:
           python-version: '3.11'
           architecture: x64
+      - name: Check Python headless Windows PowerShell null-stdin guard contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m unittest discover -s tests -p 'test_map02_windows_private_output_acl.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'headless Windows ACL guard contract rejected' }
       - name: Reject Everyone-readable one-run output using real NTFS ACL and fake process receipts
         shell: pwsh
         run: |
