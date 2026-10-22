@@ -147,11 +147,17 @@ namespace VhMap02CoreWitness
                 // CreateNew prevents replacing stale/manual evidence.
                 using (var output = new FileStream(
                     target, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                using (var writer = new StreamWriter(output, new UTF8Encoding(false)))
                 {
-                    writer.Write(payload);
-                    writer.Flush();
-                    output.Flush(true);
+#if VH_MAP02_UNIX_BUILD
+                    if (Syscall.chmod(target, FilePermissions.S_IRUSR | FilePermissions.S_IWUSR) != 0)
+                        throw new InvalidOperationException();
+#endif
+                    using (var writer = new StreamWriter(output, new UTF8Encoding(false)))
+                    {
+                        writer.Write(payload);
+                        writer.Flush();
+                        output.Flush(true);
+                    }
                 }
                 _summary.Text = "PSX/Octoshock automatic private core-only witness saved."
                     + Environment.NewLine
@@ -450,12 +456,18 @@ namespace VhMap02CoreWitness
                     // Exclusive creation; do not overwrite or append to media.
                     using (var output = new FileStream(
                         target, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                    using (var writer = new StreamWriter(
-                        output, new UTF8Encoding(false)))
                     {
-                        writer.Write(payload);
-                        writer.Flush();
-                        output.Flush(true);
+#if VH_MAP02_UNIX_BUILD
+                        if (Syscall.chmod(target, FilePermissions.S_IRUSR | FilePermissions.S_IWUSR) != 0)
+                            throw new InvalidOperationException();
+#endif
+                        using (var writer = new StreamWriter(
+                            output, new UTF8Encoding(false)))
+                        {
+                            writer.Write(payload);
+                            writer.Flush();
+                            output.Flush(true);
+                        }
                     }
                     MessageBox.Show(this,
                         "A core-only witness was written privately. "
