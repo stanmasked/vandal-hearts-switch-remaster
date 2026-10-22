@@ -8,6 +8,8 @@ on:
       - 'tools/map02_private_two_capture_audit.py'
       - 'tools/map02_private_two_replay_runner.py'
       - 'tools/map02_private_process_group.py'
+      - 'tools/map02_private_process_witness_binding.py'
+      - 'tests/test_map02_private_process_witness_binding.py'
       - 'tests/test_map02_private_process_group.py'
       - 'tests/test_map02_private_two_replay_runner.py'
       - 'tests/test_map02_private_two_capture_audit.py'
@@ -113,3 +115,19 @@ jobs:
           fi
           test -n "$test_count"
           echo "VH_MAP02_PRIVATE_PROCESS_GROUP_SYNTHETIC_PASS tests=${test_count} original_emulator=0 game_data=0 ps1=unverified"
+
+      - name: Bind invented EmuHawk process birth receipts to fake Octoshock core witnesses
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_map02_private_process_witness_binding.py' -v \
+            2>&1 | tee /tmp/map02-private-birth-witness.log
+          count=$(sed -nE 's/^Ran ([1-9][0-9]*) tests? in .*$/\1/p' /tmp/map02-private-birth-witness.log)
+          if [[ "$count" != "19" ]]; then
+            echo 'unexpected fictional process-core binding test count' >&2
+            exit 1
+          fi
+          if grep -E '^(FAILED|ERROR)' /tmp/map02-private-birth-witness.log; then exit 1; fi
+          grep -E '^OK' /tmp/map02-private-birth-witness.log
+          echo "VH_MAP02_OWNER_PROCESS_CORE_BINDING_SYNTHETIC_PASS cases=$count real_psx=0 original_bk2=0"
