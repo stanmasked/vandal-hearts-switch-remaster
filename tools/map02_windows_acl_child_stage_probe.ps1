@@ -10,7 +10,7 @@ try {
     $item = Get-Item -LiteralPath $Directory -Force -ErrorAction Stop
     if (-not $item.PSIsContainer) { exit 12 }
     $stage = 3
-    $acl = Get-Acl -LiteralPath $item.FullName -ErrorAction Stop
+    $acl = [System.IO.Directory]::GetAccessControl($item.FullName)
     $stage = 4
     $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
     if ($null -eq $user) { exit 13 }
