@@ -215,9 +215,6 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
     env.pop(AUTO_WITNESS_ENV, None)
     if plugin is not None:
         env[AUTO_WITNESS_ENV] = str(root)
-        # Set only by an explicit option; never accept ambient path as proof.
-        if core_witness_sha256 is not None:
-            env["VH_BIZHAWK_CORE_PLUGIN_PINNED_FILE"] = str(plugin)
     env["VH_PRIVATE_CAPTURE_PLAN"] = str(plan)
     env["VH_PRIVATE_PNG_DIR"] = str(root)
     env["VH_PRIVATE_CAPTURE_LOG"] = str(log_path)
@@ -381,7 +378,7 @@ def main() -> int:
     if args.private_core_witness_sha256 is not None:
         try:
             require_pinned_core_witness_dll(
-                Path(env["VH_BIZHAWK_CORE_PLUGIN_PINNED_FILE"]),
+                args.auto_core_witness_plugin,
                 args.private_core_witness_sha256)
         except (OSError, ValueError, TypeError):
             success = False
