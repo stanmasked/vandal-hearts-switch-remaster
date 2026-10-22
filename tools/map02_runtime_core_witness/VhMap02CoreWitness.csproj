@@ -17,6 +17,15 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(VH_MAP02_UNIX_BUILD)' == 'true'">
+    <DefineConstants>$(DefineConstants);VH_MAP02_UNIX_BUILD</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(VH_MAP02_UNIX_BUILD)' == 'true'">
+    <Reference Include="Mono.Posix">
+      <HintPath>$(VH_MONO_POSIX_PATH)</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
   <ItemGroup Condition="'$(VH_BIZHAWK_RELEASE_ROOT)' != ''">
     <Reference Include="System.Windows.Forms" />
     <Reference Include="BizHawk.Client.Common">
