@@ -132,12 +132,10 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
     mono = None
     if mono_executable is not None:
         mono_candidate = Path(mono_executable)
-        if (not sys.platform.startswith("linux")
-                or not mono_candidate.is_absolute()
-                or mono_candidate.is_symlink() or not mono_candidate.is_file()):
-            raise ValueError("Linux Mono executable requires an absolute regular file")
+        if not sys.platform.startswith("linux") or not mono_candidate.is_absolute():
+            raise ValueError("Linux Mono executable requires an absolute path")
         mono = mono_candidate.resolve(strict=True)
-        if not os.access(mono, os.X_OK):
+        if not mono.is_file() or mono.is_symlink() or not os.access(mono, os.X_OK):
             raise ValueError("Linux Mono executable is not executable")
     lua = Path(script)
     if not lua.is_absolute() or not lua.is_file():
@@ -353,7 +351,7 @@ def main() -> int:
                         help="Owner opt-in: trust-pinned 64-hex digest of installed experimental C# DLL")
     parser.add_argument(
         "--record-process-identity", action="store_true",
-        help="Windows only: create a private 0600 actual EmuHawk PID/start-time receipt",
+        help="Create a private 0600 actual EmuHawk PID/start-time receipt on supported Windows/Linux hosts",
     )
     parser.add_argument("--launch", action="store_true",
                         help="open BizHawk locally; without this, validate only")
