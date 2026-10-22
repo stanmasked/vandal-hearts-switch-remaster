@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -24,8 +25,9 @@ class PrivateDiscPartsTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def split(self, chunk_size=1024):
-        self.manifest_path, manifest = split_image(self.source, self.parts_dir, chunk_size)
+    def split(self, chunk_size=1024, expected_sha256=None):
+        self.manifest_path, manifest = split_image(
+            self.source, self.parts_dir, chunk_size, expected_sha256=expected_sha256)
         return manifest
 
     def test_split_and_join_round_trip(self):
@@ -38,6 +40,17 @@ class PrivateDiscPartsTests(unittest.TestCase):
         result = join_parts(self.manifest_path, self.parts_dir, output)
         self.assertEqual(result["total_bytes"], self.source.stat().st_size)
         self.assertEqual(output.read_bytes(), self.source.read_bytes())
+
+    def test_split_accepts_expected_sha256(self):
+        expected = hashlib.sha256(self.source.read_bytes()).hexdigest()
+        manifest = self.split(expected_sha256=expected)
+        self.assertEqual(manifest["total_sha256"], expected)
+
+    def test_split_rejects_wrong_expected_sha256_and_cleans_outputs(self):
+        with self.assertRaisesRegex(ValueError, "does not match expected private reference"):
+            split_image(self.source, self.parts_dir, 1024, expected_sha256="0" * 64)
+        self.assertTrue(self.parts_dir.is_dir())
+        self.assertEqual(list(self.parts_dir.iterdir()), [])
 
     def test_split_refuses_overwrite(self):
         self.split()

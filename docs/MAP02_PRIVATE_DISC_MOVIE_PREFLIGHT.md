@@ -218,15 +218,23 @@ the BK2, a part, or the generated private manifest to Git.
 The helper tools/map02_private_disc_parts.py splits an unchanged local BIN
 into parts of 220 MiB by default (well below the transfer limit), and writes a
 private JSON manifest with the part order, sizes, and SHA-256 digests. It
-refuses to overwrite existing outputs. The inverse command verifies each part
-and the whole reconstructed image before reporting success; a mismatch deletes
-the partial output rather than leaving a misleading reconstructed file.
+refuses to overwrite existing outputs. The optional --expected-sha256 flag
+compares the streamed source against a digest already pinned in the owner's
+private local inventory; a mismatch removes every part and writes no manifest.
+This is a continuity check against that previously observed copy, not proof of
+release authenticity. Do not commit or publish the private digest. The inverse
+command verifies each part and the whole reconstructed image before reporting
+success; a mismatch deletes the partial output rather than leaving a misleading
+reconstructed file.
 
-Run from a clean checkout of the current working branch:
+Run from a clean checkout of the current working branch. Set
+VH_EXPECTED_BIN_SHA256 locally from the private pinned inventory before using
+the optional digest check; do not put it into a repository file:
 
     python3 -m tools.map02_private_disc_parts split \
       "/absolute/path/Vandal_Hearts_(RU)_v1.6.bin" \
-      "/absolute/path/vh-map02-private-parts"
+      "/absolute/path/vh-map02-private-parts" \
+      --expected-sha256 "$VH_EXPECTED_BIN_SHA256"
 
 Upload the three .partNN files and the .parts.json manifest to the
 owner-private Vandal Hearts Drive folder. Keep the manifest private because it

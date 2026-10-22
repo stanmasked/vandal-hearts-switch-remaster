@@ -37,7 +37,8 @@ def _sha256_hex(value: Any) -> bool:
 
 
 def split_image(source: Path, output_dir: Path,
-                chunk_size: int = DEFAULT_CHUNK_SIZE) -> tuple[Path, dict[str, Any]]:
+                chunk_size: int = DEFAULT_CHUNK_SIZE,
+                expected_sha256: str | None = None) -> tuple[Path, dict[str, Any]]:
     source = Path(source)
     output_dir = Path(output_dir)
     _regular_file(source, "source image")
@@ -45,6 +46,8 @@ def split_image(source: Path, output_dir: Path,
         raise ValueError("output directory must not be a symlink")
     if type(chunk_size) is not int or not 1 <= chunk_size <= MAX_CHUNK_SIZE:
         raise ValueError("chunk size must be between 1 byte and 240 MiB")
+    if expected_sha256 is not None and not _sha256_hex(expected_sha256):
+        raise ValueError("expected SHA-256 must be 64 lowercase hexadecimal characters")
 
     total_bytes = source.stat().st_size
     if total_bytes <= 0:
@@ -93,6 +96,8 @@ def split_image(source: Path, output_dir: Path,
         if (after.st_size != before.st_size or after.st_mtime_ns != before.st_mtime_ns
                 or remaining_total != 0):
             raise ValueError("source changed while it was being split")
+        if expected_sha256 is not None and whole_hash.hexdigest() != expected_sha256:
+            raise ValueError("source SHA-256 does not match expected private reference")
 
         manifest: dict[str, Any] = {
             "schema": SCHEMA,
@@ -218,6 +223,10 @@ def main() -> int:
     split_parser.add_argument("source", type=Path)
     split_parser.add_argument("output_dir", type=Path)
     split_parser.add_argument("--chunk-size-mib", type=int, default=220)
+    split_parser.add_argument(
+        "--expected-sha256",
+        help="optional private digest from a previously pinned local inventory; never logged",
+    )
     join_parser = commands.add_parser("join", help="verify and reconstruct private split parts")
     join_parser.add_argument("manifest", type=Path)
     join_parser.add_argument("parts_dir", type=Path)
@@ -226,7 +235,8 @@ def main() -> int:
     try:
         if args.command == "split":
             manifest_path, manifest = split_image(
-                args.source, args.output_dir, args.chunk_size_mib * 1024 * 1024)
+                args.source, args.output_dir, args.chunk_size_mib * 1024 * 1024,
+                expected_sha256=args.expected_sha256)
             print(f"VH_MAP02_PRIVATE_DISC_SPLIT_PASS parts={manifest['part_count']} "
                   f"total_bytes={manifest['total_bytes']} hashes_in_private_manifest=1 "
                   "original_media_uploaded=0")

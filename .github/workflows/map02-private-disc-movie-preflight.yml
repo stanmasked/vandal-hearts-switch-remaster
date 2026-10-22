@@ -74,7 +74,7 @@ jobs:
             -p 'test_map02_private_disc_parts.py' -v \
             2>&1 | tee /tmp/vh-map02-private-disc-parts.log
           count=$(sed -nE 's/^Ran ([1-9][0-9]*) tests? in .*$/\1/p' /tmp/vh-map02-private-disc-parts.log)
-          if [[ "$count" != "6" ]]; then
+          if [[ "$count" != "8" ]]; then
             echo 'unexpected fictional private disc-parts test count' >&2
             exit 1
           fi
