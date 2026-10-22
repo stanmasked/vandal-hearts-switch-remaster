@@ -118,7 +118,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw 'BizHawk 2.11 external tool loader smoke rejected compiled DLL'
           }
-          $expected = 'VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_PASS metadata=1 activation=1 missing_core_fail_closed=1 fake_iemulator_positive=1 fake_negative_gates=4 in_memory_fake_witness_schema=1 official_nullhawk_service_injected=1 official_nullhawk_snapshot_rejected=1 owner_only_ntfs_folder_accepted=1 publicly_readable_ntfs_folder_rejected=1 emulator_process_started=0 original_disc=0 bios=0 bk2=0'
+          $expected = 'VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_PASS metadata=1 activation=1 missing_core_fail_closed=1 fake_iemulator_positive=1 fake_negative_gates=4 in_memory_fake_witness_schema=1 official_nullhawk_service_injected=1 official_nullhawk_snapshot_rejected=1 owner_only_ntfs_folder_accepted=1 publicly_readable_ntfs_folder_rejected=1 synthetic_optin_automatic_core_witness=1 emulator_process_started=0 original_disc=0 bios=0 bk2=0'
           if (@($output).Count -ne 1 -or [string]$output -cne $expected) {
             throw 'strict synthetic IEmulator loader smoke marker mismatch'
           }
