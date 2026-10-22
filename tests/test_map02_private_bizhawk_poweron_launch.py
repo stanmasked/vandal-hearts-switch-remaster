@@ -1,5 +1,6 @@
 """Invented-only BizHawk CLI launch preflight and privacy tests."""
 import contextlib
+import hashlib
 import io
 import os
 from pathlib import Path
@@ -63,6 +64,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                 after=kwargs.pop("after", 1663),
                 before=kwargs.pop("before", 933949),
                 auto_core_witness_plugin=kwargs.pop("auto_core_witness_plugin", None),
+                core_witness_sha256=kwargs.pop("core_witness_sha256", None),
             )
         self.assertFalse(kwargs)
         self.assertEqual(source.call_args.kwargs["limit"], 1)
@@ -575,6 +577,32 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported evidence"):
             verify_private_auto_witness(self.output)
 
+
+
+    def test_private_pin_accepts_only_installed_matching_fake_dll(self):
+        plugin = self.make_auto_plugin()
+        digest = hashlib.sha256(plugin.read_bytes()).hexdigest()
+        argv, env, count = self.call(
+            auto_core_witness_plugin=plugin,
+            core_witness_sha256=digest.upper(),
+        )
+        self.assertEqual(count, 3)
+        self.assertTrue(any(x.startswith("--open-ext-tool-dll=") for x in argv))
+        self.assertNotIn("VH_BIZHAWK_CORE_PLUGIN_PINNED_FILE", env)
+        self.assertNotIn(str(plugin), " ".join(argv))
+
+    def test_private_pin_blocks_installed_fake_dll_swapped_after_install(self):
+        plugin = self.make_auto_plugin()
+        original = hashlib.sha256(plugin.read_bytes()).hexdigest()
+        plugin.write_bytes(b"CHANGED-FICTIONAL-BIZHAWK-DLL-STAGE517")
+        with self.assertRaisesRegex(ValueError, "differs from pinned build"):
+            self.call(auto_core_witness_plugin=plugin, core_witness_sha256=original)
+        self.assertFalse((self.output / "vh_private_capture.log").exists())
+
+    def test_private_pin_requires_auto_mode(self):
+        with self.assertRaisesRegex(ValueError, "digest needs"):
+            self.call(core_witness_sha256="a" * 64)
+        self.assertFalse((self.output / "vh_emuhawk_process.log").exists())
 
 
 if __name__ == "__main__":
