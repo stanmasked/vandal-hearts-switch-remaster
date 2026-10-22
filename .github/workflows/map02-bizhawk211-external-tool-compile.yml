@@ -13,6 +13,11 @@ on:
       - 'tools/map02_windows_private_acl_ci_probe.ps1'
       - 'tools/map02_private_process_witness_binding.py'
       - 'tests/test_map02_private_process_witness_binding.py'
+      - 'tools/map02_private_core_witness_audit.py'
+      - 'tests/test_map02_private_core_witness_audit.py'
+      - 'tests/test_map02_private_first_run_audit.py'
+      - 'tests/test_map02_private_paired_capture_core_png_gate.py'
+      - 'tools/map02_private_bizhawk_poweron_launch.py'
       - 'docs/MAP02_RUNTIME_CORE_WITNESS.md'
   workflow_dispatch:
 permissions:
@@ -72,8 +77,18 @@ jobs:
               throw 'expected official BizHawk assembly absent'
             }
           }
+          $coreFiles = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter 'BizHawk.Emulation.Cores.dll')
+          if ($coreFiles.Count -lt 1) { throw 'official runtime core assembly absent' }
+          $coreHashes = @($coreFiles | ForEach-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() } | Sort-Object -Unique)
+          if ($coreHashes.Count -ne 1) { throw 'official runtime core assembly copies have different hashes' }
+          $nativeFiles = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter 'octoshock.dll')
+          if ($nativeFiles.Count -lt 1) { throw 'official Octoshock native module absent' }
+          $nativeHashes = @($nativeFiles | ForEach-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() } | Sort-Object -Unique)
+          if ($nativeHashes.Count -ne 1) { throw 'official Octoshock native module copies have different hashes' }
           "VH_BIZHAWK_RELEASE_ROOT=$root" >> $env:GITHUB_ENV
           Write-Output 'VH_MAP02_OFFICIAL_BIZHAWK211_PIN_VERIFIED actual_game_assets=0'
+          Write-Output "VH_BIZHAWK211_CORE_ASSEMBLY_SHA256=$($coreHashes[0])"
+          Write-Output "VH_BIZHAWK211_NATIVE_OCTOSHOCK_SHA256=$($nativeHashes[0])"
       - name: Compile actual C# witness project against real upstream 2.11 DLLs
         shell: pwsh
         run: |
@@ -188,7 +203,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw 'BizHawk 2.11 external tool loader smoke rejected compiled DLL'
           }
-          $expected = 'VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_PASS metadata=1 activation=1 missing_core_fail_closed=1 fake_iemulator_positive=1 fake_negative_gates=4 in_memory_fake_witness_schema=2 official_nullhawk_service_injected=1 official_nullhawk_snapshot_rejected=1 owner_only_ntfs_folder_accepted=1 publicly_readable_ntfs_folder_rejected=1 synthetic_optin_automatic_core_witness=1 emulator_process_started=0 original_disc=0 bios=0 bk2=0'
+          $expected = 'VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_PASS metadata=1 activation=1 missing_core_fail_closed=1 fake_octoshock_impersonation_rejected=1 fake_negative_gates=5 exact_runtime_type_gate=1 in_memory_fake_witness_schema=0 official_nullhawk_service_injected=1 official_nullhawk_snapshot_rejected=1 owner_only_ntfs_folder_accepted=1 publicly_readable_ntfs_folder_rejected=1 synthetic_optin_fake_core_rejected=1 emulator_process_started=0 original_disc=0 bios=0 bk2=0'
           if (@($output).Count -ne 1 -or [string]$output -cne $expected) {
             throw 'strict synthetic IEmulator loader smoke marker mismatch'
           }
