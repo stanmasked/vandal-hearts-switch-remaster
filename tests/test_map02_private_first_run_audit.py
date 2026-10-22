@@ -70,7 +70,7 @@ class OwnerFirstCaptureAuditTests(unittest.TestCase):
         self.fake = self.root / "manual-fictional-octoshock.txt"
         self.fake.write_bytes(witness_bytes())
 
-    def review(self, *, manual=None, chain=None, rows=None):
+    def review(self, *, manual=None, chain=None, rows=None, expected_sha256=None):
         data = dict(CHAIN if chain is None else chain)
         planned = ROWS if rows is None else rows
         with patch(
@@ -80,7 +80,8 @@ class OwnerFirstCaptureAuditTests(unittest.TestCase):
             "tools.map02_private_first_run_audit.parse_plan",
             return_value=("fictional plan", planned),
         ) as parse:
-            report = review_first_capture(self.movie, self.workspace, manual)
+            report = review_first_capture(
+                self.movie, self.workspace, manual, expected_sha256)
         verify.assert_called_once_with(
             self.movie.resolve(strict=True), self.plan.resolve(strict=True),
             self.first.resolve(strict=True) / "vh_private_capture.log",
@@ -119,6 +120,23 @@ class OwnerFirstCaptureAuditTests(unittest.TestCase):
         (self.first / AUTO_WITNESS_NAME).write_bytes(witness_bytes(frame=3002))
         with self.assertRaisesRegex(ValueError, "later than first PNG"):
             self.review()
+
+    def test_supplied_tool_hash_pin_matches_and_is_not_disclosed(self):
+        result = self.review(expected_sha256="a" * 64)
+        self.assertTrue(result["runtime_tool_file_hash_matches_supplied_pin"])
+        self.assertTrue(result["runtime_tool_file_hash_pin_supplied"])
+        self.assertNotIn("a" * 64, json.dumps(result))
+
+    def test_mismatching_or_malformed_tool_hash_pin_rejected(self):
+        with self.assertRaisesRegex(ValueError, "differs from supplied pin"):
+            self.review(expected_sha256="b" * 64)
+        with self.assertRaisesRegex(ValueError, "pin is malformed"):
+            self.review(expected_sha256="not-a-sha256")
+
+    def test_unpinned_tool_hash_is_not_claimed_as_verified(self):
+        result = self.review()
+        self.assertFalse(result["runtime_tool_file_hash_matches_supplied_pin"])
+        self.assertFalse(result["runtime_tool_file_hash_pin_supplied"])
 
     def test_missing_or_wrong_process_receipt_rejected(self):
         target = self.first / START_NAME
