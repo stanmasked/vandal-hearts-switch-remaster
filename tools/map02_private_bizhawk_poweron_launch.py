@@ -24,7 +24,12 @@ from tools.map02_private_process_group import run_owned_process
 from tools.map02_windows_private_output_acl import require_windows_private_output
 from tools.map02_private_process_witness_binding import (
     NAME as OWNER_PROCESS_RECEIPT_NAME, record_started_process,
+    read_started_process,
 )
+from tools.map02_private_core_witness_audit import read_witness
+
+AUTO_WITNESS_NAME = "vh-map02-runtime-core-auto.txt"
+AUTO_WITNESS_ENV = "VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR"
 from tools.verify_map02_private_neutral_capture_chain import parse_plan
 
 MOVIE_LENGTH = 933949
@@ -56,13 +61,33 @@ def _reject_git(path: Path) -> None:
             raise ValueError("never open owner-private BK2/disc/plan/images inside Git checkout")
 
 
+
+def require_matching_core_plugin(emuhawk: Path, plugin: Path) -> Path:
+    """Require the sole owner-installed external tool next to this EmuHawk."""
+    emulator = Path(emuhawk)
+    candidate = Path(plugin)
+    if (not emulator.is_absolute() or not emulator.is_file()
+            or emulator.is_symlink() or not candidate.is_absolute()
+            or candidate.is_symlink() or not candidate.is_file()
+            or candidate.name != "VhMap02CoreWitness.dll"
+            or candidate.parent.name != "ExternalTools"
+            or candidate.parent.is_symlink()
+            or candidate.parent.parent.resolve(strict=True)
+               != emulator.parent.resolve(strict=True)):
+        raise ValueError(
+            "owner private automatic core witness DLL is not a matching installed external tool")
+    _reject_git(candidate)
+    return candidate.resolve(strict=True)
+
+
 def build_launch(private_emuhawk: Path, private_disc: Path,
                  private_bk2: Path, private_plan: Path,
                  private_png_root: Path, *,
                  script: Path = SCRIPT,
                  minimum: int = 180, maximum: int = 1800,
                  after: int = 1663, before: int = MOVIE_LENGTH,
-                 private_full_bin_sha256_file: Path | None = None):
+                 private_full_bin_sha256_file: Path | None = None,
+                 auto_core_witness_plugin: Path | None = None):
     """Return argv/env without starting EmuHawk or exposing paths to stdout."""
     executable = Path(private_emuhawk)
     if not executable.is_absolute() or not executable.is_file():
@@ -165,13 +190,25 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
     if process_log_path.exists() or process_log_path.is_symlink():
         raise ValueError("private EmuHawk process log already exists: no overwrite")
 
+    plugin = None
+    if auto_core_witness_plugin is not None:
+        plugin = require_matching_core_plugin(executable, auto_core_witness_plugin)
+        target = root / AUTO_WITNESS_NAME
+        if target.exists() or target.is_symlink():
+            raise ValueError("owner private automatic core witness already exists")
+
     args = [
         str(executable),
         "--movie=" + str(movie),
         "--lua=" + str(lua),
+        *(["--open-ext-tool-dll=VhMap02CoreWitness.dll"] if plugin is not None else []),
         str(disc),  # BizHawk expects the ROM/disc as final positional argument.
     ]
     env = os.environ.copy()
+    # Environment inheritance alone MUST NOT enable sensitive file writes.
+    env.pop(AUTO_WITNESS_ENV, None)
+    if plugin is not None:
+        env[AUTO_WITNESS_ENV] = str(root)
     env["VH_PRIVATE_CAPTURE_PLAN"] = str(plan)
     env["VH_PRIVATE_PNG_DIR"] = str(root)
     env["VH_PRIVATE_CAPTURE_LOG"] = str(log_path)
@@ -180,6 +217,15 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
     # not just movie length and inputs of any pre-existing GUI instance.
     env["VH_PRIVATE_EXPECTED_MOVIE"] = str(movie)
     return args, env, len(positions)
+
+
+def verify_private_auto_witness(root: Path) -> None:
+    """Reject an absent/stale auto-witness before accepting the local process."""
+    source = Path(root)
+    witness = read_witness(source / AUTO_WITNESS_NAME)
+    launch = read_started_process(source / OWNER_PROCESS_RECEIPT_NAME)
+    if witness[:2] != launch:
+        raise ValueError("private automatic core witness does not match launched process")
 
 
 def _append_private_log(path: Path, line: str) -> None:
@@ -216,6 +262,8 @@ def main() -> int:
         "--private-full-bin-sha256-file", type=Path,
         help="Privately hash the entire BIN against a user-local 0600 digest file",
     )
+    parser.add_argument("--auto-core-witness-plugin", type=Path,
+                        help="Owner opt-in: installed BizHawk 2.11 external DLL creates one private early PSX core-only receipt")
     parser.add_argument(
         "--record-process-identity", action="store_true",
         help="Windows only: create a private 0600 actual EmuHawk PID/start-time receipt",
@@ -225,6 +273,11 @@ def main() -> int:
     args = parser.parse_args()
     if not MIN_EMULATOR_TIMEOUT_SECONDS <= args.emulator_timeout_seconds <= MAX_EMULATOR_TIMEOUT_SECONDS:
         parser.error("EmuHawk timeout seconds must be within a bounded range")
+    if args.auto_core_witness_plugin is not None:
+        if not args.record_process_identity:
+            parser.error("automatic witness requires matching Windows process identity receipt")
+        if args.launch and os.name != "nt":
+            parser.error("automatic witness execution requires Windows")
     try:
         command, env, count = build_launch(
             args.absolute_emuhawk_executable, args.owner_private_ps1_disc,
@@ -232,7 +285,8 @@ def main() -> int:
             args.owner_private_png_directory, script=args.capture_lua,
             minimum=args.min_neutral_frames, maximum=args.max_neutral_frames,
             after=args.after_input_frame, before=args.before_input_frame,
-            private_full_bin_sha256_file=args.private_full_bin_sha256_file)
+            private_full_bin_sha256_file=args.private_full_bin_sha256_file,
+            auto_core_witness_plugin=args.auto_core_witness_plugin)
     except (OSError, ValueError, TypeError, UnicodeError, RuntimeError):
         parser.error("private BizHawk power-on launch preflight failed")
     if args.record_process_identity and args.launch:
@@ -312,6 +366,13 @@ def main() -> int:
               "original_ps1_authenticated=0 map02_identified=0")
         return 1
     success = result.returncode == 0
+    if success and args.auto_core_witness_plugin is not None:
+        # Never accept a zero process exit without the receipt from THIS
+        # exact EmuHawk PID + native process-birth time.
+        try:
+            verify_private_auto_witness(Path(env["VH_PRIVATE_PNG_DIR"]))
+        except (OSError, ValueError, TypeError, RuntimeError):
+            success = False
     try:
         _append_private_log(log_path,
             "VH_PRIVATE_BIZHAWK_LOCAL_PROCESS_EXITED exit_success=%d "

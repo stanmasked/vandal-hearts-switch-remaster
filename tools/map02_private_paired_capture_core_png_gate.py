@@ -17,13 +17,15 @@ from tools.map02_private_process_witness_binding import (
     bind_owner_private_replays,
 )
 from tools.map02_private_two_capture_audit import _private_root, audit_pair
+from tools.map02_private_bizhawk_poweron_launch import AUTO_WITNESS_NAME
 
 SCHEMA = "vh.map02.owner-paired-capture-core-png-gate.v1"
 RUN_NAMES = ("vh-map02-cold-01", "vh-map02-cold-02")
 
 
 def review_owner_capture(movie: Path, plan: Path, workspace: Path,
-                         first_core: Path, second_core: Path) -> dict:
+                         first_core: Path | None = None,
+                         second_core: Path | None = None) -> dict:
     """Recheck separate private captures and locally matched core witnesses.
 
     Re-reading the full paired PNG chain is deliberate: do not accept a stale
@@ -57,6 +59,12 @@ def review_owner_capture(movie: Path, plan: Path, workspace: Path,
     if paired.get("all_supported_png_pixel_content_equal") is not pixel_match:
         raise ValueError("private pixel comparison summary inconsistent")
 
+    if (first_core is None) != (second_core is None):
+        raise ValueError("paired automatic/manual witness mode must be consistent")
+    auto = first_core is None
+    if auto:
+        first_core = first / AUTO_WITNESS_NAME
+        second_core = second / AUTO_WITNESS_NAME
     bound = bind_owner_private_replays(
         first / PROCESS_RECEIPT_NAME, first_core,
         second / PROCESS_RECEIPT_NAME, second_core,
@@ -69,7 +77,8 @@ def review_owner_capture(movie: Path, plan: Path, workspace: Path,
     return {
         "schema": SCHEMA,
         "owner_private_capture_chains_reaudited": 2,
-        "manual_psx_octoshock_core_witnesses_process_matched": 2,
+        "manual_psx_octoshock_core_witnesses_process_matched": 0 if auto else 2,
+        "auto_psx_octoshock_core_witnesses_process_matched": 2 if auto else 0,
         "reported_emuhawk_processes_distinct": True,
         "psx_core_fallback_reported_blocked_for_both_replays": True,
         "screenshot_pairs_checked": count,
@@ -94,8 +103,8 @@ def main() -> int:
     parser.add_argument("owner_private_bk2", type=Path)
     parser.add_argument("owner_private_plan", type=Path)
     parser.add_argument("owner_private_capture_workspace", type=Path)
-    parser.add_argument("first_owner_private_core_witness", type=Path)
-    parser.add_argument("second_owner_private_core_witness", type=Path)
+    parser.add_argument("first_owner_private_core_witness", nargs="?", type=Path)
+    parser.add_argument("second_owner_private_core_witness", nargs="?", type=Path)
     args = parser.parse_args()
     try:
         report = review_owner_capture(

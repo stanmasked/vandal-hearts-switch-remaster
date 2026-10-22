@@ -80,3 +80,67 @@ Public CI uses **17 entirely fictional acceptance cases** (including
 swapped, stale, duplicated, missing or unsupported records) on three
 Python runners. It never opens commercial image files, starts a PSX
 emulator or claims to have captured a Vandal Hearts frame.
+
+## Stage509 — explicit automatic process-bound core-only witness
+
+On the owner's Windows machine, the optional `--auto-core-witness-plugin`
+flag accepts an **already installed** `VhMap02CoreWitness.dll` from the
+matching EmuHawk 2.11 installation's `ExternalTools` directory. It is
+opt-in and requires `--record-windows-process-identity`. Without this flag,
+the plugin does not automatically write anything, and the existing manual
+procedure remains available.
+
+Use this **illustrative** command shape (do not copy personal paths into
+GitHub issues, logs or chat):
+
+```text
+python -m tools.map02_private_two_replay_runner \
+  C:\\Private\\BizHawk-2.11\\EmuHawk.exe \
+  C:\\Private\\Game\\Vandal_Hearts.cue \
+  C:\\Private\\Game\\vandalhearts.bk2 \
+  C:\\Private\\review \
+  --record-windows-process-identity \
+  --auto-core-witness-plugin C:\\Private\\BizHawk-2.11\\ExternalTools\\VhMap02CoreWitness.dll
+```
+
+The command above is **dry run only**: it never starts an emulator or
+creates screenshots. After a successful owner-local dry run and confirmation
+of all original media requirements, add `--launch-two` to explicitly run
+two separate local EmuHawk processes. The child appends official
+`--open-ext-tool-dll=VhMap02CoreWitness.dll`, forwards the intended output
+directory using a child-only environment variable, and still enforces the
+existing exclusive private-file, NTFS and launcher safety checks.
+
+On each `Restart()` with the **injected current** PSX/Octoshock
+`IEmulator`, the C# tool makes **one attempt only** to create
+`vh-map02-runtime-core-auto.txt` in that individual run folder, using
+`CreateNew` and a verified owner-only NTFS DACL. It never overwrites
+a prior witness. An unavailable/rejected/late export is a failed run:
+the launcher rejects a zero exit when the PSX receipt is missing or its
+PID/birth time differs from the launch receipt. The parent additionally
+requires both distinct process identities and matching per-run core files.
+
+No manual witness filename is needed to rerun the **offline** combined
+core+PNG review in automatic mode:
+
+```text
+python -m tools.map02_private_paired_capture_core_png_gate \
+  C:\\Private\\Game\\vandalhearts.bk2 \
+  C:\\Private\\review\\vh-map02-review-plan.txt \
+  C:\\Private\\review
+```
+
+The auditor detects `vh-map02-runtime-core-auto.txt` in each
+`vh-map02-cold-0N` directory only when **both** manually specified
+witness arguments are omitted. Passing one manual witness alone is
+rejected. It still checks original BK2/plan, Lua logs and RGB PNGs
+independently. In all cases the returned JSON contains no owner paths,
+process identifiers, game hashes, ROM bytes or image pixels.
+
+**Important:** This code is validated against a *synthetic fake*
+`IEmulator` and a **no-game** real NullHawk; it has **not** proven
+that the genuine owner's PSX/Octoshock load invokes `Restart()` before
+the capture's Lua exit. A matching editable text file attests neither
+correct BIOS nor mounted CUE/BIN, actual BK2 controller delivery, original
+MAP02 scene, real cold boot nor Switch renderer parity. The owner must
+run and examine authentic screenshots locally. Do not publish them.

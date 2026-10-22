@@ -24,6 +24,11 @@ namespace VhMap02CoreWitness
 
         private readonly Label _summary;
         private readonly Button _save;
+        // One attempt per externally launched process. Never silently retry a
+        // failed file write or overwrite a witness from an older process.
+        private bool _automaticWitnessAttempted;
+        private const string AutomaticWitnessFile = "vh-map02-runtime-core-auto.txt";
+        private const string AutomaticWitnessEnvironment = "VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR";
         protected override string WindowTitleStatic => "VH MAP02 PSX core witness";
 
         public CoreWitnessForm()
@@ -85,6 +90,43 @@ namespace VhMap02CoreWitness
                 + Environment.NewLine
                 + "BIOS, disc image and BK2 replay are NOT verified.";
             _save.Enabled = true;
+            TryAutomaticWitness(core);
+        }
+
+        private void TryAutomaticWitness(IEmulator actualCore)
+        {
+            // Opt-in is passed ONLY to this child by our private launcher.
+            // No environment opt-in -> no automatic file or UI action.
+            var targetDir = Environment.GetEnvironmentVariable(AutomaticWitnessEnvironment);
+            if (string.IsNullOrEmpty(targetDir) || _automaticWitnessAttempted) return;
+            _automaticWitnessAttempted = true;
+            try
+            {
+                RequireNonGitPrivateFolder(targetDir);
+                var payload = Snapshot(actualCore);
+                var target = Path.Combine(targetDir, AutomaticWitnessFile);
+                // Do not use an existing / symlinked destination. Exclusive
+                // CreateNew prevents replacing stale/manual evidence.
+                using (var output = new FileStream(
+                    target, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                using (var writer = new StreamWriter(output, new UTF8Encoding(false)))
+                {
+                    writer.Write(payload);
+                    writer.Flush();
+                    output.Flush(true);
+                }
+                _summary.Text = "PSX/Octoshock automatic private core-only witness saved."
+                    + Environment.NewLine
+                    + "BIOS, disc, BK2 and MAP02 remain unverified.";
+            }
+            catch (Exception)
+            {
+                // Keep identifiers, folders and OS ACL details entirely local.
+                // Owner capture must fail closed if the expected file is absent.
+                _summary.Text = "Automatic private core witness rejected."
+                    + Environment.NewLine
+                    + "No original gameplay authentication claimed.";
+            }
         }
 
         private static void RequireNonGitPrivateFolder(string folder)

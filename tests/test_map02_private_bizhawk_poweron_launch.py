@@ -62,6 +62,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                 maximum=kwargs.pop("maximum", 1800),
                 after=kwargs.pop("after", 1663),
                 before=kwargs.pop("before", 933949),
+                auto_core_witness_plugin=kwargs.pop("auto_core_witness_plugin", None),
             )
         self.assertFalse(kwargs)
         self.assertEqual(source.call_args.kwargs["limit"], 1)
@@ -454,6 +455,126 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                 main()
         process.assert_not_called()
         self.assertFalse((self.output / "vh_emuhawk_process_identity.txt").exists())
+
+
+    # Stage509: invented plugin DLLs and witness receipts only; no PS1 media.
+    def make_auto_plugin(self):
+        folder = self.root / "ExternalTools"
+        folder.mkdir(exist_ok=True)
+        plugin = folder / "VhMap02CoreWitness.dll"
+        plugin.write_bytes(b"fictional external DLL placeholder")
+        return plugin
+
+    def test_autowrite_optin_adds_only_installed_plugin_and_child_private_env(self):
+        plugin = self.make_auto_plugin()
+        argv, env, count = self.call(auto_core_witness_plugin=plugin)
+        self.assertEqual(count, 3)
+        self.assertEqual(argv[-2], "--open-ext-tool-dll=VhMap02CoreWitness.dll")
+        self.assertEqual(argv[-1], str(self.disc.resolve()))
+        self.assertEqual(env["VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR"],
+                         str(self.output.resolve()))
+        self.assertNotIn(str(plugin), " ".join(argv))
+
+    def test_ambient_auto_env_cannot_enable_writes_without_flag(self):
+        with patch.dict(os.environ, {
+            "VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR": str(self.output)
+        }):
+            argv, env, count = self.call()
+        self.assertNotIn("VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR", env)
+        self.assertNotIn("--open-ext-tool-dll", " ".join(argv))
+
+    def test_refuse_auto_plugin_from_unrelated_directory(self):
+        plugin = self.root / "wrong" / "VhMap02CoreWitness.dll"
+        plugin.parent.mkdir()
+        plugin.write_bytes(b"fictional")
+        with self.assertRaisesRegex(ValueError, "matching installed"):
+            self.call(auto_core_witness_plugin=plugin)
+
+    def test_refuse_renamed_auto_plugin(self):
+        plugin = self.root / "ExternalTools" / "unsafe.dll"
+        plugin.parent.mkdir()
+        plugin.write_bytes(b"fictional")
+        with self.assertRaisesRegex(ValueError, "matching installed"):
+            self.call(auto_core_witness_plugin=plugin)
+
+    def test_refuse_symlinked_auto_plugin(self):
+        original = self.root / "test.dll"
+        original.write_bytes(b"fictional")
+        target = self.root / "ExternalTools" / "VhMap02CoreWitness.dll"
+        target.parent.mkdir()
+        target.symlink_to(original)
+        with self.assertRaisesRegex(ValueError, "matching installed"):
+            self.call(auto_core_witness_plugin=target)
+
+    def test_refuse_preexisting_auto_witness(self):
+        plugin = self.make_auto_plugin()
+        destination = self.output / "vh-map02-runtime-core-auto.txt"
+        destination.write_bytes(b"do not overwrite")
+        with self.assertRaisesRegex(ValueError, "already exists"):
+            self.call(auto_core_witness_plugin=plugin)
+        self.assertEqual(destination.read_bytes(), b"do not overwrite")
+
+    def test_direct_cli_refuses_auto_without_kernel_pid_receipt(self):
+        plugin = self.make_auto_plugin()
+        args = ["launcher", str(self.program), str(self.disc), str(self.bk2),
+                str(self.plan), str(self.output), "--capture-lua", str(self.lua),
+                "--auto-core-witness-plugin", str(plugin), "--launch"]
+        with patch.object(sys, "argv", args), patch(
+            "tools.map02_private_bizhawk_poweron_launch.run_owned_process"
+        ) as runner:
+            with self.assertRaises(SystemExit):
+                main()
+            runner.assert_not_called()
+
+    def test_direct_cli_optin_preflight_never_creates_receipts_or_runs(self):
+        plugin = self.make_auto_plugin()
+        args = ["launcher", str(self.program), str(self.disc), str(self.bk2),
+                str(self.plan), str(self.output), "--capture-lua", str(self.lua),
+                "--auto-core-witness-plugin", str(plugin),
+                "--record-process-identity"]
+        with patch.object(sys, "argv", args), patch(
+            "tools.map02_private_bizhawk_poweron_launch.plan_lines",
+            return_value=ROWS,
+        ), patch(
+            "tools.map02_private_bizhawk_poweron_launch.inspect_pair",
+            return_value={"media_preflight_ready_for_owner_replay": True},
+        ), patch(
+            "tools.map02_private_bizhawk_poweron_launch.run_owned_process"
+        ) as runner, contextlib.redirect_stdout(io.StringIO()) as stream:
+            self.assertEqual(main(), 0)
+        runner.assert_not_called()
+        self.assertFalse((self.output / "vh-map02-runtime-core-auto.txt").exists())
+        self.assertFalse((self.output / "vh_emuhawk_process_identity.txt").exists())
+        self.assertIn("emulator_started=0", stream.getvalue())
+
+    def test_local_auto_witness_requires_matching_pid_and_birth(self):
+        from tools.map02_private_bizhawk_poweron_launch import verify_private_auto_witness
+        from tools.map02_private_process_witness_binding import MAGIC
+        pid, birth = 3030, 639000000000000001
+        (self.output / "vh_emuhawk_process_identity.txt").write_bytes(
+            (f"{MAGIC}\nprocess_id={pid}\n"
+             f"process_start_utc_ticks={birth}\n").encode("ascii"))
+        witness = self.output / "vh-map02-runtime-core-auto.txt"
+        def core(when):
+            return (
+                "VH_MAP02_RUNTIME_CORE_WITNESS_V1\nsystem=PSX\n"
+                "loaded_core=Octoshock\n"
+                "core_source=IEmulator.Attributes.CoreName\n"
+                f"process_id={pid}\nprocess_start_utc_ticks={when}\n"
+                "frame_count=1666\nbios=unverified\ndisc=unverified\n"
+                "movie_sync=unverified\n"
+            ).encode("ascii")
+        with self.assertRaises((OSError, ValueError)):
+            verify_private_auto_witness(self.output)
+        witness.write_bytes(core(birth + 1))
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            verify_private_auto_witness(self.output)
+        witness.write_bytes(core(birth))
+        self.assertIsNone(verify_private_auto_witness(self.output))
+        witness.write_bytes(core(birth).replace(b"Octoshock", b"Nymashock"))
+        with self.assertRaisesRegex(ValueError, "unsupported evidence"):
+            verify_private_auto_witness(self.output)
+
 
 
 if __name__ == "__main__":

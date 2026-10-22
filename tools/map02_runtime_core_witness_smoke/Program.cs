@@ -67,6 +67,7 @@ namespace VhMap02LoaderSmoke
                     + " official_nullhawk_snapshot_rejected=1"
                     + " owner_only_ntfs_folder_accepted=1"
                     + " publicly_readable_ntfs_folder_rejected=1"
+                    + " synthetic_optin_automatic_core_witness=1"
                     + " emulator_process_started=0 original_disc=0 bios=0 bk2=0");
                 return 0;
             }
@@ -228,6 +229,79 @@ namespace VhMap02LoaderSmoke
             }
         }
 
+
+        // A real NTFS private folder, but a deliberately FICTIONAL PSX core.
+        // This proves that the opt-in writes exactly once without a GUI click,
+        // never that an authentic PlayStation game or movie was executed.
+        private static void AuditSyntheticAutomaticWitness(
+            Type entrypoint, PropertyInfo property)
+        {
+            var key = "VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR";
+            var prior = Environment.GetEnvironmentVariable(key);
+            var dir = Path.Combine(Path.GetTempPath(),
+                "vh-map02-synthetic-automatic-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            try
+            {
+                using (var identity = WindowsIdentity.GetCurrent())
+                {
+                    var owner = identity.User;
+                    if (owner == null) throw new InvalidOperationException();
+                    var acl = new DirectorySecurity();
+                    acl.SetOwner(owner);
+                    acl.SetAccessRuleProtection(true, false);
+                    acl.AddAccessRule(new FileSystemAccessRule(
+                        owner, FileSystemRights.FullControl,
+                        InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                        PropagationFlags.None, AccessControlType.Allow));
+                    Directory.SetAccessControl(dir, acl);
+                }
+                var destination = Path.Combine(dir, "vh-map02-runtime-core-auto.txt");
+                Environment.SetEnvironmentVariable(key, null);
+                using (var notOptedIn = (Form)Activator.CreateInstance(entrypoint))
+                {
+                    property.SetValue(notOptedIn, new SyntheticOctoshock());
+                    ((IExternalToolForm)notOptedIn).Restart();
+                    if (File.Exists(destination))
+                        throw new InvalidOperationException("automatic write without opt-in");
+                }
+                Environment.SetEnvironmentVariable(key, dir);
+                using (var optedIn = (Form)Activator.CreateInstance(entrypoint))
+                {
+                    property.SetValue(optedIn, new SyntheticNymashock());
+                    ((IExternalToolForm)optedIn).Restart();
+                    if (File.Exists(destination))
+                        throw new InvalidOperationException("wrong PSX core autowrote witness");
+                    property.SetValue(optedIn, new SyntheticOctoshock());
+                    ((IExternalToolForm)optedIn).Restart();
+                    if (!File.Exists(destination))
+                        throw new InvalidOperationException("opted-in fake core autowrite absent");
+                    var body = File.ReadAllText(destination);
+                    if (!body.StartsWith("VH_MAP02_RUNTIME_CORE_WITNESS_V1\n"
+                        + "system=PSX\nloaded_core=Octoshock\n")
+                        || !body.Contains("bios=unverified\n")
+                        || !body.Contains("movie_sync=unverified\n"))
+                        throw new InvalidOperationException("synthetic auto witness incorrect");
+                    ((IExternalToolForm)optedIn).Restart();
+                    if (File.ReadAllText(destination) != body)
+                        throw new InvalidOperationException("automatic witness overwritten");
+                }
+                // A new instance also cannot overwrite the first run's file.
+                using (var secondInstance = (Form)Activator.CreateInstance(entrypoint))
+                {
+                    property.SetValue(secondInstance, new SyntheticOctoshock());
+                    ((IExternalToolForm)secondInstance).Restart();
+                    if (!File.Exists(destination))
+                        throw new InvalidOperationException("existing witness was erased");
+                }
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(key, prior);
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+
         // Defer JIT resolution of BizHawk types until AssemblyResolve is hooked.
         [MethodImpl(MethodImplOptions.NoInlining)]
         private static void RunSmoke(string plug)
@@ -353,6 +427,8 @@ namespace VhMap02LoaderSmoke
                     if (saveButtons[0].Enabled)
                         throw new InvalidOperationException("save not disabled after clearing core");
                 }
+                _stage = "synthetic-optin-auto-witness";
+                AuditSyntheticAutomaticWitness(entrypoint, property);
 
         }
     }
