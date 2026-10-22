@@ -21,6 +21,7 @@ from tools.map02_private_disc_movie_preflight import (
     inspect_pair, read_private_full_bin_sha256,
 )
 from tools.map02_private_process_group import run_owned_process
+from tools.map02_windows_private_output_acl import require_windows_private_output
 from tools.verify_map02_private_neutral_capture_chain import parse_plan
 
 MOVIE_LENGTH = 933949
@@ -125,6 +126,7 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
             raise ValueError("PNG output directory must be owned by current user")
         if stat.S_IMODE(root_info.st_mode) & 0o077:
             raise ValueError("PNG output directory must be owner-only (mode 0700)")
+    require_windows_private_output(root)
 
     # Validate the known disc/MAP02 resource profile and BK2 metadata before
     # deriving a plan or allowing the caller to launch EmuHawk.
