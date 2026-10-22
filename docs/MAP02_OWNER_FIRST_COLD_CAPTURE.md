@@ -96,3 +96,50 @@ It **cannot** load the owner's original game. Even a successful owner
 single-run report does not prove actual BIOS/disc identity, BK2 input
 delivery, original MAP02 scene identity, a second independent cold boot,
 Nintendo Switch GPU parity or gameplay on physical hardware.
+
+## Stage513 — independently recheck the saved first capture without starting EmuHawk
+
+After **one owner-local `--launch-one` attempt** completes and leaves an
+existing protected `vh-map02-cold-01` directory, run the offline review
+in the same private Windows environment. This step never starts a process,
+does not modify the movie, plan, witness or PNG files, and does not create
+or assume a second capture.
+
+```powershell
+# Reuse the PRIVATE $bk2 and $workspace variables from above.
+python -m tools.map02_private_first_run_audit $bk2 $workspace
+```
+
+In the default automatic-witness mode, the review expects a
+`vh-map02-runtime-core-auto.txt` under the first capture directory
+and a matching owner-local `vh_emuhawk_process_identity.txt`. It
+reconstructs the capture plan from the original BK2, checks the Lua
+log and every PNG, requires the strict core/process PID and Windows
+creation-time match, and rejects any reported core frame after the
+first planned PNG. The tool fails closed if the expected witness was
+never recorded before the first image.
+
+For a separately exported *manual* C# witness, explicitly opt into
+manual audit, passing its private path:
+
+```powershell
+python -m tools.map02_private_first_run_audit $bk2 $workspace \
+  --manual-core-witness 'C:\\ExamplePrivate\\manual-core-export.txt'
+```
+
+Manual-mode records must **not** contain the early automatic-witness
+Lua marker. A manual core witness may have a later frame than the first
+PNG, so it is not misrepresented as pre-screenshot evidence.
+
+The offline reviewer refuses a workspace that already contains
+`vh-map02-cold-02`, because one-run proof and two-run repeatability
+are different acceptance procedures. To compare two replay attempts,
+use a new owner-private workspace and the dedicated two-run reviewer.
+
+**Never copy the owner's complete output JSON, game files or captured
+images into GitHub.** The offline reviewer prints only counts, flags
+and fixed schema names, never filenames, file digests, game bytes,
+screenshots, Windows PIDs or private machine paths. Its passing result
+still does not prove that the original MAP02 appeared, that the correct
+BIOS/disc was mounted, that BK2 controller input arrived in-game or that
+a Switch renderer matches the original.
