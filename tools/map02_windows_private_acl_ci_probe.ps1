@@ -13,7 +13,7 @@ try {
     $acl.SetOwner($user)
     $acl.SetAccessRuleProtection($true, $false)
     $acl.AddAccessRule(
-        (New-Object System.Security.AccessControl.FileSystemAccessRule(
+        ([System.Security.AccessControl.FileSystemAccessRule]::new(
             $user,
             [System.Security.AccessControl.FileSystemRights]::FullControl,
             ([System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
@@ -27,15 +27,14 @@ try {
 
     $guard = Join-Path $PSScriptRoot 'map02_windows_private_output_acl.ps1'
     $ok = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $guard -Directory $private
-    if ($LASTEXITCODE -ne 0 -or @($ok).Count -ne 1 -or [string]$ok -cne
-        'VH_MAP02_OWNER_PRIVATE_NTFS_ACL_OK') {
+    if ($LASTEXITCODE -ne 0 -or @($ok).Count -ne 1 -or [string]$ok -cne 'VH_MAP02_OWNER_PRIVATE_NTFS_ACL_OK') {
         throw 'owner-only directory was not accepted by genuine NTFS guard'
     }
 
     $badAcl = Get-Acl -LiteralPath $public
     $badAcl.AddAccessRule(
-        (New-Object System.Security.AccessControl.FileSystemAccessRule(
-            (New-Object System.Security.Principal.SecurityIdentifier('S-1-1-0')),
+        ([System.Security.AccessControl.FileSystemAccessRule]::new(
+            ([System.Security.Principal.SecurityIdentifier]::new('S-1-1-0')),
             [System.Security.AccessControl.FileSystemRights]::ReadAndExecute,
             ([System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
                 [System.Security.AccessControl.InheritanceFlags]::ObjectInherit),
