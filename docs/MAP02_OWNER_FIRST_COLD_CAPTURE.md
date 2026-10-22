@@ -324,10 +324,13 @@ file hash against the pin; after capture, the Python verifier also requires
 the receipt's digest field to match the same expected value. Malformed,
 missing, or mismatching digest evidence fails closed.
 
-The raw tool digest remains local: it is not copied into public JSON reports,
-logs, GitHub artifacts, or screenshots. Paired witness audits also require both
-cold-run receipts to report the same tool-file digest, even if no independent
-pin is supplied; this detects drift but does not authenticate the digest. The
+The receipt's tool_assembly_sha256 value is not echoed by public audit reports
+or owner-capture logs. The no-media compile workflow separately publishes a
+DLL SHA-256 marker so an owner can verify the downloaded artifact from that same
+successful run; this public build marker is not a private capture receipt.
+Paired witness audits also require both cold-run receipts to report the same
+tool-file digest, even if no independent pin is supplied; this detects drift
+but does not authenticate the digest. The
 existing Stage517 checks still re-hash the installed DLL before and after launch
 and audit checkpoints. The offline one-run re-audit also accepts the optional
 `--private-core-witness-sha256` argument to compare the saved V2 receipt against
@@ -376,5 +379,7 @@ python -m tools.map02_private_first_run_audit $bk2 $workspace `
 A Stage517/V1 DLL or V1 witness receipt is not compatible with the Stage518/V2
 parser. Until the exact Stage518 build has a successful CI result and its
 matching artifact digest has been verified, the real owner-local capture
-remains blocked. Keep all original media, screenshots, local receipts and
-the digest itself out of GitHub comments and artifacts.
+remains blocked. Keep all original media, screenshots, owner-local receipts,
+private paths, process IDs and game hashes out of GitHub comments and artifacts.
+The trusted no-media compile workflow intentionally publishes a DLL SHA-256
+marker; use it only to verify the artifact downloaded from that exact run.
