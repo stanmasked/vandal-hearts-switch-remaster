@@ -55,7 +55,21 @@ def main() -> int:
                         check=False, timeout=30,
                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                     )
+                    plain = subprocess.run(
+                        ["powershell.exe", "-NoProfile", "-NonInteractive",
+                         "-ExecutionPolicy", "Bypass", "-File", str(SCRIPT),
+                         "-Directory", str(workspace.resolve(strict=True))],
+                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                        check=False, timeout=30,
+                    )
                     raw = probe.stdout
+                    print("VH_MAP02_WIN_PYTHON_ACL_DIAG "
+                          + " no_window_off_exit_zero=" + str(plain.returncode == 0).lower()
+                          + " no_window_off_ascii_exact=" + str(
+                              plain.stdout.strip() == SUCCESS.encode("ascii")).lower()
+                          + " no_window_off_nonempty=" + str(bool(plain.stdout)).lower()
+                          + " no_window_off_rc_1=" + str(plain.returncode == 1).lower(),
+                          file=sys.stderr, flush=True)
                     print("VH_MAP02_WIN_PYTHON_ACL_DIAG "
                           + "exit_zero=" + str(probe.returncode == 0).lower()
                           + " ascii_exact=" + str(raw.strip() == SUCCESS.encode("ascii")).lower()
