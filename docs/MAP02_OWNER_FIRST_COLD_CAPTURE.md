@@ -320,8 +320,11 @@ the receipt's digest field to match the same expected value. Malformed,
 missing, or mismatching digest evidence fails closed.
 
 The raw tool digest remains local: it is not copied into public JSON reports,
-logs, GitHub artifacts, or screenshots. The existing Stage517 checks still
-re-hash the installed DLL before and after launch and audit checkpoints.
+logs, GitHub artifacts, or screenshots. Paired witness audits also require both
+cold-run receipts to report the same tool-file digest, even if no independent
+pin is supplied; this detects drift but does not authenticate the digest. The
+existing Stage517 checks still re-hash the installed DLL before and after launch
+and audit checkpoints.
 
 **Evidence limit:** this is an additional in-process self-check of the file at
 the executing assembly's reported location. It is **not** independent OS
