@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 
 from tools.map02_private_bizhawk_poweron_launch import AUTO_WITNESS_NAME
-from tools.map02_private_core_witness_audit import read_witness
+from tools.map02_private_core_witness_audit import SHA256_HEX, read_witness_record
 from tools.map02_private_disc_movie_preflight import _resolve_private_file
 from tools.map02_private_process_witness_binding import (
     NAME as PROCESS_RECEIPT_NAME, read_started_process,
@@ -25,7 +25,8 @@ SCHEMA = "vh.map02.owner-one-capture-offline-reaudit.v1"
 
 
 def review_first_capture(private_movie: Path, private_workspace: Path,
-                         manual_core_witness: Path | None = None) -> dict:
+                         manual_core_witness: Path | None = None,
+                         expected_core_witness_sha256: str | None = None) -> dict:
     """Re-read source BK2, plan, log, PNG and in-process PSX identity locally.
 
     A valid report confirms ONLY that the supplied owner-local *files* have
@@ -65,9 +66,15 @@ def review_first_capture(private_movie: Path, private_workspace: Path,
     witness = (first / AUTO_WITNESS_NAME if is_auto
                else _resolve_private_file(manual_core_witness))
     started = read_started_process(first / PROCESS_RECEIPT_NAME)
-    observed = read_witness(witness)
+    observed = read_witness_record(witness)
     if observed[:2] != started:
         raise ValueError("one-run core identity does not match launch PID/birth time")
+    if expected_core_witness_sha256 is not None:
+        if not isinstance(expected_core_witness_sha256, str) or not SHA256_HEX.fullmatch(
+                expected_core_witness_sha256):
+            raise ValueError("supplied runtime tool SHA256 pin is malformed")
+        if observed[3] != expected_core_witness_sha256.lower():
+            raise ValueError("one-run runtime tool file hash differs from supplied pin")
 
     first_counter = rows[0][2] + 1
     if is_auto and observed[2] > first_counter:
@@ -82,6 +89,10 @@ def review_first_capture(private_movie: Path, private_workspace: Path,
         "owner_log_reports_automatic_witness_before_first_png": is_auto,
         "private_octoshock_core_witness_matches_launched_pid_and_birth": True,
         "auto_core_frame_not_later_than_first_png": is_auto,
+        "runtime_tool_file_hash_matches_supplied_pin": (
+            expected_core_witness_sha256 is not None
+            and observed[3] == expected_core_witness_sha256.lower()),
+        "runtime_tool_file_hash_pin_supplied": expected_core_witness_sha256 is not None,
         "two_run_repeatability_audited": False,
         "original_ps1_disc_or_bios_authenticated": False,
         "bk2_controller_delivery_authenticated": False,
@@ -98,11 +109,14 @@ def main() -> int:
     parser.add_argument("owner_private_one_run_workspace", type=Path)
     parser.add_argument("--manual-core-witness", type=Path,
                         help="Use one owner-exported PSX witness instead of automatic mode")
+    parser.add_argument("--private-core-witness-sha256",
+                        help="Compare the private witness digest to a separately trusted SHA-256 pin")
     args = parser.parse_args()
     try:
         report = review_first_capture(
             args.owner_private_bk2, args.owner_private_one_run_workspace,
             args.manual_core_witness,
+            args.private_core_witness_sha256,
         )
     except (OSError, ValueError, TypeError, KeyError, UnicodeError, RuntimeError):
         parser.error("private first-run offline audit rejected")
