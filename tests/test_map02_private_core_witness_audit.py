@@ -47,6 +47,8 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
         self.assertEqual(result["runtime_iemulator_core_witnesses_read"], 2)
         self.assertTrue(result["both_witnesses_report_psx_octoshock"])
         self.assertTrue(result["reported_emuhawk_process_identities_distinct"])
+        self.assertTrue(result["both_witnesses_report_same_tool_assembly_file_hash"])
+        self.assertFalse(result["tool_assembly_file_hash_independently_pinned"])
         for label in (
             "process_or_witness_origin_cryptographically_authenticated",
             "witnesses_tied_to_specific_bk2_or_png_capture",
@@ -65,6 +67,13 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
                                encoding="ascii")
         self.assertTrue(compare_witnesses(self.first, self.second)[
             "reported_emuhawk_process_identities_distinct"])
+
+    def test_different_tool_assembly_hashes_are_rejected(self):
+        self.second.write_text(receipt(
+            pid=3002, start=639000000000000002, tool_assembly_sha256="b" * 64
+        ), encoding="ascii")
+        with self.assertRaisesRegex(ValueError, "different tool assembly file hashes"):
+            compare_witnesses(self.first, self.second)
 
     def test_identical_process_identity_is_rejected(self):
         self.second.write_text(receipt(), encoding="ascii")
