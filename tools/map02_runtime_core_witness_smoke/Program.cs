@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Security.AccessControl;
+using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Runtime.CompilerServices;
 using System.Windows.Forms;
@@ -55,6 +56,7 @@ namespace VhMap02LoaderSmoke
                     || !File.Exists(Path.Combine(_root, "dll", "BizHawk.Client.Common.dll")))
                     throw new InvalidOperationException("official release or plugin missing");
 
+                Environment.SetEnvironmentVariable("VH_MAP02_CORE_EXPECTED_DLL_SHA256", null);
                 AppDomain.CurrentDomain.AssemblyResolve += Resolve;
                 _stage = "typed-assembly-load";
                 RunSmoke(plug);
@@ -230,14 +232,26 @@ namespace VhMap02LoaderSmoke
         }
 
 
+        private static string FileSha256(string path)
+        {
+            using (var input = new FileStream(
+                path, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var sha = SHA256.Create())
+                return BitConverter.ToString(sha.ComputeHash(input))
+                    .Replace("-", "").ToLowerInvariant();
+        }
+
         // A real NTFS private folder, but a deliberately FICTIONAL PSX core.
-        // This proves that the opt-in writes exactly once without a GUI click,
-        // never that an authentic PlayStation game or movie was executed.
+        // This proves the opt-in hash self-check and one-time write only, not
+        // that the original PlayStation game or movie was executed.
         private static void AuditSyntheticAutomaticWitness(
             Type entrypoint, PropertyInfo property)
         {
             var key = "VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR";
+            var hashKey = "VH_MAP02_CORE_EXPECTED_DLL_SHA256";
             var prior = Environment.GetEnvironmentVariable(key);
+            var priorHash = Environment.GetEnvironmentVariable(hashKey);
+            var assemblyHash = FileSha256(entrypoint.Assembly.Location);
             var dir = Path.Combine(Path.GetTempPath(),
                 "vh-map02-synthetic-automatic-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(dir);
@@ -258,6 +272,7 @@ namespace VhMap02LoaderSmoke
                 }
                 var destination = Path.Combine(dir, "vh-map02-runtime-core-auto.txt");
                 Environment.SetEnvironmentVariable(key, null);
+                Environment.SetEnvironmentVariable(hashKey, null);
                 using (var notOptedIn = (Form)Activator.CreateInstance(entrypoint))
                 {
                     property.SetValue(notOptedIn, new SyntheticOctoshock());
@@ -266,6 +281,7 @@ namespace VhMap02LoaderSmoke
                         throw new InvalidOperationException("automatic write without opt-in");
                 }
                 Environment.SetEnvironmentVariable(key, dir);
+                Environment.SetEnvironmentVariable(hashKey, assemblyHash);
                 using (var optedIn = (Form)Activator.CreateInstance(entrypoint))
                 {
                     property.SetValue(optedIn, new SyntheticNymashock());
@@ -279,6 +295,7 @@ namespace VhMap02LoaderSmoke
                     var body = File.ReadAllText(destination);
                     if (!body.StartsWith("VH_MAP02_RUNTIME_CORE_WITNESS_V1\n"
                         + "system=PSX\nloaded_core=Octoshock\n")
+                        || !body.Contains("tool_assembly_sha256=" + assemblyHash + "\n")
                         || !body.Contains("bios=unverified\n")
                         || !body.Contains("movie_sync=unverified\n"))
                         throw new InvalidOperationException("synthetic auto witness incorrect");
@@ -286,18 +303,37 @@ namespace VhMap02LoaderSmoke
                     if (File.ReadAllText(destination) != body)
                         throw new InvalidOperationException("automatic witness overwritten");
                 }
-                // A new instance also cannot overwrite the first run's file.
+
+                // A wrong owner-supplied pin must fail before it creates a
+                // receipt. Use a new instance and remove only our fake test file.
+                File.Delete(destination);
+                Environment.SetEnvironmentVariable(hashKey, new string('0', 64));
+                using (var wrongPin = (Form)Activator.CreateInstance(entrypoint))
+                {
+                    property.SetValue(wrongPin, new SyntheticOctoshock());
+                    ((IExternalToolForm)wrongPin).Restart();
+                    if (File.Exists(destination))
+                        throw new InvalidOperationException("mismatched DLL pin wrote witness");
+                }
+
+                // Recreate the receipt with the right pin, then prove another
+                // instance still cannot overwrite it.
+                Environment.SetEnvironmentVariable(hashKey, assemblyHash);
                 using (var secondInstance = (Form)Activator.CreateInstance(entrypoint))
                 {
                     property.SetValue(secondInstance, new SyntheticOctoshock());
                     ((IExternalToolForm)secondInstance).Restart();
                     if (!File.Exists(destination))
-                        throw new InvalidOperationException("existing witness was erased");
+                        throw new InvalidOperationException("existing witness was erased or valid pin rejected");
+                    if (!File.ReadAllText(destination).Contains(
+                        "tool_assembly_sha256=" + assemblyHash + "\n"))
+                        throw new InvalidOperationException("recreated witness has wrong tool digest");
                 }
             }
             finally
             {
                 Environment.SetEnvironmentVariable(key, prior);
+                Environment.SetEnvironmentVariable(hashKey, priorHash);
                 Directory.Delete(dir, recursive: true);
             }
         }
@@ -370,18 +406,21 @@ namespace VhMap02LoaderSmoke
                     // Test schema in memory only. Never print the witness, process
                     // ID/start time, any original SHA1, paths or game data.
                     var rows = witness?.Split('\n');
-                    if (rows == null || rows.Length != 11
+                    if (rows == null || rows.Length != 12
                         || rows[0] != "VH_MAP02_RUNTIME_CORE_WITNESS_V1"
                         || rows[1] != "system=PSX"
                         || rows[2] != "loaded_core=Octoshock"
                         || rows[3] != "core_source=IEmulator.Attributes.CoreName"
-                        || !rows[4].StartsWith("process_id=")
-                        || !rows[5].StartsWith("process_start_utc_ticks=")
-                        || rows[6] != "frame_count=1666"
-                        || rows[7] != "bios=unverified"
-                        || rows[8] != "disc=unverified"
-                        || rows[9] != "movie_sync=unverified"
-                        || rows[10] != "")
+                        || !rows[4].StartsWith("tool_assembly_sha256=")
+                        || !System.Text.RegularExpressions.Regex.IsMatch(
+                            rows[4], @"^tool_assembly_sha256=[0-9a-f]{64}$")
+                        || !rows[5].StartsWith("process_id=")
+                        || !rows[6].StartsWith("process_start_utc_ticks=")
+                        || rows[7] != "frame_count=1666"
+                        || rows[8] != "bios=unverified"
+                        || rows[9] != "disc=unverified"
+                        || rows[10] != "movie_sync=unverified"
+                        || rows[11] != "")
                         throw new InvalidOperationException("synthetic witness schema invalid");
 
                     _stage = "official-nullhawk-service-injection";
