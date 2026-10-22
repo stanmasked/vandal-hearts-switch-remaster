@@ -30,9 +30,13 @@ def started(pid, ticks):
 
 def core(pid, ticks, frame=1666, tool_hash="a" * 64):
     return (
-        "VH_MAP02_RUNTIME_CORE_WITNESS_V2\n"
+        "VH_MAP02_RUNTIME_CORE_WITNESS_V3\n"
         "system=PSX\nloaded_core=Octoshock\n"
         "core_source=IEmulator.Attributes.CoreName\n"
+        "runtime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock\n"
+        "core_assembly_sha256=" + "b" * 64 + "\n"
+        "native_core_module_name=octoshock.dll\n"
+        "native_core_module_sha256=" + "c" * 64 + "\n"
         "tool_assembly_sha256=" + tool_hash + "\n"
         f"process_id={pid}\nprocess_start_utc_ticks={ticks}\n"
         f"frame_count={frame}\nbios=unverified\n"
