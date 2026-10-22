@@ -192,6 +192,37 @@ has been injected, let alone verify original BIOS, Russian source disc,
 USA BK2 synchronization, MAP02 pixels or a Switch remake. Those still
 require the owner's private real-disc replay.
 
+## Stage508: integrate NTFS output privacy with process-bound replay evidence
+
+The Stage506 Windows PID/OS birth-time receipts and Stage507 paired PNG
+acceptance now share a branch with Stage506's sibling NTFS ACL hardening
+(Draft #490). Before any private process can produce screenshots/logs,
+the owner-local Python coordinator and child capture launcher call
+`require_windows_private_output`. The independent pair auditor
+rechecks each private output directory. The C# External Tool checks
+NTFS owner and DACL on its selected witness folder.
+
+On Windows, the guard runs the OS PowerShell ACL verifier with a
+bounded timeout and `shell=False`; it accepts only a current-user-owned
+folder with direct user write access and no Allow ACE (including
+inherited) to any principal other than the current user, SYSTEM and
+BUILTIN Administrators. The guard prints no SID, ACL, media content,
+hash or local path, and it never changes the user's permissions.
+Linux/macOS POSIX owner-only checks remain in place.
+
+The combined Windows CI must pass the owner-only/Everyone-readable
+real NTFS fixture, plugin's real NTFS reflection guard, and native
+Windows `GetProcessTimes` probe; three separate OS/Python matrices
+cover the fictional ACL and capture regressions. None of this is proof
+that the original BIOS, disc, BK2 or MAP02 loaded into Octoshock.
+
+**Open limitation:** the actual PSX/Octoshock witness still must be
+exported manually *before the matching EmuHawk process terminates*.
+The Lua script intentionally exits after the planned screenshots.
+A missed witness cannot be reconstructed from a later process: rerun
+the local capture or add a tested explicit early, owner-opted witness
+mechanism, never claim a stale receipt is valid.
+
 ## Stage506: bind actual process start to manual Octoshock witness
 
 Stage505 verified a **real** BizHawk 2.11 no-game `NullHawk` service injection.

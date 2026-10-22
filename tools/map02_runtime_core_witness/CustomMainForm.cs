@@ -5,6 +5,8 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text;
 using System.Windows.Forms;
 using BizHawk.Client.Common;
@@ -96,6 +98,35 @@ namespace VhMap02CoreWitness
                 var marker = Path.Combine(current.FullName, ".git");
                 if (File.Exists(marker) || Directory.Exists(marker))
                     throw new InvalidOperationException();
+            }
+            // A Windows folder can be publicly readable despite chmod(0700)
+            // semantics elsewhere. Check the effective NTFS DACL, including
+            // inherited ALLOW ACEs. No ACL or SID is ever logged or exported.
+            using (var current = WindowsIdentity.GetCurrent())
+            {
+                var user = current.User;
+                var acl = Directory.GetAccessControl(directory.FullName);
+                var owner = acl.GetOwner(typeof(SecurityIdentifier))
+                    as SecurityIdentifier;
+                if (user == null || owner == null || owner.Value != user.Value)
+                    throw new InvalidOperationException();
+                var writableByOwner = false;
+                foreach (FileSystemAccessRule entry in acl.GetAccessRules(
+                    true, true, typeof(SecurityIdentifier)))
+                {
+                    if (entry.AccessControlType != AccessControlType.Allow)
+                        continue;
+                    var sid = (SecurityIdentifier)entry.IdentityReference;
+                    var trusted = sid.Value == user.Value
+                        || sid.Value == "S-1-5-18" // LOCAL SYSTEM
+                        || sid.Value == "S-1-5-32-544"; // BUILTIN Administrators
+                    if (!trusted) throw new InvalidOperationException();
+                    if (sid.Value == user.Value
+                        && (entry.FileSystemRights & FileSystemRights.WriteData)
+                           == FileSystemRights.WriteData)
+                        writableByOwner = true;
+                }
+                if (!writableByOwner) throw new InvalidOperationException();
             }
         }
 

@@ -5,6 +5,9 @@ on:
       - '.github/workflows/map02-bizhawk211-external-tool-compile.yml'
       - 'tools/map02_runtime_core_witness/**'
       - 'tools/map02_runtime_core_witness_smoke/**'
+      - 'tools/map02_windows_private_output_acl.ps1'
+      - 'tools/map02_windows_private_output_acl.py'
+      - 'tools/map02_windows_private_acl_ci_probe.ps1'
       - 'tools/map02_private_process_witness_binding.py'
       - 'tests/test_map02_private_process_witness_binding.py'
       - 'docs/MAP02_RUNTIME_CORE_WITNESS.md'
@@ -80,6 +83,19 @@ jobs:
             throw 'compiled witness assembly missing'
           }
           Write-Output 'VH_MAP02_REAL_BIZHAWK211_ASSEMBLY_COMPILE_PASS original_disc=0 original_bk2=0 bios=0 emulator_launched=0'
+      - name: Verify owner-only and Everyone-readable NTFS fixture ACLs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $report = @( & tools/map02_windows_private_acl_ci_probe.ps1 )
+          if ($LASTEXITCODE -ne 0) {
+            throw 'private Windows ACL fixture command failed'
+          }
+          $expected = 'VH_MAP02_WINDOWS_OUTPUT_ACL_REAL_FIXTURE_PASS private=accepted everyone=denied media=0'
+          if (@($report).Count -ne 1 -or [string]$report -cne $expected) {
+            throw 'actual Windows NTFS ACL owner-only fixture failed'
+          }
+          Write-Output $expected
       - name: Smoke-test real loader predicates and unloaded form against official assemblies
         shell: pwsh
         run: |
@@ -102,7 +118,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw 'BizHawk 2.11 external tool loader smoke rejected compiled DLL'
           }
-          $expected = 'VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_PASS metadata=1 activation=1 missing_core_fail_closed=1 fake_iemulator_positive=1 fake_negative_gates=4 in_memory_fake_witness_schema=1 official_nullhawk_service_injected=1 official_nullhawk_snapshot_rejected=1 emulator_process_started=0 original_disc=0 bios=0 bk2=0'
+          $expected = 'VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_PASS metadata=1 activation=1 missing_core_fail_closed=1 fake_iemulator_positive=1 fake_negative_gates=4 in_memory_fake_witness_schema=1 official_nullhawk_service_injected=1 official_nullhawk_snapshot_rejected=1 owner_only_ntfs_folder_accepted=1 publicly_readable_ntfs_folder_rejected=1 emulator_process_started=0 original_disc=0 bios=0 bk2=0'
           if (@($output).Count -ne 1 -or [string]$output -cne $expected) {
             throw 'strict synthetic IEmulator loader smoke marker mismatch'
           }
