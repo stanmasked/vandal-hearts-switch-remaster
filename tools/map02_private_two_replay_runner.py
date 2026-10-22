@@ -206,7 +206,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
                   max_windows: int = 4,
                   emulator_timeout_seconds: int | None = None,
                   run_count: int = 2,
-                  start: bool = False) -> dict:
+                  start: bool = False,
+                  mono_executable: Path | None = None) -> dict:
     """Require explicit opt-in; run separate fresh emulator subprocesses.
 
     Output remains local. The capture chain and PNG files are independently
@@ -228,10 +229,17 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         raise ValueError("owner private automatic core witness requires process identity recording")
     if core_witness_sha256 is not None and auto_core_witness_plugin is None:
         raise ValueError("private plugin hash requires the automatic core witness DLL")
-    if auto_core_witness_plugin is not None and start and os.name != "nt":
-        raise ValueError("owner private automatic core witness requires Windows")
-    if record_windows_process_identity and start and os.name != "nt":
-        raise ValueError("private process identity capture requires Windows")
+    linux_runtime = sys.platform.startswith("linux") and mono_executable is not None
+    if mono_executable is not None:
+        mono = Path(mono_executable)
+        if (not sys.platform.startswith("linux") or not mono.is_absolute()
+                or mono.is_symlink() or not mono.is_file()
+                or not os.access(mono, os.X_OK)):
+            raise ValueError("Linux Mono executable requires an absolute executable regular file")
+    if auto_core_witness_plugin is not None and start and os.name != "nt" and not linux_runtime:
+        raise ValueError("owner automatic core witness requires Windows or Linux with explicit Mono")
+    if record_windows_process_identity and start and os.name != "nt" and not linux_runtime:
+        raise ValueError("private process identity requires Windows or Linux with explicit Mono")
     if emulator_timeout_seconds is not None and (
             type(emulator_timeout_seconds) is not int or
             not MIN_EMULATOR_TIMEOUT_SECONDS <= emulator_timeout_seconds
@@ -340,6 +348,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             argv += ["--auto-core-witness-plugin", str(auto_core_witness_plugin)]
         if core_witness_sha256 is not None:
             argv += ["--private-core-witness-sha256", core_witness_sha256]
+        if mono_executable is not None:
+            argv += ["--mono-executable", str(Path(mono_executable).resolve(strict=True))]
         argv.append("--launch")
         # The child wrapper redirects EmuHawk stdout/stderr (which contain
         # absolute private paths) into files in the private capture folder.
@@ -516,9 +526,12 @@ def main() -> int:
     parser.add_argument("--private-core-witness-sha256", type=str,
                         help="Owner opt-in: independently pinned SHA256 for the installed experimental DLL")
     parser.add_argument(
-        "--record-windows-process-identity", action="store_true",
-        help="Opt-in owner-private launch receipts for later comparison to the core witness files",
+        "--record-process-identity", "--record-windows-process-identity",
+        dest="record_windows_process_identity", action="store_true",
+        help="Opt-in owner-private Windows/Linux process-start receipts for comparison to core witness files",
     )
+    parser.add_argument("--mono-executable", type=Path,
+                        help="Linux only: absolute Mono executable for the official EmuHawk.exe")
     parser.add_argument("--max-windows", type=int, default=4)
     parser.add_argument(
         "--emulator-timeout-seconds", type=int,
@@ -544,6 +557,7 @@ def main() -> int:
             emulator_timeout_seconds=args.emulator_timeout_seconds,
             run_count=1 if args.launch_one else 2,
             start=args.launch_one or args.launch_two,
+            mono_executable=args.mono_executable,
         )
     except (OSError, ValueError, TypeError, RuntimeError, KeyError):
         parser.error("private two-replay execution or capture audit failed")
