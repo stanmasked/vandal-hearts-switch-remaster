@@ -40,6 +40,7 @@ def core_receipt(pid: int, birth: int) -> bytes:
     return ("VH_MAP02_RUNTIME_CORE_WITNESS_V1\n"
             "system=PSX\nloaded_core=Octoshock\n"
             "core_source=IEmulator.Attributes.CoreName\n"
+            "tool_assembly_sha256=" + "a" * 64 + "\n"
             f"process_id={pid}\nprocess_start_utc_ticks={birth}\n"
             "frame_count=1800\nbios=unverified\ndisc=unverified\n"
             "movie_sync=unverified\n").encode("ascii")
