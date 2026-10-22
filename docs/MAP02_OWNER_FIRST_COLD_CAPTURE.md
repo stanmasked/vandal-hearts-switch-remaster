@@ -310,7 +310,7 @@ remain on the owner's private workstation.
 
 ## Stage518 — compare the witness's executing-tool file hash to the pin
 
-Stage518 adds a tool_assembly_sha256 field to the private runtime receipt.
+Stage518 adds a tool_assembly_sha256 field to the private runtime receipt (V2 schema).
 The external tool computes SHA-256 for the file at its own executing assembly
 location. When --private-core-witness-sha256 is supplied, the launcher passes
 that exact pin to the child EmuHawk process through a dedicated environment
