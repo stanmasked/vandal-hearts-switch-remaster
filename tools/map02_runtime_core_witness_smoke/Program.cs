@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Security.AccessControl;
+using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Runtime.CompilerServices;
 using System.Windows.Forms;
@@ -55,19 +56,20 @@ namespace VhMap02LoaderSmoke
                     || !File.Exists(Path.Combine(_root, "dll", "BizHawk.Client.Common.dll")))
                     throw new InvalidOperationException("official release or plugin missing");
 
+                Environment.SetEnvironmentVariable("VH_MAP02_CORE_EXPECTED_DLL_SHA256", null);
                 AppDomain.CurrentDomain.AssemblyResolve += Resolve;
                 _stage = "typed-assembly-load";
                 RunSmoke(plug);
                 Console.WriteLine(
                     "VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_PASS"
                     + " metadata=1 activation=1 missing_core_fail_closed=1"
-                    + " fake_iemulator_positive=1 fake_negative_gates=4"
-                    + " in_memory_fake_witness_schema=1"
+                    + " fake_octoshock_impersonation_rejected=1 fake_negative_gates=5"
+                    + " exact_runtime_type_gate=1 in_memory_fake_witness_schema=0"
                     + " official_nullhawk_service_injected=1"
                     + " official_nullhawk_snapshot_rejected=1"
                     + " owner_only_ntfs_folder_accepted=1"
                     + " publicly_readable_ntfs_folder_rejected=1"
-                    + " synthetic_optin_automatic_core_witness=1"
+                    + " synthetic_optin_fake_core_rejected=1"
                     + " emulator_process_started=0 original_disc=0 bios=0 bk2=0");
                 return 0;
             }
@@ -230,14 +232,27 @@ namespace VhMap02LoaderSmoke
         }
 
 
-        // A real NTFS private folder, but a deliberately FICTIONAL PSX core.
-        // This proves that the opt-in writes exactly once without a GUI click,
-        // never that an authentic PlayStation game or movie was executed.
+        private static string FileSha256(string path)
+        {
+            using (var input = new FileStream(
+                path, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var sha = SHA256.Create())
+                return BitConverter.ToString(sha.ComputeHash(input))
+                    .Replace("-", "").ToLowerInvariant();
+        }
+
+        // An invented Octoshock-named IEmulator must never create a receipt,
+        // even when automatic writes are explicitly opted in.
         private static void AuditSyntheticAutomaticWitness(
             Type entrypoint, PropertyInfo property)
         {
+            var snapshot = entrypoint.GetMethod(
+                "Snapshot", BindingFlags.NonPublic | BindingFlags.Static);
+            if (snapshot == null) throw new InvalidOperationException();
             var key = "VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR";
+            var hashKey = "VH_MAP02_CORE_EXPECTED_DLL_SHA256";
             var prior = Environment.GetEnvironmentVariable(key);
+            var priorHash = Environment.GetEnvironmentVariable(hashKey);
             var dir = Path.Combine(Path.GetTempPath(),
                 "vh-map02-synthetic-automatic-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(dir);
@@ -258,46 +273,44 @@ namespace VhMap02LoaderSmoke
                 }
                 var destination = Path.Combine(dir, "vh-map02-runtime-core-auto.txt");
                 Environment.SetEnvironmentVariable(key, null);
+                Environment.SetEnvironmentVariable(hashKey, null);
                 using (var notOptedIn = (Form)Activator.CreateInstance(entrypoint))
                 {
                     property.SetValue(notOptedIn, new SyntheticOctoshock());
                     ((IExternalToolForm)notOptedIn).Restart();
                     if (File.Exists(destination))
-                        throw new InvalidOperationException("automatic write without opt-in");
+                        throw new InvalidOperationException("fake core wrote without opt-in");
                 }
+
                 Environment.SetEnvironmentVariable(key, dir);
                 using (var optedIn = (Form)Activator.CreateInstance(entrypoint))
                 {
-                    property.SetValue(optedIn, new SyntheticNymashock());
+                    var fake = new SyntheticOctoshock();
+                    property.SetValue(optedIn, fake);
+                    ((IExternalToolForm)optedIn).Restart();
+                    var button = optedIn.Controls.OfType<Button>().Single();
+                    if (button.Enabled || File.Exists(destination))
+                        throw new InvalidOperationException("opted-in fake Octoshock was accepted");
+                    var rejected = false;
+                    try
+                    {
+                        snapshot.Invoke(null, new object[] { fake });
+                    }
+                    catch (TargetInvocationException ex)
+                    {
+                        rejected = ex.InnerException is InvalidOperationException;
+                    }
+                    if (!rejected)
+                        throw new InvalidOperationException("fake Octoshock snapshot was not rejected");
                     ((IExternalToolForm)optedIn).Restart();
                     if (File.Exists(destination))
-                        throw new InvalidOperationException("wrong PSX core autowrote witness");
-                    property.SetValue(optedIn, new SyntheticOctoshock());
-                    ((IExternalToolForm)optedIn).Restart();
-                    if (!File.Exists(destination))
-                        throw new InvalidOperationException("opted-in fake core autowrite absent");
-                    var body = File.ReadAllText(destination);
-                    if (!body.StartsWith("VH_MAP02_RUNTIME_CORE_WITNESS_V1\n"
-                        + "system=PSX\nloaded_core=Octoshock\n")
-                        || !body.Contains("bios=unverified\n")
-                        || !body.Contains("movie_sync=unverified\n"))
-                        throw new InvalidOperationException("synthetic auto witness incorrect");
-                    ((IExternalToolForm)optedIn).Restart();
-                    if (File.ReadAllText(destination) != body)
-                        throw new InvalidOperationException("automatic witness overwritten");
-                }
-                // A new instance also cannot overwrite the first run's file.
-                using (var secondInstance = (Form)Activator.CreateInstance(entrypoint))
-                {
-                    property.SetValue(secondInstance, new SyntheticOctoshock());
-                    ((IExternalToolForm)secondInstance).Restart();
-                    if (!File.Exists(destination))
-                        throw new InvalidOperationException("existing witness was erased");
+                        throw new InvalidOperationException("fake witness was written on retry");
                 }
             }
             finally
             {
                 Environment.SetEnvironmentVariable(key, prior);
+                Environment.SetEnvironmentVariable(hashKey, priorHash);
                 Directory.Delete(dir, recursive: true);
             }
         }
@@ -360,29 +373,8 @@ namespace VhMap02LoaderSmoke
                     if (snapshot == null || snapshot.ReturnType != typeof(string))
                         throw new InvalidOperationException("witness snapshot contract missing");
 
-                    _stage = "synthetic-positive-core-injection";
-                    var fictional = new SyntheticOctoshock();
-                    property.SetValue(form, fictional);
-                    ((IExternalToolForm)form).Restart();
-                    if (!saveButtons[0].Enabled)
-                        throw new InvalidOperationException("valid invented PSX core was rejected");
-                    var witness = snapshot.Invoke(null, new object[] { fictional }) as string;
-                    // Test schema in memory only. Never print the witness, process
-                    // ID/start time, any original SHA1, paths or game data.
-                    var rows = witness?.Split('\n');
-                    if (rows == null || rows.Length != 11
-                        || rows[0] != "VH_MAP02_RUNTIME_CORE_WITNESS_V1"
-                        || rows[1] != "system=PSX"
-                        || rows[2] != "loaded_core=Octoshock"
-                        || rows[3] != "core_source=IEmulator.Attributes.CoreName"
-                        || !rows[4].StartsWith("process_id=")
-                        || !rows[5].StartsWith("process_start_utc_ticks=")
-                        || rows[6] != "frame_count=1666"
-                        || rows[7] != "bios=unverified"
-                        || rows[8] != "disc=unverified"
-                        || rows[9] != "movie_sync=unverified"
-                        || rows[10] != "")
-                        throw new InvalidOperationException("synthetic witness schema invalid");
+                    _stage = "synthetic-octoshock-impersonation";
+                    AssertBlocked(form, property, snapshot, new SyntheticOctoshock());
 
                     _stage = "official-nullhawk-service-injection";
                     using (var genuineNoGameCore = new NullEmulator())
@@ -427,7 +419,7 @@ namespace VhMap02LoaderSmoke
                     if (saveButtons[0].Enabled)
                         throw new InvalidOperationException("save not disabled after clearing core");
                 }
-                _stage = "synthetic-optin-auto-witness";
+                _stage = "synthetic-optin-fake-core-rejection";
                 AuditSyntheticAutomaticWitness(entrypoint, property);
 
         }

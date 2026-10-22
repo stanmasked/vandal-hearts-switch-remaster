@@ -17,6 +17,7 @@ from tools.map02_private_process_witness_binding import (
     MAGIC, NAME, bind_owner_private_replays, main, read_started_process,
     record_started_process, windows_process_start_ticks,
 )
+from tools.map02_private_process_group import run_owned_process
 
 BIRTH_A = 639000000000000001
 BIRTH_B = 639000000000000002
@@ -27,11 +28,17 @@ def started(pid, ticks):
             f"process_start_utc_ticks={ticks}\n")
 
 
-def core(pid, ticks, frame=1666):
+def core(pid, ticks, frame=1666, tool_hash="a" * 64,
+         core_hash="b" * 64, native_hash="c" * 64):
     return (
-        "VH_MAP02_RUNTIME_CORE_WITNESS_V1\n"
+        "VH_MAP02_RUNTIME_CORE_WITNESS_V3\n"
         "system=PSX\nloaded_core=Octoshock\n"
         "core_source=IEmulator.Attributes.CoreName\n"
+        "runtime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock\n"
+        "core_assembly_sha256=" + core_hash + "\n"
+        "native_core_module_name=octoshock.dll\n"
+        "native_core_module_sha256=" + native_hash + "\n"
+        "tool_assembly_sha256=" + tool_hash + "\n"
         f"process_id={pid}\nprocess_start_utc_ticks={ticks}\n"
         f"frame_count={frame}\nbios=unverified\n"
         "disc=unverified\nmovie_sync=unverified\n"
@@ -66,15 +73,36 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
         result = self.bind()
         self.assertTrue(result["runtime_core_witnesses_bound_to_launched_process_identity"])
         self.assertTrue(result["reported_emuhawk_processes_distinct"])
+        self.assertTrue(result["both_witnesses_report_same_tool_assembly_file_hash"])
+        self.assertTrue(result["both_witnesses_report_same_runtime_core_assembly_file_hash"])
+        self.assertTrue(result["both_witnesses_report_same_native_core_module_file_hash"])
+        self.assertFalse(result["tool_assembly_file_hash_independently_pinned"])
+        self.assertFalse(result["runtime_core_assembly_file_hash_independently_pinned"])
+        self.assertFalse(result["native_core_module_file_hash_independently_pinned"])
         self.assertFalse(result["binding_authenticated_against_os_without_editable_receipts"])
         self.assertFalse(result["witnesses_linked_to_lua_or_png_by_cryptography"])
         self.assertFalse(result["actual_bios_and_mounted_disc_authenticated"])
         self.assertFalse(result["original_bk2_input_or_map02_scene_authenticated"])
-        for private in ("3011", str(BIRTH_A), str(self.root)):
+        for private in ("3011", str(BIRTH_A), str(self.root), "a" * 64):
             self.assertNotIn(private, json.dumps(result))
 
     def test_read_receipt_returns_local_only_pid_and_birth(self):
         self.assertEqual(read_started_process(self.a_start), (3011, BIRTH_A))
+
+    def test_different_tool_assembly_hash_across_cold_runs_is_rejected(self):
+        _lf_fixture(self.b_core, core(3012, BIRTH_B, tool_hash="b" * 64))
+        with self.assertRaisesRegex(ValueError, "tool assembly file hash differs"):
+            self.bind()
+
+    def test_different_runtime_core_assembly_hash_across_cold_runs_is_rejected(self):
+        _lf_fixture(self.b_core, core(3012, BIRTH_B, core_hash="d" * 64))
+        with self.assertRaisesRegex(ValueError, "runtime core assembly file hash differs"):
+            self.bind()
+
+    def test_different_native_module_hash_across_cold_runs_is_rejected(self):
+        _lf_fixture(self.b_core, core(3012, BIRTH_B, native_hash="e" * 64))
+        with self.assertRaisesRegex(ValueError, "native core module file hash differs"):
+            self.bind()
 
     def test_swapped_run_witness_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "does not match"):
@@ -171,6 +199,27 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "requires Windows"):
             windows_process_start_ticks(3011)
 
+    @unittest.skipUnless(os.name == "nt", "Windows Popen handle identity only")
+    def test_process_object_observer_records_the_owned_child_handle(self):
+        observed = []
+
+        def record(process):
+            observed.append(process.pid)
+            record_started_process(
+                process.pid, self.root, process_handle=process._handle)
+
+        result = run_owned_process(
+            [sys.executable, "-c", "import time;time.sleep(0.5)"],
+            env=os.environ.copy(), stdout=subprocess.DEVNULL, timeout=10,
+            on_started_process=record,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(len(observed), 1)
+        pid, ticks = read_started_process(self.root / NAME)
+        self.assertEqual(pid, observed[0])
+        self.assertGreaterEqual(ticks, 621355968000000000)
+        self.assertLessEqual(ticks, 725811840000000000)
+
     @unittest.skipUnless(os.name == "nt", "Windows process identity API only")
     def test_real_windows_owned_child_creation_time(self):
         proc = subprocess.Popen(
@@ -178,14 +227,19 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         try:
-            birth = windows_process_start_ticks(proc.pid)
+            birth = windows_process_start_ticks(
+                proc.pid, process_handle=proc._handle)
             self.assertGreater(birth, 630000000000000000)
             self.assertLess(birth, 725811840000000000)
+            with self.assertRaisesRegex(ValueError, "handle does not match PID"):
+                windows_process_start_ticks(
+                    proc.pid + 1, process_handle=proc._handle)
             with patch(
                 "tools.map02_private_process_witness_binding.windows_process_start_ticks",
                 return_value=birth,
             ):
-                record_started_process(proc.pid, self.root)
+                record_started_process(
+                    proc.pid, self.root, process_handle=proc._handle)
             self.assertEqual(read_started_process(self.root / NAME),
                              (proc.pid, birth))
         finally:

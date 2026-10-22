@@ -475,15 +475,34 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.assertEqual(argv[-1], str(self.disc.resolve()))
         self.assertEqual(env["VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR"],
                          str(self.output.resolve()))
+        self.assertNotIn("VH_MAP02_CORE_EXPECTED_DLL_SHA256", env)
+        self.assertNotIn("VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256", env)
+        self.assertNotIn("VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256", env)
         self.assertNotIn(str(plugin), " ".join(argv))
 
     def test_ambient_auto_env_cannot_enable_writes_without_flag(self):
         with patch.dict(os.environ, {
-            "VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR": str(self.output)
+            "VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR": str(self.output),
+            "VH_MAP02_CORE_EXPECTED_DLL_SHA256": "b" * 64,
+            "VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256": "c" * 64,
+            "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256": "d" * 64,
         }):
             argv, env, count = self.call()
         self.assertNotIn("VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR", env)
+        self.assertNotIn("VH_MAP02_CORE_EXPECTED_DLL_SHA256", env)
+        self.assertNotIn("VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256", env)
+        self.assertNotIn("VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256", env)
         self.assertNotIn("--open-ext-tool-dll", " ".join(argv))
+
+    def test_runtime_file_pins_are_passed_only_with_explicit_plugin_optin(self):
+        plugin = self.make_auto_plugin()
+        with patch.dict(os.environ, {
+            "VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256": "b" * 64,
+            "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256": "c" * 64,
+        }):
+            _, env, _ = self.call(auto_core_witness_plugin=plugin)
+        self.assertEqual(env["VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256"], "b" * 64)
+        self.assertEqual(env["VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256"], "c" * 64)
 
     def test_refuse_auto_plugin_from_unrelated_directory(self):
         plugin = self.root / "wrong" / "VhMap02CoreWitness.dll"
@@ -559,9 +578,14 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         witness = self.output / "vh-map02-runtime-core-auto.txt"
         def core(when):
             return (
-                "VH_MAP02_RUNTIME_CORE_WITNESS_V1\nsystem=PSX\n"
+                "VH_MAP02_RUNTIME_CORE_WITNESS_V3\nsystem=PSX\n"
                 "loaded_core=Octoshock\n"
                 "core_source=IEmulator.Attributes.CoreName\n"
+                "runtime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock\n"
+                "core_assembly_sha256=" + "b" * 64 + "\n"
+                "native_core_module_name=octoshock.dll\n"
+                "native_core_module_sha256=" + "c" * 64 + "\n"
+                "tool_assembly_sha256=" + "a" * 64 + "\n"
                 f"process_id={pid}\nprocess_start_utc_ticks={when}\n"
                 "frame_count=1666\nbios=unverified\ndisc=unverified\n"
                 "movie_sync=unverified\n"
@@ -573,6 +597,17 @@ class PrivateBizHawkBootTests(unittest.TestCase):
             verify_private_auto_witness(self.output)
         witness.write_bytes(core(birth))
         self.assertIsNone(verify_private_auto_witness(self.output))
+        self.assertIsNone(verify_private_auto_witness(self.output, "a" * 64))
+        with self.assertRaisesRegex(ValueError, "tool hash differs"):
+            verify_private_auto_witness(self.output, "b" * 64)
+        self.assertIsNone(verify_private_auto_witness(
+            self.output, "a" * 64, "b" * 64, "c" * 64))
+        with self.assertRaisesRegex(ValueError, "core assembly hash differs"):
+            verify_private_auto_witness(self.output, "a" * 64, "d" * 64, "c" * 64)
+        with self.assertRaisesRegex(ValueError, "native core module hash differs"):
+            verify_private_auto_witness(self.output, "a" * 64, "b" * 64, "d" * 64)
+        with self.assertRaisesRegex(ValueError, "SHA256 pin is malformed"):
+            verify_private_auto_witness(self.output, "a" * 64, "invalid", "c" * 64)
         witness.write_bytes(core(birth).replace(b"Octoshock", b"Nymashock"))
         with self.assertRaisesRegex(ValueError, "unsupported evidence"):
             verify_private_auto_witness(self.output)
@@ -589,6 +624,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.assertEqual(count, 3)
         self.assertTrue(any(x.startswith("--open-ext-tool-dll=") for x in argv))
         self.assertNotIn("VH_BIZHAWK_CORE_PLUGIN_PINNED_FILE", env)
+        self.assertEqual(env["VH_MAP02_CORE_EXPECTED_DLL_SHA256"], digest.lower())
         self.assertNotIn(str(plugin), " ".join(argv))
 
     def test_private_pin_blocks_installed_fake_dll_swapped_after_install(self):

@@ -103,7 +103,7 @@ actual core: its acceptance only confirms **the implementation's
 decision logic**, not authentic provenance.
 
 The Windows CI requires an exact `fake_iemulator_positive=1`,
-`fake_negative_gates=4`, `in_memory_fake_witness_schema=1` success
+`fake_negative_gates=4`, `in_memory_fake_witness_schema=2` success
 marker, with `emulator_process_started=0`. No private witness,
 process identifier or sample data is published.
 
@@ -313,7 +313,8 @@ a private process identifier.
 While the original PS1 game is running in each independently launched
 EmuHawk process:
 
-- Verify that the tool says the injected `IEmulator` reports PSX/Octoshock.
+- Verify that the tool confirms the concrete BizHawk `Octoshock` runtime
+  type and that `octoshock.dll` is mapped in the same EmuHawk process.
 - Choose **Write private core witness...** and select an **existing,
   owner-private folder outside any Git repository or symlinked directory**.
   The tool creates a new uniquely named plain-text file without overwriting.
@@ -322,10 +323,10 @@ EmuHawk process:
   same owner-private folder. Two clicks in one process are not independent
   replays and the verifier rejects them.
 
-**Privacy:** the folder chooser uses the operating system's permissions.
-On Windows, restrict the selected folder to the owner in Windows security
-properties. The tool does not grant or validate NTFS ACLs. It does not
-attempt to read/write BIOS, BIN, BK2 or PNG content.
+**Privacy:** the tool does not grant NTFS permissions. It checks the selected
+folder's owner and effective allow-list before writing, and rejects unexpected
+allow ACEs, symlink/reparse paths and Git worktrees. It does not attempt to
+read/write BIOS, BIN, BK2 or PNG content.
 
 ## Local paired audit
 
@@ -347,6 +348,37 @@ external tool**, frame count, and process identity (PID/start time) in
 a private file. All BIOS, disc and movie-sync fields MUST remain
 `unverified`.
 
+### Stage518 — executing-tool file digest (historical receipt schema V2)
+
+The V2 receipt also contains tool_assembly_sha256: a lowercase SHA-256
+of the file at the executing assembly's reported location. In the owner-private
+automatic launch path, an independently supplied --private-core-witness-sha256
+pin is passed to the child process; the tool refuses to write a receipt if
+that file hash differs, and the Python coordinator independently checks the
+reported digest against the same pin. The digest itself stays in the private
+receipt and is never printed in public-safe reports.
+
+The Stage516/Stage517 digest identifies the older V1 assembly and must not be
+reused for this changed Stage518 binary. Obtain the current pin from the
+`VH_MAP02_EXPERIMENTAL_DLL_PUBLIC_SHA256` marker in the exact successful
+Stage518 compile workflow run, and verify the downloaded DLL against that
+same-run marker before installing or capturing.
+
+The two-witness auditors also require both receipts to report the same tool
+file digest. This catches accidental DLL drift across cold runs, but the paired
+digest remains self-reported unless compared to an independently supplied pin.
+The offline one-run re-audit also accepts `--private-core-witness-sha256` so an
+owner can compare one saved receipt with a separately trusted expected digest.
+Its report contains only pin-supplied/matched booleans. Without that argument,
+the one-run audit checks schema and process/frame consistency, not independent
+pin equality.
+
+This is a self-check of the file at the reported location, **not** an
+independent OS attestation of the CLR's in-memory module bytes. A malicious
+assembly could falsify its own receipt. Do not treat this as cryptographic
+authentication of the loaded module, BIOS, mounted disc, movie synchronization,
+MAP02 graphics, or Switch gameplay.
+
 ### What this does and does not prove
 
 If the owner runs a matching authentic External Tool inside genuine
@@ -363,7 +395,7 @@ stronger than observing only the preferred core. However:
   checks remain mandatory before authentic gameplay or remake fidelity
   can be claimed.
 
-The Python CI suite exercises **20 invented witness pairs**; the
+The Python CI suite exercises **23 synthetic witness-audit cases**; the
 Stage501 Windows CI additionally **compiles** the plugin against
 official SHA-256-verified BizHawk 2.11 binaries. Neither CI workflow
 runs EmuHawk, authenticates a live core or touches original game
@@ -373,3 +405,69 @@ Official sources consulted: BizHawk
 `src/BizHawk.Client.EmuHawk/MainForm.Movie.cs`,
 `src/BizHawk.Client.EmuHawk/tools/ToolManager.cs`, and the
 `ExternalToolProjects/HelloWorld` sample.
+
+
+### Stage521 — bind the receipt to the direct child handle
+
+The Windows launcher now passes the direct Popen process handle to the process-start receipt writer. The writer asks GetProcessId to confirm that the handle belongs to the recorded PID and reads GetProcessTimes from that same handle. This avoids the avoidable race in which a child exits and its numeric PID is reused before a separate OpenProcess call. The older PID-only query remains available for standalone owner-local use, but the paired capture path uses the owned handle. This narrows an accidental mismatch window; the editable local text receipts are still not cryptographic or OS attestation.
+
+
+### Stage522 — require the concrete Octoshock implementation and fingerprint its native module
+
+The previous V2 schema accepted any injected `IEmulator` whose system ID,
+core-name attribute and frame counter looked like PSX/Octoshock. The loader
+smoke test exposed this as a meaningful false-positive: a synthetic test double
+could satisfy those interface-level checks and cause a witness to be written.
+V3 now fails closed unless the injected object's concrete type is exactly
+`BizHawk.Emulation.Cores.Sony.PSX.Octoshock` from the `BizHawk.Emulation.Cores`
+assembly.
+
+Before enabling the save control or writing a receipt, the tool also requires
+`octoshock.dll` to be present in the current EmuHawk process module list. V3
+records three local file digests: the External Tool assembly, the managed core
+assembly, and the on-disk file identified by the loaded native module path.
+The independent Python audit validates the exact type and module name and
+rejects paired captures if any of those file digests differ.
+
+The verified BizHawk 2.11 release workflow now prints two additional
+public-safe markers, `VH_BIZHAWK211_CORE_ASSEMBLY_SHA256` and
+`VH_BIZHAWK211_NATIVE_OCTOSHOCK_SHA256`. Their values are derived from the
+SHA-256-verified upstream release archive and can be supplied privately as
+`VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256` and
+`VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256` when launching the owner-local
+capture. The External Tool rejects malformed or mismatching supplied pins.
+If no pin is supplied, the audit only checks that the reported hashes match
+between independent receipts; it explicitly reports both core-file pins as
+not independently verified.
+
+These are hashes of files on disk, not a measurement of the native module's
+in-memory pages. The receipt remains editable text and is not OS attestation.
+No original PS1, BIOS, BK2 or screenshots are included in CI. The no-media
+loader test now proves that a fake Octoshock-named `IEmulator` is rejected,
+rather than treating a synthetic positive receipt as evidence of real core
+execution.
+
+
+### Stage523 — offline first-run re-audit checks all three V3 file pins
+
+The owner-local offline one-run auditor now accepts three independent optional
+SHA-256 pins:
+
+- `--private-core-witness-sha256` for the External Tool assembly file;
+- `--private-core-assembly-sha256` for `BizHawk.Emulation.Cores.dll`;
+- `--private-native-module-sha256` for the on-disk `octoshock.dll` file.
+
+Each supplied value must be a 64-character hexadecimal SHA-256 and must match
+the corresponding digest in the V3 receipt. A malformed or mismatching value
+rejects the audit. Public-safe output includes only booleans saying whether a
+pin was supplied and whether it matched; it never prints the digest, process
+identity, paths, screenshot pixels, or original game data.
+
+The Windows real-NTFS synthetic fixture was also migrated from V2 to the full
+V3 record, and a regression test checks its schema. This keeps the real ACL
+test focused on permissions rather than failing early because its fake receipt
+is obsolete. All fixture media and receipt values remain fictional.
+
+These checks compare the receipt's reported file hashes to supplied pins.
+They do not attest to the in-memory bytes of loaded modules, and they do not
+prove that the original game reached MAP02.

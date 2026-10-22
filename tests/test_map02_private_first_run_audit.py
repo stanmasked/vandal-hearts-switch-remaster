@@ -41,9 +41,14 @@ def launch_bytes(pid=PID, ticks=TICKS):
 
 
 def witness_bytes(pid=PID, ticks=TICKS, frame=1800):
-    return ("VH_MAP02_RUNTIME_CORE_WITNESS_V1\n"
+    return ("VH_MAP02_RUNTIME_CORE_WITNESS_V3\n"
             "system=PSX\nloaded_core=Octoshock\n"
             "core_source=IEmulator.Attributes.CoreName\n"
+            "runtime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock\n"
+            "core_assembly_sha256=" + "b" * 64 + "\n"
+            "native_core_module_name=octoshock.dll\n"
+            "native_core_module_sha256=" + "c" * 64 + "\n"
+            "tool_assembly_sha256=" + "a" * 64 + "\n"
             f"process_id={pid}\nprocess_start_utc_ticks={ticks}\n"
             f"frame_count={frame}\nbios=unverified\ndisc=unverified\n"
             "movie_sync=unverified\n").encode("ascii")
@@ -69,7 +74,8 @@ class OwnerFirstCaptureAuditTests(unittest.TestCase):
         self.fake = self.root / "manual-fictional-octoshock.txt"
         self.fake.write_bytes(witness_bytes())
 
-    def review(self, *, manual=None, chain=None, rows=None):
+    def review(self, *, manual=None, chain=None, rows=None, expected_sha256=None,
+               expected_core_sha256=None, expected_native_sha256=None):
         data = dict(CHAIN if chain is None else chain)
         planned = ROWS if rows is None else rows
         with patch(
@@ -79,7 +85,9 @@ class OwnerFirstCaptureAuditTests(unittest.TestCase):
             "tools.map02_private_first_run_audit.parse_plan",
             return_value=("fictional plan", planned),
         ) as parse:
-            report = review_first_capture(self.movie, self.workspace, manual)
+            report = review_first_capture(
+                self.movie, self.workspace, manual, expected_sha256,
+                expected_core_sha256, expected_native_sha256)
         verify.assert_called_once_with(
             self.movie.resolve(strict=True), self.plan.resolve(strict=True),
             self.first.resolve(strict=True) / "vh_private_capture.log",
@@ -118,6 +126,62 @@ class OwnerFirstCaptureAuditTests(unittest.TestCase):
         (self.first / AUTO_WITNESS_NAME).write_bytes(witness_bytes(frame=3002))
         with self.assertRaisesRegex(ValueError, "later than first PNG"):
             self.review()
+
+    def test_supplied_tool_hash_pin_matches_and_is_not_disclosed(self):
+        result = self.review(expected_sha256="a" * 64)
+        self.assertTrue(result["runtime_tool_file_hash_matches_supplied_pin"])
+        self.assertTrue(result["runtime_tool_file_hash_pin_supplied"])
+        self.assertNotIn("a" * 64, json.dumps(result))
+
+    def test_mismatching_or_malformed_tool_hash_pin_rejected(self):
+        with self.assertRaisesRegex(ValueError, "differs from supplied pin"):
+            self.review(expected_sha256="b" * 64)
+        with self.assertRaisesRegex(ValueError, "pin is malformed"):
+            self.review(expected_sha256="not-a-sha256")
+
+    def test_managed_core_and_native_module_pins_match_and_are_redacted(self):
+        result = self.review(
+            expected_sha256="a" * 64,
+            expected_core_sha256="b" * 64,
+            expected_native_sha256="c" * 64,
+        )
+        self.assertTrue(result["runtime_core_assembly_file_hash_matches_supplied_pin"])
+        self.assertTrue(result["native_core_module_file_hash_matches_supplied_pin"])
+        self.assertTrue(result["runtime_core_assembly_file_hash_pin_supplied"])
+        self.assertTrue(result["native_core_module_file_hash_pin_supplied"])
+        report = json.dumps(result)
+        for digest in ("a" * 64, "b" * 64, "c" * 64):
+            self.assertNotIn(digest, report)
+
+    def test_managed_core_or_native_module_pin_mismatch_or_malformed_rejected(self):
+        with self.assertRaisesRegex(ValueError, "runtime core assembly file hash differs"):
+            self.review(expected_core_sha256="d" * 64)
+        with self.assertRaisesRegex(ValueError, "native core module file hash differs"):
+            self.review(expected_native_sha256="d" * 64)
+        with self.assertRaisesRegex(ValueError, "runtime core assembly SHA256 pin is malformed"):
+            self.review(expected_core_sha256="invalid")
+        with self.assertRaisesRegex(ValueError, "native core module SHA256 pin is malformed"):
+            self.review(expected_native_sha256="invalid")
+
+    def test_ntfs_fixture_uses_complete_v3_witness_schema(self):
+        source = (Path(__file__).resolve().parents[1]
+                  / "tools" / "map02_windows_first_capture_acl_ci_probe.ps1")
+        script = source.read_text(encoding="utf-8")
+        for expected in (
+            "VH_MAP02_RUNTIME_CORE_WITNESS_V3",
+            "runtime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock",
+            "core_assembly_sha256=$('b' * 64)",
+            "native_core_module_name=octoshock.dll",
+            "native_core_module_sha256=$('c' * 64)",
+            "tool_assembly_sha256=$('a' * 64)",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, script)
+
+    def test_unpinned_tool_hash_is_not_claimed_as_verified(self):
+        result = self.review()
+        self.assertFalse(result["runtime_tool_file_hash_matches_supplied_pin"])
+        self.assertFalse(result["runtime_tool_file_hash_pin_supplied"])
 
     def test_missing_or_wrong_process_receipt_rejected(self):
         target = self.first / START_NAME
@@ -233,7 +297,7 @@ class OwnerFirstCaptureAuditTests(unittest.TestCase):
             },
         ) as reviewer, contextlib.redirect_stdout(io.StringIO()) as out:
             self.assertEqual(main(), 0)
-        reviewer.assert_called_once_with(self.movie, self.workspace, None)
+        reviewer.assert_called_once_with(self.movie, self.workspace, None, None, None, None)
         serialized = out.getvalue()
         self.assertNotIn(str(self.root), serialized)
         self.assertFalse(json.loads(serialized)["authentic_map02_scene_identified"])

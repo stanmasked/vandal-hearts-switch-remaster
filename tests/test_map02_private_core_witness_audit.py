@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from tools.map02_private_core_witness_audit import (
     MAGIC, MAX_RECEIPT_BYTES, compare_witnesses, main, read_witness,
+    read_witness_record,
 )
 
 
@@ -19,6 +20,11 @@ def receipt(*, pid=3001, start=639000000000000001, frame=1666, **changes):
     values = dict(
         system="PSX", loaded_core="Octoshock",
         core_source="IEmulator.Attributes.CoreName",
+        runtime_core_type="BizHawk.Emulation.Cores.Sony.PSX.Octoshock",
+        core_assembly_sha256="b" * 64,
+        native_core_module_name="octoshock.dll",
+        native_core_module_sha256="c" * 64,
+        tool_assembly_sha256="a" * 64,
         process_id=str(pid), process_start_utc_ticks=str(start),
         frame_count=str(frame), bios="unverified",
         disc="unverified", movie_sync="unverified",
@@ -45,6 +51,8 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
         self.assertEqual(result["runtime_iemulator_core_witnesses_read"], 2)
         self.assertTrue(result["both_witnesses_report_psx_octoshock"])
         self.assertTrue(result["reported_emuhawk_process_identities_distinct"])
+        self.assertTrue(result["both_witnesses_report_same_tool_assembly_file_hash"])
+        self.assertFalse(result["tool_assembly_file_hash_independently_pinned"])
         for label in (
             "process_or_witness_origin_cryptographically_authenticated",
             "witnesses_tied_to_specific_bk2_or_png_capture",
@@ -55,6 +63,9 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
         ):
             self.assertFalse(result[label])
         self.assertNotIn(str(self.root), json.dumps(result))
+        self.assertNotIn("a" * 64, json.dumps(result))
+        self.assertNotIn("b" * 64, json.dumps(result))
+        self.assertNotIn("c" * 64, json.dumps(result))
         self.assertNotIn("3001", json.dumps(result))
         self.assertNotIn("639000000000000001", json.dumps(result))
 
@@ -63,6 +74,40 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
                                encoding="ascii")
         self.assertTrue(compare_witnesses(self.first, self.second)[
             "reported_emuhawk_process_identities_distinct"])
+
+    def test_different_tool_assembly_hashes_are_rejected(self):
+        self.second.write_text(receipt(
+            pid=3002, start=639000000000000002, tool_assembly_sha256="b" * 64
+        ), encoding="ascii")
+        with self.assertRaisesRegex(ValueError, "different tool assembly file hashes"):
+            compare_witnesses(self.first, self.second)
+
+    def test_different_runtime_core_assembly_hashes_are_rejected(self):
+        self.second.write_text(receipt(
+            pid=3002, start=639000000000000002, core_assembly_sha256="d" * 64
+        ), encoding="ascii")
+        with self.assertRaisesRegex(ValueError, "different runtime core assembly file hashes"):
+            compare_witnesses(self.first, self.second)
+
+    def test_different_native_core_module_hashes_are_rejected(self):
+        self.second.write_text(receipt(
+            pid=3002, start=639000000000000002, native_core_module_sha256="e" * 64
+        ), encoding="ascii")
+        with self.assertRaisesRegex(ValueError, "different native core module file hashes"):
+            compare_witnesses(self.first, self.second)
+
+    def test_wrong_concrete_runtime_core_type_rejected(self):
+        self.first.write_text(receipt(
+            runtime_core_type="invented.SyntheticOctoshock"
+        ), encoding="ascii")
+        with self.assertRaisesRegex(ValueError, "unsupported evidence"):
+            compare_witnesses(self.first, self.second)
+
+    def test_wrong_native_core_module_name_rejected(self):
+        self.first.write_text(receipt(native_core_module_name="fake-octoshock.dll"),
+                              encoding="ascii")
+        with self.assertRaisesRegex(ValueError, "unsupported evidence"):
+            compare_witnesses(self.first, self.second)
 
     def test_identical_process_identity_is_rejected(self):
         self.second.write_text(receipt(), encoding="ascii")
@@ -89,6 +134,19 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
         ), encoding="ascii")
         with self.assertRaisesRegex(ValueError, "unsupported evidence"):
             compare_witnesses(self.first, self.second)
+
+    def test_tool_assembly_hash_is_validated_and_normalized(self):
+        self.first.write_text(receipt(tool_assembly_sha256="A" * 64), encoding="ascii")
+        self.assertEqual(read_witness_record(self.first)[3], "a" * 64)
+
+    def test_malformed_tool_assembly_hash_is_rejected(self):
+        for key in ("tool_assembly_sha256", "core_assembly_sha256",
+                    "native_core_module_sha256"):
+            for digest in ("a" * 63, "a" * 65, "g" * 64, "a" * 63 + "!"):
+                with self.subTest(key=key, digest=digest):
+                    self.first.write_text(receipt(**{key: digest}), encoding="ascii")
+                    with self.assertRaisesRegex(ValueError, "SHA256 malformed"):
+                        read_witness(self.first)
 
     def test_bios_claim_is_rejected(self):
         self.first.write_text(receipt(bios="verified"), encoding="ascii")

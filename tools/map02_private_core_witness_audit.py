@@ -19,9 +19,11 @@ from tools.map02_private_disc_movie_preflight import (
     _assert_stable, _open_stable, _resolve_private_file,
 )
 
-SCHEMA = "vh.map02.private-runtime-core-witness-review.v1"
-MAGIC = "VH_MAP02_RUNTIME_CORE_WITNESS_V1"
-MAX_RECEIPT_BYTES = 512
+SCHEMA = "vh.map02.private-runtime-core-witness-review.v2"
+MAGIC = "VH_MAP02_RUNTIME_CORE_WITNESS_V3"
+MAX_RECEIPT_BYTES = 768
+RUNTIME_CORE_TYPE = "BizHawk.Emulation.Cores.Sony.PSX.Octoshock"
+NATIVE_CORE_MODULE_NAME = "octoshock.dll"
 MAX_FRAME_COUNT = 2_000_000
 MIN_WINDOWS_UTC_TICKS = 621355968000000000  # 1970-01-01 UTC
 MAX_WINDOWS_UTC_TICKS = 725811840000000000  # 2300-01-01 UTC
@@ -29,6 +31,11 @@ KEYS = (
     "system",
     "loaded_core",
     "core_source",
+    "runtime_core_type",
+    "core_assembly_sha256",
+    "native_core_module_name",
+    "native_core_module_sha256",
+    "tool_assembly_sha256",
     "process_id",
     "process_start_utc_ticks",
     "frame_count",
@@ -37,6 +44,7 @@ KEYS = (
     "movie_sync",
 )
 DECIMAL = re.compile(r"(?:0|[1-9][0-9]*)\Z")
+SHA256_HEX = re.compile(r"[0-9a-fA-F]{64}\Z")
 
 
 def _decimal(value: str, *, maximum: int, minimum: int = 0) -> int:
@@ -48,8 +56,8 @@ def _decimal(value: str, *, maximum: int, minimum: int = 0) -> int:
     return number
 
 
-def read_witness(source: Path) -> tuple[int, int, int]:
-    """Verify strict little textual witness; keep process IDs local."""
+def read_witness_record(source: Path) -> tuple[int, int, int, str, str, str]:
+    """Read a strict V3 witness; keep all runtime file hashes and IDs local."""
     path = _resolve_private_file(source)
     fd, before = _open_stable(path)
     try:
@@ -85,34 +93,67 @@ def read_witness(source: Path) -> tuple[int, int, int]:
         ("system", "PSX"),
         ("loaded_core", "Octoshock"),
         ("core_source", "IEmulator.Attributes.CoreName"),
+        ("runtime_core_type", RUNTIME_CORE_TYPE),
+        ("native_core_module_name", NATIVE_CORE_MODULE_NAME),
         ("bios", "unverified"),
         ("disc", "unverified"),
         ("movie_sync", "unverified"),
     ):
         if fields[key] != expected:
             raise ValueError("private core witness has unsupported evidence claim")
+    digests = {}
+    for key in (
+        "tool_assembly_sha256",
+        "core_assembly_sha256",
+        "native_core_module_sha256",
+    ):
+        value = fields[key]
+        if not SHA256_HEX.fullmatch(value):
+            raise ValueError("private core witness SHA256 malformed")
+        digests[key] = value.lower()
     return (
         _decimal(fields["process_id"], maximum=2_147_483_647, minimum=1),
         _decimal(fields["process_start_utc_ticks"],
                  maximum=MAX_WINDOWS_UTC_TICKS,
                  minimum=MIN_WINDOWS_UTC_TICKS),
         _decimal(fields["frame_count"], maximum=MAX_FRAME_COUNT),
+        digests["tool_assembly_sha256"],
+        digests["core_assembly_sha256"],
+        digests["native_core_module_sha256"],
     )
+
+
+def read_witness(source: Path) -> tuple[int, int, int]:
+    """Compatibility view of the PID, birth time and frame count only."""
+    return read_witness_record(source)[:3]
 
 
 def compare_witnesses(first: Path, second: Path) -> dict:
     """Report limited evidence only; distinct processes, not linked gameplay."""
     if Path(first) == Path(second):
         raise ValueError("two independent private witness paths are required")
-    a = read_witness(first)
-    b = read_witness(second)
+    a = read_witness_record(first)
+    b = read_witness_record(second)
     if a[:2] == b[:2]:
         raise ValueError("two private witnesses report the same emulator process")
+    if a[3] != b[3]:
+        raise ValueError("two private witnesses report different tool assembly file hashes")
+    if a[4] != b[4]:
+        raise ValueError("two private witnesses report different runtime core assembly file hashes")
+    if a[5] != b[5]:
+        raise ValueError("two private witnesses report different native core module file hashes")
     return {
         "schema": SCHEMA,
         "runtime_iemulator_core_witnesses_read": 2,
         "both_witnesses_report_psx_octoshock": True,
+        "both_witnesses_report_same_concrete_runtime_core_type": True,
         "reported_emuhawk_process_identities_distinct": True,
+        "both_witnesses_report_same_tool_assembly_file_hash": True,
+        "tool_assembly_file_hash_independently_pinned": False,
+        "both_witnesses_report_same_runtime_core_assembly_file_hash": True,
+        "runtime_core_assembly_file_hash_independently_pinned": False,
+        "both_witnesses_report_same_native_core_module_file_hash": True,
+        "native_core_module_file_hash_independently_pinned": False,
         "process_or_witness_origin_cryptographically_authenticated": False,
         "witnesses_tied_to_specific_bk2_or_png_capture": False,
         "actual_loaded_bios_authenticated": False,
