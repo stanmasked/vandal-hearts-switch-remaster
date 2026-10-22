@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import subprocess
 import sys
 from unittest.mock import patch
 
@@ -41,7 +42,29 @@ def main() -> int:
         return_value=chain,
     ):
         if sys.argv[1] == "owner":
-            result = review_first_capture(movie, workspace)
+            try:
+                result = review_first_capture(movie, workspace)
+            except ValueError as exc:
+                if "ACL" in str(exc):
+                    from tools.map02_windows_private_output_acl import SCRIPT, SUCCESS
+                    probe = subprocess.run(
+                        ["powershell.exe", "-NoProfile", "-NonInteractive",
+                         "-ExecutionPolicy", "Bypass", "-File", str(SCRIPT),
+                         "-Directory", str(workspace.resolve(strict=True))],
+                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                        check=False, timeout=30,
+                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                    )
+                    raw = probe.stdout
+                    print("VH_MAP02_WIN_PYTHON_ACL_DIAG "
+                          + "exit_zero=" + str(probe.returncode == 0).lower()
+                          + " ascii_exact=" + str(raw.strip() == SUCCESS.encode("ascii")).lower()
+                          + " utf16le_exact=" + str(
+                              raw.decode("utf-16-le", "ignore").strip("\\ufeff \\r\\n")
+                              == SUCCESS).lower()
+                          + " nonempty=" + str(bool(raw)).lower(),
+                          flush=True)
+                raise
             if (result["owner_private_capture_attempts_reaudited"] != 1
                     or not result["private_octoshock_core_witness_matches_launched_pid_and_birth"]
                     or not result["auto_core_frame_not_later_than_first_png"]
