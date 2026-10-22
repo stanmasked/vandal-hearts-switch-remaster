@@ -4,6 +4,7 @@ on:
     paths:
       - '.github/workflows/map02-bizhawk211-external-tool-compile.yml'
       - 'tools/map02_runtime_core_witness/**'
+      - 'tools/map02_owner_core_witness_install.ps1'
       - 'tools/map02_runtime_core_witness_smoke/**'
       - 'tools/map02_windows_private_output_acl.ps1'
       - 'tools/map02_windows_private_output_acl.py'
@@ -83,6 +84,72 @@ jobs:
             throw 'compiled witness assembly missing'
           }
           Write-Output 'VH_MAP02_REAL_BIZHAWK211_ASSEMBLY_COMPILE_PASS original_disc=0 original_bk2=0 bios=0 emulator_launched=0'
+      - name: Owner-private DLL install fixture against official pinned BizHawk layout
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $builder = 'tools/map02_runtime_core_witness/bin/Release/net48/VhMap02CoreWitness.dll'
+          $sourceRoot = Join-Path $env:RUNNER_TEMP ('vh-map02-stage516-src-' + [Guid]::NewGuid().ToString('N'))
+          [void][System.IO.Directory]::CreateDirectory($sourceRoot)
+          $source = Join-Path $sourceRoot 'VhMap02CoreWitness.dll'
+          try {
+            Copy-Item -LiteralPath $builder -Destination $source -ErrorAction Stop
+            $hash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+            # This public experimental DLL contains NO owner PS1 or BK2 data.
+            # The log allows an owner to independently verify an extracted
+            # Actions artifact before installing it on a personal PC.
+            Write-Output "VH_MAP02_EXPERIMENTAL_DLL_PUBLIC_SHA256=$hash"
+            $helper = 'tools/map02_owner_core_witness_install.ps1'
+            $args = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+                      '-File', $helper,
+                      '-BizHawkRoot', $env:VH_BIZHAWK_RELEASE_ROOT,
+                      '-SourceDll', $source, '-ExpectedDllSha256', $hash)
+            $dry = @( & powershell.exe @args )
+            if ($LASTEXITCODE -ne 0 -or @($dry).Count -ne 1 -or
+                [string]$dry -cne 'VH_MAP02_OWNER_BIZHAWK_PLUGIN_PREFLIGHT_OK installed=0 media=0') {
+              throw 'owner DLL installer dry-run was not strict'
+            }
+            $plugin = Join-Path $env:VH_BIZHAWK_RELEASE_ROOT 'ExternalTools/VhMap02CoreWitness.dll'
+            if (Test-Path -LiteralPath $plugin) { throw 'dry-run created a witness DLL' }
+            $wrong = @($args.Clone())
+            $wrong[$wrong.Length - 1] = ('0' * 64)
+            $invalid = @( & powershell.exe @wrong -Install )
+            if ($LASTEXITCODE -eq 0 -or @($invalid).Count -ne 1 -or
+                [string]$invalid -cne 'VH_MAP02_OWNER_BIZHAWK_PLUGIN_INSTALL_REJECTED media=0' -or
+                (Test-Path -LiteralPath $plugin)) {
+              throw 'invalid SHA256 was accepted by external-tool installer'
+            }
+            $installed = @( & powershell.exe @args -Install )
+            if ($LASTEXITCODE -ne 0 -or @($installed).Count -ne 1 -or
+                [string]$installed -cne 'VH_MAP02_OWNER_BIZHAWK_PLUGIN_INSTALLED_OK create_new=1 sha256_checked=1 media=0') {
+              throw 'owner DLL installer rejected verified and new DLL'
+            }
+            if ((Get-FileHash -LiteralPath $plugin -Algorithm SHA256).Hash -cne $hash) {
+              throw 'installed DLL differs from verified compiled witness'
+            }
+            # The same launcher path validator used by the owner must accept
+            # this installed DLL under exactly this EmuHawk/ExternalTools.
+            $emuhawk = Join-Path $env:VH_BIZHAWK_RELEASE_ROOT 'EmuHawk.exe'
+            python -c "from pathlib import Path; from tools.map02_private_bizhawk_poweron_launch import require_matching_core_plugin; import sys; assert require_matching_core_plugin(Path(sys.argv[1]), Path(sys.argv[2])) == Path(sys.argv[2]).resolve(strict=True)" $emuhawk $plugin
+            if ($LASTEXITCODE -ne 0) {
+              throw 'owner launcher rejects installed matching external DLL'
+            }
+            $repeat = @( & powershell.exe @args -Install )
+            if ($LASTEXITCODE -eq 0 -or @($repeat).Count -ne 1 -or
+                [string]$repeat -cne 'VH_MAP02_OWNER_BIZHAWK_PLUGIN_INSTALL_REJECTED media=0') {
+              throw 'existing private witness DLL was overwritten'
+            }
+            if ((Get-FileHash -LiteralPath $plugin -Algorithm SHA256).Hash -cne $hash) {
+              throw 'existing witness DLL changed on refused second install'
+            }
+            # The last child intentionally failed (reinstall refused);
+            # do not propagate that EXPECTED negative-case exit as the
+            # successful parent Actions step result.
+            $global:LASTEXITCODE = 0
+            Write-Output 'VH_MAP02_OWNER_WITNESS_DLL_INSTALL_FAKE_PASS dry=1 sha256=1 new=1 no_overwrite=1 original_media=0'
+          } finally {
+            Remove-Item -LiteralPath $sourceRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
       - name: Verify owner-only and Everyone-readable NTFS fixture ACLs
         shell: pwsh
         run: |
@@ -103,9 +170,10 @@ jobs:
           $root = "$env:VH_BIZHAWK_RELEASE_ROOT"
           $witness = 'tools/map02_runtime_core_witness/bin/Release/net48/VhMap02CoreWitness.dll'
           $external = Join-Path $root 'ExternalTools'
-          New-Item -ItemType Directory -Path $external -Force | Out-Null
           $plugin = Join-Path $external 'VhMap02CoreWitness.dll'
-          Copy-Item -LiteralPath $witness -Destination $plugin
+          if (-not (Test-Path -LiteralPath $plugin -PathType Leaf)) {
+            throw 'Stage516 strict installer did not prepare the experimental DLL'
+          }
           dotnet build tools/map02_runtime_core_witness_smoke/VhMap02LoaderSmoke.csproj -c Release -p:VH_BIZHAWK_RELEASE_ROOT="$root" --nologo -v:minimal
           if ($LASTEXITCODE -ne 0) { throw 'real-loader smoke harness compile failed' }
           $exe = 'tools/map02_runtime_core_witness_smoke/bin/Release/net48/VhMap02LoaderSmoke.exe'
