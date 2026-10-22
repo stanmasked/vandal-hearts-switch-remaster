@@ -232,10 +232,11 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     linux_runtime = sys.platform.startswith("linux") and mono_executable is not None
     if mono_executable is not None:
         mono = Path(mono_executable)
-        if (not sys.platform.startswith("linux") or not mono.is_absolute()
-                or mono.is_symlink() or not mono.is_file()
-                or not os.access(mono, os.X_OK)):
-            raise ValueError("Linux Mono executable requires an absolute executable regular file")
+        if not sys.platform.startswith("linux") or not mono.is_absolute():
+            raise ValueError("Linux Mono executable requires an absolute path")
+        mono = mono.resolve(strict=True)
+        if not mono.is_file() or mono.is_symlink() or not os.access(mono, os.X_OK):
+            raise ValueError("resolved Linux Mono executable must be a regular executable file")
     if auto_core_witness_plugin is not None and start and os.name != "nt" and not linux_runtime:
         raise ValueError("owner automatic core witness requires Windows or Linux with explicit Mono")
     if record_windows_process_identity and start and os.name != "nt" and not linux_runtime:
