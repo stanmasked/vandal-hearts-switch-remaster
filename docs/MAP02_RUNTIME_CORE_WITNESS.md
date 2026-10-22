@@ -348,7 +348,7 @@ external tool**, frame count, and process identity (PID/start time) in
 a private file. All BIOS, disc and movie-sync fields MUST remain
 `unverified`.
 
-### Stage518 — executing-tool file digest (receipt schema V2)
+### Stage518 — executing-tool file digest (historical receipt schema V2)
 
 The V2 receipt also contains tool_assembly_sha256: a lowercase SHA-256
 of the file at the executing assembly's reported location. In the owner-private
@@ -446,3 +446,28 @@ No original PS1, BIOS, BK2 or screenshots are included in CI. The no-media
 loader test now proves that a fake Octoshock-named `IEmulator` is rejected,
 rather than treating a synthetic positive receipt as evidence of real core
 execution.
+
+
+### Stage523 — offline first-run re-audit checks all three V3 file pins
+
+The owner-local offline one-run auditor now accepts three independent optional
+SHA-256 pins:
+
+- `--private-core-witness-sha256` for the External Tool assembly file;
+- `--private-core-assembly-sha256` for `BizHawk.Emulation.Cores.dll`;
+- `--private-native-module-sha256` for the on-disk `octoshock.dll` file.
+
+Each supplied value must be a 64-character hexadecimal SHA-256 and must match
+the corresponding digest in the V3 receipt. A malformed or mismatching value
+rejects the audit. Public-safe output includes only booleans saying whether a
+pin was supplied and whether it matched; it never prints the digest, process
+identity, paths, screenshot pixels, or original game data.
+
+The Windows real-NTFS synthetic fixture was also migrated from V2 to the full
+V3 record, and a regression test checks its schema. This keeps the real ACL
+test focused on permissions rather than failing early because its fake receipt
+is obsolete. All fixture media and receipt values remain fictional.
+
+These checks compare the receipt's reported file hashes to supplied pins.
+They do not attest to the in-memory bytes of loaded modules, and they do not
+prove that the original game reached MAP02.
