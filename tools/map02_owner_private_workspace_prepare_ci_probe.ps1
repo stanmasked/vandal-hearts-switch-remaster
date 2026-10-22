@@ -76,7 +76,7 @@ try {
 
     # An owner-private directory is deliberately made Everyone-readable
     # after creation. The *original* guard must still reject it.
-    $acl = [System.IO.Directory]::GetAccessControl($prepared)
+    $acl = Get-Acl -LiteralPath $prepared -ErrorAction Stop
     $acl.AddAccessRule(
         ([System.Security.AccessControl.FileSystemAccessRule]::new(
             [System.Security.Principal.SecurityIdentifier]::new('S-1-1-0'),
@@ -87,7 +87,7 @@ try {
             [System.Security.AccessControl.AccessControlType]::Allow
         ))
     )
-    [System.IO.Directory]::SetAccessControl($prepared, $acl)
+    Set-Acl -LiteralPath $prepared -AclObject $acl -ErrorAction Stop
     $denied = @( & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $guard -Directory $prepared )
     if ($LASTEXITCODE -eq 0 -or @($denied).Count -gt 0) {
         throw 'Everyone-readable target passed owner-only guard'
