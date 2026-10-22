@@ -130,6 +130,23 @@ class OwnerProcessGroupTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(len(observed), 1)
 
+    def test_optional_process_object_observer_receives_live_child(self):
+        observed = []
+
+        def on_started_process(process):
+            self.assertIsInstance(process, subprocess.Popen)
+            self.assertGreater(process.pid, 0)
+            self.assertIsNone(process.poll())
+            observed.append(process.pid)
+
+        result = run_owned_process(
+            [sys.executable, "-c", "import time;time.sleep(0.5)"],
+            env=os.environ.copy(), stdout=subprocess.DEVNULL, timeout=10,
+            on_started_process=on_started_process,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(len(observed), 1)
+
     def test_start_observer_failure_terminates_real_child(self):
         pid = []
         def reject(child_pid):

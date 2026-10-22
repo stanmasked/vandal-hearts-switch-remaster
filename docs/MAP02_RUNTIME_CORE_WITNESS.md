@@ -404,3 +404,8 @@ Official sources consulted: BizHawk
 `src/BizHawk.Client.EmuHawk/MainForm.Movie.cs`,
 `src/BizHawk.Client.EmuHawk/tools/ToolManager.cs`, and the
 `ExternalToolProjects/HelloWorld` sample.
+
+
+### Stage521 — bind the receipt to the direct child handle
+
+The Windows launcher now passes the direct Popen process handle to the process-start receipt writer. The writer asks GetProcessId to confirm that the handle belongs to the recorded PID and reads GetProcessTimes from that same handle. This avoids the avoidable race in which a child exits and its numeric PID is reused before a separate OpenProcess call. The older PID-only query remains available for standalone owner-local use, but the paired capture path uses the owned handle. This narrows an accidental mismatch window; the editable local text receipts are still not cryptographic or OS attestation.

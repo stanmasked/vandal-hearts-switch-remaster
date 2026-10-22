@@ -355,8 +355,9 @@ def main() -> int:
             extras = {}
             if args.record_process_identity:
                 private_dir = Path(env["VH_PRIVATE_PNG_DIR"])
-                extras["on_started"] = (
-                    lambda pid: record_started_process(pid, private_dir)
+                extras["on_started_process"] = (
+                    lambda process: record_started_process(
+                        process.pid, private_dir, process_handle=process._handle)
                 )
             result = run_owned_process(
                 command, env=env, stdout=private_output,

@@ -31,8 +31,13 @@ MAX_BYTES = 180
 POSITIVE_DECIMAL = re.compile(r"[1-9][0-9]*\Z")
 
 
-def windows_process_start_ticks(pid: int) -> int:
-    """Read the real kernel process birth time, as .NET DateTime UTC ticks."""
+def windows_process_start_ticks(
+        pid: int, *, process_handle: int | None = None) -> int:
+    """Read the kernel birth time, preferring the exact Popen-owned handle.
+
+    Passing a process handle avoids reopening a numeric PID after the child
+    starts, which could otherwise race process exit and PID reuse.
+    """
     if os.name != "nt":
         raise ValueError("Windows process start-time recording requires Windows")
     if type(pid) is not int or not 1 <= pid <= 2147483647:
@@ -46,6 +51,8 @@ def windows_process_start_ticks(pid: int) -> int:
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
     kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.GetProcessId.argtypes = [wintypes.HANDLE]
+    kernel.GetProcessId.restype = wintypes.DWORD
     kernel.GetProcessTimes.argtypes = [
         wintypes.HANDLE, ctypes.POINTER(FILETIME), ctypes.POINTER(FILETIME),
         ctypes.POINTER(FILETIME), ctypes.POINTER(FILETIME),
@@ -53,9 +60,25 @@ def windows_process_start_ticks(pid: int) -> int:
     kernel.GetProcessTimes.restype = wintypes.BOOL
     kernel.CloseHandle.argtypes = [wintypes.HANDLE]
     kernel.CloseHandle.restype = wintypes.BOOL
-    handle = kernel.OpenProcess(0x1000, False, pid)  # limited query only
-    if not handle:
-        raise OSError("cannot query owned EmuHawk process creation time")
+
+    owns_handle = process_handle is None
+    if owns_handle:
+        handle = kernel.OpenProcess(0x1000, False, pid)  # limited query only
+        if not handle:
+            raise OSError("cannot query owned EmuHawk process creation time")
+    else:
+        try:
+            raw_handle = int(process_handle)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError("invalid owned EmuHawk process handle") from None
+        if raw_handle <= 0:
+            raise ValueError("invalid owned EmuHawk process handle")
+        handle = wintypes.HANDLE(raw_handle)
+        # A valid handle is stronger than a PID lookup, but still verify the
+        # handle belongs to the PID recorded beside it.
+        if kernel.GetProcessId(handle) != pid:
+            raise ValueError("owned EmuHawk process handle does not match PID")
+
     try:
         created, exited, kernel_time, user_time = (FILETIME() for _ in range(4))
         success = kernel.GetProcessTimes(
@@ -70,11 +93,14 @@ def windows_process_start_ticks(pid: int) -> int:
             raise ValueError("owned process birth time outside supported period")
         return value
     finally:
-        kernel.CloseHandle(handle)
+        if owns_handle:
+            kernel.CloseHandle(handle)
 
 
-def record_started_process(pid: int, owner_private_dir: Path) -> None:
-    """Exclusively create a 0600 owner-local launch receipt while PID is alive."""
+def record_started_process(
+        pid: int, owner_private_dir: Path, *,
+        process_handle: int | None = None) -> None:
+    """Exclusively record a live child using its exact process handle when available."""
     directory = Path(owner_private_dir)
     if not directory.is_absolute() or not directory.is_dir() or directory.is_symlink():
         raise ValueError("owner-private capture directory must already exist")
@@ -82,7 +108,7 @@ def record_started_process(pid: int, owner_private_dir: Path) -> None:
     # as owner-only and rejects any Git checkout input/output directories.
     if (directory / ".git").exists():
         raise ValueError("process identity receipt must be outside Git")
-    ticks = windows_process_start_ticks(pid)
+    ticks = windows_process_start_ticks(pid, process_handle=process_handle)
     path = directory / NAME
     payload = (
         f"{MAGIC}\nprocess_id={pid}\n"

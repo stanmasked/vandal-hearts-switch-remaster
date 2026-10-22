@@ -186,14 +186,19 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         try:
-            birth = windows_process_start_ticks(proc.pid)
+            birth = windows_process_start_ticks(
+                proc.pid, process_handle=proc._handle)
             self.assertGreater(birth, 630000000000000000)
             self.assertLess(birth, 725811840000000000)
+            with self.assertRaisesRegex(ValueError, "handle does not match PID"):
+                windows_process_start_ticks(
+                    proc.pid + 1, process_handle=proc._handle)
             with patch(
                 "tools.map02_private_process_witness_binding.windows_process_start_ticks",
                 return_value=birth,
             ):
-                record_started_process(proc.pid, self.root)
+                record_started_process(
+                    proc.pid, self.root, process_handle=proc._handle)
             self.assertEqual(read_started_process(self.root / NAME),
                              (proc.pid, birth))
         finally:

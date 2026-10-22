@@ -24,8 +24,13 @@ def _kill_owned_group(pid: int, sig: int) -> None:
 
 
 def run_owned_process(command: list[str], *, env: dict[str, str],
-                      stdout, timeout: int, on_started=None):
+                      stdout, timeout: int, on_started=None,
+                      on_started_process=None):
     """Wait for emulator; on timeout stop its POSIX group and fail closed.
+
+    The PID-only observer is preserved. The process observer receives the
+    actual Popen object so Windows callers can use its owned handle rather
+    than reopening a possibly reused numeric PID.
 
     EmuHawk's stderr is redirected into the caller's owner-private stream;
     command, environment, timeout exception and OS errors are not printed.
@@ -46,7 +51,10 @@ def run_owned_process(command: list[str], *, env: dict[str, str],
             stdout=stdout, stderr=subprocess.STDOUT,
         )
         try:
-            on_started(process.pid)
+            if on_started is not None:
+                on_started(process.pid)
+            if on_started_process is not None:
+                on_started_process(process)
             return subprocess.CompletedProcess(command, process.wait(timeout=timeout))
         except BaseException:
             try:
@@ -62,6 +70,8 @@ def run_owned_process(command: list[str], *, env: dict[str, str],
     try:
         if on_started is not None:
             on_started(process.pid)
+        if on_started_process is not None:
+            on_started_process(process)
         code = process.wait(timeout=timeout)
     except BaseException:
         # TimeoutExpired, Ctrl-C and unexpected wait errors must not leave
