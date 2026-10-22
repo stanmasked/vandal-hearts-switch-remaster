@@ -103,6 +103,12 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported evidence"):
             compare_witnesses(self.first, self.second)
 
+    def test_linux_native_core_module_name_is_accepted(self):
+        self.first.write_text(receipt(
+            native_core_module_name="liboctoshock.dll.so"
+        ), encoding="ascii")
+        self.assertEqual(read_witness_record(self.first)[5], "c" * 64)
+
     def test_wrong_native_core_module_name_rejected(self):
         self.first.write_text(receipt(native_core_module_name="fake-octoshock.dll"),
                               encoding="ascii")
