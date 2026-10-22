@@ -263,7 +263,8 @@ namespace VhMap02CoreWitness
             {
                 foreach (ProcessModule module in process.Modules)
                 {
-                    if (Array.IndexOf(NativeCoreModuleNames, module.ModuleName) < 0)
+                    if (!string.Equals(module.ModuleName, NativeCoreModuleNames[0],
+                            StringComparison.OrdinalIgnoreCase))
                         continue;
                     if (!string.IsNullOrEmpty(found))
                         throw new InvalidOperationException();
