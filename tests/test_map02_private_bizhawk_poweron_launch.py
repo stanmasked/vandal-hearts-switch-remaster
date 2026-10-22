@@ -101,6 +101,18 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.assertEqual(argv[-1], str(self.disc.resolve()))
         self.assertNotIn("sh", argv[0].lower())
         self.assertEqual(env["VH_PRIVATE_EXPECTED_MOVIE"], str(self.bk2.resolve()))
+        expected_system_lib = (
+            Path("/usr/lib/x86_64-linux-gnu")
+            if Path("/usr/lib/x86_64-linux-gnu").is_dir()
+            else Path("/usr/lib64") if Path("/usr/lib64").is_dir()
+            else Path("/usr/lib")
+        )
+        self.assertEqual(env["LD_LIBRARY_PATH"], os.pathsep.join((
+            str(self.program.resolve().parent / "dll"),
+            str(self.program.resolve().parent), str(expected_system_lib),
+        )))
+        self.assertEqual(env["MONO_CRASH_NOFILE"], "1")
+        self.assertEqual(env["MONO_WINFORMS_XIM_STYLE"], "disabled")
 
     def test_refuses_cue_with_missing_track_file(self):
         self.track.unlink()
