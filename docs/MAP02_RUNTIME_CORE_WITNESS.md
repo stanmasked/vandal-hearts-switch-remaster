@@ -103,7 +103,7 @@ actual core: its acceptance only confirms **the implementation's
 decision logic**, not authentic provenance.
 
 The Windows CI requires an exact `fake_iemulator_positive=1`,
-`fake_negative_gates=4`, `in_memory_fake_witness_schema=1` success
+`fake_negative_gates=4`, `in_memory_fake_witness_schema=2` success
 marker, with `emulator_process_started=0`. No private witness,
 process identifier or sample data is published.
 
