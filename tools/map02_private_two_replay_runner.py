@@ -192,6 +192,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
                   private_workspace: Path, *,
                   expected_digest_file: Path | None = None,
                   private_psx_bios_candidate: Path | None = None,
+                  record_windows_process_identity: bool = False,
                   max_windows: int = 4,
                   emulator_timeout_seconds: int | None = None,
                   start: bool = False) -> dict:
@@ -208,6 +209,10 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         raise ValueError("private capture window count must be 1..10")
     if type(start) is not bool:
         raise ValueError("private execution opt-in must be boolean")
+    if type(record_windows_process_identity) is not bool:
+        raise ValueError("process binding request must be boolean")
+    if record_windows_process_identity and start and os.name != "nt":
+        raise ValueError("private process identity capture requires Windows")
     if emulator_timeout_seconds is not None and (
             type(emulator_timeout_seconds) is not int or
             not MIN_EMULATOR_TIMEOUT_SECONDS <= emulator_timeout_seconds
@@ -264,6 +269,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
                 else DEFAULT_EMULATOR_TIMEOUT_SECONDS
             ),
             "emulator_processes_started": 0,
+            "private_windows_process_start_receipts_requested": False,
+            "process_to_manual_core_witness_bound": False,
             "capture_attempts_audited": 0,
             "owner_private_assets_uploaded": False,
             "original_map02_scene_authenticated": False,
@@ -295,6 +302,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             argv += ["--private-full-bin-sha256-file", str(expected_digest_file)]
         if emulator_timeout_seconds is not None:
             argv += ["--emulator-timeout-seconds", str(emulator_timeout_seconds)]
+        if record_windows_process_identity:
+            argv.append("--record-process-identity")
         argv.append("--launch")
         # The child wrapper redirects EmuHawk stdout/stderr (which contain
         # absolute private paths) into files in the private capture folder.
@@ -335,6 +344,9 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         "schema": SCHEMA,
         "explicit_launch_requested": True,
         "emulator_processes_started": 2,
+        "private_windows_process_start_receipts_requested":
+            record_windows_process_identity,
+        "process_to_manual_core_witness_bound": False,
         "capture_attempts_audited": 2,
         "same_reported_bizhawk_runtime_profile":
             paired["same_reported_bizhawk_runtime_profile"],
@@ -382,6 +394,10 @@ def main() -> int:
     parser.add_argument("owner_existing_empty_private_workspace", type=Path)
     parser.add_argument("--private-full-bin-sha256-file", type=Path)
     parser.add_argument("--private-psx-bios-candidate", type=Path)
+    parser.add_argument(
+        "--record-windows-process-identity", action="store_true",
+        help="Opt-in owner-private launch receipts for later comparison to the core witness files",
+    )
     parser.add_argument("--max-windows", type=int, default=4)
     parser.add_argument(
         "--emulator-timeout-seconds", type=int,
@@ -397,6 +413,7 @@ def main() -> int:
             args.owner_existing_empty_private_workspace,
             expected_digest_file=args.private_full_bin_sha256_file,
             private_psx_bios_candidate=args.private_psx_bios_candidate,
+            record_windows_process_identity=args.record_windows_process_identity,
             max_windows=args.max_windows,
             emulator_timeout_seconds=args.emulator_timeout_seconds,
             start=args.launch_two,
