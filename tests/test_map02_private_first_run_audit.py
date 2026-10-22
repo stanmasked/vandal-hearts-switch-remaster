@@ -81,11 +81,11 @@ class OwnerFirstCaptureAuditTests(unittest.TestCase):
         ) as parse:
             report = review_first_capture(self.movie, self.workspace, manual)
         verify.assert_called_once_with(
-            self.movie.resolve(strict=True), self.plan,
+            self.movie.resolve(strict=True), self.plan.resolve(strict=True),
             self.first.resolve(strict=True) / "vh_private_capture.log",
             self.first.resolve(strict=True),
         )
-        parse.assert_called_once_with(self.plan)
+        parse.assert_called_once_with(self.plan.resolve(strict=True))
         return report
 
     def test_single_automatic_owner_receipt_and_three_screenshots(self):
