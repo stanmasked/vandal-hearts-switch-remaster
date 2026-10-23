@@ -651,6 +651,10 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         witness.write_bytes(core(birth + 1))
         with self.assertRaisesRegex(ValueError, "does not match"):
             verify_private_auto_witness(self.output)
+        witness.write_bytes(core(birth).replace(
+            b"bios=psx_u_firmware_hash_matches_movie_header", b"bios=unverified"))
+        with self.assertRaisesRegex(ValueError, "does not confirm PSX/U firmware match"):
+            verify_private_auto_witness(self.output)
         witness.write_bytes(core(birth))
         self.assertIsNone(verify_private_auto_witness(self.output))
         self.assertIsNone(verify_private_auto_witness(self.output, "a" * 64))
