@@ -71,8 +71,8 @@ jobs:
           nm -D --defined-only "$library" | awk '{print $3}' > "$RUNNER_TEMP/octoshock-exports.txt"
           managed_bindings="$RUNNER_TEMP/bizhawk-upstream/src/BizHawk.Emulation.Cores/Consoles/Sony/PSX/OctoshockDll.cs"
           test -f "$managed_bindings"
-          grep -oE 'public static extern [^ ]+ shock_[A-Za-z0-9_]+\\(' "$managed_bindings" \
-            | sed -E 's/.* (shock_[A-Za-z0-9_]+)\\(.*/\\1/' \
+          grep -oE 'public static extern [^ ]+ shock_[A-Za-z0-9_]+\(' "$managed_bindings" \
+            | sed -E 's/.* (shock_[A-Za-z0-9_]+)\(.*/\1/' \
             | sort -u > "$RUNNER_TEMP/octoshock-required-exports.txt"
           test -s "$RUNNER_TEMP/octoshock-required-exports.txt"
           while IFS= read -r symbol; do
