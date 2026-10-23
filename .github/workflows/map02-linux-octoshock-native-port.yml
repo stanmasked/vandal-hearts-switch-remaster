@@ -86,18 +86,60 @@ jobs:
           readelf -h "$library" | grep -q 'Class:.*ELF64'
           readelf -h "$library" | grep -q 'Machine:.*X86-64'
           nm -D --defined-only "$library" | awk '{print $3}' > "$RUNNER_TEMP/octoshock-exports.txt"
-          managed_bindings="$RUNNER_TEMP/bizhawk-upstream/src/BizHawk.Emulation.Cores/Consoles/Sony/PSX/OctoshockDll.cs"
+          managed_dir="$RUNNER_TEMP/bizhawk-upstream/src/BizHawk.Emulation.Cores/Consoles/Sony/PSX"
+          managed_bindings="$managed_dir/OctoshockDll.cs"
           test -f "$managed_bindings"
           grep -oE 'public static extern [^ ]+ shock_[A-Za-z0-9_]+\(' "$managed_bindings" \
             | sed -E 's/.* (shock_[A-Za-z0-9_]+)\(.*/\1/' \
-            | sort -u > "$RUNNER_TEMP/octoshock-required-exports.txt"
+            | sort -u > "$RUNNER_TEMP/octoshock-declared-imports.txt"
+          grep -RohE 'OctoshockDll\.shock_[A-Za-z0-9_]+\(' "$managed_dir" --include='*.cs' \
+            | sed -E 's/.*OctoshockDll\.(shock_[A-Za-z0-9_]+)\(.*/\1/' \
+            | sort -u > "$RUNNER_TEMP/octoshock-referenced-imports.txt"
+          comm -23 "$RUNNER_TEMP/octoshock-referenced-imports.txt" "$RUNNER_TEMP/octoshock-declared-imports.txt" \
+            > "$RUNNER_TEMP/octoshock-undeclared-calls.txt"
+          if test -s "$RUNNER_TEMP/octoshock-undeclared-calls.txt"; then
+            echo 'managed Octoshock call has no declared P/Invoke:' >&2
+            cat "$RUNNER_TEMP/octoshock-undeclared-calls.txt" >&2
+            exit 1
+          fi
+          known_unimplemented="$GITHUB_WORKSPACE/tools/map02_linux_octoshock/known-unimplemented-managed-imports.txt"
+          test "$(wc -l < "$known_unimplemented")" -eq 1
+          sort -u "$known_unimplemented" > "$RUNNER_TEMP/octoshock-known-unimplemented.sorted.txt"
+          if ! cmp -s "$known_unimplemented" "$RUNNER_TEMP/octoshock-known-unimplemented.sorted.txt"; then
+            echo 'known unimplemented import list must be sorted and unique' >&2
+            exit 1
+          fi
+          comm -23 "$known_unimplemented" "$RUNNER_TEMP/octoshock-declared-imports.txt" \
+            > "$RUNNER_TEMP/octoshock-stale-import-not-declared.txt"
+          if test -s "$RUNNER_TEMP/octoshock-stale-import-not-declared.txt"; then
+            echo 'pinned stale-import exception no longer matches managed declarations' >&2
+            cat "$RUNNER_TEMP/octoshock-stale-import-not-declared.txt" >&2
+            exit 1
+          fi
+          while IFS= read -r symbol; do
+            if grep -R -E "OctoshockDll\\.${symbol}\\(" "$managed_dir" --include='*.cs' >/dev/null; then
+              echo "known unimplemented import is now referenced by managed code: $symbol" >&2
+              exit 1
+            fi
+            if grep -R -F --include='*.h' --include='*.cpp' "$symbol" "$RUNNER_TEMP/bizhawk-upstream/psx/octoshock" >/dev/null; then
+              echo "known unimplemented import now exists in native source; update the exception: $symbol" >&2
+              exit 1
+            fi
+            if grep -Fx "$symbol" "$RUNNER_TEMP/octoshock-exports.txt" >/dev/null; then
+              echo "known unimplemented import unexpectedly exported; remove exception: $symbol" >&2
+              exit 1
+            fi
+          done < "$known_unimplemented"
+          grep -Fvx -f "$known_unimplemented" "$RUNNER_TEMP/octoshock-declared-imports.txt" \
+            > "$RUNNER_TEMP/octoshock-required-exports.txt"
           test -s "$RUNNER_TEMP/octoshock-required-exports.txt"
           while IFS= read -r symbol; do
             if ! grep -Fx "$symbol" "$RUNNER_TEMP/octoshock-exports.txt" >/dev/null; then
-              echo "official BizHawk managed P/Invoke export absent: $symbol" >&2
+              echo "referenced official BizHawk managed P/Invoke export absent: $symbol" >&2
               exit 1
             fi
           done < "$RUNNER_TEMP/octoshock-required-exports.txt"
+          echo 'VH_MAP02_KNOWN_STALE_IMPORT_CONFIRMED symbol=shock_Peripheral_SetNegconInput native_definition=0 managed_call=0'
           echo "VH_MAP02_OCTOSHOCK_MANAGED_EXPORT_COVERAGE_PASS count=$(wc -l < "$RUNNER_TEMP/octoshock-required-exports.txt")"
           if ldd -r "$library" 2>&1 | grep -E 'undefined symbol|not found'; then
             echo 'native probe has unresolved runtime dependencies' >&2
