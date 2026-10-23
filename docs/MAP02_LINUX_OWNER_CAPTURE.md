@@ -337,13 +337,25 @@ That temporary CI result is NOT a preserved backup. Stage537 introduces
 command that uses a pre-authenticated local `rclone` Google Drive connection
 to upload files and actually download them again, validating all bytes.
 
-Configure two **private local** rclone Drive remotes (OAuth token only in
-the owner's private rclone config, never public code or CI):
-- `vh_builds`: type `drive`, root_folder_id `15uQPDvLCAwYrwphCoFSvPHLsMpPiew-S`
-  (= private `07_Builds_and_Test_Artifacts`)
-- `vh_manifests`: type `drive`, root_folder_id
-  `1AVh7q1BXMWhJHSarPh9ZWh2YbwI_92AE`
-  (= private `00_Manifest_and_SHA256`)
+Configure two **private local** rclone Drive remotes (OAuth token only
+in the owner's private rclone config, never public code or CI):
+- `vh_builds`: Google Drive type `drive`, root_folder_id of the project's
+  *private* `07_Builds_and_Test_Artifacts` folder
+- `vh_manifests`: Google Drive type `drive`, root_folder_id of the project's
+  *private* `00_Manifest_and_SHA256` folder
+
+Store the two **actual** folder IDs in a separate local `0600` JSON file
+outside the runtime, Git checkout, and public CI, for example:
+
+```json
+{
+  "builds_folder_id": "YOUR_PRIVATE_07_FOLDER_ID",
+  "manifests_folder_id": "YOUR_PRIVATE_00_FOLDER_ID"
+}
+```
+
+The tool compares the folder IDs from this privately saved map with the
+authenticated remote configuration but never prints either the map or token.
 
 The command independently inspects each remote's locally redacted config,
 requires exactly these canonical folder IDs, and refuses environment overrides
@@ -362,7 +374,8 @@ python3 -m tools.map02_linux_octoshock.private_runtime_drive \
   /private/backup/vh-map02-owner-runtime.tar.sha256 \
   /private/readback/map02-owner-run-001 \
   --builds-remote vh_builds --manifests-remote vh_manifests \
-  --session owner-run-001
+  --session owner-run-001 \
+  --private-folder-map /private/config/vh-map02-drive-folders.json
 ```
 
 The readback path must not already exist, must be outside Git and runtime,

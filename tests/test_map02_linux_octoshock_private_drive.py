@@ -11,9 +11,13 @@ import unittest
 from test_map02_linux_octoshock_archive_readback import private_mock_runtime, sha
 from tools.map02_linux_octoshock.private_runtime_tar import pack_runtime
 from tools.map02_linux_octoshock.private_runtime_drive import (
-    BUILDS_FOLDER_ID, MANIFESTS_FOLDER_ID, PrivateDriveError,
+    PrivateDriveError,
     archive_to_private_drive,
 )
+
+
+BUILDS_FOLDER_ID = "fictionalBuildsFolderRoot1"
+MANIFESTS_FOLDER_ID = "fictionalManifestFolderR2"
 
 
 class FakeDriveTransport:
@@ -88,6 +92,12 @@ class Stage537TransportTests(unittest.TestCase):
         self.tar = self.archive_dir / "runtime.tar"
         self.tar_sha = self.archive_dir / "runtime.tar.sha256"
         pack_runtime(self.source, self.pin, self.tar, self.tar_sha)
+        self.private_map = self.base / "private-folders.json"
+        self.private_map.write_text(json.dumps({
+            "builds_folder_id": BUILDS_FOLDER_ID,
+            "manifests_folder_id": MANIFESTS_FOLDER_ID,
+        }), encoding="utf-8")
+        self.private_map.chmod(0o600)
         self.readback = self.base / "downloaded"
         self.transport = FakeDriveTransport()
 
@@ -95,7 +105,7 @@ class Stage537TransportTests(unittest.TestCase):
         return archive_to_private_drive(
             self.source, self.pin, self.tar, self.tar_sha, self.readback,
             "vh_builds", "vh_manifests", "testowner001",
-            invoke=self.transport,
+            self.private_map, invoke=self.transport,
         )
 
     def test_entire_mock_transfer_and_readback_receipt(self):
@@ -165,7 +175,7 @@ class Stage537TransportTests(unittest.TestCase):
             archive_to_private_drive(
                 self.source, self.pin, self.tar, self.tar_sha, self.readback,
                 "vh_builds", "vh_manifests", "../not-safe",
-                invoke=self.transport
+                self.private_map, invoke=self.transport
             )
         self.assertEqual(self.transport.uploads, 0)
 

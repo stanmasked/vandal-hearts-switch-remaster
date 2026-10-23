@@ -25,8 +25,7 @@ from tools.map02_linux_octoshock.private_runtime_tar import (
 )
 from tools.map02_linux_octoshock.verify_owner_runtime import verify_runtime
 
-BUILDS_FOLDER_ID = "15uQPDvLCAwYrwphCoFSvPHLsMpPiew-S"
-MANIFESTS_FOLDER_ID = "1AVh7q1BXMWhJHSarPh9ZWh2YbwI_92AE"
+FOLDER_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{15,128}\Z")
 REMOTE_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,40}\Z")
 SESSION_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]{7,62}\Z")
 MAX_STDOUT = 262144
@@ -117,6 +116,29 @@ def _require_file(path_value: Path, source: Path, *, mode: int | None = None) ->
     return path
 
 
+def _folder_map(path: Path, root: Path) -> tuple[str, str]:
+    """Read true private folder IDs from an outside-Git owner-only file."""
+    owner_file = _require_file(path, root, mode=0o600)
+    if owner_file.stat().st_size > 2048:
+        _fail()
+    try:
+        data = json.loads(owner_file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError):
+        _fail()
+    if not isinstance(data, dict) or set(data) != {
+            "builds_folder_id", "manifests_folder_id"}:
+        _fail()
+    builds_id = data["builds_folder_id"]
+    manifests_id = data["manifests_folder_id"]
+    if (not isinstance(builds_id, str)
+            or not isinstance(manifests_id, str)
+            or FOLDER_ID_PATTERN.fullmatch(builds_id) is None
+            or FOLDER_ID_PATTERN.fullmatch(manifests_id) is None
+            or builds_id == manifests_id):
+        _fail()
+    return builds_id, manifests_id
+
+
 def _sha_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
@@ -124,7 +146,7 @@ def _sha_bytes(value: bytes) -> str:
 def archive_to_private_drive(
     runtime: Path, owner_manifest_pin: Path, tar: Path, tar_pin: Path,
     private_readback_folder: Path, builds_remote: str, manifests_remote: str,
-    session: str, *,
+    session: str, private_folder_map: Path, *,
     invoke: Callable[[list[str]], str] = _call_rclone,
 ) -> dict[str, object]:
     """Archive previously pinned runtime; confirm exact remote-byte readback.
@@ -140,6 +162,7 @@ def archive_to_private_drive(
         if builds == manifests or SESSION_PATTERN.fullmatch(session) is None:
             _fail()
         staging = _outside(private_readback_folder, source, nonexistent=True)
+        builds_id, manifests_id = _folder_map(private_folder_map, source)
         manifest_file = source / "map02-owner-runtime-manifest.json"
         pin = _require_file(owner_manifest_pin, source, mode=0o600)
         archive = _require_file(tar, source, mode=0o600)
@@ -161,8 +184,8 @@ def archive_to_private_drive(
                     or lower in {"vandalhearts.bin", "vandalhearts.bk2"}):
                 _fail()
 
-        _check_remote(builds, BUILDS_FOLDER_ID, invoke)
-        _check_remote(manifests, MANIFESTS_FOLDER_ID, invoke)
+        _check_remote(builds, builds_id, invoke)
+        _check_remote(manifests, manifests_id, invoke)
         stem = "map02-runtime-" + session
         payloads = [
             (builds, stem + ".tar", archive),
@@ -195,8 +218,8 @@ def archive_to_private_drive(
             if path == pin or path == archive_pin:
                 os.chmod(downloaded, 0o600)
             metadata.append({
-                "folder_id": (BUILDS_FOLDER_ID if remote == builds
-                              else MANIFESTS_FOLDER_ID),
+                "folder_id": (builds_id if remote == builds
+                              else manifests_id),
                 "name": name,
                 "google_drive_id": object_id,
                 "sha256": _hash_file(downloaded),
@@ -262,12 +285,14 @@ def main() -> int:
     parser.add_argument("--builds-remote", required=True)
     parser.add_argument("--manifests-remote", required=True)
     parser.add_argument("--session", required=True)
+    parser.add_argument("--private-folder-map", required=True, type=Path)
     args = parser.parse_args()
     try:
         report = archive_to_private_drive(
             args.runtime, args.owner_manifest_pin,
             args.packed_tar, args.tar_sha256_pin, args.new_private_readback_dir,
             args.builds_remote, args.manifests_remote, args.session,
+            args.private_folder_map,
         )
     except PrivateDriveError:
         print("VH_MAP02_STAGE537_PRIVATE_DRIVE_READBACK_REJECTED capture_ready=0")
