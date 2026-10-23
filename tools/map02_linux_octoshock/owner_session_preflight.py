@@ -34,7 +34,7 @@ def verify_owner_backup_readiness(
     new_session_root: Path, new_receipt_pin: Path,
     builds_remote: str, manifests_remote: str, session: str, *,
     invoke=_call_rclone,
-    disk_usage=shutil.disk_usage,
+    disk_usage=None,
 ) -> dict[str, object]:
     """Require safe space, trust, remote scope and unique artifact names."""
     try:
@@ -73,7 +73,8 @@ def verify_owner_backup_readiness(
         # At least 512 MiB or 10x unpacked bytes, whichever is larger.
         # Tar, sealed tar, downloaded copies and safe-restored trees coexist.
         required = max(512 * 1024 * 1024, total * 10)
-        if disk_usage(root.parent).free < required:
+        usage_fn = shutil.disk_usage if disk_usage is None else disk_usage
+        if usage_fn(root.parent).free < required:
             _fail()
         builds_id, manifests_id = _folder_map(config, source)
         _check_remote(builds, builds_id, invoke)
