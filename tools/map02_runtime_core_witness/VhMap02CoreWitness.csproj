@@ -25,6 +25,12 @@
       <HintPath>$(VH_MONO_POSIX_PATH)</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- The official Linux Mono build references netstandard-based attributes.
+         NET48 compilers do not always add this facade transitively. -->
+    <Reference Include="netstandard">
+      <HintPath>$(VH_MONO_NETSTANDARD_PATH)</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
   <ItemGroup Condition="'$(VH_BIZHAWK_RELEASE_ROOT)' != ''">
     <Reference Include="System.Windows.Forms" />
