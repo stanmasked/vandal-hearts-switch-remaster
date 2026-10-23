@@ -19,11 +19,13 @@ class OwnerDriveSessionTests(unittest.TestCase):
         Stage537TransportTests.setUp(self)
         self.full_session = self.base / "private-owner-full-session"
         self.receipt_pin = self.base / "private-trust-receipt.sha256"
+        self.archive_pin = self.base / "private-trust-archive.sha256"
 
     def execute(self, *, session="owner541001"):
         return complete_owner_archive_session(
             self.source, self.pin, self.private_map, self.full_session,
             self.receipt_pin, "vh_builds", "vh_manifests", session,
+            independent_archive_pin_output=self.archive_pin,
             invoke=self.transport,
         )
 
@@ -36,6 +38,9 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertFalse(result["capture_ready"])
         self.assertTrue(self.receipt_pin.exists())
         self.assertEqual(self.receipt_pin.stat().st_mode & 0o777, 0o600)
+        self.assertTrue(self.archive_pin.is_file())
+        self.assertEqual(self.archive_pin.stat().st_mode & 0o777, 0o600)
+        self.assertTrue(result["owner_archive_pin_written"])
         self.assertEqual(self.transport.uploads, 5)
         self.assertTrue(
             (self.full_session / "independent-reaudit/new-copy/restored/runtime/EmuHawk.exe").is_file()
@@ -43,15 +48,39 @@ class OwnerDriveSessionTests(unittest.TestCase):
         # Delete original installed runtime and still restore again from
         # same fictional cloud using *independently retained* local pins.
         shutil.rmtree(self.source)
+        shutil.rmtree(self.full_session)
         report = audit_independent_readback(
-            self.private_map, self.pin,
-            self.full_session / "archive/map02-runtime-owner541001.tar.sha256",
-            self.receipt_pin,
+            self.private_map, self.pin, self.archive_pin, self.receipt_pin,
             self.base / "new-audit-after-loss", "vh_builds",
             "vh_manifests", "owner541001",
             invoke=self.transport,
         )
         self.assertFalse(report["original_runtime_required"])
+        self.assertFalse(self.full_session.exists())
+        self.assertEqual(report["objects_read_back"], 5)
+
+    def test_existing_independent_archive_pin_rejected_before_transfer(self):
+        self.archive_pin.write_text("0" * 64 + "\n", encoding="ascii")
+        self.archive_pin.chmod(0o600)
+        with self.assertRaises(PrivateOwnerSessionError):
+            self.execute()
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertFalse(self.full_session.exists())
+        self.assertEqual(self.archive_pin.read_text(), "0" * 64 + "\n")
+
+    def test_archive_pin_inside_session_root_rejected_early(self):
+        self.archive_pin = self.full_session / "untrusted-tar.sha256"
+        with self.assertRaises(PrivateOwnerSessionError):
+            self.execute()
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertFalse(self.full_session.exists())
+
+    def test_duplicate_pin_output_rejected_early(self):
+        self.archive_pin = self.receipt_pin
+        with self.assertRaises(PrivateOwnerSessionError):
+            self.execute()
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertFalse(self.full_session.exists())
 
     def test_missing_manifest_owner_pin_does_not_upload(self):
         self.pin.write_text("0" * 64 + "\n", encoding="ascii")
@@ -70,6 +99,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
         with self.assertRaises(PrivateOwnerSessionError):
             self.execute()
         self.assertFalse(self.receipt_pin.exists())
+        self.assertFalse(self.archive_pin.exists())
 
     def test_bad_session_rejected_early(self):
         with self.assertRaises(PrivateOwnerSessionError):

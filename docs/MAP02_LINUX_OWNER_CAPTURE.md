@@ -623,3 +623,37 @@ type, exact owner-private root folder IDs, forbidden environment overrides,
 existing cloud object collisions and byte-for-byte receipt readbacks are
 still checked separately. Public CI exercises version and flags against
 an in-memory stand-in and never uses original PS1 media or owner tokens.
+
+## Stage544 — independent tar trust survives loss of the owner session
+
+Stage541 created an independent owner-private receipt SHA256 outside the
+throwaway session, but the tar SHA256 itself was retained **inside** that
+session. This meant Stage539's later source-free restore could not
+honestly prove independent integrity after both the original installed
+runtime **and** the temporary owner session directory were lost.
+
+Stage544 closes that recovery gap. The full owner-only archive-session CLI
+now requires `--new-owner-archive-pin /private/trust/owner544001-tar.sha256`.
+The chosen output must be a NEW private regular file path outside the
+installed runtime, Git, entire session directory, existing manifest pin,
+folder-map file and receipt SHA pin. Parent must already be owner-owned
+mode-0700. It cannot reuse or overwrite prior anchors.
+
+The utility only creates the exclusive mode-0600 independent tar digest
+**after the complete authenticated archive readback, receipt pin creation,
+and separate source-free re-audit have all succeeded**. It compares the
+local tar's freshly computed full SHA256 to the retained archive digest
+before and after writing the external reference. Partial or corrupted
+cloud transfers cannot yield a completed external tar pin.
+
+The Stage544 synthetic integration test now simulates loss of BOTH the
+owner runtime and **the entire disposable owner archive session** and
+then re-downloads and verifies the fake cloud archive from the three
+separately retained anchors: owner manifest SHA, external archive SHA,
+and independent cloud receipt SHA.
+
+For a real backup, store the three SHA256 trust references and their
+generation/provenance in a protected owner-controlled offline backup
+**independent of the cloud archive**. Moving files elsewhere on the same
+machine alone does not protect against whole-host loss. The public CI
+simulation does not actually save an owner binary to Google Drive.
