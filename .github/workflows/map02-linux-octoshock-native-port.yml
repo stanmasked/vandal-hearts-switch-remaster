@@ -24,6 +24,9 @@ jobs:
       - name: Check out project tooling only
         uses: actions/checkout@v4
 
+      - name: Test POSIX compiler-sanity shim against synthetic upstream header
+        run: python3 tests/test_map02_linux_octoshock_compiler_sanity.py
+
       - name: Install native build tools
         run: |
           set -euo pipefail
