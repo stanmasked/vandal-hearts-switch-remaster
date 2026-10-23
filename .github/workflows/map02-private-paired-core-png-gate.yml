@@ -12,6 +12,10 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   fictional-owner-paired-acceptance:
     name: Fictional paired core/PNG evidence (${{ matrix.os }} Python ${{ matrix.python }})

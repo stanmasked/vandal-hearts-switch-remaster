@@ -18,6 +18,10 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   fictional-first-owner-audit:
     name: Read-only first-run review (${{ matrix.os }} Python ${{ matrix.python }})
