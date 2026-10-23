@@ -11,6 +11,7 @@ internal static class OctoshockNative
         public int scanline_end;
         public int renderType;
         public int deinterlaceMode;
+        [MarshalAs(UnmanagedType.I1)]
         public bool skip;
     }
 
@@ -79,6 +80,13 @@ internal static class Program
                 return 4;
             }
             created = true;
+            // The pinned upstream implementation is singleton-based and explicitly
+            // writes NULL to *psx. Keep this unusual but real contract under test.
+            if (psx != IntPtr.Zero)
+            {
+                Console.Error.WriteLine("Octoshock shock_Create returned a non-null instance pointer");
+                return 5;
+            }
 
             var options = new OctoshockNative.ShockRenderOptions
             {
@@ -92,7 +100,7 @@ internal static class Program
             if (result != 0)
             {
                 Console.Error.WriteLine("Octoshock synthetic shock_SetRenderOptions returned " + result);
-                return 5;
+                return 6;
             }
             Console.WriteLine("VH_MAP02_MONO_RENDER_OPTIONS_PASS size=" + optionsSize
                 + " skip_offset=" + skipOffset + " result=0");
@@ -101,7 +109,7 @@ internal static class Program
             if (result != 0)
             {
                 Console.Error.WriteLine("Octoshock synthetic shock_Destroy returned " + result);
-                return 6;
+                return 7;
             }
             created = false;
 
@@ -111,10 +119,10 @@ internal static class Program
             if (result != ShockNoCanDo)
             {
                 Console.Error.WriteLine("Octoshock duplicate destroy guard returned " + result);
-                return 7;
+                return 8;
             }
 
-            Console.WriteLine("VH_MAP02_MONO_LIFECYCLE_PASS create=0 render_options=0 destroy=0 "
+            Console.WriteLine("VH_MAP02_MONO_LIFECYCLE_PASS create=0 instance_pointer=null render_options=0 destroy=0 "
                 + "destroy_guard=-2 firmware=synthetic-zero-filled bytes=524288 "
                 + "power_on=0 disc=0 frames=0");
             return 0;
