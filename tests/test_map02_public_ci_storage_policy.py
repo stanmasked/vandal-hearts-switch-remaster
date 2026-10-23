@@ -22,6 +22,15 @@ class PublicCIStoragePolicyTests(unittest.TestCase):
         self.assertNotIn("vandalhearts.bk2", text.lower())
         self.assertNotIn("SCPH-7003", text)
 
+    def test_windows_compile_workflow_does_not_publish_experimental_dll(self):
+        text = (ROOT / ".github/workflows/map02-bizhawk211-external-tool-compile.yml").read_text(encoding="utf-8")
+        self.assertNotIn("actions/upload-artifact", text)
+        self.assertNotIn("VH_MAP02_EXPERIMENTAL_DLL_PUBLIC_SHA256", text)
+        self.assertIn(
+            "VH_MAP02_STORAGE_POLICY_PASS public_runtime_artifact_upload=0 original_media_upload=0",
+            text,
+        )
+
     def test_native_port_workflow_does_not_publish_compiled_library(self):
         text = NATIVE_PORT.read_text(encoding="utf-8")
         self.assertNotIn("actions/upload-artifact", text)

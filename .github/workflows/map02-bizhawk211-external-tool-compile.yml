@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/map02-bizhawk211-external-tool-compile.yml'
+      - 'tests/test_map02_public_ci_storage_policy.py'
       - 'tools/map02_runtime_core_witness/**'
       - 'tools/map02_owner_core_witness_install.ps1'
       - 'tools/map02_private_witness_plugin_digest.py'
@@ -116,10 +117,9 @@ jobs:
           try {
             Copy-Item -LiteralPath $builder -Destination $source -ErrorAction Stop
             $hash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
-            # This public experimental DLL contains NO owner PS1 or BK2 data.
-            # The log allows an owner to independently verify an extracted
-            # Actions artifact before installing it on a personal PC.
-            Write-Output "VH_MAP02_EXPERIMENTAL_DLL_PUBLIC_SHA256=$hash"
+            # The DLL exists only in this ephemeral runner. It is never published
+            # as an Actions artifact; the hash is used only for local installer checks.
+            Write-Output 'VH_MAP02_EXPERIMENTAL_DLL_TEMP_COPY_SHA256_CHECKED artifact_upload=0 media=0'
             $helper = 'tools/map02_owner_core_witness_install.ps1'
             $args = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
                       '-File', $helper,
@@ -227,10 +227,8 @@ jobs:
             throw 'no-media EmuHawk core witness UI observation not confirmed'
           }
           Write-Output $expected
-      - name: Publish only the compiled experimental witness DLL (no original assets)
-        uses: actions/upload-artifact@v4
-        with:
-          name: vh-map02-bizhawk211-experimental-core-witness
-          path: tools/map02_runtime_core_witness/bin/Release/net48/VhMap02CoreWitness.dll
-          if-no-files-found: error
-          retention-days: 14
+      - name: Enforce public CI storage boundary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Output 'VH_MAP02_STORAGE_POLICY_PASS public_runtime_artifact_upload=0 original_media_upload=0'
