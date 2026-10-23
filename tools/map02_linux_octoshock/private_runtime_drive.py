@@ -68,8 +68,21 @@ def _remote_name(remote: str) -> str:
     return remote
 
 
+def _check_rclone_compatibility(invoke: Callable[[list[str]], str]) -> None:
+    """rclone config redacted was introduced in 1.64; reject older clients."""
+    output = invoke(["version"])
+    first_line = output.splitlines()[0] if output else ""
+    match = re.fullmatch(r"rclone v(\d+)\.(\d+)(?:\.(\d+))?(?:[-+][A-Za-z0-9._-]+)?", first_line)
+    if not match:
+        _fail()
+    major, minor = int(match.group(1)), int(match.group(2))
+    if (major, minor) < (1, 64):
+        _fail()
+
+
 def _check_remote(remote: str, folder_id: str,
                   invoke: Callable[[list[str]], str]) -> None:
+    _check_rclone_compatibility(invoke)
     # Capture output; never emit even "redacted" config to stdout or a report.
     details = invoke(["config", "redacted", remote])
     if len(details) > 16384:

@@ -604,3 +604,22 @@ python3 -m tools.map02_linux_octoshock.owner_session_preflight \
   --builds-remote vh_builds --manifests-remote vh_manifests \
   --session owner542001
 ```
+
+## Stage543 — real rclone CLI compatibility gate
+
+Stage543 adds an actual command-contract check in the owner-only Drive
+transport. Before reading a remote's redacted configuration and before any
+cloud upload, the tool calls `rclone version` and requires a parseable
+version **1.64 or newer**. The `rclone config redacted [remote]` subcommand
+used by our exact Drive backend/root-folder security check was introduced
+in rclone 1.64; accepting older versions would make an otherwise correct
+owner-private backup unexpectedly fail after provisioning. An unreadable
+or outdated rclone version is rejected without emitting private host
+details, remote IDs or credentials.
+
+This does **not** substitute for actual authenticated Google Drive upload,
+or assert that rclone remotes belong to the owner. The remote's backend
+type, exact owner-private root folder IDs, forbidden environment overrides,
+existing cloud object collisions and byte-for-byte receipt readbacks are
+still checked separately. Public CI exercises version and flags against
+an in-memory stand-in and never uses original PS1 media or owner tokens.

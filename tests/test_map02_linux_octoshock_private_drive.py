@@ -34,9 +34,12 @@ class FakeDriveTransport:
         self.bad_object_metadata = False
         self.mutate_owner_archive = None
         self.upload_sources = []
+        self.version = "rclone v1.69.3"
 
     def __call__(self, argv):
         name = argv[0]
+        if name == "version":
+            return self.version + "\n- os/version: synthetic-test-only\n"
         if name == "config" and argv[1] == "redacted":
             remote = argv[2]
             return (
@@ -198,6 +201,18 @@ class Stage537TransportTests(unittest.TestCase):
             any(n.endswith("receipt.json")
                 for n in self.transport.remote["vh_manifests"])
         )
+
+    def test_outdated_rclone_refused_before_upload(self):
+        self.transport.version = "rclone v1.63.4"
+        with self.assertRaises(PrivateDriveError):
+            self.run_archive()
+        self.assertEqual(self.transport.uploads, 0)
+
+    def test_invalid_rclone_version_refused_before_upload(self):
+        self.transport.version = "not-a-real-rclone"
+        with self.assertRaises(PrivateDriveError):
+            self.run_archive()
+        self.assertEqual(self.transport.uploads, 0)
 
     def test_duplicate_remote_name_blocked(self):
         self.transport.remote["vh_builds"]["map02-runtime-testowner001.tar"] = b"old"
