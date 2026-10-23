@@ -1,0 +1,10 @@
+diff --git a/psx/octoshock/video/Deinterlacer.cpp b/psx/octoshock/video/Deinterlacer.cpp
+--- a/psx/octoshock/video/Deinterlacer.cpp
++++ b/psx/octoshock/video/Deinterlacer.cpp
+@@ -16,5 +16,6 @@
+ 
++#include <cstring>
+ #include "octoshock.h"
+ #include "video.h"
+ 
+ #include "Deinterlacer.h"
