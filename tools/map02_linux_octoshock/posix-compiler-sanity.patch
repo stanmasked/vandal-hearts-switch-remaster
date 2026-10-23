@@ -1,0 +1,32 @@
+diff --git a/psx/octoshock/emuware/emuware.h b/psx/octoshock/emuware/emuware.h
+--- a/psx/octoshock/emuware/emuware.h
++++ b/psx/octoshock/emuware/emuware.h
+@@ -3,3 +3,5 @@
+ #include <inttypes.h>
+ #include <stdint.h>
+ #include <cstdlib>
++#include <cstddef>
++#include <sys/types.h>
+@@ -34,3 +36,12 @@
+ #else
++#define SIZEOF_CHAR sizeof(char)
++#define SIZEOF_SHORT sizeof(short)
++#define SIZEOF_INT sizeof(int)
++#define SIZEOF_LONG sizeof(long)
++#define SIZEOF_LONG_LONG sizeof(long long)
++#define SIZEOF_OFF_T sizeof(off_t)
++#define SIZEOF_PTRDIFF_T sizeof(ptrdiff_t)
++#define SIZEOF_SIZE_T sizeof(size_t)
++#define SIZEOF_VOID_P sizeof(void*)
+ typedef __int64_t s64;
+ typedef __int32_t s32;
+@@ -92,4 +103,9 @@
+ #if defined(_MSC_VER)
+ 	#define strncasecmp _strnicmp
+ 	#define NO_CLONE
+ #endif
++#if defined(__GNUC__) && !defined(_MSC_VER)
++#undef NO_INLINE
++#define NO_INLINE __attribute__((noinline))
++#define NO_CLONE __attribute__((noclone))
++#endif
