@@ -117,7 +117,7 @@ jobs:
           fi
           grep -qx 'OK' /tmp/vh-map02-psx-firmware-probe.log
           echo "VH_MAP02_PRIVATE_PSX_FIRMWARE_METADATA_PASS cases=$count actual_bios=0 original_bk2=0 emuhawk=0"
-      - name: Audit 27 fictional in-process PSX runtime/core/native-module witnesses
+      - name: Audit 28 fictional in-process PSX runtime/core/native-module witnesses
         shell: bash
         run: |
           set -euo pipefail
@@ -125,7 +125,7 @@ jobs:
             -p 'test_map02_private_core_witness_audit.py' -v \
             2>&1 | tee /tmp/vh-map02-runtime-core-witness.log
           count=$(sed -nE 's/^Ran ([1-9][0-9]*) tests? in .*$/\1/p' /tmp/vh-map02-runtime-core-witness.log)
-          if [[ "$count" != "27" ]]; then
+          if [[ "$count" != "28" ]]; then
             echo 'unexpected synthetic runtime core witness test count' >&2
             exit 1
           fi
