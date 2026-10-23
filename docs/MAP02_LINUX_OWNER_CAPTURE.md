@@ -129,3 +129,52 @@ A passing Linux workflow proves that the code compiles against the official Linu
 The process receipt binds a Linux PID to a kernel process-start tick converted to UTC ticks using `/proc`; it is not cryptographic OS attestation. The C# witness hashes the mapped shared object's on-disk file, not its in-memory pages. Preserve these limits in all reports.
 
 No Windows machine is required for this route, but a real Linux x86_64 runtime is required. A macOS host alone cannot execute the official BizHawk 2.11 Linux binary natively.
+
+## Stage532 — owner-private manifest trust anchor (mandatory before capture)
+
+The independent native Linux staging workflow now builds and verifies an installed
+runtime **without** original game data. The manifest contains component digests,
+but a self-consistent manifest alone is not an independent trust anchor.
+
+After a verified owner-private build, calculate SHA-256 for the **exact raw bytes**
+of `map02-owner-runtime-manifest.json`. Save this digest in a new line-oriented
+owner-only file **outside** the runtime directory and outside public Git checkout.
+Do not print it in CI, public PRs or public technical reports:
+
+```bash
+umask 077
+export RUNTIME='/absolute/private/path/owner-runtime'
+export TRUSTED_PIN='/different/private/directory/map02-runtime-manifest.sha256'
+sha256sum "$RUNTIME/map02-owner-runtime-manifest.json" |
+  cut -d ' ' -f1 > "$TRUSTED_PIN"
+chmod 600 "$TRUSTED_PIN"
+```
+
+**Storage is a separate mandatory step.** Upload an immutable copy of the
+actual manifest and its original SHA-256 to the project's private Google Drive
+`00_Manifest_and_SHA256` folder, read back the Drive copy, and verify its
+byte count and checksum before using the saved pin as trusted evidence.
+Recording only a link or hash without verifying the stored copy is not enough.
+The CI-created example pin is *synthetic*, and no owner-private runtime
+manifest has yet been archived by CI.
+
+Once the private Drive copy has been independently checked, verify a locally
+retained trusted pin file using the new fail-closed gate:
+
+```bash
+python3 tools/map02_linux_octoshock/verify_owner_runtime.py "$RUNTIME" \\
+  --trusted-manifest-pin-file "$TRUSTED_PIN" --require-trusted-pin
+```
+
+The verifier requires the pin file to be a real, non-symlinked owner-owned
+`0600` file outside the runtime with exactly one lowercase 64-digit SHA-256
+line. It refuses missing pins, altered manifests and jointly modified native
+libraries/manifest records. A successful result confirms file-level agreement
+with the **supplied** trust anchor; it does not cryptographically attest live
+loaded pages, BIOS selection, BK2 replay, MAP02 or Nintendo Switch parity.
+
+Run this check before each private capture, and never treat the builder's
+ordinary no-pin verification as authorization to load real media. The existing
+owner capture launcher does not yet enforce this additional Stage532 check
+internally: until that integration is completed, executing the above gate is a
+mandatory manual prerequisite rather than an automatic capture blockade.

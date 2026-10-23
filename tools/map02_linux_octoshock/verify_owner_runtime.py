@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -99,17 +100,69 @@ def _sha(root: Path, relative: str, digest: str) -> None:
         os.close(fd)
 
 
-def verify_runtime(root_value: Path) -> dict[str, object]:
+def _read_external_manifest_pin(pin_value: Path, runtime_root: Path) -> str:
+    """Read a pre-established owner-private trust anchor outside the runtime.
+
+    This function does NOT create or authenticate the trusted value. The owner
+    must store and independently verify the pin in the private evidence archive
+    before replay. Never disclose the hash or its path in public output.
+    """
+    path = Path(pin_value)
+    if not path.is_absolute() or path.is_symlink() or not path.is_file():
+        _fail()
+    if path.is_relative_to(runtime_root):
+        _fail()
+    # Do not follow a symlink in the parent or its intermediate components.
+    if path.parent.resolve(strict=True) != path.parent:
+        _fail()
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags)
+    try:
+        before = os.fstat(fd)
+        if (not stat.S_ISREG(before.st_mode) or before.st_size != 65
+                or stat.S_IMODE(before.st_mode) != 0o600
+                or before.st_uid != os.geteuid()):
+            _fail()
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            content = stream.read(66)
+        after = os.fstat(fd)
+        now = path.stat()
+        stable = lambda x: (x.st_dev, x.st_ino, x.st_size, x.st_mtime_ns)
+        if stable(before) != stable(after) or stable(after) != stable(now):
+            _fail()
+        if len(content) != 65 or not content.endswith(b"\\n"):
+            _fail()
+        digest = content[:-1].decode("ascii")
+        if HASH.fullmatch(digest) is None:
+            _fail()
+        return digest
+    finally:
+        os.close(fd)
+
+
+def verify_runtime(root_value: Path, *,
+                   trusted_manifest_pin_file: Path | None = None,
+                   require_trusted_pin: bool = False) -> dict[str, object]:
     raw = Path(root_value)
     if not raw.is_absolute() or raw.is_symlink() or not raw.is_dir():
         _fail()
     root = raw.resolve(strict=True)
     if stat.S_IMODE(root.stat().st_mode) != 0o700:
         _fail()
+    if type(require_trusted_pin) is not bool:
+        _fail()
+    if require_trusted_pin and trusted_manifest_pin_file is None:
+        _fail()
     try:
-        manifest = json.loads(_bytes(
+        manifest_bytes = _bytes(
             root, "map02-owner-runtime-manifest.json", maximum=65536, mode=0o600
-        ))
+        )
+        if trusted_manifest_pin_file is not None:
+            trusted = _read_external_manifest_pin(trusted_manifest_pin_file, root)
+            observed = hashlib.sha256(manifest_bytes).hexdigest()
+            if not hmac.compare_digest(observed, trusted):
+                _fail()
+        manifest = json.loads(manifest_bytes)
         if not isinstance(manifest, dict) or manifest.get("schema") != SCHEMA:
             _fail()
         for field in ("game_media_used", "bios_used", "bk2_used", "game_loaded",
@@ -170,19 +223,32 @@ def verify_runtime(root_value: Path) -> dict[str, object]:
             _fail()
     except (KeyError, TypeError, AttributeError, UnicodeError, ValueError, OSError):
         _fail()
-    return {"schema": SCHEMA, "verified": True, "capture_ready": False}
+    return {
+        "schema": SCHEMA, "verified": True, "capture_ready": False,
+        "trusted_manifest_pin_verified": trusted_manifest_pin_file is not None,
+    }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("absolute_owner_runtime", type=Path)
+    parser.add_argument("--trusted-manifest-pin-file", type=Path,
+                        help="Existing owner-private mode-0600 SHA-256 line, outside runtime")
+    parser.add_argument("--require-trusted-pin", action="store_true",
+                        help="Fail closed without independently supplied manifest digest")
     args = parser.parse_args()
     try:
-        verify_runtime(args.absolute_owner_runtime)
+        verify_runtime(
+            args.absolute_owner_runtime,
+            trusted_manifest_pin_file=args.trusted_manifest_pin_file,
+            require_trusted_pin=args.require_trusted_pin,
+        )
     except (RuntimeVerificationError, OSError, ValueError):
         print("VH_MAP02_OWNER_RUNTIME_VERIFY_REJECTED capture_ready=0")
         return 1
-    print("VH_MAP02_OWNER_RUNTIME_VERIFY_PASS no_media_assertions=1 hashes=5 capture_ready=0")
+    print("VH_MAP02_OWNER_RUNTIME_VERIFY_PASS no_media_assertions=1 hashes=5 "
+          "trusted_manifest_pin_verified=%d capture_ready=0" %
+          (args.trusted_manifest_pin_file is not None))
     return 0
 
 

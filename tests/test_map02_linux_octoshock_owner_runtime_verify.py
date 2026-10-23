@@ -124,6 +124,85 @@ class OwnerRuntimeVerifierTests(unittest.TestCase):
                         with self.assertRaises(RuntimeVerificationError):
                             verify_runtime(root)
 
+    @staticmethod
+    def external_pin(root: Path) -> Path:
+        pin = root.parent / "trusted-manifest-sha256.txt"
+        pin.write_text(
+            digest((root / "map02-owner-runtime-manifest.json").read_bytes()) + "\\n",
+            encoding="ascii",
+        )
+        os.chmod(pin, 0o600)
+        return pin
+
+    def test_independently_pinned_runtime_passes(self):
+        temp, root, _ = self.with_fixture()
+        with temp:
+            pin = self.external_pin(root)
+            result = verify_runtime(
+                root, trusted_manifest_pin_file=pin, require_trusted_pin=True
+            )
+            self.assertTrue(result["trusted_manifest_pin_verified"])
+            self.assertFalse(result["capture_ready"])
+
+    def test_mandatory_trust_pin_missing_or_invalid(self):
+        temp, root, _ = self.with_fixture()
+        with temp:
+            with self.assertRaises(RuntimeVerificationError):
+                verify_runtime(root, require_trusted_pin=True)
+            pin = self.external_pin(root)
+            pin.write_text("0" * 64 + "\\n", encoding="ascii")
+            with self.assertRaises(RuntimeVerificationError):
+                verify_runtime(root, trusted_manifest_pin_file=pin,
+                               require_trusted_pin=True)
+            pin.write_text("not-a-valid-sha256\\n", encoding="ascii")
+            with self.assertRaises(RuntimeVerificationError):
+                verify_runtime(root, trusted_manifest_pin_file=pin,
+                               require_trusted_pin=True)
+
+    def test_manifest_and_native_joint_tamper_still_rejected_by_external_pin(self):
+        temp, root, manifest = self.with_fixture()
+        with temp:
+            pin = self.external_pin(root)
+            changed = b"tampered-but-self-consistent-native"
+            (root / "dll" / NATIVE_NAME).write_bytes(changed)
+            manifest["native_octoshock"]["sha256"] = digest(changed)
+            (root / "map02-owner-runtime-manifest.json").write_text(
+                json.dumps(manifest), encoding="utf-8"
+            )
+            env = root / "map02-owner-runtime-pins.env"
+            env.write_text(
+                env.read_text(encoding="ascii").replace(
+                    digest(b"fictional native"), digest(changed)),
+                encoding="ascii",
+            )
+            self.assertTrue(verify_runtime(root)["verified"])
+            with self.assertRaises(RuntimeVerificationError):
+                verify_runtime(root, trusted_manifest_pin_file=pin,
+                               require_trusted_pin=True)
+
+    def test_external_pin_requires_owner_only_file_outside_runtime(self):
+        for failure in ("world-readable", "symlink", "inside-runtime", "missing"):
+            with self.subTest(failure=failure):
+                temp, root, _ = self.with_fixture()
+                with temp:
+                    pin = self.external_pin(root)
+                    if failure == "world-readable":
+                        os.chmod(pin, 0o644)
+                    elif failure == "symlink":
+                        alias = root.parent / "pin-alias"
+                        alias.symlink_to(pin)
+                        pin = alias
+                    elif failure == "inside-runtime":
+                        new = root / "pin-sha256.txt"
+                        new.write_bytes(pin.read_bytes())
+                        os.chmod(new, 0o600)
+                        pin = new
+                    else:
+                        pin.unlink()
+                    with self.assertRaises(RuntimeVerificationError):
+                        verify_runtime(root, trusted_manifest_pin_file=pin,
+                                       require_trusted_pin=True)
+
     def test_rejects_world_readable_staged_root(self):
         temp, root, _ = self.with_fixture()
         with temp:
