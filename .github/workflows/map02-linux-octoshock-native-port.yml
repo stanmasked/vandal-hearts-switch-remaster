@@ -57,12 +57,8 @@ jobs:
           buffer_patch="$GITHUB_WORKSPACE/tools/map02_linux_octoshock/posix-local-buffer.patch"
           git -C "$upstream" apply --ignore-space-change --check "$buffer_patch"
           git -C "$upstream" apply --ignore-space-change "$buffer_patch"
-          sanity_patch="$GITHUB_WORKSPACE/tools/map02_linux_octoshock/posix-compiler-sanity.patch"
-          # emuware.h is an upstream portability header whose whitespace/line-ending
-          # representation may differ from the normalized patch file. Ignore only
-          # whitespace differences in context; all non-whitespace anchors remain exact.
-          git -C "$upstream" apply --ignore-whitespace --check "$sanity_patch"
-          git -C "$upstream" apply --ignore-whitespace "$sanity_patch"
+          python3 "$GITHUB_WORKSPACE/tools/map02_linux_octoshock/apply_posix_compiler_sanity.py" \
+            "$upstream/psx/octoshock/emuware/emuware.h"
           echo 'VH_MAP02_OCTOSHOCK_POSIX_EXPORT_HEADER_BUFFER_AND_SANITY_SHIMS_APPLIED upstream_source_changed_only_in_temp_checkout=1'
 
       - name: Configure the exact upstream 41-file native project
