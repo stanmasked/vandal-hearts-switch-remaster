@@ -1,0 +1,27 @@
+diff --git a/psx/octoshock/psx/psx.cpp b/psx/octoshock/psx/psx.cpp
+--- a/psx/octoshock/psx/psx.cpp
++++ b/psx/octoshock/psx/psx.cpp
+@@ -2610,19 +2610,19 @@
+ 			};
+ 			u8 subcode[96];
+ 		};
+ 		u8 buf2448[2448];
+-	};
++	} readBuffer;
+ 
+-	s32 ret = InternalReadLBA2448(lba,buf2448,false);
++	s32 ret = InternalReadLBA2448(lba,readBuffer.buf2448,false);
+ 	if(ret != SHOCK_OK)
+ 		return ret;
+ 
+-	if(sector.mode == 1)
+-		memcpy(dst2048,sector.data2048,2048);
++	if(readBuffer.sector.mode == 1)
++		memcpy(dst2048,readBuffer.sector.data2048,2048);
+ 	else
+-		memcpy(dst2048,xasector.form1.data2048,2048);
++		memcpy(dst2048,readBuffer.xasector.form1.data2048,2048);
+ 
+-	return sector.mode;
++	return readBuffer.sector.mode;
+ }
