@@ -68,8 +68,12 @@ class PublicCIStoragePolicyTests(unittest.TestCase):
     def test_native_port_workflow_does_not_publish_compiled_library(self):
         text = NATIVE_PORT.read_text(encoding="utf-8")
         self.assertNotIn("actions/upload-artifact", text)
-        self.assertIn("No compiled library or private game asset is uploaded.", text)
-        self.assertIn("private_temp_only=1 original_disc=0 bios=0 bk2=0", text)
+        # Check enforceable workflow behavior, not an optional explanatory sentence.
+        self.assertIn("assert manifest[\"game_media_used\"] is False", text)
+        self.assertIn("assert manifest[\"bios_used\"] is False", text)
+        self.assertIn("assert manifest[\"bk2_used\"] is False", text)
+        self.assertIn("assert manifest[\"psx_capture_ready\"] is False", text)
+        self.assertIn("map02-owner-runtime-manifest.json", text)
 
 
 if __name__ == "__main__":
