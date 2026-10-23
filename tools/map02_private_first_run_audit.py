@@ -69,6 +69,8 @@ def review_first_capture(private_movie: Path, private_workspace: Path,
                else _resolve_private_file(manual_core_witness))
     started = read_started_process(first / PROCESS_RECEIPT_NAME)
     observed = read_witness_record(witness)
+    if is_auto and observed[6] is not True:
+        raise ValueError("automatic core witness does not confirm PSX/U firmware match")
     if observed[:2] != started:
         raise ValueError("one-run core identity does not match launch PID/birth time")
     pins = (
@@ -96,6 +98,7 @@ def review_first_capture(private_movie: Path, private_workspace: Path,
         "owner_log_reports_core_fallback_blocked": True,
         "owner_log_reports_automatic_witness_before_first_png": is_auto,
         "private_octoshock_core_witness_matches_launched_pid_and_birth": True,
+        "runtime_witness_reports_loaded_psx_u_bios_matches_bk2_header": observed[6],
         "auto_core_frame_not_later_than_first_png": is_auto,
         "runtime_tool_file_hash_matches_supplied_pin": (
             expected_core_witness_sha256 is not None
