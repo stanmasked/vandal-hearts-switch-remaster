@@ -389,6 +389,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             observed = read_witness_record(output / AUTO_WITNESS_NAME)
             if started != observed[:2]:
                 raise ValueError("owner automatic core witness differs from captured process")
+            if observed[6] is not True:
+                raise ValueError("owner automatic core witness does not confirm PSX/U firmware match")
             if (core_witness_sha256 is not None
                     and observed[3] != core_witness_sha256.lower()):
                 raise ValueError(
@@ -425,7 +427,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             "first_auto_core_witness_bound_to_launched_process":
                 auto_core_witness_plugin is not None,
             "first_runtime_witness_reports_loaded_psx_u_bios_matches_bk2_header":
-                auto_core_witness_plugin is not None,
+                auto_core_witness_plugin is not None and observed[6] is True,
             "first_auto_core_frame_not_later_than_first_png":
                 auto_core_witness_plugin is not None,
             "same_bk2_bytes_across_capture_attempts": False,
@@ -458,6 +460,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         )
         if bound.get("runtime_core_witnesses_bound_to_launched_process_identity") is not True:
             raise ValueError("automatic core witness binding rejected")
+        if bound.get("both_witnesses_report_psx_u_firmware_matches_bk2_header") is not True:
+            raise ValueError("paired automatic witnesses do not confirm PSX/U firmware match")
     # Third parent-side full read: the final PNG/pair audit may take time.
     if core_witness_sha256 is not None:
         require_pinned_core_witness_dll(auto_core_witness_plugin, core_witness_sha256)
