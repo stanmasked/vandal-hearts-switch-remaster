@@ -1,7 +1,9 @@
 // Optional owner-local BizHawk 2.11 External Tool, NOT part of public CI.
 // Build inside a private BizHawk source checkout with the .csproj alongside.
 // This observes the *loaded* IEmulator, unlike client.getconfig() which
-// observes only PreferredCores; no BIOS, disc or movie is inspected.
+// observes only PreferredCores. It also compares BizHawk's actual served
+// PSX/U firmware hash with the current BK2 header, without recording the hash
+// or reading/recording disc bytes or movie input.
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -38,6 +40,7 @@ namespace VhMap02CoreWitness
         private const string ExpectedAssemblySha256Environment = "VH_MAP02_CORE_EXPECTED_DLL_SHA256";
         private const string ExpectedCoreAssemblySha256Environment = "VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256";
         private const string ExpectedNativeModuleSha256Environment = "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256";
+        private const string ExpectedPsxFirmwareSha1Environment = "VH_MAP02_CORE_EXPECTED_PSX_FIRMWARE_SHA1";
         private const string ExpectedRuntimeCoreType = "BizHawk.Emulation.Cores.Sony.PSX.Octoshock";
 #if VH_MAP02_UNIX_BUILD
         private static readonly string[] NativeCoreModuleNames =
@@ -339,6 +342,43 @@ namespace VhMap02CoreWitness
             return true;
         }
 
+        private static bool IsSha1Hex(string? value)
+        {
+            if (value == null || value.Length != 40) return false;
+            foreach (var c in value)
+                if (!((c >= '0' && c <= '9')
+                    || (c >= 'a' && c <= 'f')
+                    || (c >= 'A' && c <= 'F'))) return false;
+            return true;
+        }
+
+        private static void RequireLoadedPsxUFirmwareMatchesMovieHeader()
+        {
+            var expected = Environment.GetEnvironmentVariable(ExpectedPsxFirmwareSha1Environment);
+            if (!IsSha1Hex(expected)) throw new InvalidOperationException();
+
+            // MainForm's firmware manager records the resolved firmware ID,
+            // SHA-1 and size when CoreFileProvider serves the bytes to a core.
+            // Require the PSX/U entry for this live process and compare it to
+            // the source BK2's PSX_Firmware_U field. Never emit the digest.
+            var firmwareMainForm = MainForm as IMainFormForRetroAchievements;
+            if (firmwareMainForm == null || firmwareMainForm.FirmwareManager == null)
+                throw new InvalidOperationException();
+
+            var matchedRequests = 0;
+            foreach (var served in firmwareMainForm.FirmwareManager.RecentlyServed)
+            {
+                if (!string.Equals(served.ID.System, "PSX", StringComparison.Ordinal)
+                    || !string.Equals(served.ID.Firmware, "U", StringComparison.Ordinal))
+                    continue;
+                if (!IsSha1Hex(served.Hash)
+                    || !string.Equals(served.Hash, expected, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException();
+                matchedRequests++;
+            }
+            if (matchedRequests == 0) throw new InvalidOperationException();
+        }
+
         private static string Snapshot(IEmulator actualCore)
         {
             // A recorded BK2 Core header or configured preferred core is NOT
@@ -353,6 +393,8 @@ namespace VhMap02CoreWitness
                 || !string.Equals(runtimeType.Assembly.GetName().Name,
                     "BizHawk.Emulation.Cores", StringComparison.Ordinal))
                 throw new InvalidOperationException();
+
+            RequireLoadedPsxUFirmwareMatchesMovieHeader();
 
             var coreAssemblySha256 = FileSha256(runtimeType.Assembly.Location);
             var nativeModulePath = FindLoadedNativeCoreModulePath();
@@ -378,7 +420,7 @@ namespace VhMap02CoreWitness
                 var start = process.StartTime.ToUniversalTime().Ticks;
 #endif
                 if (process.Id <= 0 || start <= 0) throw new InvalidOperationException();
-                return "VH_MAP02_RUNTIME_CORE_WITNESS_V3\n"
+                return "VH_MAP02_RUNTIME_CORE_WITNESS_V4\n"
                     + "system=PSX\n"
                     + "loaded_core=Octoshock\n"
                     + "core_source=IEmulator.Attributes.CoreName\n"
@@ -390,7 +432,7 @@ namespace VhMap02CoreWitness
                     + "process_id=" + process.Id + "\n"
                     + "process_start_utc_ticks=" + start + "\n"
                     + "frame_count=" + actualCore.Frame + "\n"
-                    + "bios=unverified\n"
+                    + "bios=psx_u_firmware_hash_matches_movie_header\n"
                     + "disc=unverified\n"
                     + "movie_sync=unverified\n";
             }

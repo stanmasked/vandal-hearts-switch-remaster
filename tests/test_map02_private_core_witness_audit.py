@@ -26,7 +26,7 @@ def receipt(*, pid=3001, start=639000000000000001, frame=1666, **changes):
         native_core_module_sha256="c" * 64,
         tool_assembly_sha256="a" * 64,
         process_id=str(pid), process_start_utc_ticks=str(start),
-        frame_count=str(frame), bios="unverified",
+        frame_count=str(frame), bios="psx_u_firmware_hash_matches_movie_header",
         disc="unverified", movie_sync="unverified",
     )
     values.update(changes)
@@ -53,6 +53,7 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
         self.assertTrue(result["reported_emuhawk_process_identities_distinct"])
         self.assertTrue(result["both_witnesses_report_same_tool_assembly_file_hash"])
         self.assertFalse(result["tool_assembly_file_hash_independently_pinned"])
+        self.assertTrue(result["both_runtime_witnesses_report_psx_u_firmware_matches_bk2_header"])
         for label in (
             "process_or_witness_origin_cryptographically_authenticated",
             "witnesses_tied_to_specific_bk2_or_png_capture",
@@ -155,9 +156,11 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
                         read_witness(self.first)
 
     def test_bios_claim_is_rejected(self):
-        self.first.write_text(receipt(bios="verified"), encoding="ascii")
-        with self.assertRaisesRegex(ValueError, "unsupported evidence"):
-            compare_witnesses(self.first, self.second)
+        for claim in ("verified", "unverified", "mismatch"):
+            with self.subTest(claim=claim):
+                self.first.write_text(receipt(bios=claim), encoding="ascii")
+                with self.assertRaisesRegex(ValueError, "unsupported evidence"):
+                    compare_witnesses(self.first, self.second)
 
     def test_disc_claim_is_rejected(self):
         self.first.write_text(receipt(disc="verified"), encoding="ascii")

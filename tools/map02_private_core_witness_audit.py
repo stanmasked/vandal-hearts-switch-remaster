@@ -19,8 +19,8 @@ from tools.map02_private_disc_movie_preflight import (
     _assert_stable, _open_stable, _resolve_private_file,
 )
 
-SCHEMA = "vh.map02.private-runtime-core-witness-review.v2"
-MAGIC = "VH_MAP02_RUNTIME_CORE_WITNESS_V3"
+SCHEMA = "vh.map02.private-runtime-core-witness-review.v3"
+MAGIC = "VH_MAP02_RUNTIME_CORE_WITNESS_V4"
 MAX_RECEIPT_BYTES = 768
 RUNTIME_CORE_TYPE = "BizHawk.Emulation.Cores.Sony.PSX.Octoshock"
 NATIVE_CORE_MODULE_NAME = "octoshock.dll"
@@ -97,7 +97,7 @@ def read_witness_record(source: Path) -> tuple[int, int, int, str, str, str]:
         ("loaded_core", "Octoshock"),
         ("core_source", "IEmulator.Attributes.CoreName"),
         ("runtime_core_type", RUNTIME_CORE_TYPE),
-        ("bios", "unverified"),
+        ("bios", "psx_u_firmware_hash_matches_movie_header"),
         ("disc", "unverified"),
         ("movie_sync", "unverified"),
     ):
@@ -160,6 +160,7 @@ def compare_witnesses(first: Path, second: Path) -> dict:
         "native_core_module_file_hash_independently_pinned": False,
         "process_or_witness_origin_cryptographically_authenticated": False,
         "witnesses_tied_to_specific_bk2_or_png_capture": False,
+        "both_runtime_witnesses_report_psx_u_firmware_matches_bk2_header": True,
         "actual_loaded_bios_authenticated": False,
         "mounted_ps1_disc_authenticated": False,
         "original_map02_scene_authenticated": False,
