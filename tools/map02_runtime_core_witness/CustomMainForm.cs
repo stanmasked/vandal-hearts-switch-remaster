@@ -352,8 +352,14 @@ namespace VhMap02CoreWitness
             return true;
         }
 
-        private static void RequireLoadedPsxUFirmwareMatchesMovieHeader()
+        private bool RequireLoadedPsxUFirmwareMatchesMovieHeader()
         {
+            // Manual receipts remain explicitly unverified. Only the owner-local
+            // launcher opts into the automatic path and supplies a BK2-derived
+            // PSX/U fingerprint through this process's private environment.
+            var automatic = !string.IsNullOrEmpty(
+                Environment.GetEnvironmentVariable(AutomaticWitnessEnvironment));
+            if (!automatic) return false;
             var expected = Environment.GetEnvironmentVariable(ExpectedPsxFirmwareSha1Environment);
             if (!IsSha1Hex(expected)) throw new InvalidOperationException();
 
@@ -377,9 +383,10 @@ namespace VhMap02CoreWitness
                 matchedRequests++;
             }
             if (matchedRequests == 0) throw new InvalidOperationException();
+            return true;
         }
 
-        private static string Snapshot(IEmulator actualCore)
+        private string Snapshot(IEmulator actualCore)
         {
             // A recorded BK2 Core header or configured preferred core is NOT
             // accepted as the identity: sample the currently injected core.
@@ -394,7 +401,7 @@ namespace VhMap02CoreWitness
                     "BizHawk.Emulation.Cores", StringComparison.Ordinal))
                 throw new InvalidOperationException();
 
-            RequireLoadedPsxUFirmwareMatchesMovieHeader();
+            var firmwareMatchesMovieHeader = RequireLoadedPsxUFirmwareMatchesMovieHeader();
 
             var coreAssemblySha256 = FileSha256(runtimeType.Assembly.Location);
             var nativeModulePath = FindLoadedNativeCoreModulePath();
@@ -432,7 +439,8 @@ namespace VhMap02CoreWitness
                     + "process_id=" + process.Id + "\n"
                     + "process_start_utc_ticks=" + start + "\n"
                     + "frame_count=" + actualCore.Frame + "\n"
-                    + "bios=psx_u_firmware_hash_matches_movie_header\n"
+                    + "bios=" + (firmwareMatchesMovieHeader
+                        ? "psx_u_firmware_hash_matches_movie_header" : "unverified") + "\n"
                     + "disc=unverified\n"
                     + "movie_sync=unverified\n";
             }
@@ -472,7 +480,7 @@ namespace VhMap02CoreWitness
             var hz = LinuxSysconf(2); // POSIX _SC_CLK_TCK on Linux.
             if (!foundBootTime || hz <= 0) throw new InvalidOperationException();
             var rate = checked((ulong)hz);
-            // /proc/stat btime is UNIX seconds; witness V3 uses .NET UTC
+            // /proc/stat btime is UNIX seconds; witness V4 uses .NET UTC
             // ticks since 0001-01-01 (the 1970 offset is mandatory).
             var start = checked(621355968000000000UL
                 + (checked(checked(bootTime * rate + startClockTicks)
