@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'tools/map02_linux_octoshock/**'
+      - 'tools/map02_linux_octoshock/official_managed_binding_smoke.cs'
       - '.github/workflows/map02-linux-octoshock-native-port.yml'
   workflow_dispatch:
 
@@ -148,6 +149,54 @@ jobs:
           fi
           echo 'VH_MAP02_OCTOSHOCK_LINUX_LINK_AND_EXPORT_AUDIT_PASS game_loaded=0 firmware=0 original_disc=0 bk2=0 map02=unverified'
 
+      - name: Stage pinned official BizHawk 2.11 Linux runtime for managed-binding smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/BizHawk-2.11-linux-x64.tar.gz"
+          root="$RUNNER_TEMP/bizhawk211-linux-x64-managed-binding"
+          expected='cdaf9650d880bae660d63a388430f630b8d8a96b1ba59ebf0e0195a645c3bab8'
+          curl --fail --location --silent --show-error \
+            'https://github.com/TASEmulators/BizHawk/releases/download/2.11/BizHawk-2.11-linux-x64.tar.gz' \
+            --output "$archive"
+          actual="$(sha256sum "$archive" | awk '{print $1}')"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "official BizHawk Linux release SHA256 mismatch" >&2
+            exit 1
+          fi
+          mkdir -p "$root"
+          tar -xzf "$archive" -C "$root"
+          mapfile -t core_assemblies < <(find "$root" -type f -name BizHawk.Emulation.Cores.dll -print | sort)
+          if [[ "${#core_assemblies[@]}" -lt 1 ]]; then
+            echo "official BizHawk.Emulation.Cores.dll missing" >&2
+            exit 1
+          fi
+          core_hashes="$(sha256sum "${core_assemblies[@]}" | awk '{print $1}' | sort -u)"
+          if [[ "$(printf '%s\n' "$core_hashes" | wc -l)" -ne 1 ]]; then
+            echo "official BizHawk core assembly copies differ" >&2
+            exit 1
+          fi
+          mapfile -t emuhawk_files < <(find "$root" -type f -name EmuHawk.exe -print | sort)
+          if [[ "${#emuhawk_files[@]}" -ne 1 ]]; then
+            echo "expected exactly one official EmuHawk.exe" >&2
+            exit 1
+          fi
+          bizhawk_dir="$(dirname "${emuhawk_files[0]}")"
+          if [[ ! -f "$bizhawk_dir/EmuHawkMono.sh" ]]; then
+            echo "official EmuHawkMono.sh missing" >&2
+            exit 1
+          fi
+          for assembly in "${core_assemblies[@]}"; do
+            dll_dir="$(dirname "$assembly")"
+            test -f "$dll_dir/BizHawk.Emulation.Common.dll"
+            cp "$RUNNER_TEMP/octoshock-build/liboctoshock.dll.so" "$dll_dir/liboctoshock.dll.so"
+            cmp -s "$RUNNER_TEMP/octoshock-build/liboctoshock.dll.so" "$dll_dir/liboctoshock.dll.so"
+          done
+          dll_dir="$(dirname "${core_assemblies[0]}")"
+          echo "VH_MAP02_OFFICIAL_BIZHAWK211_LINUX_NATIVE_STAGED archive_sha256_verified=1 native_module=custom_pinned_source_build private_temp_only=1 original_disc=0 bios=0 bk2=0"
+          echo "VH_BIZHAWK_LINUX_ROOT=$bizhawk_dir" >> "$GITHUB_ENV"
+          echo "VH_BIZHAWK_LINUX_DLL_DIR=$dll_dir" >> "$GITHUB_ENV"
+
       - name: Smoke-test Mono P/Invoke and synthetic core lifecycle
         shell: bash
         run: |
@@ -155,6 +204,40 @@ jobs:
           mcs -out:"$RUNNER_TEMP/octoshock-abi-smoke.exe" tools/map02_linux_octoshock/abi_smoke.cs
           LD_LIBRARY_PATH="$RUNNER_TEMP/octoshock-build${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
             mono "$RUNNER_TEMP/octoshock-abi-smoke.exe"
+
+      - name: Smoke-test official BizHawk 2.11 managed Octoshock binding with synthetic firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          mcs -unsafe \
+            -r:"$VH_BIZHAWK_LINUX_DLL_DIR/BizHawk.Emulation.Cores.dll" \
+            -r:"$VH_BIZHAWK_LINUX_DLL_DIR/BizHawk.Emulation.Common.dll" \
+            -out:"$RUNNER_TEMP/official-bizhawk-octoshock-binding-smoke.exe" \
+            tools/map02_linux_octoshock/official_managed_binding_smoke.cs
+          MONO_PATH="$VH_BIZHAWK_LINUX_DLL_DIR" \
+            LD_LIBRARY_PATH="$VH_BIZHAWK_LINUX_DLL_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            mono "$RUNNER_TEMP/official-bizhawk-octoshock-binding-smoke.exe"
+
+      - name: Smoke-test staged EmuHawkMono startup with custom native module present
+        shell: bash
+        run: |
+          set -euo pipefail
+          private_home="$RUNNER_TEMP/vh-map02-native-staged-home"
+          mkdir -p "$private_home"
+          chmod 700 "$private_home"
+          trap 'rm -rf "$private_home"' EXIT
+          set +e
+          HOME="$private_home" \
+            LD_LIBRARY_PATH="$VH_BIZHAWK_LINUX_DLL_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            timeout 45s xvfb-run -a "$VH_BIZHAWK_LINUX_ROOT/EmuHawkMono.sh" --help \
+            > "$RUNNER_TEMP/vh-map02-native-staged-emuhawk.log" 2>&1
+          result=$?
+          set -e
+          if [[ "$result" -ne 0 ]]; then
+            tail -n 30 "$RUNNER_TEMP/vh-map02-native-staged-emuhawk.log"
+            exit 1
+          fi
+          echo 'VH_MAP02_CUSTOM_NATIVE_STAGED_EMUHAWK_STARTUP_PASS game_loaded=0 bios=0 disc=0 bk2=0 map02=unverified'
 
       - name: Record the hard acceptance boundary
         run: |
