@@ -97,7 +97,8 @@ def complete_owner_archive_session(
         tar = archive_folder / (stem + ".tar")
         tar_digest = archive_folder / (stem + ".tar.sha256")
         packed = pack_runtime(source, manifest_pin, tar, tar_digest)
-        if packed["files"] <= 0 or packed["capture_ready"] is not False:
+        if (packed["files"] <= 0 or packed["bytes"] <= 0
+                or packed.get("drive_upload_authenticated") is not False):
             _fail()
         uploaded = archive_to_private_drive(
             source, manifest_pin, tar, tar_digest, upload_folder / "new-copy",
