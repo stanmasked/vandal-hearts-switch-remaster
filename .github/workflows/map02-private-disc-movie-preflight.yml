@@ -108,7 +108,7 @@ jobs:
             -p 'test_map02_private_psx_firmware_probe.py' -v \
             2>&1 | tee /tmp/vh-map02-psx-firmware-probe.log
           count=$(sed -nE 's/^Ran ([1-9][0-9]*) tests? in .*$/\1/p' /tmp/vh-map02-psx-firmware-probe.log)
-          if [[ "$count" != "17" ]]; then
+          if [[ "$count" != "20" ]]; then
             echo 'unexpected fictional PSX firmware candidate test count' >&2
             exit 1
           fi
