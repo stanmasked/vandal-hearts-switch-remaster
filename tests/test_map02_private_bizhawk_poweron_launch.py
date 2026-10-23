@@ -353,12 +353,6 @@ class PrivateBizHawkBootTests(unittest.TestCase):
             "--emulator-timeout-seconds", "7200", "--launch",
         ]
         with patch.object(sys, "argv", args), patch(
-            "tools.map02_private_bizhawk_poweron_launch.read_expected_psx_u_firmware_sha1",
-            return_value="f" * 40,
-        ), patch(
-            "tools.map02_private_bizhawk_poweron_launch.read_expected_psx_u_firmware_sha1",
-            return_value="f" * 40,
-        ), patch(
             "tools.map02_private_bizhawk_poweron_launch.plan_lines",
             return_value=ROWS,
         ), patch(
