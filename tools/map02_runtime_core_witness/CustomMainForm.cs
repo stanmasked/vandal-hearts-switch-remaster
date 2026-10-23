@@ -430,8 +430,11 @@ namespace VhMap02CoreWitness
             var hz = LinuxSysconf(2); // POSIX _SC_CLK_TCK on Linux.
             if (!foundBootTime || hz <= 0) throw new InvalidOperationException();
             var rate = checked((ulong)hz);
-            var start = checked(((checked(bootTime * rate + startClockTicks))
-                * 10000000UL) / rate);
+            // /proc/stat btime is UNIX seconds; witness V3 uses .NET UTC
+            // ticks since 0001-01-01 (the 1970 offset is mandatory).
+            var start = checked(621355968000000000UL
+                + (checked(checked(bootTime * rate + startClockTicks)
+                    * 10000000UL) / rate));
             if (start < 621355968000000000UL || start > 725811840000000000UL)
                 throw new InvalidOperationException();
             return checked((long)start);
