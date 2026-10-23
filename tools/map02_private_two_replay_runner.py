@@ -21,7 +21,7 @@ from tools.map02_private_bizhawk_poweron_launch import (
     SCRIPT, DEFAULT_EMULATOR_TIMEOUT_SECONDS,
     MIN_EMULATOR_TIMEOUT_SECONDS, MAX_EMULATOR_TIMEOUT_SECONDS,
     AUTO_WITNESS_NAME, require_matching_core_plugin,
-    require_runtime_module_pins,
+    require_runtime_module_pins, require_linux_owner_runtime_pin,
 )
 from tools.map02_private_disc_movie_preflight import (
     _assert_stable, _identity, _open_stable, _parse_cue, _read_at,
@@ -207,7 +207,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
                   emulator_timeout_seconds: int | None = None,
                   run_count: int = 2,
                   start: bool = False,
-                  mono_executable: Path | None = None) -> dict:
+                  mono_executable: Path | None = None,
+                  trusted_runtime_manifest_pin_file: Path | None = None) -> dict:
     """Require explicit opt-in; run separate fresh emulator subprocesses.
 
     Output remains local. The capture chain and PNG files are independently
@@ -258,6 +259,10 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         # independently trusted build supplies both runtime module pins.
         require_runtime_module_pins(required=auto_core_witness_plugin is not None)
 
+    # Fail before reading the owner's disc or movie.
+    require_linux_owner_runtime_pin(
+        private_emuhawk, mono_executable, trusted_runtime_manifest_pin_file
+    )
     # Pin the BK2 bytes before any preflight, capture plan, emulator
     # process or independent audit. Merely re-parsing a changed archive later
     # would not prove that both sessions used the same exact input movie.
@@ -327,6 +332,9 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     _require_digest_reference_unchanged(expected_digest_file, digest)
 
     for name in RUN_NAMES[:run_count]:
+        require_linux_owner_runtime_pin(
+            private_emuhawk, mono_executable, trusted_runtime_manifest_pin_file
+        )
         if core_witness_sha256 is not None:
             require_pinned_core_witness_dll(auto_core_witness_plugin, core_witness_sha256)
         _require_movie_unchanged(private_bk2, movie_identity)
@@ -352,6 +360,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             argv += ["--private-core-witness-sha256", core_witness_sha256]
         if mono_executable is not None:
             argv += ["--mono-executable", str(Path(mono_executable).resolve(strict=True))]
+            argv += ["--trusted-runtime-manifest-pin-file",
+                     str(trusted_runtime_manifest_pin_file)]
         argv.append("--launch")
         # The child wrapper redirects EmuHawk stdout/stderr (which contain
         # absolute private paths) into files in the private capture folder.
@@ -362,6 +372,9 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         )
         if core_witness_sha256 is not None:
             require_pinned_core_witness_dll(auto_core_witness_plugin, core_witness_sha256)
+        require_linux_owner_runtime_pin(
+            private_emuhawk, mono_executable, trusted_runtime_manifest_pin_file
+        )
         _require_movie_unchanged(private_bk2, movie_identity)
         _require_disc_unchanged(private_disc, disc_identity)
         _require_digest_reference_unchanged(expected_digest_file, digest)
@@ -406,6 +419,9 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             require_pinned_core_witness_dll(auto_core_witness_plugin, core_witness_sha256)
 
     if run_count == 1:
+        require_linux_owner_runtime_pin(
+            private_emuhawk, mono_executable, trusted_runtime_manifest_pin_file
+        )
         # This is owner-private first-run evidence only, never evidence of
         # a second emulator process, repeatability, or scene identity.
         _require_full_bin_unchanged(private_disc, digest)
@@ -463,6 +479,9 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         if bound.get("both_witnesses_report_psx_u_firmware_matches_bk2_header") is not True:
             raise ValueError("paired automatic witnesses do not confirm PSX/U firmware match")
     # Third parent-side full read: the final PNG/pair audit may take time.
+    require_linux_owner_runtime_pin(
+        private_emuhawk, mono_executable, trusted_runtime_manifest_pin_file
+    )
     if core_witness_sha256 is not None:
         require_pinned_core_witness_dll(auto_core_witness_plugin, core_witness_sha256)
     _require_full_bin_unchanged(private_disc, digest)
@@ -543,6 +562,8 @@ def main() -> int:
     )
     parser.add_argument("--mono-executable", type=Path,
                         help="Linux only: absolute Mono executable for the official EmuHawk.exe")
+    parser.add_argument("--trusted-runtime-manifest-pin-file", type=Path,
+                        help="Required with Linux Mono: external owner-private runtime SHA-256")
     parser.add_argument("--max-windows", type=int, default=4)
     parser.add_argument(
         "--emulator-timeout-seconds", type=int,
@@ -569,6 +590,7 @@ def main() -> int:
             run_count=1 if args.launch_one else 2,
             start=args.launch_one or args.launch_two,
             mono_executable=args.mono_executable,
+            trusted_runtime_manifest_pin_file=args.trusted_runtime_manifest_pin_file,
         )
     except (OSError, ValueError, TypeError, RuntimeError, KeyError):
         parser.error("private two-replay execution or capture audit failed")

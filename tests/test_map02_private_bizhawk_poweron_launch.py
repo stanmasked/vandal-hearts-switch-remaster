@@ -51,6 +51,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         lua = kwargs.pop("lua", self.lua)
         rows = kwargs.pop("source_rows", ROWS)
         mono = kwargs.pop("mono_executable", None)
+        trusted = kwargs.pop("trusted_runtime_manifest_pin_file", None)
         with patch(
             "tools.map02_private_bizhawk_poweron_launch.read_expected_psx_u_firmware_sha1",
             return_value="f" * 40,
@@ -70,6 +71,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                 auto_core_witness_plugin=kwargs.pop("auto_core_witness_plugin", None),
                 core_witness_sha256=kwargs.pop("core_witness_sha256", None),
                 mono_executable=mono,
+                trusted_runtime_manifest_pin_file=trusted,
             )
         self.assertFalse(kwargs)
         self.assertEqual(source.call_args.kwargs["limit"], 1)
@@ -99,7 +101,15 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         mono = self.root / "mono"
         mono.write_bytes(b"fictional mono launcher")
         mono.chmod(0o700)
-        argv, env, count = self.call(mono_executable=mono)
+        with patch(
+            "tools.map02_private_bizhawk_poweron_launch.require_linux_owner_runtime_pin",
+            return_value=True,
+        ) as trust_gate:
+            argv, env, count = self.call(
+                mono_executable=mono,
+                trusted_runtime_manifest_pin_file=self.root / "synthetic-trust-pin",
+            )
+        trust_gate.assert_called_once()
         self.assertEqual(count, 3)
         self.assertEqual(argv[:2], [str(mono.resolve()), str(self.program.resolve())])
         self.assertEqual(argv[-1], str(self.disc.resolve()))

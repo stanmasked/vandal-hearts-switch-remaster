@@ -178,3 +178,21 @@ ordinary no-pin verification as authorization to load real media. The existing
 owner capture launcher does not yet enforce this additional Stage532 check
 internally: until that integration is completed, executing the above gate is a
 mandatory manual prerequisite rather than an automatic capture blockade.
+
+## Stage533 — mandatory Linux trusted-manifest gate in capture launcher
+
+The Linux Mono capture route requires `--trusted-runtime-manifest-pin-file`
+for both dry-run and real EmuHawk capture. This private owner-only file must
+contain the previously trusted SHA-256 of the exact runtime manifest and must
+reside outside the runtime directory. Pass it to both launcher and coordinator.
+The parent coordinator verifies before reading private game files, before and
+after each emulator process and again during final auditing. The child verifies
+independently before reading game files, immediately before starting EmuHawk
+and after the process exits. Any missing or mismatched pin fails closed.
+Windows legacy launch behavior remains unchanged.
+
+Append to every Linux owner capture command shown above:
+`--trusted-runtime-manifest-pin-file "$TRUSTED_PIN"`.
+Establish and read back the original private runtime pin in Drive before use;
+CI-created ephemeral test values are never production trust anchors.
+Successful file checks are not evidence of MAP02, BIOS load or in-memory pages.

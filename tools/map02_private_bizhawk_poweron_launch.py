@@ -17,6 +17,7 @@ import stat
 import subprocess
 import sys
 
+from tools.map02_linux_octoshock.verify_owner_runtime import verify_runtime
 from tools.map02_private_bk2_capture_plan import plan_lines
 from tools.map02_private_disc_movie_preflight import (
     inspect_pair, read_private_full_bin_sha256,
@@ -116,6 +117,41 @@ def require_matching_core_plugin(emuhawk: Path, plugin: Path) -> Path:
     return candidate.resolve(strict=True)
 
 
+def require_linux_owner_runtime_pin(private_emuhawk: Path,
+                                    mono_executable: Path | None,
+                                    trusted_runtime_manifest_pin_file: Path | None) -> bool:
+    """Fail closed on Linux before opening owner-private game media.
+
+    A separately authenticated owner-private manifest digest must exist.
+    Windows paths are unchanged and receive no Linux authentication claim.
+    """
+    if mono_executable is None:
+        if trusted_runtime_manifest_pin_file is not None:
+            raise ValueError("trusted Linux manifest pin requires Linux Mono")
+        return False
+    if not sys.platform.startswith("linux"):
+        raise ValueError("trusted runtime manifest pin requires a Linux host")
+    executable = Path(private_emuhawk)
+    if (not executable.is_absolute() or executable.is_symlink()
+            or executable.name != "EmuHawk.exe" or not executable.is_file()):
+        raise ValueError("owner Linux runtime must use regular EmuHawk.exe")
+    if trusted_runtime_manifest_pin_file is None:
+        raise ValueError("owner Linux runtime requires external trusted manifest pin")
+    try:
+        verified = verify_runtime(
+            executable.parent,
+            trusted_manifest_pin_file=trusted_runtime_manifest_pin_file,
+            require_trusted_pin=True,
+        )
+    except (OSError, ValueError, TypeError):
+        raise ValueError("owner Linux runtime manifest trust gate rejected") from None
+    if (verified.get("verified") is not True
+            or verified.get("trusted_manifest_pin_verified") is not True
+            or verified.get("capture_ready") is not False):
+        raise ValueError("owner Linux runtime manifest trust gate rejected")
+    return True
+
+
 def build_launch(private_emuhawk: Path, private_disc: Path,
                  private_bk2: Path, private_plan: Path,
                  private_png_root: Path, *,
@@ -125,7 +161,8 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
                  private_full_bin_sha256_file: Path | None = None,
                  auto_core_witness_plugin: Path | None = None,
                  core_witness_sha256: str | None = None,
-                 mono_executable: Path | None = None):
+                 mono_executable: Path | None = None,
+                 trusted_runtime_manifest_pin_file: Path | None = None):
     """Return argv/env without starting EmuHawk or exposing paths to stdout."""
     executable = Path(private_emuhawk)
     if not executable.is_absolute() or not executable.is_file():
@@ -139,6 +176,10 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
         mono = mono_candidate.resolve(strict=True)
         if not mono.is_file() or mono.is_symlink() or not os.access(mono, os.X_OK):
             raise ValueError("Linux Mono executable is not executable")
+    # Validate installed files before reading CUE, BIN, BIOS or BK2.
+    require_linux_owner_runtime_pin(
+        private_emuhawk, mono_executable, trusted_runtime_manifest_pin_file
+    )
     lua = Path(script)
     if not lua.is_absolute() or not lua.is_file():
         raise ValueError("capture Lua script requires an existing absolute path")
@@ -373,6 +414,8 @@ def main() -> int:
         "--private-full-bin-sha256-file", type=Path,
         help="Privately hash the entire BIN against a user-local 0600 digest file",
     )
+    parser.add_argument("--trusted-runtime-manifest-pin-file", type=Path,
+                        help="Required on Linux Mono: external owner-only manifest SHA-256")
     parser.add_argument("--auto-core-witness-plugin", type=Path,
                         help="Owner opt-in: installed BizHawk 2.11 external DLL creates one private early PSX core-only receipt")
     parser.add_argument("--private-core-witness-sha256", type=str,
@@ -406,7 +449,8 @@ def main() -> int:
             private_full_bin_sha256_file=args.private_full_bin_sha256_file,
             auto_core_witness_plugin=args.auto_core_witness_plugin,
             core_witness_sha256=args.private_core_witness_sha256,
-            mono_executable=args.mono_executable)
+            mono_executable=args.mono_executable,
+            trusted_runtime_manifest_pin_file=args.trusted_runtime_manifest_pin_file)
     except (OSError, ValueError, TypeError, UnicodeError, RuntimeError):
         parser.error("private BizHawk power-on launch preflight failed")
     if args.record_process_identity and args.launch:
@@ -459,6 +503,10 @@ def main() -> int:
                     lambda process: record_started_process(
                         process.pid, private_dir, process_handle=getattr(process, "_handle", None))
                 )
+            require_linux_owner_runtime_pin(
+                args.absolute_emuhawk_executable, args.mono_executable,
+                args.trusted_runtime_manifest_pin_file
+            )
             result = run_owned_process(
                 command, env=env, stdout=private_output,
                 timeout=args.emulator_timeout_seconds,
@@ -490,6 +538,13 @@ def main() -> int:
               "original_ps1_authenticated=0 map02_identified=0")
         return 1
     success = result.returncode == 0
+    try:
+        require_linux_owner_runtime_pin(
+            args.absolute_emuhawk_executable, args.mono_executable,
+            args.trusted_runtime_manifest_pin_file
+        )
+    except (OSError, ValueError, TypeError):
+        success = False
     if args.private_core_witness_sha256 is not None:
         try:
             require_pinned_core_witness_dll(
