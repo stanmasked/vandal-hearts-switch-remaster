@@ -205,6 +205,12 @@ class OwnerFirstCaptureAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "schema|LF"):
             self.review()
 
+    def test_automatic_witness_without_firmware_match_rejected(self):
+        (self.first / AUTO_WITNESS_NAME).write_bytes(
+            witness_bytes(bios="unverified"))
+        with self.assertRaisesRegex(ValueError, "does not confirm PSX/U firmware match"):
+            self.review()
+
     def test_missing_auto_core_witness_rejected(self):
         (self.first / AUTO_WITNESS_NAME).unlink()
         with self.assertRaises((OSError, ValueError)):
