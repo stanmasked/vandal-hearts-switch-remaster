@@ -77,6 +77,7 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
         self.assertTrue(result["both_witnesses_report_same_tool_assembly_file_hash"])
         self.assertTrue(result["both_witnesses_report_same_runtime_core_assembly_file_hash"])
         self.assertTrue(result["both_witnesses_report_same_native_core_module_file_hash"])
+        self.assertTrue(result["both_witnesses_report_psx_u_firmware_matches_bk2_header"])
         self.assertFalse(result["tool_assembly_file_hash_independently_pinned"])
         self.assertFalse(result["runtime_core_assembly_file_hash_independently_pinned"])
         self.assertFalse(result["native_core_module_file_hash_independently_pinned"])
