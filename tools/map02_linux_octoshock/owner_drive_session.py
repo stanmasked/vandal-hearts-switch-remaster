@@ -24,6 +24,7 @@ from tools.map02_linux_octoshock.private_runtime_tar import (
     _outside, _pin, pack_runtime,
 )
 from tools.map02_linux_octoshock.verify_owner_runtime import verify_runtime
+from tools.map02_linux_octoshock.owner_session_preflight import verify_owner_backup_readiness
 
 
 class PrivateOwnerSessionError(ValueError):
@@ -83,6 +84,15 @@ def complete_owner_archive_session(
         if (check.get("verified") is not True
                 or check.get("trusted_manifest_pin_verified") is not True
                 or check.get("capture_ready") is not False):
+            _fail()
+
+        readiness = verify_owner_backup_readiness(
+            source, manifest_pin, folder_map, root, receipt_pin,
+            builds, manifests, session, invoke=invoke,
+        )
+        if (readiness["writes_performed"] is not False
+                or readiness["cloud_names_available"] is not True
+                or readiness["capture_ready"] is not False):
             _fail()
 
         # No dangerous partial overwrite / resume. An interrupted session

@@ -568,3 +568,39 @@ including a complete upload -> independent SHA -> re-audit -> simulated
 loss of original runtime -> repeat restore sequence. Public CI cannot
 create actual owner-private binary backups, does not contain OAuth tokens
 and never constitutes evidence of authentic MAP02 gameplay.
+
+## Stage542 — owner-only read-only archive preflight
+
+Before creating a possibly large runtime tar or transferring any bytes, run
+`python3 -m tools.map02_linux_octoshock.owner_session_preflight`
+using the exact same flags as Stage541's owner-private full session.
+
+The preflight checks: verified owner runtime against an independently trusted
+mode-0600 manifest SHA, no BIOS/game/media files anywhere inside the runtime,
+safe non-existing output paths with owner-only mode-0700 parents, available
+local disk space of at least 10x unpacked runtime size or 512 MiB (whichever
+is larger), redacted authentication/configuration of two folder-scoped
+Google Drive remotes, and the absence of all five proposed remote object
+names. It prints only safe counts and minimum free bytes — never private
+paths, Drive IDs, access tokens, or file hashes.
+
+On failure it refuses before any upload, output-directory creation or
+manifest/receipt generation. Stage541's real complete archive command now
+runs this gate automatically again before any local archive is written.
+The preflight is **not** a proof of Google Drive sharing settings or
+successful real binary backup, and it does not establish independent
+provenance for an owner-generated manifest SHA. Public CI uses exclusively
+fictional remotes and synthetic runtime bytes.
+
+Example:
+
+```bash
+python3 -m tools.map02_linux_octoshock.owner_session_preflight \
+  --runtime /private/runtime/vh-map02-owner-runtime \
+  --trusted-manifest-pin /private/trust/map02-owner-manifest.sha256 \
+  --private-folder-map /private/config/map02-private-drive-folders.json \
+  --new-session-root /private/evidence/sessions/owner542001 \
+  --new-owner-receipt-pin /private/trust/map02-owner542001-receipt.sha256 \
+  --builds-remote vh_builds --manifests-remote vh_manifests \
+  --session owner542001
+```
