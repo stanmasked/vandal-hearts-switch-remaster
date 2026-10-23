@@ -22,10 +22,8 @@ foreach(relative_source IN LISTS OCTOSH_RELATIVE_SOURCES)
   list(APPEND OCTOSH_SOURCES "${source_file}")
 endforeach()
 
-if(NOT OCTOSH_RELATIVE_SOURCES_LENGTH)
-  list(LENGTH OCTOSH_SOURCES OCTOSH_RELATIVE_SOURCES_LENGTH)
-endif()
-if(NOT OCTOSH_RELATIVE_SOURCES_LENGTH EQUAL 41)
+list(LENGTH OCTOSH_SOURCES OCTOSH_SOURCE_COUNT)
+if(NOT OCTOSH_SOURCE_COUNT EQUAL 41)
   message(FATAL_ERROR "expected the exact 41 source files from BizHawk 2.11's upstream VS project")
 endif()
 
