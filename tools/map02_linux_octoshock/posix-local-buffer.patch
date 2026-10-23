@@ -1,7 +1,7 @@
 diff --git a/psx/octoshock/psx/psx.cpp b/psx/octoshock/psx/psx.cpp
 --- a/psx/octoshock/psx/psx.cpp
 +++ b/psx/octoshock/psx/psx.cpp
-@@ -2610,19 +2610,19 @@
+@@ -2610,17 +2610,17 @@
  			};
  			u8 subcode[96];
  		};
