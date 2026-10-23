@@ -198,3 +198,63 @@ Append to every Linux owner capture command shown above:
 Establish and read back the original private runtime pin in Drive before use;
 CI-created ephemeral test values are never production trust anchors.
 Successful file checks are not evidence of MAP02, BIOS load or in-memory pages.
+
+## Stage534 — persistent private runtime archive readback
+
+The canonical Vandal Hearts Project Evidence Archive currently contains no
+runtime binaries in `07_Builds_and_Test_Artifacts`, and no owner-verified
+runtime manifest/pin from a persistent installation in `00_Manifest_and_SHA256`.
+Past CI proved a temporary no-media build, but the GitHub Actions runner's
+runtime was not durably saved.
+
+An **actual private Linux x86_64 owner environment** must execute the pinned
+`build_and_stage_owner.py` to install a fresh runtime outside Git. Use the
+Stage532/533 protocol to create a separate `0600` trusted manifest digest,
+then upload that manifest and digest privately to
+`00_Manifest_and_SHA256`. Upload a lossless **tar** archive of the entire
+verified runtime, preserving modes, to `07_Builds_and_Test_Artifacts`. Keep
+the archive outside GitHub/Actions and do not mix original BIOS/disc/movie.
+
+Only a completely downloaded Drive copy counts as readback. For example, in a
+private shell after a fresh runtime has been staged and pinned:
+
+```bash
+umask 077
+tar -C "$(dirname "$RUNTIME")" -cpf /private/backup/vh-map02-owner-runtime.tar \
+  "$(basename "$RUNTIME")"
+sha256sum /private/backup/vh-map02-owner-runtime.tar \
+  | cut -d ' ' -f1 > /private/backup/vh-map02-owner-runtime.tar.sha256
+chmod 600 /private/backup/vh-map02-owner-runtime.tar.sha256
+```
+
+Retain the local archive digest separately, upload the tar and its checksum to
+private Drive (tar in folder 07 and checksum in folder 00), download the
+archive back from Drive to another private path, verify the downloaded tar
+SHA-256 against the previously trusted digest, then extract only that checked
+archive into a new private, non-Git directory. Do not trust an unverified
+tar or extract it with privileged permissions.
+
+```bash
+sha256sum /private/readback/vh-map02-owner-runtime.tar \
+  | cut -d ' ' -f1 \
+  | diff - /private/backup/vh-map02-owner-runtime.tar.sha256
+mkdir -m 700 /private/readback/extracted
+tar -C /private/readback/extracted -xpf \
+  /private/readback/vh-map02-owner-runtime.tar
+python3 -m tools.map02_linux_octoshock.archive_owner_runtime \
+  "$RUNTIME" /private/readback/extracted/"$(basename "$RUNTIME")" \
+  --trusted-manifest-pin-file "$TRUSTED_PIN"
+```
+
+This gate verifies *both* trees separately against the external trusted
+manifest SHA-256, then compares every regular file path, byte length,
+SHA-256 and file/directory permission mode. It rejects omitted, additional
+or corrupted files and empty directories, symlinks, permission drift and
+nested/aliased source/destination roots. It emits only counts/status, never
+private file paths or hashes.
+
+Passing this tool means the downloaded-and-extracted copy matches the source
+**as checked**, not that it originated from Google Drive: the owner must
+confirm the download came from the actual private archive and preserve the
+upload/readback evidence. CI exercises only synthetic tiny runtimes; it
+does not archive any owner binaries or validate game playback.
