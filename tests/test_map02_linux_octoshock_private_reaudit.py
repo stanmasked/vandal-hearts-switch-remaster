@@ -93,6 +93,34 @@ class IndependentReadbackTests(unittest.TestCase):
             _safe_restore(tar, target)
         self.assertFalse(target.exists())
 
+    def test_refuse_archive_with_ps1_bios_even_with_valid_tar_structure(self):
+        tar = self.base / "disc-leak.tar"
+        target = self.base / "new-disc-leak-runtime"
+        with tarfile.open(tar, "w") as stream:
+            top = tarfile.TarInfo("runtime")
+            top.type, top.mode = tarfile.DIRTYPE, 0o700
+            stream.addfile(top)
+            bios = tarfile.TarInfo("runtime/firmware/scph1001.BIN")
+            bios.size, bios.mode = 6, 0o600
+            stream.addfile(bios, io.BytesIO(b"PS1ROM"))
+        with self.assertRaises(IndependentAuditError):
+            _safe_restore(tar, target)
+        self.assertFalse(target.exists())
+
+    def test_refuse_archive_with_game_movie_inside_subdirectory(self):
+        tar = self.base / "movie-leak.tar"
+        target = self.base / "new-movie-leak-runtime"
+        with tarfile.open(tar, "w") as stream:
+            top = tarfile.TarInfo("runtime")
+            top.type, top.mode = tarfile.DIRTYPE, 0o700
+            stream.addfile(top)
+            movie = tarfile.TarInfo("runtime/captures/inputs.BK2")
+            movie.size, movie.mode = 3, 0o600
+            stream.addfile(movie, io.BytesIO(b"BK2"))
+        with self.assertRaises(IndependentAuditError):
+            _safe_restore(tar, target)
+        self.assertFalse(target.exists())
+
     def test_refuse_tar_path_traversal(self):
         tar = self.base / "traversal.tar"
         target = self.base / "new-traversal-runtime"

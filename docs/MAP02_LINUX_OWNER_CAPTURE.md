@@ -484,3 +484,32 @@ cloud sharing controls by itself or authenticate the real PS1 disc/BIOS/
 BK2, cold MAP02 runtime evidence, or native Nintendo Switch playback.
 CI runs only fictional small remotes and cannot substitute for a real
 owner/private archive.
+
+## Stage540 — automatic owner receipt pin and no-media re-audit parity
+
+To remove the manual gap between Stage538's successful cloud readback and
+Stage539's independently anchored re-audit, the **real owner-only** uploader
+CLI now requires `--new-owner-receipt-pin /private/config/map02-owner-receipt.sha256`.
+The chosen path must not already exist, must be outside Git/runtime and
+the Drive readback directory, and must have an owner-only (0700) parent.
+A new exclusive mode-0600 file is written **only after the originally uploaded
+receipt has been downloaded from the Drive remote and byte-verified**.
+It contains exactly the hex SHA-256 of those validated receipt bytes.
+Preserve this pin independently of both the Drive archive and the staging
+directory; do not treat a digest regenerated from a later Drive download as
+an independent trust anchor. No owner/private backup is claimed until the
+actual private upload command has run and the receipt pin is retained safely.
+
+Add the flag to Stage538's private upload example:
+
+```bash
+  --new-owner-receipt-pin /private/config/map02-owner-receipt.sha256
+```
+
+Stage539's source-free re-audit also re-enforces the same conservative
+original-media exclusions as Stage537/538, including nested or uppercase
+`.bin` BIOS images and `.bk2` gameplay movies in tar entries. An archive
+matching a trusted tar SHA is **not** a license to accidentally restore
+original game/BIOS assets as part of the no-media runtime. Fictional CI tests
+cover both rejected inputs and the new receipt-pin creation, without
+downloading or uploading actual owner content.

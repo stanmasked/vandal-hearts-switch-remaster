@@ -29,6 +29,16 @@ FOLDER_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{15,128}\Z")
 REMOTE_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,40}\Z")
 SESSION_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]{7,62}\Z")
 MAX_STDOUT = 262144
+MEDIA_SUFFIXES = (".cue", ".iso", ".chd", ".bk2", ".sav", ".bin",
+                  ".rom", ".img", ".pbp", ".srm", ".m3u", ".ccd", ".sub", ".mdf")
+
+
+def forbidden_original_media_path(value: str) -> bool:
+    """Conservative no-game-media rule shared by upload and re-audit."""
+    if not isinstance(value, str):
+        return True
+    return any(part.lower().endswith(MEDIA_SUFFIXES)
+               for part in value.replace("\\", "/").split("/") if part)
 
 
 class PrivateDriveError(ValueError):
@@ -183,6 +193,7 @@ def archive_to_private_drive(
     runtime: Path, owner_manifest_pin: Path, tar: Path, tar_pin: Path,
     private_readback_folder: Path, builds_remote: str, manifests_remote: str,
     session: str, private_folder_map: Path, *,
+    owner_receipt_pin_output: Path | None = None,
     invoke: Callable[[list[str]], str] = _call_rclone,
 ) -> dict[str, object]:
     """Archive previously pinned runtime; confirm exact remote-byte readback.
@@ -205,6 +216,15 @@ def archive_to_private_drive(
         archive_pin = _require_file(tar_pin, source, mode=0o600)
         if len({str(staging), str(archive), str(archive_pin), str(pin)}) != 4:
             _fail()
+        receipt_pin_out = None
+        if owner_receipt_pin_output is not None:
+            receipt_pin_out = _outside(
+                owner_receipt_pin_output, source, nonexistent=True,
+            )
+            if (receipt_pin_out.is_relative_to(staging)
+                    or receipt_pin_out in (pin, archive, archive_pin)
+                    or receipt_pin_out == manifest_file):
+                _fail()
         result = verify_runtime(source, trusted_manifest_pin_file=pin,
                                 require_trusted_pin=True)
         if result.get("verified") is not True or result.get("capture_ready") is not False:
@@ -215,11 +235,7 @@ def archive_to_private_drive(
         if _sha_bytes(manifest_file.read_bytes()) != _pin(pin):
             _fail()
         for name in files:
-            lower = name.lower()
-            if (lower.endswith((".cue", ".iso", ".chd", ".bk2", ".sav",
-                                ".bin", ".rom", ".img", ".pbp", ".srm",
-                                ".m3u", ".ccd", ".sub", ".mdf"))
-                    or lower in {"vandalhearts.bin", "vandalhearts.bk2"}):
+            if forbidden_original_media_path(name):
                 _fail()
 
         # Reject malicious or contaminated tar BEFORE uploading even one byte.
@@ -341,8 +357,19 @@ def archive_to_private_drive(
         )
         receipt_download = staged_files / receipt_name
         invoke(["copyto", "--immutable", receipt_target, str(receipt_download)])
-        if _hash_file(_require_file(receipt_download, source)) != _hash_file(receipt_file):
+        receipt_hash = _hash_file(_require_file(receipt_download, source))
+        if receipt_hash != _hash_file(receipt_file):
             _fail()
+        # Owner-only external reference: create it ONLY after a real verified
+        # round-trip. Must be retained independently from Drive and readback.
+        if receipt_pin_out is not None:
+            fd = os.open(receipt_pin_out,
+                         os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                         getattr(os, "O_NOFOLLOW", 0), 0o600)
+            with os.fdopen(fd, "wb") as stream:
+                stream.write((receipt_hash + "\n").encode("ascii"))
+            if _pin(receipt_pin_out) != receipt_hash:
+                _fail()
         return {
             "schema": receipt["schema"],
             "remote_receipt_id": receipt_id,
@@ -350,6 +377,7 @@ def archive_to_private_drive(
             "files": count,
             "bytes": total,
             "drive_download_bytes_verified": True,
+            "owner_receipt_pin_written": receipt_pin_out is not None,
             "capture_ready": False,
         }
     except (OSError, ValueError, TypeError, RuntimeError, subprocess.SubprocessError):
@@ -367,6 +395,8 @@ def main() -> int:
     parser.add_argument("--manifests-remote", required=True)
     parser.add_argument("--session", required=True)
     parser.add_argument("--private-folder-map", required=True, type=Path)
+    parser.add_argument("--new-owner-receipt-pin", required=True, type=Path,
+                        help="New outside-Git 0600 SHA256 file retained separately")
     args = parser.parse_args()
     try:
         report = archive_to_private_drive(
@@ -374,6 +404,7 @@ def main() -> int:
             args.packed_tar, args.tar_sha256_pin, args.new_private_readback_dir,
             args.builds_remote, args.manifests_remote, args.session,
             args.private_folder_map,
+            owner_receipt_pin_output=args.new_owner_receipt_pin,
         )
     except PrivateDriveError:
         print("VH_MAP02_STAGE537_PRIVATE_DRIVE_READBACK_REJECTED capture_ready=0")

@@ -158,6 +158,32 @@ class Stage537TransportTests(unittest.TestCase):
             "sealed-for-upload" in self.transport.upload_sources[0]
         )
 
+    def test_create_independent_owner_receipt_pin_after_readback(self):
+        anchor = self.base / "offline-owner-receipt.sha256"
+        result = archive_to_private_drive(
+            self.source, self.pin, self.tar, self.tar_sha, self.readback,
+            "vh_builds", "vh_manifests", "testowner001", self.private_map,
+            owner_receipt_pin_output=anchor, invoke=self.transport,
+        )
+        expected = sha(self.transport.remote["vh_manifests"][
+            "map02-runtime-testowner001.receipt.json"])
+        self.assertEqual(anchor.read_text(encoding="ascii"), expected + "\n")
+        self.assertEqual(anchor.stat().st_mode & 0o777, 0o600)
+        self.assertTrue(result["owner_receipt_pin_written"])
+
+    def test_existing_owner_receipt_pin_rejected_before_upload(self):
+        anchor = self.base / "offline-owner-receipt.sha256"
+        anchor.write_text("0" * 64 + "\n", encoding="ascii")
+        anchor.chmod(0o600)
+        with self.assertRaises(PrivateDriveError):
+            archive_to_private_drive(
+                self.source, self.pin, self.tar, self.tar_sha, self.readback,
+                "vh_builds", "vh_manifests", "testowner001", self.private_map,
+                owner_receipt_pin_output=anchor, invoke=self.transport,
+            )
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertEqual(anchor.read_text(encoding="ascii"), "0" * 64 + "\n")
+
     def test_wrong_drive_folder_scope_fails_before_upload(self):
         self.transport.folder_ids["vh_builds"] = "wrong-folder"
         with self.assertRaises(PrivateDriveError):

@@ -22,7 +22,7 @@ from typing import Callable
 from tools.map02_linux_octoshock.archive_owner_runtime import _inventory
 from tools.map02_linux_octoshock.private_runtime_drive import (
     PrivateDriveError, _call_rclone, _check_remote, _folder_map,
-    _remote_name, _stat_remote, SESSION_PATTERN,
+    _remote_name, _stat_remote, SESSION_PATTERN, forbidden_original_media_path,
 )
 from tools.map02_linux_octoshock.private_runtime_tar import (
     _hash_file, _pin, _outside, _create_private, PREFIX,
@@ -132,6 +132,10 @@ def _safe_restore(archive_path: Path, target: Path) -> None:
                         or name in paths):
                     _fail()
                 paths.add(name)
+                # Re-enforce no-game-media constraints even when the receipt,
+                # manifest and tar hashes were all pinned elsewhere.
+                if name != PREFIX and forbidden_original_media_path(name):
+                    _fail()
                 if name == PREFIX:
                     if not member.isdir() or member.mode != 0o700:
                         _fail()
