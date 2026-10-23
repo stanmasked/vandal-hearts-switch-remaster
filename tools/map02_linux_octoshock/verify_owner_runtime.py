@@ -15,7 +15,7 @@ import re
 import stat
 from pathlib import Path
 
-SCHEMA = "vh.map02.owner-local-runtime.v1"
+SCHEMA = "vh.map02.owner-local-runtime.v2"
 BIZHAWK_ARCHIVE_SHA256 = "cdaf9650d880bae660d63a388430f630b8d8a96b1ba59ebf0e0195a645c3bab8"
 UPSTREAM_COMMIT = "427556b5ef3ac437eba754d90c5e7e9096c9a8df"
 UPSTREAM_TREE = "24f43550ff70776a86a2d7b64d09993dd09021d9"
@@ -134,8 +134,8 @@ def verify_runtime(root_value: Path) -> dict[str, object]:
                       "emuhawk_no_media_startup"):
             if smoke.get(field) != "pass":
                 _fail()
-        _file(root, "EmuHawk.exe")
-        _file(root, "EmuHawkMono.sh")
+        _sha(root, "EmuHawk.exe", official["emuhawk_exe_sha256"])
+        _sha(root, "EmuHawkMono.sh", official["emuhawk_mono_launcher_sha256"])
         cores = sorted(
             x.relative_to(root).as_posix() for x in root.rglob("BizHawk.Emulation.Cores.dll")
             if x.is_file()
@@ -182,7 +182,7 @@ def main() -> int:
     except (RuntimeVerificationError, OSError, ValueError):
         print("VH_MAP02_OWNER_RUNTIME_VERIFY_REJECTED capture_ready=0")
         return 1
-    print("VH_MAP02_OWNER_RUNTIME_VERIFY_PASS no_media_assertions=1 hashes=3 capture_ready=0")
+    print("VH_MAP02_OWNER_RUNTIME_VERIFY_PASS no_media_assertions=1 hashes=5 capture_ready=0")
     return 0
 
 

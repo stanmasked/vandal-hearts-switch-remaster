@@ -44,6 +44,8 @@ def fixture(root: Path) -> dict:
         "official_bizhawk": {
             "version": "2.11", "archive_sha256": BIZHAWK_ARCHIVE_SHA256,
             "core_assembly_sha256": core_hash,
+            "emuhawk_exe_sha256": digest(b"fictional emuhawk"),
+            "emuhawk_mono_launcher_sha256": digest(b"#!/bin/sh\nexit 0\n"),
         },
         "native_octoshock": {
             "filename": NATIVE_NAME, "sha256": native_hash,
@@ -93,6 +95,8 @@ class OwnerRuntimeVerifierTests(unittest.TestCase):
 
     def test_rejects_modified_native_and_managed_components(self):
         for relative in (
+            "EmuHawk.exe",
+            "EmuHawkMono.sh",
             "dll/" + NATIVE_NAME,
             "dll/BizHawk.Emulation.Cores.dll",
             "ExternalTools/VhMap02CoreWitness.dll",
@@ -103,6 +107,22 @@ class OwnerRuntimeVerifierTests(unittest.TestCase):
                     (root / relative).write_bytes(b"tampered")
                     with self.assertRaises(RuntimeVerificationError):
                         verify_runtime(root)
+
+    def test_rejects_missing_or_invalid_launcher_hash_pins(self):
+        for key in ("emuhawk_exe_sha256", "emuhawk_mono_launcher_sha256"):
+            for invalid in (None, "not-a-sha256"):
+                with self.subTest(key=key, invalid=invalid):
+                    temp, root, manifest = self.with_fixture()
+                    with temp:
+                        if invalid is None:
+                            del manifest["official_bizhawk"][key]
+                        else:
+                            manifest["official_bizhawk"][key] = invalid
+                        (root / "map02-owner-runtime-manifest.json").write_text(
+                            json.dumps(manifest), encoding="utf-8"
+                        )
+                        with self.assertRaises(RuntimeVerificationError):
+                            verify_runtime(root)
 
     def test_rejects_world_readable_staged_root(self):
         temp, root, _ = self.with_fixture()

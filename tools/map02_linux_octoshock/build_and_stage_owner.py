@@ -32,7 +32,7 @@ UPSTREAM_SOURCE_COUNT = 41
 BIZHAWK_URL = "https://github.com/TASEmulators/BizHawk/releases/download/2.11/BizHawk-2.11-linux-x64.tar.gz"
 BIZHAWK_ARCHIVE_SHA256 = "cdaf9650d880bae660d63a388430f630b8d8a96b1ba59ebf0e0195a645c3bab8"
 NATIVE_MODULE_NAME = "liboctoshock.dll.so"
-MANIFEST_SCHEMA = "vh.map02.owner-local-runtime.v1"
+MANIFEST_SCHEMA = "vh.map02.owner-local-runtime.v2"
 PATCH_NAMES = (
     "posix-export.patch",
     "posix-header-order.patch",
@@ -440,6 +440,8 @@ def _write_runtime_records(
             "archive_url": BIZHAWK_URL,
             "archive_sha256": archive_hash,
             "core_assembly_sha256": core_hash,
+            "emuhawk_exe_sha256": sha256_file(runtime_root / "EmuHawk.exe"),
+            "emuhawk_mono_launcher_sha256": sha256_file(runtime_root / "EmuHawkMono.sh"),
         },
         "native_octoshock": {
             "filename": NATIVE_MODULE_NAME,
@@ -691,10 +693,7 @@ def main() -> int:
         return 1
     print(
         "VH_MAP02_OWNER_RUNTIME_STAGE_PASS "
-        "native_module_sha256=" + str(manifest["native_octoshock"]["sha256"]) + " "
-        "core_assembly_sha256=" + str(manifest["official_bizhawk"]["core_assembly_sha256"]) + " "
-        "witness_plugin_sha256=" + str(manifest["experimental_witness_plugin"]["sha256"]) + " "
-        "game_media_used=0 capture_ready=0"
+        "component_hashes_verified=5 game_media_used=0 capture_ready=0"
     )
     return 0
 

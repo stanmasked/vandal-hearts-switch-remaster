@@ -67,7 +67,7 @@ jobs:
           from pathlib import Path
           root = Path(os.environ["VH_MAP02_OWNER_RUNTIME"]).resolve(strict=True)
           manifest = json.loads((root / "map02-owner-runtime-manifest.json").read_text(encoding="utf-8"))
-          assert manifest["schema"] == "vh.map02.owner-local-runtime.v1"
+          assert manifest["schema"] == "vh.map02.owner-local-runtime.v2"
           assert manifest["game_media_used"] is False
           assert manifest["bios_used"] is False
           assert manifest["bk2_used"] is False

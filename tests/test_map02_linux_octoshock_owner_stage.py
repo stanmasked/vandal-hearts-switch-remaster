@@ -98,7 +98,7 @@ class OwnerRuntimeStageSafetyTests(unittest.TestCase):
             )
 
     def test_manifest_schema_is_explicit(self):
-        self.assertEqual(MANIFEST_SCHEMA, "vh.map02.owner-local-runtime.v1")
+        self.assertEqual(MANIFEST_SCHEMA, "vh.map02.owner-local-runtime.v2")
 
 
 if __name__ == "__main__":
