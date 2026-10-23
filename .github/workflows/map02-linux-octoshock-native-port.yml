@@ -6,6 +6,7 @@ on:
       - 'tools/map02_linux_octoshock/**'
       - 'tools/map02_linux_octoshock/official_managed_binding_smoke.cs'
       - 'tests/test_map02_public_ci_storage_policy.py'
+      - 'tests/test_map02_linux_octoshock_owner_stage.py'
       - '.github/workflows/map02-linux-octoshock-native-port.yml'
   workflow_dispatch:
 
@@ -27,227 +28,47 @@ jobs:
       - name: Enforce public CI storage policy
         run: python3 -m unittest discover -s tests -p 'test_map02_public_ci_storage_policy.py' -v
 
+      - name: Test owner-local runtime staging safety contracts
+        run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_owner_stage.py' -v
+
       - name: Test POSIX compiler-sanity shim against synthetic upstream header
         run: python3 tests/test_map02_linux_octoshock_compiler_sanity.py
 
-      - name: Install native build tools
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install native build and no-media runtime dependencies
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake git binutils python3 mono-complete
+          sudo apt-get install -y build-essential cmake git binutils python3 mono-complete curl file xvfb libopenal1 liblua5.4-0 lsb-release libgl1
 
-      - name: Fetch and verify exact upstream BizHawk 2.11 source
-        shell: bash
+      - name: Build and stage the owner-local runtime with the pinned source builder
         run: |
           set -euo pipefail
-          upstream="$RUNNER_TEMP/bizhawk-upstream"
-          commit='427556b5ef3ac437eba754d90c5e7e9096c9a8df'
-          expected_tree='24f43550ff70776a86a2d7b64d09993dd09021d9'
-          git clone --filter=blob:none --no-checkout https://github.com/TASEmulators/BizHawk.git "$upstream"
-          git -C "$upstream" checkout --detach "$commit"
-          test "$(git -C "$upstream" rev-parse HEAD)" = "$commit"
-          test "$(git -C "$upstream" rev-parse HEAD:psx/octoshock)" = "$expected_tree"
-          python3 tools/map02_linux_octoshock/verify_source_manifest.py --source-root "$upstream"
+          python3 tools/map02_linux_octoshock/build_and_stage_owner.py \
+            --output-root "$RUNNER_TEMP/vh-map02-owner-runtime"
 
-      - name: Apply isolated POSIX symbol export shim
-        shell: bash
+      - name: Verify staged runtime manifest and no-media boundary
+        env:
+          VH_MAP02_OWNER_RUNTIME: ${{ runner.temp }}/vh-map02-owner-runtime
         run: |
           set -euo pipefail
-          upstream="$RUNNER_TEMP/bizhawk-upstream"
-          patch="$GITHUB_WORKSPACE/tools/map02_linux_octoshock/posix-export.patch"
-          git -C "$upstream" apply --ignore-space-change --check "$patch"
-          git -C "$upstream" apply --ignore-space-change "$patch"
-          order_patch="$GITHUB_WORKSPACE/tools/map02_linux_octoshock/posix-header-order.patch"
-          git -C "$upstream" apply --ignore-space-change --check "$order_patch"
-          git -C "$upstream" apply --ignore-space-change "$order_patch"
-          deinterlacer_patch="$GITHUB_WORKSPACE/tools/map02_linux_octoshock/posix-deinterlacer-include.patch"
-          git -C "$upstream" apply --ignore-space-change --check "$deinterlacer_patch"
-          git -C "$upstream" apply --ignore-space-change "$deinterlacer_patch"
-          buffer_patch="$GITHUB_WORKSPACE/tools/map02_linux_octoshock/posix-local-buffer.patch"
-          git -C "$upstream" apply --ignore-space-change --check "$buffer_patch"
-          git -C "$upstream" apply --ignore-space-change "$buffer_patch"
-          python3 "$GITHUB_WORKSPACE/tools/map02_linux_octoshock/apply_posix_compiler_sanity.py" \
-            "$upstream/psx/octoshock/emuware/emuware.h"
-          echo 'VH_MAP02_OCTOSHOCK_POSIX_EXPORT_HEADER_BUFFER_AND_SANITY_SHIMS_APPLIED upstream_source_changed_only_in_temp_checkout=1'
-
-      - name: Configure the exact upstream 41-file native project
-        shell: bash
-        run: |
-          set -euo pipefail
-          cmake -S tools/map02_linux_octoshock -B "$RUNNER_TEMP/octoshock-build"             -DCMAKE_BUILD_TYPE=Release             -DOCTOSH_SOURCE_DIR="$RUNNER_TEMP/bizhawk-upstream/psx/octoshock"
-
-      - name: Compile native Octoshock probe without game data
-        shell: bash
-        run: |
-          set -euo pipefail
-          cmake --build "$RUNNER_TEMP/octoshock-build" --parallel 2 --verbose
-
-      - name: Audit shared-library identity and required C ABI exports
-        shell: bash
-        run: |
-          set -euo pipefail
-          library="$RUNNER_TEMP/octoshock-build/liboctoshock.dll.so"
-          test -f "$library"
-          file "$library"
-          readelf -h "$library" | grep -q 'Class:.*ELF64'
-          readelf -h "$library" | grep -q 'Machine:.*X86-64'
-          nm -D --defined-only "$library" | awk '{print $3}' > "$RUNNER_TEMP/octoshock-exports.txt"
-          managed_dir="$RUNNER_TEMP/bizhawk-upstream/src/BizHawk.Emulation.Cores/Consoles/Sony/PSX"
-          managed_bindings="$managed_dir/OctoshockDll.cs"
-          test -f "$managed_bindings"
-          grep -oE 'public static extern [^ ]+ shock_[A-Za-z0-9_]+\(' "$managed_bindings" \
-            | sed -E 's/.* (shock_[A-Za-z0-9_]+)\(.*/\1/' \
-            | sort -u > "$RUNNER_TEMP/octoshock-declared-imports.txt"
-          grep -RohE 'OctoshockDll\.shock_[A-Za-z0-9_]+\(' "$managed_dir" --include='*.cs' \
-            | sed -E 's/.*OctoshockDll\.(shock_[A-Za-z0-9_]+)\(.*/\1/' \
-            | sort -u > "$RUNNER_TEMP/octoshock-referenced-imports.txt"
-          comm -23 "$RUNNER_TEMP/octoshock-referenced-imports.txt" "$RUNNER_TEMP/octoshock-declared-imports.txt" \
-            > "$RUNNER_TEMP/octoshock-undeclared-calls.txt"
-          if test -s "$RUNNER_TEMP/octoshock-undeclared-calls.txt"; then
-            echo 'managed Octoshock call has no declared P/Invoke:' >&2
-            cat "$RUNNER_TEMP/octoshock-undeclared-calls.txt" >&2
-            exit 1
-          fi
-          known_unimplemented="$GITHUB_WORKSPACE/tools/map02_linux_octoshock/known-unimplemented-managed-imports.txt"
-          test "$(wc -l < "$known_unimplemented")" -eq 1
-          sort -u "$known_unimplemented" > "$RUNNER_TEMP/octoshock-known-unimplemented.sorted.txt"
-          if ! cmp -s "$known_unimplemented" "$RUNNER_TEMP/octoshock-known-unimplemented.sorted.txt"; then
-            echo 'known unimplemented import list must be sorted and unique' >&2
-            exit 1
-          fi
-          comm -23 "$known_unimplemented" "$RUNNER_TEMP/octoshock-declared-imports.txt" \
-            > "$RUNNER_TEMP/octoshock-stale-import-not-declared.txt"
-          if test -s "$RUNNER_TEMP/octoshock-stale-import-not-declared.txt"; then
-            echo 'pinned stale-import exception no longer matches managed declarations' >&2
-            cat "$RUNNER_TEMP/octoshock-stale-import-not-declared.txt" >&2
-            exit 1
-          fi
-          while IFS= read -r symbol; do
-            if grep -R -E "OctoshockDll\\.${symbol}\\(" "$managed_dir" --include='*.cs' >/dev/null; then
-              echo "known unimplemented import is now referenced by managed code: $symbol" >&2
-              exit 1
-            fi
-            if grep -R -F --include='*.h' --include='*.cpp' "$symbol" "$RUNNER_TEMP/bizhawk-upstream/psx/octoshock" >/dev/null; then
-              echo "known unimplemented import now exists in native source; update the exception: $symbol" >&2
-              exit 1
-            fi
-            if grep -Fx "$symbol" "$RUNNER_TEMP/octoshock-exports.txt" >/dev/null; then
-              echo "known unimplemented import unexpectedly exported; remove exception: $symbol" >&2
-              exit 1
-            fi
-          done < "$known_unimplemented"
-          grep -Fvx -f "$known_unimplemented" "$RUNNER_TEMP/octoshock-declared-imports.txt" \
-            > "$RUNNER_TEMP/octoshock-required-exports.txt"
-          test -s "$RUNNER_TEMP/octoshock-required-exports.txt"
-          while IFS= read -r symbol; do
-            if ! grep -Fx "$symbol" "$RUNNER_TEMP/octoshock-exports.txt" >/dev/null; then
-              echo "referenced official BizHawk managed P/Invoke export absent: $symbol" >&2
-              exit 1
-            fi
-          done < "$RUNNER_TEMP/octoshock-required-exports.txt"
-          echo 'VH_MAP02_KNOWN_STALE_IMPORT_CONFIRMED symbol=shock_Peripheral_SetNegconInput native_definition=0 managed_call=0'
-          echo "VH_MAP02_OCTOSHOCK_MANAGED_EXPORT_COVERAGE_PASS count=$(wc -l < "$RUNNER_TEMP/octoshock-required-exports.txt")"
-          if ldd -r "$library" 2>&1 | grep -E 'undefined symbol|not found'; then
-            echo 'native probe has unresolved runtime dependencies' >&2
-            exit 1
-          fi
-          echo 'VH_MAP02_OCTOSHOCK_LINUX_LINK_AND_EXPORT_AUDIT_PASS game_loaded=0 firmware=0 original_disc=0 bk2=0 map02=unverified'
-
-      - name: Stage pinned official BizHawk 2.11 Linux runtime for managed-binding smoke
-        shell: bash
-        run: |
-          set -euo pipefail
-          archive="$RUNNER_TEMP/BizHawk-2.11-linux-x64.tar.gz"
-          root="$RUNNER_TEMP/bizhawk211-linux-x64-managed-binding"
-          expected='cdaf9650d880bae660d63a388430f630b8d8a96b1ba59ebf0e0195a645c3bab8'
-          curl --fail --location --silent --show-error \
-            'https://github.com/TASEmulators/BizHawk/releases/download/2.11/BizHawk-2.11-linux-x64.tar.gz' \
-            --output "$archive"
-          actual="$(sha256sum "$archive" | awk '{print $1}')"
-          if [[ "$actual" != "$expected" ]]; then
-            echo "official BizHawk Linux release SHA256 mismatch" >&2
-            exit 1
-          fi
-          mkdir -p "$root"
-          tar -xzf "$archive" -C "$root"
-          mapfile -t core_assemblies < <(find "$root" -type f -name BizHawk.Emulation.Cores.dll -print | sort)
-          if [[ "${#core_assemblies[@]}" -lt 1 ]]; then
-            echo "official BizHawk.Emulation.Cores.dll missing" >&2
-            exit 1
-          fi
-          core_hashes="$(sha256sum "${core_assemblies[@]}" | awk '{print $1}' | sort -u)"
-          if [[ "$(printf '%s\n' "$core_hashes" | wc -l)" -ne 1 ]]; then
-            echo "official BizHawk core assembly copies differ" >&2
-            exit 1
-          fi
-          mapfile -t emuhawk_files < <(find "$root" -type f -name EmuHawk.exe -print | sort)
-          if [[ "${#emuhawk_files[@]}" -ne 1 ]]; then
-            echo "expected exactly one official EmuHawk.exe" >&2
-            exit 1
-          fi
-          bizhawk_dir="$(dirname "${emuhawk_files[0]}")"
-          if [[ ! -f "$bizhawk_dir/EmuHawkMono.sh" ]]; then
-            echo "official EmuHawkMono.sh missing" >&2
-            exit 1
-          fi
-          for assembly in "${core_assemblies[@]}"; do
-            dll_dir="$(dirname "$assembly")"
-            test -f "$dll_dir/BizHawk.Emulation.Common.dll"
-            cp "$RUNNER_TEMP/octoshock-build/liboctoshock.dll.so" "$dll_dir/liboctoshock.dll.so"
-            cmp -s "$RUNNER_TEMP/octoshock-build/liboctoshock.dll.so" "$dll_dir/liboctoshock.dll.so"
-          done
-          dll_dir="$(dirname "${core_assemblies[0]}")"
-          echo "VH_MAP02_OFFICIAL_BIZHAWK211_LINUX_NATIVE_STAGED archive_sha256_verified=1 native_module=custom_pinned_source_build private_temp_only=1 original_disc=0 bios=0 bk2=0"
-          echo "VH_BIZHAWK_LINUX_ROOT=$bizhawk_dir" >> "$GITHUB_ENV"
-          echo "VH_BIZHAWK_LINUX_DLL_DIR=$dll_dir" >> "$GITHUB_ENV"
-
-      - name: Smoke-test Mono P/Invoke and synthetic core lifecycle
-        shell: bash
-        run: |
-          set -euo pipefail
-          mcs -out:"$RUNNER_TEMP/octoshock-abi-smoke.exe" tools/map02_linux_octoshock/abi_smoke.cs
-          LD_LIBRARY_PATH="$RUNNER_TEMP/octoshock-build${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-            mono "$RUNNER_TEMP/octoshock-abi-smoke.exe"
-
-      - name: Smoke-test official BizHawk 2.11 managed Octoshock binding with synthetic firmware
-        shell: bash
-        run: |
-          set -euo pipefail
-          netstandard='/usr/lib/mono/4.8-api/Facades/netstandard.dll'
-          test -f "$netstandard"
-          mcs -unsafe -r:"$netstandard" \
-            -r:"$VH_BIZHAWK_LINUX_DLL_DIR/BizHawk.Emulation.Cores.dll" \
-            -r:"$VH_BIZHAWK_LINUX_DLL_DIR/BizHawk.Emulation.Common.dll" \
-            -out:"$RUNNER_TEMP/official-bizhawk-octoshock-binding-smoke.exe" \
-            tools/map02_linux_octoshock/official_managed_binding_smoke.cs
-          echo 'VH_MAP02_OFFICIAL_MANAGED_BINDING_COMPILE_PASS netstandard=mono-facade'
-          MONO_PATH="$VH_BIZHAWK_LINUX_DLL_DIR" \
-            LD_LIBRARY_PATH="$VH_BIZHAWK_LINUX_DLL_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-            mono "$RUNNER_TEMP/official-bizhawk-octoshock-binding-smoke.exe"
-
-      - name: Smoke-test staged EmuHawkMono startup with custom native module present
-        shell: bash
-        run: |
-          set -euo pipefail
-          private_home="$RUNNER_TEMP/vh-map02-native-staged-home"
-          mkdir -p "$private_home"
-          chmod 700 "$private_home"
-          trap 'rm -rf "$private_home"' EXIT
-          set +e
-          HOME="$private_home" \
-            LD_LIBRARY_PATH="$VH_BIZHAWK_LINUX_DLL_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-            timeout 45s xvfb-run -a "$VH_BIZHAWK_LINUX_ROOT/EmuHawkMono.sh" --help \
-            > "$RUNNER_TEMP/vh-map02-native-staged-emuhawk.log" 2>&1
-          result=$?
-          set -e
-          if [[ "$result" -ne 0 ]]; then
-            tail -n 30 "$RUNNER_TEMP/vh-map02-native-staged-emuhawk.log"
-            exit 1
-          fi
-          echo 'VH_MAP02_CUSTOM_NATIVE_STAGED_EMUHAWK_STARTUP_PASS game_loaded=0 bios=0 disc=0 bk2=0 map02=unverified'
-
-      - name: Record the hard acceptance boundary
-        run: |
-          echo 'This job proves a pinned-source native build, checked C ABI exports, safe helper P/Invoke, and synthetic create/destroy lifecycle.'
-          echo 'It does not prove BIOS validity, powered-on PSX execution, BK2 compatibility, or MAP02 capture.'
-          echo 'No compiled library or private game asset is uploaded.'
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ["VH_MAP02_OWNER_RUNTIME"]).resolve(strict=True)
+          manifest = json.loads((root / "map02-owner-runtime-manifest.json").read_text(encoding="utf-8"))
+          assert manifest["schema"] == "vh.map02.owner-local-runtime.v1"
+          assert manifest["game_media_used"] is False
+          assert manifest["bios_used"] is False
+          assert manifest["bk2_used"] is False
+          assert manifest["game_loaded"] is False
+          assert manifest["psx_capture_ready"] is False
+          assert (root / "dll/liboctoshock.dll.so").is_file()
+          assert (root / "ExternalTools/VhMap02CoreWitness.dll").is_file()
+          assert (root / "map02-owner-runtime-pins.env").is_file()
+          assert not (root / "vandalhearts.bk2").exists()
+          print("VH_MAP02_OWNER_RUNTIME_STAGED_NO_MEDIA_PASS native=1 witness_plugin=1 original_disc=0 bios=0 bk2=0 capture_ready=0")
+          PY
