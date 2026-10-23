@@ -297,6 +297,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             "full_bin_reference_stable_during_preflight": digest is not None,
             "candidate_bios_matches_bk2_psx_firmware_metadata":
                 private_psx_bios_candidate is not None,
+            "runtime_witness_reports_loaded_psx_u_bios_matches_bk2_header": False,
             "actual_emuhawk_loaded_bios_authenticated": False,
             "emulator_timeout_seconds": (
                 emulator_timeout_seconds
@@ -423,6 +424,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
                 auto_core_witness_plugin is not None and core_witness_sha256 is not None,
             "first_auto_core_witness_bound_to_launched_process":
                 auto_core_witness_plugin is not None,
+            "first_runtime_witness_reports_loaded_psx_u_bios_matches_bk2_header":
+                auto_core_witness_plugin is not None,
             "first_auto_core_frame_not_later_than_first_png":
                 auto_core_witness_plugin is not None,
             "same_bk2_bytes_across_capture_attempts": False,
@@ -475,6 +478,9 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         "runtime_tool_file_hash_reported_by_witness_matches_pin":
             auto_core_witness_plugin is not None and core_witness_sha256 is not None,
         "automatic_core_witness_process_bound": auto_core_witness_plugin is not None,
+        "both_runtime_witnesses_report_loaded_psx_u_bios_matches_bk2_header":
+            auto_core_witness_plugin is not None
+            and bound.get("both_witnesses_report_psx_u_firmware_matches_bk2_header") is True,
         "capture_attempts_audited": 2,
         "same_reported_bizhawk_runtime_profile":
             paired["same_reported_bizhawk_runtime_profile"],
