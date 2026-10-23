@@ -1,7 +1,9 @@
 diff --git a/psx/octoshock/emuware/emuware.h b/psx/octoshock/emuware/emuware.h
 --- a/psx/octoshock/emuware/emuware.h
 +++ b/psx/octoshock/emuware/emuware.h
-@@ -3,3 +3,5 @@
+@@ -1,5 +1,7 @@
+ #pragma once
+ 
  #include <inttypes.h>
  #include <stdint.h>
  #include <cstdlib>
