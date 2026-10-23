@@ -43,6 +43,9 @@ jobs:
           posix="$(find /usr/lib/mono -type f -name Mono.Posix.dll | sort | grep '/4\.5-api/' | head -n 1)"
           test -n "$posix"
           echo "VH_MONO_POSIX_PATH=$posix" >> "$GITHUB_ENV"
+          netstandard='/usr/lib/mono/4.8-api/Facades/netstandard.dll'
+          test -f "$netstandard"
+          echo "VH_MONO_NETSTANDARD_PATH=$netstandard" >> "$GITHUB_ENV"
           echo 'VH_MAP02_LINUX_MONO_DEPENDENCIES_READY no_game_assets=0'
       - name: Download and verify the exact official BizHawk 2.11 Linux x64 release
         shell: bash
@@ -110,7 +113,8 @@ jobs:
             -c Release --nologo -v:minimal \
             -p:VH_BIZHAWK_RELEASE_ROOT="$VH_BIZHAWK_LINUX_ROOT" \
             -p:VH_MAP02_UNIX_BUILD=true \
-            -p:VH_MONO_POSIX_PATH="$VH_MONO_POSIX_PATH"
+            -p:VH_MONO_POSIX_PATH="$VH_MONO_POSIX_PATH" \
+            -p:VH_MONO_NETSTANDARD_PATH="$VH_MONO_NETSTANDARD_PATH"
           dll='tools/map02_runtime_core_witness/bin/Release/net48/VhMap02CoreWitness.dll'
           test -f "$dll"
           digest="$(sha256sum "$dll" | awk '{print toupper($1)}')"
