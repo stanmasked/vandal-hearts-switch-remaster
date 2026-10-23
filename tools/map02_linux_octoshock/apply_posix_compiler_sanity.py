@@ -80,16 +80,29 @@ def main() -> int:
     )
     text = replace_once(text, msvc_anchor, gcc_attributes, "GCC no-inline/no-clone definitions")
 
-    required = (
+    required_once = (
         "#include <cstddef>",
         "#include <sys/types.h>",
-        "#define SIZEOF_OFF_T sizeof(off_t)",
         "#define SIZEOF_PTRDIFF_T sizeof(ptrdiff_t)",
         "#define NO_INLINE __attribute__((noinline))",
         "#define NO_CLONE __attribute__((noclone))",
     )
-    if not all(text.count(marker) == 1 for marker in required):
-        raise SystemExit("postcondition failed: shim definitions are missing or duplicated")
+    # These macros intentionally exist once in each mutually exclusive branch:
+    # the original MSVC branch and the added POSIX branch.
+    required_twice = (
+        "#define SIZEOF_CHAR sizeof(char)",
+        "#define SIZEOF_SHORT sizeof(short)",
+        "#define SIZEOF_INT sizeof(int)",
+        "#define SIZEOF_LONG sizeof(long)",
+        "#define SIZEOF_LONG_LONG sizeof(long long)",
+        "#define SIZEOF_OFF_T sizeof(off_t)",
+        "#define SIZEOF_SIZE_T sizeof(size_t)",
+        "#define SIZEOF_VOID_P sizeof(void*)",
+    )
+    if not all(text.count(marker) == 1 for marker in required_once):
+        raise SystemExit("postcondition failed: unique shim definitions are missing or duplicated")
+    if not all(text.count(marker) == 2 for marker in required_twice):
+        raise SystemExit("postcondition failed: branch-specific size macros are not present exactly twice")
 
     # Normalize line endings only in the disposable upstream checkout, avoiding
     # fragile patch matching against upstream's platform-specific line endings.
