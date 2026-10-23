@@ -55,21 +55,27 @@ jobs:
             'https://github.com/TASEmulators/BizHawk/releases/download/2.11/BizHawk-2.11-linux-x64.tar.gz' \
             --output "$archive"
           actual="$(sha256sum "$archive" | awk '{print $1}')"
-          test "$actual" = "$expected"
+          if [[ "$actual" != "$expected" ]]; then echo "official Linux release SHA256 mismatch" >&2; exit 1; fi
+          echo "VH_MAP02_LINUX_ARCHIVE_SHA256_VERIFIED"
           mkdir -p "$root"
           tar -xzf "$archive" -C "$root"
+          echo "VH_MAP02_LINUX_OFFICIAL_ARCHIVE_EXTRACTED"
           mapfile -t emuhawk_files < <(find "$root" -type f -name EmuHawk.exe -print)
-          test "${#emuhawk_files[@]}" -eq 1
+          if [[ "${#emuhawk_files[@]}" -ne 1 ]]; then echo "expected exactly one official Linux EmuHawk.exe" >&2; exit 1; fi
           bizhawk_root="$(dirname "${emuhawk_files[0]}")"
-          test -f "$bizhawk_root/EmuHawkMono.sh"
-          test -f "$bizhawk_root/dll/BizHawk.Emulation.Common.dll"
+          if [[ ! -f "$bizhawk_root/EmuHawkMono.sh" ]]; then echo "official Linux Mono launcher absent" >&2; exit 1; fi
+          if [[ ! -f "$bizhawk_root/dll/BizHawk.Emulation.Common.dll" ]]; then echo "official Linux BizHawk.Emulation.Common.dll absent" >&2; exit 1; fi
           mapfile -t core_files < <(find "$bizhawk_root" -type f -name BizHawk.Emulation.Cores.dll -print | sort)
-          test "${#core_files[@]}" -ge 1
+          if [[ "${#core_files[@]}" -lt 1 ]]; then echo "official Linux runtime core assembly absent" >&2; exit 1; fi
           core_hashes="$(sha256sum "${core_files[@]}" | awk '{print $1}' | sort -u)"
           test "$(printf '%s\n' "$core_hashes" | wc -l)" -eq 1
           mapfile -t native_files < <(find "$bizhawk_root" -type f \
             \( -name 'liboctoshock.dll.so' -o -name 'liboctoshock.so' -o -name 'octoshock.dll' \) -print | sort)
-          test "${#native_files[@]}" -ge 1
+          if [[ "${#native_files[@]}" -lt 1 ]]; then
+            echo "official Linux native Octoshock module not found under expected names" >&2
+            find "$bizhawk_root" -type f -iname "*octoshock*" -printf "%f\n" | sort -u >&2
+            exit 1
+          fi
           native_hashes="$(sha256sum "${native_files[@]}" | awk '{print $1}' | sort -u)"
           test "$(printf '%s\n' "$native_hashes" | wc -l)" -eq 1
           core_hash="$(printf '%s\n' "$core_hashes" | head -n 1)"
