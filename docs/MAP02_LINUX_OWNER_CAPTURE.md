@@ -97,7 +97,8 @@ python3 -m tools.map02_private_two_replay_runner \
   --private-full-bin-sha256-file "$FULL_BIN_SHA_FILE" \
   --auto-core-witness-plugin "$BIZHAWK_ROOT/ExternalTools/VhMap02CoreWitness.dll" \
   --private-core-witness-sha256 "$KNOWN_LINUX_DLL_SHA256" \
-  --record-process-identity --mono-executable "$MONO_REAL_PATH"
+  --record-process-identity --mono-executable "$MONO_REAL_PATH" \
+  --trusted-runtime-manifest-pin-file "$TRUSTED_PIN"
 
 python3 -m tools.map02_private_two_replay_runner \
   "$BIZHAWK_ROOT/EmuHawk.exe" "$CUE" "$BK2" "$WORKSPACE" \
@@ -105,6 +106,7 @@ python3 -m tools.map02_private_two_replay_runner \
   --auto-core-witness-plugin "$BIZHAWK_ROOT/ExternalTools/VhMap02CoreWitness.dll" \
   --private-core-witness-sha256 "$KNOWN_LINUX_DLL_SHA256" \
   --record-process-identity --mono-executable "$MONO_REAL_PATH" \
+  --trusted-runtime-manifest-pin-file "$TRUSTED_PIN" \
   --launch-one
 ```
 
@@ -174,10 +176,10 @@ with the **supplied** trust anchor; it does not cryptographically attest live
 loaded pages, BIOS selection, BK2 replay, MAP02 or Nintendo Switch parity.
 
 Run this check before each private capture, and never treat the builder's
-ordinary no-pin verification as authorization to load real media. The existing
-owner capture launcher does not yet enforce this additional Stage532 check
-internally: until that integration is completed, executing the above gate is a
-mandatory manual prerequisite rather than an automatic capture blockade.
+ordinary no-pin verification as authorization to load real media. Stage533
+integrates this mandatory check into the private Linux Mono launcher and
+coordinator; the independent Drive archival/readback of the owner pin remains
+an essential prerequisite and is not supplied by public CI.
 
 ## Stage533 — mandatory Linux trusted-manifest gate in capture launcher
 
