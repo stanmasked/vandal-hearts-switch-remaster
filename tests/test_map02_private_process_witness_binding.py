@@ -32,7 +32,7 @@ def started(pid, ticks):
 def core(pid, ticks, frame=1666, tool_hash="a" * 64,
          core_hash="b" * 64, native_hash="c" * 64):
     return (
-        "VH_MAP02_RUNTIME_CORE_WITNESS_V3\n"
+        "VH_MAP02_RUNTIME_CORE_WITNESS_V4\n"
         "system=PSX\nloaded_core=Octoshock\n"
         "core_source=IEmulator.Attributes.CoreName\n"
         "runtime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock\n"
@@ -41,7 +41,7 @@ def core(pid, ticks, frame=1666, tool_hash="a" * 64,
         "native_core_module_sha256=" + native_hash + "\n"
         "tool_assembly_sha256=" + tool_hash + "\n"
         f"process_id={pid}\nprocess_start_utc_ticks={ticks}\n"
-        f"frame_count={frame}\nbios=unverified\n"
+        f"frame_count={frame}\nbios=psx_u_firmware_hash_matches_movie_header\n"
         "disc=unverified\nmovie_sync=unverified\n"
     )
 
@@ -305,7 +305,7 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
 
     def test_unsafe_core_witness_false_bios_claim_rejected(self):
         _lf_fixture(
-            self.a_core, core(3011, BIRTH_A).replace("bios=unverified", "bios=verified")
+            self.a_core, core(3011, BIRTH_A).replace("bios=psx_u_firmware_hash_matches_movie_header", "bios=unverified")
         )
         with self.assertRaisesRegex(ValueError, "unsupported evidence"):
             self.bind()
