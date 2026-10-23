@@ -316,6 +316,8 @@ def verify_private_auto_witness(
     source = Path(root)
     witness = read_witness_record(source / AUTO_WITNESS_NAME)
     launch = read_started_process(source / OWNER_PROCESS_RECEIPT_NAME)
+    if witness[6] is not True:
+        raise ValueError("private automatic core witness does not confirm PSX/U firmware match")
     if witness[:2] != launch:
         raise ValueError("private automatic core witness does not match launched process")
     if expected_sha256 is not None:
