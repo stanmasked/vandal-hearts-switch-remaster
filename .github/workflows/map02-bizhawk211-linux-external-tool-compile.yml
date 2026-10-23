@@ -81,11 +81,11 @@ jobs:
             native_name='unavailable'
           else
             native_hashes="$(sha256sum "${native_files[@]}" | awk '{print $1}' | sort -u)"
-            if [[ "$(printf '%s\\n' "$native_hashes" | wc -l)" -ne 1 ]]; then
+            if [[ "$(printf '%s\n' "$native_hashes" | wc -l)" -ne 1 ]]; then
               echo "official Linux native module copies differ" >&2
               exit 1
             fi
-            native_hash="$(printf '%s\\n' "$native_hashes" | head -n 1)"
+            native_hash="$(printf '%s\n' "$native_hashes" | head -n 1)"
             native_name="$(basename "${native_files[0]}")"
             case "$native_name" in
               liboctoshock.dll.so|liboctoshock.so|octoshock.dll) ;;
@@ -93,7 +93,7 @@ jobs:
             esac
             echo "VH_BIZHAWK_LINUX_NATIVE_AVAILABLE=1" >> "$GITHUB_ENV"
           fi
-          core_hash="$(printf '%s\\n' "$core_hashes" | head -n 1)"
+          core_hash="$(printf '%s\n' "$core_hashes" | head -n 1)"
           echo "VH_BIZHAWK_LINUX_ROOT=$bizhawk_root" >> "$GITHUB_ENV"
           echo "VH_BIZHAWK_LINUX_CORE_SHA256=$core_hash" >> "$GITHUB_ENV"
           echo "VH_BIZHAWK_LINUX_NATIVE_SHA256=$native_hash" >> "$GITHUB_ENV"
