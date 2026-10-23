@@ -59,8 +59,8 @@ def _decimal(value: str, *, maximum: int, minimum: int = 0) -> int:
     return number
 
 
-def read_witness_record(source: Path) -> tuple[int, int, int, str, str, str]:
-    """Read a strict V3 witness; keep all runtime file hashes and IDs local."""
+def read_witness_record(source: Path) -> tuple[int, int, int, str, str, str, bool]:
+    """Read a strict V4 witness; keep all runtime file hashes and IDs local."""
     path = _resolve_private_file(source)
     fd, before = _open_stable(path)
     try:
@@ -97,12 +97,14 @@ def read_witness_record(source: Path) -> tuple[int, int, int, str, str, str]:
         ("loaded_core", "Octoshock"),
         ("core_source", "IEmulator.Attributes.CoreName"),
         ("runtime_core_type", RUNTIME_CORE_TYPE),
-        ("bios", "psx_u_firmware_hash_matches_movie_header"),
         ("disc", "unverified"),
         ("movie_sync", "unverified"),
     ):
         if fields[key] != expected:
             raise ValueError("private core witness has unsupported evidence claim")
+    if fields["bios"] not in (
+            "psx_u_firmware_hash_matches_movie_header", "unverified"):
+        raise ValueError("private core witness has unsupported evidence claim")
     if fields["native_core_module_name"] not in NATIVE_CORE_MODULE_NAMES:
         raise ValueError("private core witness has unsupported evidence: native module name")
     digests = {}
@@ -124,6 +126,7 @@ def read_witness_record(source: Path) -> tuple[int, int, int, str, str, str]:
         digests["tool_assembly_sha256"],
         digests["core_assembly_sha256"],
         digests["native_core_module_sha256"],
+        fields["bios"] == "psx_u_firmware_hash_matches_movie_header",
     )
 
 
@@ -160,7 +163,8 @@ def compare_witnesses(first: Path, second: Path) -> dict:
         "native_core_module_file_hash_independently_pinned": False,
         "process_or_witness_origin_cryptographically_authenticated": False,
         "witnesses_tied_to_specific_bk2_or_png_capture": False,
-        "both_runtime_witnesses_report_psx_u_firmware_matches_bk2_header": True,
+        "both_runtime_witnesses_report_psx_u_firmware_matches_bk2_header":
+            a[6] and b[6],
         "actual_loaded_bios_authenticated": False,
         "mounted_ps1_disc_authenticated": False,
         "original_map02_scene_authenticated": False,
