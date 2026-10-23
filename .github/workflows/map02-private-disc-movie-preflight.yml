@@ -125,7 +125,7 @@ jobs:
             -p 'test_map02_private_core_witness_audit.py' -v \
             2>&1 | tee /tmp/vh-map02-runtime-core-witness.log
           count=$(sed -nE 's/^Ran ([1-9][0-9]*) tests? in .*$/\1/p' /tmp/vh-map02-runtime-core-witness.log)
-          if [[ "$count" != "28" ]]; then
+          if [[ "$count" != "29" ]]; then
             echo 'unexpected synthetic runtime core witness test count' >&2
             exit 1
           fi
