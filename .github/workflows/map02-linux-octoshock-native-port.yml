@@ -66,7 +66,8 @@ jobs:
           library="$RUNNER_TEMP/octoshock-build/liboctoshock.dll.so"
           test -f "$library"
           file "$library"
-          readelf -h "$library" | grep -E 'Class:.*ELF64|Machine:.*X86-64'
+          readelf -h "$library" | grep -q 'Class:.*ELF64'
+          readelf -h "$library" | grep -q 'Machine:.*X86-64'
           nm -D --defined-only "$library" | awk '{print $3}' > "$RUNNER_TEMP/octoshock-exports.txt"
           for symbol in shock_CreateDisc shock_DestroyDisc shock_AnalyzeDisc shock_Create shock_Destroy shock_PowerOn shock_Step shock_GetFramebuffer shock_StateTransaction; do
             if ! grep -Fx "$symbol" "$RUNNER_TEMP/octoshock-exports.txt" >/dev/null; then
