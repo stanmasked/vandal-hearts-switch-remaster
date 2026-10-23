@@ -1229,6 +1229,7 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         report, process, audit, pair = self._exercise_first_png_frame_boundary(3001)
         self.assertIsInstance(report, dict)
         self.assertTrue(report["first_auto_core_frame_not_later_than_first_png"])
+        self.assertTrue(report["first_runtime_witness_reports_loaded_psx_u_bios_matches_bk2_header"])
         self.assertEqual(report["emulator_processes_started"], 1)
         process.assert_called_once()
         audit.assert_called_once()
