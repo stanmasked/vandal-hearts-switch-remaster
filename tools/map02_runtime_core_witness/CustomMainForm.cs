@@ -162,9 +162,11 @@ namespace VhMap02CoreWitness
                         output.Flush(true);
                     }
                 }
-                _summary.Text = "PSX/Octoshock automatic private core-only witness saved."
+                _summary.Text = "PSX/Octoshock automatic private core witness saved."
                     + Environment.NewLine
-                    + "BIOS, disc, BK2 and MAP02 remain unverified.";
+                    + "PSX/U firmware hash matched the opened BK2 header."
+                    + Environment.NewLine
+                    + "Disc identity, replay delivery and MAP02 scene remain unverified.";
             }
             catch (Exception)
             {
