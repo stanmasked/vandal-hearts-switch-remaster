@@ -7,6 +7,7 @@ on:
       - 'tools/map02_linux_octoshock/official_managed_binding_smoke.cs'
       - 'tests/test_map02_public_ci_storage_policy.py'
       - 'tests/test_map02_linux_octoshock_owner_stage.py'
+      - 'tests/test_map02_linux_octoshock_owner_runtime_verify.py'
       - '.github/workflows/map02-linux-octoshock-native-port.yml'
   workflow_dispatch:
 
@@ -31,6 +32,9 @@ jobs:
       - name: Test owner-local runtime staging safety contracts
         run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_owner_stage.py' -v
 
+      - name: Test staged runtime integrity verifier against synthetic corruption
+        run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_owner_runtime_verify.py' -v
+
       - name: Test POSIX compiler-sanity shim against synthetic upstream header
         run: python3 tests/test_map02_linux_octoshock_compiler_sanity.py
 
@@ -49,6 +53,9 @@ jobs:
           set -euo pipefail
           python3 tools/map02_linux_octoshock/build_and_stage_owner.py \
             --output-root "$RUNNER_TEMP/vh-map02-owner-runtime"
+
+      - name: Independently verify staged runtime files, private permissions and pins
+        run: python3 tools/map02_linux_octoshock/verify_owner_runtime.py "$RUNNER_TEMP/vh-map02-owner-runtime"
 
       - name: Verify staged runtime manifest and no-media boundary
         env:

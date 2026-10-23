@@ -472,6 +472,7 @@ def _write_runtime_records(
         "export VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256=" + core_hash + "\n"
         "export VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256=" + native_hash + "\n"
         "export VH_MAP02_PRIVATE_WITNESS_DLL_SHA256=" + witness_hash + "\n"
+        "export VH_MAP02_CORE_EXPECTED_DLL_SHA256=" + witness_hash + "\n"
     )
     pins_path = runtime_root / "map02-owner-runtime-pins.env"
     pins_path.write_text(pins, encoding="ascii")
@@ -488,6 +489,8 @@ def _write_runtime_records(
         "and map02-owner-runtime-pins.env.\n"
         "Use the repository's private capture launcher only after direct BIN identity, "
         "CUE/BIN identity and the BK2-matched BIOS have been verified.\n"
+        "Before private capture, re-run the owner-local integrity verifier against "
+        "this directory. Never interpret its PASS as gameplay proof.\n"
     )
     (runtime_root / "README-MAP02-OWNER-RUNTIME.txt").write_text(readme, encoding="utf-8")
     os.chmod(runtime_root / "README-MAP02-OWNER-RUNTIME.txt", 0o600)
@@ -593,6 +596,9 @@ def build_and_stage(output_value: Path, *, keep_workdir: bool = False) -> dict[s
         ))
         os.chmod(stage_root, 0o700)
         shutil.copytree(official_root, stage_root, dirs_exist_ok=True, symlinks=False)
+        # copytree copies the upstream root's mode onto the existing destination.
+        # Restore the owner-only directory boundary before any DLL is staged.
+        os.chmod(stage_root, 0o700)
         if (stage_root / "EmuHawk.exe").is_symlink():
             raise OwnerStageError("staged EmuHawk.exe unexpectedly became a symlink")
         core_assemblies = sorted(
@@ -643,6 +649,14 @@ def build_and_stage(output_value: Path, *, keep_workdir: bool = False) -> dict[s
             stage_root=stage_root,
             output_root=output_root,
             keep_workdir=keep_workdir,
+        )
+        # Fail closed before promotion if stored hashes, mode or no-media
+        # state differ from the independently checked manifest.
+        _run(
+            [sys.executable,
+             repo_root / "tools/map02_linux_octoshock/verify_owner_runtime.py",
+             stage_root],
+            cwd=repo_root, log_path=log_path,
         )
         os.replace(stage_root, output_root)
         stage_root = None
