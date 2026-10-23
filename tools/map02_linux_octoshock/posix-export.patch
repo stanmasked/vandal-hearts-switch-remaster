@@ -1,0 +1,12 @@
+diff --git a/psx/octoshock/emuware/emuware.h b/psx/octoshock/emuware/emuware.h
+--- a/psx/octoshock/emuware/emuware.h
++++ b/psx/octoshock/emuware/emuware.h
+@@
+ #ifdef EW_EXPORT
+ #undef EW_EXPORT
+-#define EW_EXPORT extern "C" __declspec(dllexport)
++#define EW_EXPORT extern "C" __attribute__((visibility("default")))
+ #else
+-#define EW_EXPORT extern "C" __declspec(dllimport)
++#define EW_EXPORT extern "C"
+ #endif
