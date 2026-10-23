@@ -143,6 +143,42 @@ def _sha_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
+def _seal_payload(source: Path, target: Path) -> str:
+    """Create an owner-only, distinct, full-byte snapshot before any upload."""
+    if target.exists() or target.is_symlink() or source.is_symlink():
+        _fail()
+    baseline = _hash_file(source)
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    source_fd = os.open(source, flags)
+    dest_fd = None
+    try:
+        original = os.fstat(source_fd)
+        if not stat.S_ISREG(original.st_mode) or original.st_uid != os.geteuid():
+            _fail()
+        dest_fd = os.open(
+            target, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+            getattr(os, "O_NOFOLLOW", 0), 0o600,
+        )
+        with os.fdopen(source_fd, "rb", closefd=False) as incoming:
+            with os.fdopen(dest_fd, "wb", closefd=False) as outgoing:
+                while True:
+                    chunk = incoming.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    outgoing.write(chunk)
+        after = os.fstat(source_fd)
+        if ((original.st_dev, original.st_ino, original.st_size, original.st_mtime_ns)
+                != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)):
+            _fail()
+    finally:
+        if dest_fd is not None:
+            os.close(dest_fd)
+        os.close(source_fd)
+    if _hash_file(target) != baseline or _hash_file(source) != baseline:
+        _fail()
+    return baseline
+
+
 def archive_to_private_drive(
     runtime: Path, owner_manifest_pin: Path, tar: Path, tar_pin: Path,
     private_readback_folder: Path, builds_remote: str, manifests_remote: str,
@@ -197,47 +233,80 @@ def archive_to_private_drive(
         if (preflight_result["files"] != count or
                 preflight_result["bytes"] != total):
             _fail()
-        _check_remote(builds, builds_id, invoke)
-        _check_remote(manifests, manifests_id, invoke)
         stem = "map02-runtime-" + session
-        payloads = [
+        originals = [
             (builds, stem + ".tar", archive),
             (manifests, stem + ".tar.sha256", archive_pin),
             (manifests, stem + ".manifest.json", manifest_file),
             (manifests, stem + ".manifest.sha256", pin),
         ]
+        # Seal all upload sources in a separate owner-only directory. Never
+        # hand mutable build-output files directly to a remote transport.
+        sealed_dir = staging / "sealed-for-upload"
+        sealed_dir.mkdir(mode=0o700)
+        payloads = []
+        for remote, name, original in originals:
+            sealed = sealed_dir / name
+            expected_sha = _seal_payload(original, sealed)
+            payloads.append((remote, name, original, sealed, expected_sha))
+        if (_hash_file(sealed_dir / (stem + ".tar")) != _pin(archive_pin)
+                or _hash_file(sealed_dir / (stem + ".manifest.json")) != _pin(pin)):
+            _fail()
+        # Validate the actual sealed tar snapshot as well, before *any*
+        # cloud operation. The earlier source tar preflight is insufficient
+        # if mutable originals change in between checks.
+        sealed_preflight = staging / "sealed-preflight"
+        sealed_preflight.mkdir(mode=0o700)
+        check = restore_runtime(
+            source, pin, sealed_dir / (stem + ".tar"),
+            archive_pin, sealed_preflight / "runtime",
+        )
+        if check["files"] != count or check["bytes"] != total:
+            _fail()
+        _check_remote(builds, builds_id, invoke)
+        _check_remote(manifests, manifests_id, invoke)
         existing_builds = _existing_names(builds, invoke)
         existing_manifests = _existing_names(manifests, invoke)
         if any(name in (existing_builds if remote == builds else existing_manifests)
-               for remote, name, _ in payloads):
+               for remote, name, _, _, _ in payloads):
             _fail()
         staged_files = staging / "downloaded"
         staged_files.mkdir(mode=0o700)
         restored = staging / "restored"
         restored.mkdir(mode=0o700)
         metadata: list[dict[str, object]] = []
-        for remote, name, path in payloads:
+        for remote, name, original, sealed, expected_sha in payloads:
+            if (_hash_file(sealed) != expected_sha
+                    or _hash_file(original) != expected_sha):
+                _fail()
             target = remote + ":" + name
-            invoke(["copyto", "--immutable", "--no-traverse", str(path), target])
-            object_id = _stat_remote(target, name, path.stat().st_size, invoke)
-            # Download from the actual remote, not by copying local bytes.
+            invoke(["copyto", "--immutable", "--no-traverse", str(sealed), target])
+            object_id = _stat_remote(target, name, sealed.stat().st_size, invoke)
+            # Download actual remote bytes and compare against the sealed
+            # snapshot, not mutable original build output.
             download = staged_files / name
             invoke(["copyto", "--immutable", target, str(download)])
             downloaded = _require_file(download, source)
-            if (_hash_file(downloaded) != _hash_file(path)
-                    or downloaded.stat().st_size != path.stat().st_size):
+            if (_hash_file(downloaded) != expected_sha
+                    or downloaded.stat().st_size != sealed.stat().st_size):
                 _fail()
-            if path == pin or path == archive_pin:
+            if original == pin or original == archive_pin:
                 os.chmod(downloaded, 0o600)
             metadata.append({
                 "folder_id": (builds_id if remote == builds
                               else manifests_id),
                 "name": name,
                 "google_drive_id": object_id,
-                "sha256": _hash_file(downloaded),
+                "sha256": expected_sha,
                 "bytes": downloaded.stat().st_size,
                 "readback_verified": True,
             })
+        # No success receipt if any owner-source or staged file changed
+        # after preflight. The upload itself always used sealed bytes.
+        if any(_hash_file(original) != expected_sha
+               or _hash_file(sealed) != expected_sha
+               for _, _, original, sealed, expected_sha in payloads):
+            _fail()
         restored_result = restore_runtime(
             source, pin, staged_files / (stem + ".tar"),
             archive_pin, restored / "runtime",

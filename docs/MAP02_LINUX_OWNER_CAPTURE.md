@@ -409,3 +409,25 @@ GitHub Actions tests here run only a fake in-memory transport; public CI
 must not carry a real rclone token or publish the owner-private tar.
 The utility cannot be executed against the true Drive until a persistent
 owner runtime and private authenticated rclone environment actually exist.
+
+## Stage538 — sealed payload snapshot before private cloud transfer
+
+Stage537 validated an owner-private tar before upload, but then passed mutable
+original build-output paths to rclone. Stage538 closes that gap: the upload
+utility now snapshots the verified tar, tar digest, manifest and independently
+trusted manifest digest into a new owner-only `0700` staging directory with
+exclusive `0600` files. Each snapshot is checked against the source SHA-256.
+
+The tool performs a **second full safe tar extraction and complete runtime
+comparison** on the sealed tar snapshot before invoking any rclone command.
+Actual uploads use only these sealed paths, never the live runtime, and
+downloaded bytes must match the recorded SHA-256 for each snapshot. The final
+receipt is refused if any original source or sealed snapshot changed during
+the transfer. This reduces the possibility of accidentally uploading
+unverified or mutated original files. It does not protect against a compromised
+owner system capable of modifying the sealed staging directory.
+
+Public CI exercises only fictional backend transfers, including a test that
+mutates the original tar during upload and verifies that no changed tar bytes
+were sent or acceptance receipt created. It makes no authentic Google Drive
+upload and creates no new original-game capture evidence.

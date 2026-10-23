@@ -32,6 +32,8 @@ class FakeDriveTransport:
         self.uploads = 0
         self.corrupt_download = False
         self.bad_object_metadata = False
+        self.mutate_owner_archive = None
+        self.upload_sources = []
 
     def __call__(self, argv):
         name = argv[0]
@@ -61,6 +63,9 @@ class FakeDriveTransport:
                 remote, filename = dest.split(":", 1)
                 assert "--immutable" in argv
                 assert filename not in self.remote[remote], "immutable object overwritten"
+                if self.uploads == 0 and self.mutate_owner_archive is not None:
+                    self.mutate_owner_archive.write_bytes(b"PRIVATE TAMPERED OUTPUT")
+                self.upload_sources.append(source)
                 self.remote[remote][filename] = Path(source).read_bytes()
                 self.uploads += 1
             else:
@@ -117,6 +122,9 @@ class Stage537TransportTests(unittest.TestCase):
         self.assertFalse(result["capture_ready"])
         self.assertTrue(result["drive_download_bytes_verified"])
         self.assertEqual(self.transport.uploads, 5)
+        self.assertTrue(all("sealed-for-upload" in name or "receipt.json" in name
+                            for name in self.transport.upload_sources))
+        self.assertNotIn(str(self.tar), self.transport.upload_sources)
         manifest = self.transport.remote["vh_manifests"][
             "map02-runtime-testowner001.receipt.json"
         ]
@@ -126,6 +134,28 @@ class Stage537TransportTests(unittest.TestCase):
         self.assertFalse(receipt["capture_ready"])
         self.assertTrue(
             (self.readback / "restored/runtime/EmuHawk.exe").is_file()
+        )
+
+    def test_mutation_of_owner_tar_during_transfer_cannot_upload_mutated_bytes(self):
+        original = self.tar.read_bytes()
+        self.transport.mutate_owner_archive = self.tar
+        with self.assertRaises(PrivateDriveError):
+            self.run_archive()
+        # The first upload is the sealed tar, unaffected by concurrent
+        # tampering of the original owner build output.
+        uploaded = self.transport.remote["vh_builds"].get(
+            "map02-runtime-testowner001.tar"
+        )
+        self.assertEqual(uploaded, original)
+        self.assertNotIn(b"PRIVATE TAMPERED OUTPUT", uploaded)
+        self.assertFalse(any(n.endswith(".receipt.json")
+                             for n in self.transport.remote["vh_manifests"]))
+
+    def test_sealed_tar_snapshot_blocks_direct_source_path_upload(self):
+        self.run_archive()
+        self.assertNotIn(str(self.tar), self.transport.upload_sources)
+        self.assertTrue(
+            "sealed-for-upload" in self.transport.upload_sources[0]
         )
 
     def test_wrong_drive_folder_scope_fails_before_upload(self):
