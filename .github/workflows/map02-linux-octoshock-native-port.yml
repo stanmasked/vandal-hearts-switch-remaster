@@ -209,11 +209,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mcs -unsafe \
+          netstandard='/usr/lib/mono/4.8-api/Facades/netstandard.dll'
+          test -f "$netstandard"
+          mcs -unsafe -r:"$netstandard" \
             -r:"$VH_BIZHAWK_LINUX_DLL_DIR/BizHawk.Emulation.Cores.dll" \
             -r:"$VH_BIZHAWK_LINUX_DLL_DIR/BizHawk.Emulation.Common.dll" \
             -out:"$RUNNER_TEMP/official-bizhawk-octoshock-binding-smoke.exe" \
             tools/map02_linux_octoshock/official_managed_binding_smoke.cs
+          echo 'VH_MAP02_OFFICIAL_MANAGED_BINDING_COMPILE_PASS netstandard=mono-facade'
           MONO_PATH="$VH_BIZHAWK_LINUX_DLL_DIR" \
             LD_LIBRARY_PATH="$VH_BIZHAWK_LINUX_DLL_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
             mono "$RUNNER_TEMP/official-bizhawk-octoshock-binding-smoke.exe"
