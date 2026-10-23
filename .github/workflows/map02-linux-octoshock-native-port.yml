@@ -43,8 +43,8 @@ jobs:
           set -euo pipefail
           upstream="$RUNNER_TEMP/bizhawk-upstream"
           patch="$GITHUB_WORKSPACE/tools/map02_linux_octoshock/posix-export.patch"
-          git -C "$upstream" apply --check "$patch"
-          git -C "$upstream" apply "$patch"
+          git -C "$upstream" apply --ignore-space-change --check "$patch"
+          git -C "$upstream" apply --ignore-space-change "$patch"
           echo 'VH_MAP02_OCTOSHOCK_POSIX_EXPORT_SHIM_APPLIED upstream_source_changed_only_in_temp_checkout=1'
 
       - name: Configure the exact upstream 41-file native project
