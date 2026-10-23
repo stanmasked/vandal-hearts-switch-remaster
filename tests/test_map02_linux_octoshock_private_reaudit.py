@@ -1,15 +1,14 @@
 """Stage539 independently pinned fictional Drive readback, no original runtime."""
 from __future__ import annotations
 
-import hashlib
 import io
 from pathlib import Path
 import shutil
 import tarfile
-import tempfile
 import unittest
 
 from test_map02_linux_octoshock_private_drive import Stage537TransportTests
+from tools.map02_linux_octoshock.private_runtime_drive import archive_to_private_drive
 from tools.map02_linux_octoshock.private_runtime_reaudit import (
     IndependentAuditError, _safe_restore, audit_independent_readback,
 )
@@ -17,16 +16,17 @@ from tools.map02_linux_octoshock.private_runtime_reaudit import (
 
 class IndependentReadbackTests(unittest.TestCase):
     def setUp(self):
-        # Reuse the 13-test fixture setup, not its actual unittest subclasses.
+        # Use the actual Stage540 owner receipt pin creation, not a fake
+        # test-generated digest computed from downloaded untrusted bytes.
         Stage537TransportTests.setUp(self)
-        Stage537TransportTests.run_archive(self)
         self.receipt_name = "map02-runtime-testowner001.receipt.json"
         self.receipt_pin = self.base / "trusted-receipt.sha256"
-        content = self.transport.remote["vh_manifests"][self.receipt_name]
-        self.receipt_pin.write_text(
-            hashlib.sha256(content).hexdigest() + "\n", encoding="ascii"
+        result = archive_to_private_drive(
+            self.source, self.pin, self.tar, self.tar_sha, self.readback,
+            "vh_builds", "vh_manifests", "testowner001", self.private_map,
+            owner_receipt_pin_output=self.receipt_pin, invoke=self.transport,
         )
-        self.receipt_pin.chmod(0o600)
+        assert result["owner_receipt_pin_written"] is True
         self.reaudit = self.base / "new-readback-audit"
 
     def run_audit(self):
