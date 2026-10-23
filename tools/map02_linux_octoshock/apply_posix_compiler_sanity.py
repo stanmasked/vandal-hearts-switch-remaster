@@ -15,6 +15,11 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
+def active_directive_count(text: str, directive: str) -> int:
+    """Count exact preprocessor directives, excluding commented-out examples."""
+    return sum(line.strip() == directive for line in text.splitlines())
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: apply_posix_compiler_sanity.py PATH_TO_EMUWARE_H")
@@ -28,7 +33,7 @@ def main() -> int:
         "#define SIZEOF_PTRDIFF_T sizeof(ptrdiff_t)",
         "#define NO_CLONE __attribute__((noclone))",
     )
-    if any(marker in text for marker in markers):
+    if any(active_directive_count(text, marker) for marker in markers):
         raise SystemExit("refusing partial or repeated POSIX compiler-sanity shim")
 
     if '#define EW_EXPORT extern "C" __attribute__((visibility("default")))' not in text:
@@ -99,10 +104,10 @@ def main() -> int:
         "#define SIZEOF_SIZE_T sizeof(size_t)",
         "#define SIZEOF_VOID_P sizeof(void*)",
     )
-    if not all(text.count(marker) == 1 for marker in required_once):
-        raise SystemExit("postcondition failed: unique shim definitions are missing or duplicated")
-    if not all(text.count(marker) == 2 for marker in required_twice):
-        raise SystemExit("postcondition failed: branch-specific size macros are not present exactly twice")
+    if not all(active_directive_count(text, marker) == 1 for marker in required_once):
+        raise SystemExit("postcondition failed: unique active directives are missing or duplicated")
+    if not all(active_directive_count(text, marker) == 2 for marker in required_twice):
+        raise SystemExit("postcondition failed: branch-specific active size macros are not present exactly twice")
 
     # Normalize line endings only in the disposable upstream checkout, avoiding
     # fragile patch matching against upstream's platform-specific line endings.
