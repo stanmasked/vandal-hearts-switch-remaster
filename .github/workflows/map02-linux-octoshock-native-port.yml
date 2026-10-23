@@ -1,0 +1,87 @@
+name: MAP02 pinned Linux Octoshock native-port feasibility
+
+on:
+  pull_request:
+    paths:
+      - 'tools/map02_linux_octoshock/**'
+      - '.github/workflows/map02-linux-octoshock-native-port.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-source-linux-compile-spike:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out project tooling only
+        uses: actions/checkout@v4
+
+      - name: Install native build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake git binutils python3
+
+      - name: Fetch and verify exact upstream BizHawk 2.11 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream="$RUNNER_TEMP/bizhawk-upstream"
+          commit='427556b5ef3ac437eba754d90c5e7e9096c9a8df'
+          expected_tree='24f43550ff70776a86a2d7b64d09993dd09021d9'
+          git clone --filter=blob:none --no-checkout https://github.com/TASEmulators/BizHawk.git "$upstream"
+          git -C "$upstream" checkout --detach "$commit"
+          test "$(git -C "$upstream" rev-parse HEAD)" = "$commit"
+          test "$(git -C "$upstream" rev-parse HEAD:psx/octoshock)" = "$expected_tree"
+          python3 tools/map02_linux_octoshock/verify_source_manifest.py --source-root "$upstream"
+
+      - name: Apply isolated POSIX symbol export shim
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream="$RUNNER_TEMP/bizhawk-upstream"
+          patch="$GITHUB_WORKSPACE/tools/map02_linux_octoshock/posix-export.patch"
+          git -C "$upstream" apply --check "$patch"
+          git -C "$upstream" apply "$patch"
+          echo 'VH_MAP02_OCTOSHOCK_POSIX_EXPORT_SHIM_APPLIED upstream_source_changed_only_in_temp_checkout=1'
+
+      - name: Configure the exact upstream 41-file native project
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S tools/map02_linux_octoshock -B "$RUNNER_TEMP/octoshock-build"             -DCMAKE_BUILD_TYPE=Release             -DOCTOSH_SOURCE_DIR="$RUNNER_TEMP/bizhawk-upstream/psx/octoshock"
+
+      - name: Compile native Octoshock probe without game data
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build "$RUNNER_TEMP/octoshock-build" --parallel 2 --verbose
+
+      - name: Audit shared-library identity and required C ABI exports
+        shell: bash
+        run: |
+          set -euo pipefail
+          library="$RUNNER_TEMP/octoshock-build/liboctoshock.dll.so"
+          test -f "$library"
+          file "$library"
+          readelf -h "$library" | grep -E 'Class:.*ELF64|Machine:.*X86-64'
+          nm -D --defined-only "$library" | awk '{print $3}' > "$RUNNER_TEMP/octoshock-exports.txt"
+          for symbol in shock_CreateDisc shock_DestroyDisc shock_AnalyzeDisc shock_Create shock_Destroy shock_PowerOn shock_Step shock_GetFramebuffer shock_StateTransaction; do
+            if ! grep -Fx "$symbol" "$RUNNER_TEMP/octoshock-exports.txt" >/dev/null; then
+              echo "required C ABI export absent: $symbol" >&2
+              exit 1
+            fi
+          done
+          if ldd -r "$library" 2>&1 | grep -E 'undefined symbol|not found'; then
+            echo 'native probe has unresolved runtime dependencies' >&2
+            exit 1
+          fi
+          echo 'VH_MAP02_OCTOSHOCK_LINUX_LINK_AND_EXPORT_AUDIT_PASS game_loaded=0 firmware=0 original_disc=0 bk2=0 map02=unverified'
+
+      - name: Record the hard acceptance boundary
+        run: |
+          echo 'This job proves only a pinned-source native build and C ABI surface.'
+          echo 'It does not prove Mono loading, real PSX execution, BK2 compatibility, or MAP02 capture.'
+          echo 'No compiled library or private game asset is uploaded.'
