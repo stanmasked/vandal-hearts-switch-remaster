@@ -166,7 +166,7 @@ namespace VhMap02LoaderSmoke
                 throw new InvalidOperationException("unsafe save enabled on invalid fake core");
             try
             {
-                snapshot.Invoke(null, new object[] { invented });
+                snapshot.Invoke(form, new object[] { invented });
             }
             catch (TargetInvocationException ex)
             {
@@ -247,7 +247,7 @@ namespace VhMap02LoaderSmoke
             Type entrypoint, PropertyInfo property)
         {
             var snapshot = entrypoint.GetMethod(
-                "Snapshot", BindingFlags.NonPublic | BindingFlags.Static);
+                "Snapshot", BindingFlags.NonPublic | BindingFlags.Instance);
             if (snapshot == null) throw new InvalidOperationException();
             var key = "VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR";
             var hashKey = "VH_MAP02_CORE_EXPECTED_DLL_SHA256";
@@ -294,7 +294,7 @@ namespace VhMap02LoaderSmoke
                     var rejected = false;
                     try
                     {
-                        snapshot.Invoke(null, new object[] { fake });
+                        snapshot.Invoke(optedIn, new object[] { fake });
                     }
                     catch (TargetInvocationException ex)
                     {
@@ -363,13 +363,16 @@ namespace VhMap02LoaderSmoke
                         throw new InvalidOperationException(
                             "witness save must start disabled before core injection");
                     _stage = "null-core-restart";
+                    // Keep the pre-injection case explicit: the form must not depend
+                    // on a stale or framework-provided emulator reference.
+                    property.SetValue(form, null);
                     ((IExternalToolForm)form).Restart();
                     if (saveButtons[0].Enabled)
                         throw new InvalidOperationException(
                             "save must remain disabled without a loaded IEmulator");
 
                     var snapshot = entrypoint.GetMethod(
-                        "Snapshot", BindingFlags.NonPublic | BindingFlags.Static);
+                        "Snapshot", BindingFlags.NonPublic | BindingFlags.Instance);
                     if (snapshot == null || snapshot.ReturnType != typeof(string))
                         throw new InvalidOperationException("witness snapshot contract missing");
 
@@ -398,7 +401,7 @@ namespace VhMap02LoaderSmoke
                         var rejected = false;
                         try
                         {
-                            snapshot.Invoke(null, new object[] { genuineNoGameCore });
+                            snapshot.Invoke(form, new object[] { genuineNoGameCore });
                         }
                         catch (TargetInvocationException ex)
                         {
