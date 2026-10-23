@@ -9,6 +9,7 @@ on:
       - 'tests/test_map02_linux_octoshock_owner_stage.py'
       - 'tests/test_map02_linux_octoshock_owner_runtime_verify.py'
       - 'tests/test_map02_linux_octoshock_archive_readback.py'
+      - 'tests/test_map02_linux_octoshock_private_tar.py'
       - '.github/workflows/map02-linux-octoshock-native-port.yml'
   workflow_dispatch:
 
@@ -38,6 +39,9 @@ jobs:
 
       - name: Test private archive restore comparison using invented runtime bytes
         run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_archive_readback.py' -v
+
+      - name: Test protected owner runtime tar pack and restore with fictional bytes
+        run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_private_tar.py' -v
 
       - name: Test POSIX compiler-sanity shim against synthetic upstream header
         run: python3 tests/test_map02_linux_octoshock_compiler_sanity.py

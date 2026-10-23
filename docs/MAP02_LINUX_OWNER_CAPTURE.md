@@ -258,3 +258,54 @@ Passing this tool means the downloaded-and-extracted copy matches the source
 confirm the download came from the actual private archive and preserve the
 upload/readback evidence. CI exercises only synthetic tiny runtimes; it
 does not archive any owner binaries or validate game playback.
+
+## Stage535 — controlled private runtime tar pack / restore
+
+Stage535 adds an owner-only alternative to generic `tar -xpf`: the
+`private_runtime_tar.py` CLI. Use it for retained evidence; the earlier
+Stage534 `tar` commands describe legacy/manual steps but do not validate
+tar entry structure or independently detect path-escape entries.
+
+After a *real* owner-private Linux runtime and independently trusted manifest
+pin have been established, create a private tar and checksum file exclusively
+outside Git and outside runtime (both output files absent, parent mode 0700):
+
+```bash
+python3 -m tools.map02_linux_octoshock.private_runtime_tar pack \
+  "$RUNTIME" /private/backup/vh-map02-owner-runtime.tar \
+  /private/backup/vh-map02-owner-runtime.tar.sha256 \
+  --trusted-manifest-pin-file "$TRUSTED_PIN"
+```
+
+Upload the tar to the private Google Drive project folder
+`07_Builds_and_Test_Artifacts`, and separately preserve the trusted tar SHA256
+and original manifest pin under `00_Manifest_and_SHA256`. Only the tar should
+contain runtime binaries, never original game BIN, CUE, BIOS, BK2 or PNG.
+
+After independently downloading the actual archived tar into
+`/private/readback/vh-map02-owner-runtime.tar`, run:
+
+```bash
+python3 -m tools.map02_linux_octoshock.private_runtime_tar restore \
+  "$RUNTIME" /private/readback/vh-map02-owner-runtime.tar \
+  /private/backup/vh-map02-owner-runtime.tar.sha256 \
+  /private/readback/extracted/runtime \
+  --trusted-manifest-pin-file "$TRUSTED_PIN"
+```
+
+The `/private/backup/...` SHA256 reference in the command is a previously
+trusted LOCAL reference, not a checksum recalculated from the downloaded
+tar or blindly accepted from an attacker-provided pair of files. The target
+must not exist and its parent must be owner-only mode 0700.
+
+Before creating the restored directory, this command checks the tar digest,
+all member paths/types/modes/sizes and SHA256 payloads against the original
+source tree. It forbids symlinks, extra/missing files, absolute/escaping paths
+and duplicated entries. Extraction uses exclusive regular file creation, not
+`tarfile.extractall`, and is followed by the Stage534 full-tree readback
+check and both independently trusted manifest gates.
+
+The tool makes NO uploads or downloads and always reports
+`drive_upload_authenticated=0`: authentic Google Drive cloud provenance must
+be established separately by checking the actual private Drive upload and
+download. CI regression tests use only synthetic sample files.

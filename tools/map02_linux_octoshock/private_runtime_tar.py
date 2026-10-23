@@ -101,7 +101,7 @@ def _pin(path: Path) -> str:
             value = data[:-1].decode("ascii")
         except UnicodeError:
             _fail()
-        if (len(data) != 65 or data[-1:] != b"\\n" or len(value) != 64
+        if (len(data) != 65 or data[-1:] != b"\n" or len(value) != 64
                 or any(x not in "0123456789abcdef" for x in value)):
             _fail()
         return value
@@ -163,7 +163,7 @@ def pack_runtime(source_value: Path, trusted_pin: Path,
             tar_sha = _hash_file(tar)
             pin_fd = _create_private(tar_pin)
             with os.fdopen(pin_fd, "wb") as pin_output:
-                pin_output.write((tar_sha + "\\n").encode("ascii"))
+                pin_output.write((tar_sha + "\n").encode("ascii"))
         except Exception:
             if tar.exists():
                 tar.unlink()
