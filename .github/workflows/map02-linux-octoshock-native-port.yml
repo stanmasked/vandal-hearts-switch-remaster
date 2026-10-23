@@ -150,7 +150,7 @@ jobs:
           fi
           echo 'VH_MAP02_OCTOSHOCK_LINUX_LINK_AND_EXPORT_AUDIT_PASS game_loaded=0 firmware=0 original_disc=0 bk2=0 map02=unverified'
 
-      - name: Load the native library through Mono and call one safe P/Invoke
+      - name: Smoke-test Mono P/Invoke and synthetic core lifecycle
         shell: bash
         run: |
           set -euo pipefail
@@ -160,6 +160,6 @@ jobs:
 
       - name: Record the hard acceptance boundary
         run: |
-          echo 'This job proves only a pinned-source native build and C ABI surface.'
-          echo 'It does not prove Mono loading, real PSX execution, BK2 compatibility, or MAP02 capture.'
+          echo 'This job proves a pinned-source native build, checked C ABI exports, safe helper P/Invoke, and synthetic create/destroy lifecycle.'
+          echo 'It does not prove BIOS validity, powered-on PSX execution, BK2 compatibility, or MAP02 capture.'
           echo 'No compiled library or private game asset is uploaded.'
