@@ -75,8 +75,8 @@ class PrivatePsxFirmwareProbeTests(unittest.TestCase):
 
     def test_expected_psx_u_firmware_reader_rejects_multiple_firmware_fields(self):
         raw = ("Platform PSX\nGameName Vandal Hearts (USA)\nCore Octoshock\n"
-               "PSX_Firmware_U " + self.sha1 + "\\n"
-               "PSX_Firmware_E " + self.sha1 + "\\n")
+               "PSX_Firmware_U " + self.sha1 + "\n"
+               "PSX_Firmware_E " + self.sha1 + "\n")
         self.make_movie(raw_header=raw)
         with self.assertRaisesRegex(ValueError, "PSX_Firmware_U"):
             read_expected_psx_u_firmware_sha1(self.movie)
