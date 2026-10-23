@@ -1,8 +1,10 @@
 """Stage537 fictional Drive transport simulator; never accesses a real account."""
 from __future__ import annotations
 
+import io
 import json
 import os
+import tarfile
 from pathlib import Path
 import shutil
 import tempfile
@@ -154,6 +156,28 @@ class Stage537TransportTests(unittest.TestCase):
 
     def test_missing_owner_trust_anchor_refused(self):
         self.pin.write_text("0" * 64 + "\n", encoding="ascii")
+        with self.assertRaises(PrivateDriveError):
+            self.run_archive()
+        self.assertEqual(self.transport.uploads, 0)
+
+    def test_owner_game_bin_file_prohibited_before_upload(self):
+        (self.source / "SCPH1001.bin").write_bytes(b"private-bios-placeholder")
+        with self.assertRaises(PrivateDriveError):
+            self.run_archive()
+        self.assertEqual(self.transport.uploads, 0)
+
+    def test_forged_tar_even_with_rehashed_digest_blocked_before_upload(self):
+        # The owner's locally trusted tar digest can be forged together with
+        # archive bytes; inspecting archive membership BEFORE upload is required.
+        with tarfile.open(self.tar, "a") as stream:
+            extra = tarfile.TarInfo("runtime/private-disc.cue")
+            extra.mode = 0o600
+            extra.size = 7
+            stream.addfile(extra, io.BytesIO(b"PRIVATE"))
+        self.tar_sha.write_text(
+            sha(self.tar.read_bytes()) + "\n", encoding="ascii"
+        )
+        self.tar_sha.chmod(0o600)
         with self.assertRaises(PrivateDriveError):
             self.run_archive()
         self.assertEqual(self.transport.uploads, 0)

@@ -180,10 +180,23 @@ def archive_to_private_drive(
             _fail()
         for name in files:
             lower = name.lower()
-            if (lower.endswith((".cue", ".iso", ".chd", ".bk2", ".sav"))
+            if (lower.endswith((".cue", ".iso", ".chd", ".bk2", ".sav",
+                                ".bin", ".rom", ".img", ".pbp", ".srm",
+                                ".m3u", ".ccd", ".sub", ".mdf"))
                     or lower in {"vandalhearts.bin", "vandalhearts.bk2"}):
                 _fail()
 
+        # Reject malicious or contaminated tar BEFORE uploading even one byte.
+        # A matching locally regenerated tar hash is not sufficient.
+        staging.mkdir(mode=0o700)
+        preflight_parent = staging / "preflight"
+        preflight_parent.mkdir(mode=0o700)
+        preflight_result = restore_runtime(
+            source, pin, archive, archive_pin, preflight_parent / "runtime",
+        )
+        if (preflight_result["files"] != count or
+                preflight_result["bytes"] != total):
+            _fail()
         _check_remote(builds, builds_id, invoke)
         _check_remote(manifests, manifests_id, invoke)
         stem = "map02-runtime-" + session
@@ -198,7 +211,6 @@ def archive_to_private_drive(
         if any(name in (existing_builds if remote == builds else existing_manifests)
                for remote, name, _ in payloads):
             _fail()
-        staging.mkdir(mode=0o700)
         staged_files = staging / "downloaded"
         staged_files.mkdir(mode=0o700)
         restored = staging / "restored"

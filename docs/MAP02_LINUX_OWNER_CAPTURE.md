@@ -382,6 +382,11 @@ The readback path must not already exist, must be outside Git and runtime,
 and its parent must be an owner-only mode-0700 directory. The session ID
 must be globally unique for this archive and may not be reused.
 
+The owner tool first locally extracts and verifies the entire tar in a
+preflight directory before any upload, preventing a jointly tampered tar and
+checksum from accidentally exposing other/private game files. It blocks
+BIOS/disc/ROM/movie filename extensions in the source runtime.
+
 The owner tool uploads an actual tar into the private builds folder and
 the trusted manifest, manifest SHA256 and tar SHA256 into the manifest folder.
 It then queries each remote file's ID and size, downloads each **separately**
