@@ -262,6 +262,21 @@ class OwnerCombinedGateTests(unittest.TestCase):
                 review_owner_capture(self.movie, self.plan, self.workspace)
 
 
+    def test_auto_core_receipts_without_firmware_match_refused(self):
+        from tools.map02_private_bizhawk_poweron_launch import AUTO_WITNESS_NAME
+        for run, witness in zip(self.runs, self.witness):
+            (run / AUTO_WITNESS_NAME).write_bytes(
+                witness.read_bytes().replace(
+                    b"bios=psx_u_firmware_hash_matches_movie_header",
+                    b"bios=unverified"))
+        with patch(
+            "tools.map02_private_paired_capture_core_png_gate.audit_pair",
+            return_value=dict(
+                PAIR, both_owner_logs_report_auto_core_witness_before_first_png=True),
+        ):
+            with self.assertRaisesRegex(ValueError, "firmware match"):
+                review_owner_capture(self.movie, self.plan, self.workspace)
+
     def test_auto_core_receipt_frame_after_first_png_refused(self):
         from tools.map02_private_bizhawk_poweron_launch import AUTO_WITNESS_NAME
         for run, witness in zip(self.runs, self.witness):
