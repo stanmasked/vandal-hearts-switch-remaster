@@ -5,6 +5,12 @@ on:
     paths:
       - 'tools/map02_linux_octoshock/**'
       - '.github/workflows/map02-linux-octoshock-native-port.yml'
+  push:
+    branches:
+      - 'work/map02-linux-owner-capture-stage520'
+    paths:
+      - 'tools/map02_linux_octoshock/**'
+      - '.github/workflows/map02-linux-octoshock-native-port.yml'
   workflow_dispatch:
 
 permissions:
