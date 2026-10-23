@@ -69,12 +69,19 @@ jobs:
           readelf -h "$library" | grep -q 'Class:.*ELF64'
           readelf -h "$library" | grep -q 'Machine:.*X86-64'
           nm -D --defined-only "$library" | awk '{print $3}' > "$RUNNER_TEMP/octoshock-exports.txt"
-          for symbol in shock_CreateDisc shock_DestroyDisc shock_AnalyzeDisc shock_Create shock_Destroy shock_PowerOn shock_Step shock_GetFramebuffer shock_StateTransaction; do
+          managed_bindings="$RUNNER_TEMP/bizhawk-upstream/src/BizHawk.Emulation.Cores/Consoles/Sony/PSX/OctoshockDll.cs"
+          test -f "$managed_bindings"
+          grep -oE 'public static extern [^ ]+ shock_[A-Za-z0-9_]+\\(' "$managed_bindings" \
+            | sed -E 's/.* (shock_[A-Za-z0-9_]+)\\(.*/\\1/' \
+            | sort -u > "$RUNNER_TEMP/octoshock-required-exports.txt"
+          test -s "$RUNNER_TEMP/octoshock-required-exports.txt"
+          while IFS= read -r symbol; do
             if ! grep -Fx "$symbol" "$RUNNER_TEMP/octoshock-exports.txt" >/dev/null; then
-              echo "required C ABI export absent: $symbol" >&2
+              echo "official BizHawk managed P/Invoke export absent: $symbol" >&2
               exit 1
             fi
-          done
+          done < "$RUNNER_TEMP/octoshock-required-exports.txt"
+          echo "VH_MAP02_OCTOSHOCK_MANAGED_EXPORT_COVERAGE_PASS count=$(wc -l < "$RUNNER_TEMP/octoshock-required-exports.txt")"
           if ldd -r "$library" 2>&1 | grep -E 'undefined symbol|not found'; then
             echo 'native probe has unresolved runtime dependencies' >&2
             exit 1
