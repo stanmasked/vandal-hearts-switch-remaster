@@ -59,5 +59,14 @@ Unsupported shortcuts: silently swapping to Nymashock, using an unpinned native 
 
 - Retrieved the newly added private BK2 and both BIOS candidates from the Vandal Hearts Drive folder into the local working environment only.
 - Verified the BK2 ZIP integrity, all five expected members, the complete input stream (933,949 rows), and the expected game/core/sync metadata. Its header requests the US PSX firmware fingerprint.
-- Both available BIOS files are byte-identical 512 KiB European SCPH-5502 images. Their locally calculated SHA-1 does not match the movie's pinned US firmware fingerprint. Do not silently substitute this BIOS or claim replay compatibility.
-- Next gate: obtain the user's matching US firmware image, then run the private disc/movie preflight and attempt two cold replays with the pinned Octoshock core. Real MAP02 screenshots remain unverified until those runs and the loaded-core witnesses pass.
+- The two newly added US BIOS candidates were compared locally with the BK2 `PSX_Firmware_U` metadata. SCPH-7003 v3.0 matches; SCPH-7001/9001 v4.1 does not. No BIOS bytes or actual firmware hashes were committed or uploaded to CI.
+- Re-ran the full owner-local disc/movie preflight against the real private files: full BIN digest reference and size match; CUE layout, ISO9660 PVD, volume ID, 22,783-byte MAP02 resource fingerprint and all 12 raw sectors' sync/MSF/mode/subheader/Form-1/EDC checks pass. The BK2 ZIP CRC, exact member set, complete 933,949-row input stream, controller log schema, USA/PSX/Octoshock header, single-controller/no-card sync settings, and absence of a save-state anchor also pass.
+- This is now metadata/preflight ready, **not replay verified**. The probe confirms a BIOS candidate matching the movie header but cannot prove EmuHawk loaded it. Real cold replay and MAP02 capture remain blocked by the missing native Octoshock module in the official Linux package and require a tested private runtime.
+
+
+## Stage524 — US BIOS matched and owner-local preflight passed (2026-10-23)
+
+- The newly added SCPH-7003 v3.0 BIOS matches the single US PSX firmware fingerprint recorded in the actual BK2. The alternate SCPH-7001/9001 v4.1 candidate does not match; it is excluded from the replay plan.
+- The private disc/movie pair passed the complete local structural preflight. BIN/CUE and movie bytes remain outside the repository and CI. The audit checked the full BIN against the private digest reference, the CUE's single MODE2/2352 track, ISO9660 PVD, audited volume ID, MAP02 payload fingerprint, raw-sector sync/MSF/mode/repeated subheader/Form-1 EDC, BK2 ZIP integrity, expected member set, every input row, LogKey/controller schema, sync settings, and no-save-anchor metadata.
+- This validates input files and a matching BIOS candidate, not runtime behavior. `actual_emuhawk_loaded_BIOS_authenticated`, `active_Octoshock_playback_verified`, and `MAP02_scene_identity_verified` remain false until a private runtime captures independent loaded-core/BIOS witnesses and real frames.
+- Next milestone: prepare a private Linux x86_64 runtime with the pinned Octoshock native module, verify that the module is loaded by the target EmuHawk process, then perform two independent cold replays and audit the MAP02 capture. Do not route original assets through public GitHub Actions.
