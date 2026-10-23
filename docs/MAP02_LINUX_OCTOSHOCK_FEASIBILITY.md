@@ -25,7 +25,7 @@
 - Octoshock source tree pinned: `24f43550ff70776a86a2d7b64d09993dd09021d9`.
 - `tools/map02_linux_octoshock/verify_source_manifest.py` verifies the exact commit/tree, parses the official `octoshock.vcxproj`, and requires exact agreement with the 41-file manifest before any source shim is applied.
 - `tools/map02_linux_octoshock/CMakeLists.txt` builds those same source units as `liboctoshock.dll.so`, with `--no-undefined`; `posix-export.patch` changes only the export macro in the disposable CI clone. The pinned upstream repository and the project's tracked upstream sources are not modified.
-- `.github/workflows/map02-linux-octoshock-native-port.yml` runs the no-game compile spike and audits ELF64/x86-64 identity, key C ABI exports, and unresolved dynamic symbols. It uploads no binary and uses no disc, BIOS, BK2, or screenshots.
+- `.github/workflows/map02-linux-octoshock-native-port.yml` runs the no-game compile spike and audits ELF64/x86-64 identity, every `shock_*` symbol imported by the pinned `OctoshockDll.cs`, and unresolved dynamic symbols. It uploads no binary and uses no disc, BIOS, BK2, or screenshots.
 - This is a **compile feasibility experiment**, not yet a supported core port. Mono loading, API/structure ABI compatibility, exact core identity, and actual PSX/BK2 execution remain unproven.
 
 As of the last status check, the new GitHub Actions job had been queued and had not produced a compiler result. Do not infer build success from the workflow definition or from the earlier managed-only Windows build.
