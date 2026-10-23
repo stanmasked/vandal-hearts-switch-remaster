@@ -11,12 +11,24 @@
 
 ## Next native port feasibility milestones
 
-1. **Source provenance:** Pin the exact official 2.11 upstream source commit and check SHA-256 of each of the 41 translation units and dependent headers, keeping source-only inventories public and game-free.
+1. **Source provenance:** Pin the exact official 2.11 upstream commit and Octoshock Git tree; compare an explicit 41-file source manifest with the upstream Visual Studio project. The commit/tree hash transitively pins all source blobs, while no per-file SHA-256 manifest is claimed yet.
 2. **Portability compile spike:** In a separate isolated Linux build, create a narrowly scoped POSIX export/visibility shim and a CMake or Make translation of the Windows source manifest. Classify failures (ABI, Win32 APIs, compiler extensions, dependencies) without changing game logic. A successful link is not yet a valid core.
 3. **Link/export audit:** Require exported `shock_*` API functions with the documented C ABI. Check missing and unexpected unresolved symbols with `readelf` and `nm`. Do not link fabricated stubs to achieve a green build.
 4. **Official managed-binding check:** Place the experimental `liboctoshock.dll.so` only in an isolated private test package. Use Mono's P/Invoke loader to resolve the unmanaged exports; verify the actual runtime core identity, not the configured preferred core. Keep the official archive itself unchanged.
 5. **No-media emulator smoke:** Exercise startup, clean shutdown and loaded core identity on permitted synthetic inputs. Without a genuine PSX disc/firmware/movie, do not claim that native PSX execution, MAP02, or any original screenshot was reached.
 6. **Owner-private first capture:** Only after the native hash has been independently pinned, official DLLs and witness are pinned from the same exact build, and all synthetic checks pass, run the original disc/BK2/BIOS offline. Audit one cold launch before permitting two captures.
+
+
+## Stage521 implementation now in the PR
+
+- Upstream commit pinned: `427556b5ef3ac437eba754d90c5e7e9096c9a8df`.
+- Octoshock source tree pinned: `24f43550ff70776a86a2d7b64d09993dd09021d9`.
+- `tools/map02_linux_octoshock/verify_source_manifest.py` verifies the exact commit/tree, parses the official `octoshock.vcxproj`, and requires exact agreement with the 41-file manifest before any source shim is applied.
+- `tools/map02_linux_octoshock/CMakeLists.txt` builds those same source units as `liboctoshock.dll.so`, with `--no-undefined`; `posix-export.patch` changes only the export macro in the disposable CI clone. The pinned upstream repository and the project's tracked upstream sources are not modified.
+- `.github/workflows/map02-linux-octoshock-native-port.yml` runs the no-game compile spike and audits ELF64/x86-64 identity, key C ABI exports, and unresolved dynamic symbols. It uploads no binary and uses no disc, BIOS, BK2, or screenshots.
+- This is a **compile feasibility experiment**, not yet a supported core port. Mono loading, API/structure ABI compatibility, exact core identity, and actual PSX/BK2 execution remain unproven.
+
+As of the last status check, the new GitHub Actions job had been queued and had not produced a compiler result. Do not infer build success from the workflow definition or from the earlier managed-only Windows build.
 
 ## Acceptance boundaries
 
