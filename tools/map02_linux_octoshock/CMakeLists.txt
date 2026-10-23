@@ -28,7 +28,11 @@ if(NOT OCTOSH_SOURCE_COUNT EQUAL 41)
 endif()
 
 add_library(octoshock SHARED ${OCTOSH_SOURCES})
-target_include_directories(octoshock PRIVATE "${OCTOSH_SOURCE_DIR}")
+# Only quoted includes should search the Octoshock tree. Adding it with -I
+# shadows glibc <endian.h> with Octoshock/endian.h from inside extern "C",
+# causing errors for uint32/INLINE and C++ templates before emuware.h loads.
+# -iquote isolates the game-specific header from system angle-bracket includes.
+target_compile_options(octoshock PRIVATE "-iquote${OCTOSH_SOURCE_DIR}")
 target_compile_definitions(octoshock PRIVATE EW_EXPORT WANT_LEC_CHECK)
 target_compile_features(octoshock PRIVATE cxx_std_14)
 target_compile_options(octoshock PRIVATE
