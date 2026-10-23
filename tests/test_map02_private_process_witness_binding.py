@@ -211,7 +211,7 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
                 "3011 (worker ) with parens) " + " ".join(tail) + "\n",
                 encoding="ascii",
             )
-            expected = ((1700000000 * 100 + 12345) * 10_000_000) // 100
+            expected = 621355968000000000 + ((1700000000 * 100 + 12345) * 10_000_000) // 100
             self.assertEqual(
                 linux_process_start_ticks(3011, proc_root=proc,
                                           clock_ticks_per_second=100),
