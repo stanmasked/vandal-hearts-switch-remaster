@@ -1,7 +1,7 @@
 diff --git a/psx/octoshock/psx/psx.h b/psx/octoshock/psx/psx.h
 --- a/psx/octoshock/psx/psx.h
 +++ b/psx/octoshock/psx/psx.h
-@@ -24,9 +24,9 @@
+@@ -24,8 +24,8 @@
  #include "octoshock.h"
  #include "emuware/emuware.h"
  #include "video/surface.h"
