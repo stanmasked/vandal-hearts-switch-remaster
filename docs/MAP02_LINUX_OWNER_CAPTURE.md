@@ -1,5 +1,18 @@
 # MAP02 owner-local capture on Linux x86_64 (Stage520)
 
+## Current blocking finding — do NOT start a real PSX capture yet
+
+On the official, SHA-256-verified BizHawk 2.11 Linux x64 release,
+`liboctoshock.dll.so` / `liboctoshock.so` / `octoshock.dll` are absent.
+The game's BK2 was recorded with Octoshock; Nymashock cannot be silently
+substituted. The Linux capture workflow intentionally fails the terminal
+Octoshock availability gate even when a game-free managed assembly compiles.
+This matches upstream [BizHawk issue #2423](https://github.com/TASEmulators/BizHawk/issues/2423),
+whose Linux core checklist leaves Octoshock unchecked. A verified compatible
+Linux Octoshock native build is a prerequisite before following the owner
+capture commands below. No current Linux runtime is authenticated for MAP02.
+
+
 ## Why this path exists
 
 The current BizHawk 2.11 EmuHawk build does not support current macOS. The supported no-Windows route is the official Linux x86_64 release running in a Linux x86_64 environment (a private VM on an Intel Mac is acceptable). Do not try to run the Linux package directly on macOS or substitute Wine.
@@ -21,7 +34,7 @@ The official BizHawk 2.11 Linux x64 release archive is:
 - Official release URL: `https://github.com/TASEmulators/BizHawk/releases/download/2.11/BizHawk-2.11-linux-x64.tar.gz`
 - SHA-256: `cdaf9650d880bae660d63a388430f630b8d8a96b1ba59ebf0e0195a645c3bab8`
 
-The Linux workflow downloads that exact archive and verifies this digest before inspecting the package. It then records the managed `BizHawk.Emulation.Cores.dll` and native Octoshock module hashes and compiles the External Tool against the actual Linux package.
+The Linux workflow downloads that exact archive, verifies this digest, and checks the managed assembly. Its native Octoshock inventory is currently empty. It may compile the game-free External Tool as a compatibility probe, but the final PSX gate remains blocked until the correct native module can be independently built and authenticated.
 
 Install the documented Linux dependencies from the distribution package manager: Mono complete, OpenAL, Lua 5.4, `lsb_release`, and the host's X11/OpenGL dependencies. Keep this release in its own directory; do not mix files from another BizHawk version.
 
