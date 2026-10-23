@@ -128,7 +128,7 @@ class OwnerRuntimeVerifierTests(unittest.TestCase):
     def external_pin(root: Path) -> Path:
         pin = root.parent / "trusted-manifest-sha256.txt"
         pin.write_text(
-            digest((root / "map02-owner-runtime-manifest.json").read_bytes()) + "\\n",
+            digest((root / "map02-owner-runtime-manifest.json").read_bytes()) + "\n",
             encoding="ascii",
         )
         os.chmod(pin, 0o600)
@@ -150,11 +150,11 @@ class OwnerRuntimeVerifierTests(unittest.TestCase):
             with self.assertRaises(RuntimeVerificationError):
                 verify_runtime(root, require_trusted_pin=True)
             pin = self.external_pin(root)
-            pin.write_text("0" * 64 + "\\n", encoding="ascii")
+            pin.write_text("0" * 64 + "\n", encoding="ascii")
             with self.assertRaises(RuntimeVerificationError):
                 verify_runtime(root, trusted_manifest_pin_file=pin,
                                require_trusted_pin=True)
-            pin.write_text("not-a-valid-sha256\\n", encoding="ascii")
+            pin.write_text("not-a-valid-sha256\n", encoding="ascii")
             with self.assertRaises(RuntimeVerificationError):
                 verify_runtime(root, trusted_manifest_pin_file=pin,
                                require_trusted_pin=True)

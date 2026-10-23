@@ -62,11 +62,11 @@ jobs:
           set -euo pipefail
           # CI tests mechanics only; this local pin is NOT a stored owner-trusted reference.
           umask 077
-          sha256sum "$RUNNER_TEMP/vh-map02-owner-runtime/map02-owner-runtime-manifest.json" \\
+          sha256sum "$RUNNER_TEMP/vh-map02-owner-runtime/map02-owner-runtime-manifest.json" \
             | cut -d ' ' -f1 > "$RUNNER_TEMP/vh-map02-ci-manifest-test-pin.txt"
-          python3 tools/map02_linux_octoshock/verify_owner_runtime.py \\
-            "$RUNNER_TEMP/vh-map02-owner-runtime" \\
-            --trusted-manifest-pin-file "$RUNNER_TEMP/vh-map02-ci-manifest-test-pin.txt" \\
+          python3 tools/map02_linux_octoshock/verify_owner_runtime.py \
+            "$RUNNER_TEMP/vh-map02-owner-runtime" \
+            --trusted-manifest-pin-file "$RUNNER_TEMP/vh-map02-ci-manifest-test-pin.txt" \
             --require-trusted-pin
 
       - name: Verify staged runtime manifest and no-media boundary

@@ -162,7 +162,7 @@ Once the private Drive copy has been independently checked, verify a locally
 retained trusted pin file using the new fail-closed gate:
 
 ```bash
-python3 tools/map02_linux_octoshock/verify_owner_runtime.py "$RUNTIME" \\
+python3 tools/map02_linux_octoshock/verify_owner_runtime.py "$RUNTIME" \
   --trusted-manifest-pin-file "$TRUSTED_PIN" --require-trusted-pin
 ```
 

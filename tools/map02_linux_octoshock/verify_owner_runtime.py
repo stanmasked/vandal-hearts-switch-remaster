@@ -130,7 +130,7 @@ def _read_external_manifest_pin(pin_value: Path, runtime_root: Path) -> str:
         stable = lambda x: (x.st_dev, x.st_ino, x.st_size, x.st_mtime_ns)
         if stable(before) != stable(after) or stable(after) != stable(now):
             _fail()
-        if len(content) != 65 or not content.endswith(b"\\n"):
+        if len(content) != 65 or not content.endswith(b"\n"):
             _fail()
         digest = content[:-1].decode("ascii")
         if HASH.fullmatch(digest) is None:
