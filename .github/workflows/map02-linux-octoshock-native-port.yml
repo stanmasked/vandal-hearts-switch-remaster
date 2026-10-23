@@ -22,7 +22,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake git binutils python3
+          sudo apt-get install -y build-essential cmake git binutils python3 mono-complete
 
       - name: Fetch and verify exact upstream BizHawk 2.11 source
         shell: bash
@@ -87,6 +87,14 @@ jobs:
             exit 1
           fi
           echo 'VH_MAP02_OCTOSHOCK_LINUX_LINK_AND_EXPORT_AUDIT_PASS game_loaded=0 firmware=0 original_disc=0 bk2=0 map02=unverified'
+
+      - name: Load the native library through Mono and call one safe P/Invoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          mcs -out:"$RUNNER_TEMP/octoshock-abi-smoke.exe" tools/map02_linux_octoshock/abi_smoke.cs
+          LD_LIBRARY_PATH="$RUNNER_TEMP/octoshock-build${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            mono "$RUNNER_TEMP/octoshock-abi-smoke.exe"
 
       - name: Record the hard acceptance boundary
         run: |
