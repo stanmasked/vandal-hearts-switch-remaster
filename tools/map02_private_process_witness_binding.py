@@ -290,6 +290,7 @@ def bind_owner_private_replays(
         "both_witnesses_report_same_runtime_core_assembly_file_hash": True,
         "runtime_core_assembly_file_hash_independently_pinned": False,
         "both_witnesses_report_same_native_core_module_file_hash": True,
+        "both_witnesses_report_psx_u_firmware_matches_bk2_header": True,
         "native_core_module_file_hash_independently_pinned": False,
         "binding_authenticated_against_os_without_editable_receipts": False,
         "witnesses_linked_to_lua_or_png_by_cryptography": False,
