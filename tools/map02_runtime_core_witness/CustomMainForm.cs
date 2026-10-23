@@ -367,8 +367,9 @@ namespace VhMap02CoreWitness
 
             // MainForm's firmware manager records the resolved firmware ID,
             // SHA-1 and size when CoreFileProvider serves the bytes to a core.
-            // Require the PSX/U entry for this live process and compare it to
-            // the source BK2's PSX_Firmware_U field. Never emit the digest.
+            // BizHawk clears RecentlyServed immediately before loading a ROM,
+            // so this list describes requests from the current core load.
+            // Require PSX/U to match the source BK2 field; never emit the digest.
             var firmwareMainForm = MainForm as IMainFormForRetroAchievements;
             if (firmwareMainForm == null || firmwareMainForm.FirmwareManager == null)
                 throw new InvalidOperationException();
