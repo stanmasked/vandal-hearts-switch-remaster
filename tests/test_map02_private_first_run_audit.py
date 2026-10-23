@@ -175,6 +175,7 @@ class OwnerFirstCaptureAuditTests(unittest.TestCase):
             "native_core_module_name=octoshock.dll",
             "native_core_module_sha256=$('c' * 64)",
             "tool_assembly_sha256=$('a' * 64)",
+            "bios=psx_u_firmware_hash_matches_movie_header",
         ):
             with self.subTest(expected=expected):
                 self.assertIn(expected, script)
