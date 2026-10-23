@@ -327,3 +327,67 @@ not independently established provenance. On every successful run the marker
 `drive_upload=0 trusted_owner_pin=0 capture_ready=0`. The real owner
 runtime must still be installed durably and separately uploaded, downloaded
 and checked in private Google Drive before accepting MAP02 capture evidence.
+
+## Stage537 — actual owner-only Google Drive upload and readback utility
+
+Stage536 confirmed that the real no-media Linux BizHawk/Octoshock runtime
+passes complete tar pack/restore in CI (413 files and 139,113,480 bytes).
+That temporary CI result is NOT a preserved backup. Stage537 introduces
+`tools/map02_linux_octoshock/private_runtime_drive.py`, an owner-Linux-only
+command that uses a pre-authenticated local `rclone` Google Drive connection
+to upload files and actually download them again, validating all bytes.
+
+Configure two **private local** rclone Drive remotes (OAuth token only in
+the owner's private rclone config, never public code or CI):
+- `vh_builds`: type `drive`, root_folder_id `15uQPDvLCAwYrwphCoFSvPHLsMpPiew-S`
+  (= private `07_Builds_and_Test_Artifacts`)
+- `vh_manifests`: type `drive`, root_folder_id
+  `1AVh7q1BXMWhJHSarPh9ZWh2YbwI_92AE`
+  (= private `00_Manifest_and_SHA256`)
+
+The command independently inspects each remote's locally redacted config,
+requires exactly these canonical folder IDs, and refuses environment overrides
+of the backend config. It refuses collisions with existing remote filenames
+and uses rclone `copyto --immutable` to avoid overwriting retained evidence.
+
+After a *real* persistent owner runtime has been staged, its exact manifest
+SHA-256 has been independently established as a mode-0600 file outside the
+runtime, and Stage535's tar pack has created an archive plus local tar SHA,
+run in a persistent owner-private Linux environment (not public Actions):
+
+```bash
+python3 -m tools.map02_linux_octoshock.private_runtime_drive \
+  "$RUNTIME" "$TRUSTED_PIN" \
+  /private/backup/vh-map02-owner-runtime.tar \
+  /private/backup/vh-map02-owner-runtime.tar.sha256 \
+  /private/readback/map02-owner-run-001 \
+  --builds-remote vh_builds --manifests-remote vh_manifests \
+  --session owner-run-001
+```
+
+The readback path must not already exist, must be outside Git and runtime,
+and its parent must be an owner-only mode-0700 directory. The session ID
+must be globally unique for this archive and may not be reused.
+
+The owner tool uploads an actual tar into the private builds folder and
+the trusted manifest, manifest SHA256 and tar SHA256 into the manifest folder.
+It then queries each remote file's ID and size, downloads each **separately**
+into a new owner-private readback directory and hashes its actual bytes.
+It extracts the separately downloaded tar only via the Stage535 strict
+safe restore and Stage534 full-tree comparison. Finally, it writes an
+owner-private JSON receipt with Google Drive IDs, per-object byte counts
+and digests; it uploads that receipt to the manifest folder, downloads
+it anew and verifies its full contents too.
+
+The tool never uploads original CUE/BIN/BIOS/BK2/saves or private captures,
+does not print paths, checksums or OAuth configuration, and does not run
+any gameplay. An outcome marked `PASS` means actual local rclone remote
+operations returned expected object IDs and the downloaded files matched
+the originals byte for byte; separately verify folder privacy and preserve
+the receipt in private Drive. It is still **not** proof that PS1 boot/MAP02
+or Nintendo Switch parity succeeded.
+
+GitHub Actions tests here run only a fake in-memory transport; public CI
+must not carry a real rclone token or publish the owner-private tar.
+The utility cannot be executed against the true Drive until a persistent
+owner runtime and private authenticated rclone environment actually exist.
