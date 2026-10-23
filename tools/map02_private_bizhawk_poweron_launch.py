@@ -369,6 +369,8 @@ def main() -> int:
         "--record-process-identity", action="store_true",
         help="Create a private 0600 actual EmuHawk PID/start-time receipt on supported Windows/Linux hosts",
     )
+    parser.add_argument("--mono-executable", type=Path,
+                        help="Linux only: absolute path to the Mono runtime executable")
     parser.add_argument("--launch", action="store_true",
                         help="open BizHawk locally; without this, validate only")
     args = parser.parse_args()
