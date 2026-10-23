@@ -528,7 +528,7 @@ def main() -> int:
         print("VH_PRIVATE_BIZHAWK_LOCAL_PROCESS_EXITED exit_success=0 "
               "reason=timeout original_ps1_authenticated=0 map02_identified=0")
         return 1
-    except OSError:
+    except (OSError, ValueError, TypeError):
         try:
             _append_private_log(log_path,
                 "VH_PRIVATE_BIZHAWK_LAUNCH_ERROR process_started=0 original_ps1_authenticated=0")

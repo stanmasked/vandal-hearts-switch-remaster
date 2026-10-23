@@ -16,6 +16,8 @@ on:
       - 'tools/map02_private_core_witness_audit.py'
       - 'tests/test_map02_private_process_group.py'
       - 'tests/test_map02_private_two_replay_runner.py'
+      - 'tools/map02_linux_octoshock/verify_owner_runtime.py'
+      - 'tests/test_map02_private_linux_runtime_manifest_gate.py'
       - 'tests/test_map02_private_two_capture_audit.py'
       - 'tools/map02_private_png_pixels.py'
       - 'tests/test_map02_private_png_pixels.py'
@@ -63,6 +65,14 @@ jobs:
             exit 1
           fi
           echo "VH_MAP02_LOCAL_BIZHAWK_LAUNCH_TEST_PASS synthetic_tests=${test_count} owner_bk2=0 actual_bizhawk=0 real_ps1=0 map02=unverified"
+
+      - name: Reject unpinned Linux runtime before private game reads and process launch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests \
+            -p 'test_map02_private_linux_runtime_manifest_gate.py' -v
+          echo "VH_MAP02_PRIVATE_LINUX_RUNTIME_GATE_SYNTHETIC_PASS game_media=0 real_psx=0"
 
       - name: Refuse changed or unpinned fictional external DLL bytes
         shell: bash
