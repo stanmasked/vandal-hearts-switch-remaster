@@ -47,8 +47,8 @@ jobs:
           set -euo pipefail
           python -m unittest discover -s tests -p 'test_map02_private_core_witness_audit.py' -v \
             2>&1 | tee /tmp/map02-runtime-core-witness-v4-tests.log
-          grep -qx 'OK' /tmp/map02-runtime-core-witness-v3-tests.log
-          count=$(sed -nE 's/^Ran ([1-9][0-9]*) tests? in .*$/\1/p' /tmp/map02-runtime-core-witness-v3-tests.log)
+          grep -qx 'OK' /tmp/map02-runtime-core-witness-v4-tests.log
+          count=$(sed -nE 's/^Ran ([1-9][0-9]*) tests? in .*$/\1/p' /tmp/map02-runtime-core-witness-v4-tests.log)
           test "$count" = "29"
           echo "VH_MAP02_RUNTIME_CORE_WITNESS_V4_AUDIT_PASS cases=$count original_ps1=0 bios=0 bk2=0"
 
