@@ -304,12 +304,15 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
             proc.kill()
             proc.wait()
 
-    def test_unsafe_core_witness_false_bios_claim_rejected(self):
+    def test_unverified_manual_core_witness_does_not_claim_bios_match(self):
         _lf_fixture(
-            self.a_core, core(3011, BIRTH_A).replace("bios=psx_u_firmware_hash_matches_movie_header", "bios=unverified")
+            self.a_core, core(3011, BIRTH_A).replace(
+                "bios=psx_u_firmware_hash_matches_movie_header", "bios=unverified")
         )
-        with self.assertRaisesRegex(ValueError, "unsupported evidence"):
-            self.bind()
+        result = self.bind()
+        self.assertFalse(
+            result["both_witnesses_report_psx_u_firmware_matches_bk2_header"]
+        )
 
     def test_cli_output_contains_no_original_identifiers(self):
         out = io.StringIO()
