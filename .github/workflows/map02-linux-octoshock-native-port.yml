@@ -5,6 +5,7 @@ on:
     paths:
       - 'tools/map02_linux_octoshock/**'
       - 'tools/map02_linux_octoshock/official_managed_binding_smoke.cs'
+      - 'tests/test_map02_public_ci_storage_policy.py'
       - '.github/workflows/map02-linux-octoshock-native-port.yml'
   workflow_dispatch:
 
@@ -22,6 +23,9 @@ jobs:
     steps:
       - name: Check out project tooling only
         uses: actions/checkout@v4
+
+      - name: Enforce public CI storage policy
+        run: python3 -m unittest discover -s tests -p 'test_map02_public_ci_storage_policy.py' -v
 
       - name: Test POSIX compiler-sanity shim against synthetic upstream header
         run: python3 tests/test_map02_linux_octoshock_compiler_sanity.py

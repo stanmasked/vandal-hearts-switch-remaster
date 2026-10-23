@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/map02-bizhawk211-linux-external-tool-compile.yml'
+      - 'tests/test_map02_public_ci_storage_policy.py'
       - 'tools/map02_runtime_core_witness/**'
       - 'tools/map02_private_process_witness_binding.py'
       - 'tools/map02_private_core_witness_audit.py'
@@ -152,19 +153,15 @@ jobs:
           python -m unittest discover -s tests -p 'test_map02_private_two_replay_runner.py' -v
           python -m unittest discover -s tests -p 'test_map02_owner_core_witness_install_linux.py' -v
           echo 'VH_MAP02_LINUX_OWNER_CAPTURE_SYNTHETIC_TESTS_PASS original_disc=0 original_bk2=0 bios=0'
-      - name: Gate PSX/Octoshock capture availability (never fallback to Nymashock)
+          python -m unittest discover -s tests -p 'test_map02_public_ci_storage_policy.py' -v
+      - name: Record the official Linux PSX capture block without failing compile CI
         shell: bash
         run: |
           set -euo pipefail
           if [[ "${VH_BIZHAWK_LINUX_NATIVE_AVAILABLE:-0}" != "1" ]]; then
-            echo 'VH_MAP02_LINUX_PSNATIVE_FAIL_CLOSED no_official_octoshock=1 psx_capture_ready=0' >&2
-            exit 1
+            echo "::warning::Official BizHawk 2.11 Linux package has no Octoshock. This workflow proves compile/startup only; private PSX capture remains blocked until the custom source-built module is installed and a real runtime witness is verified."
+            echo 'VH_MAP02_LINUX_OFFICIAL_OCTOSHOCK_ABSENT_EXPECTED psx_capture_ready=0 native_port_workflow=separate'
+          else
+            echo 'VH_MAP02_LINUX_OFFICIAL_OCTOSHOCK_PRESENT psx_capture_ready=0 no_game_media=1'
           fi
-          echo 'VH_MAP02_LINUX_OFFICIAL_OCTOSHOCK_AVAILABLE game_loaded=0'
-      - name: Publish only the game-free experimental Linux witness assembly
-        uses: actions/upload-artifact@v4
-        with:
-          name: vh-map02-bizhawk211-linux-experimental-core-witness
-          path: tools/map02_runtime_core_witness/bin/Release/net48/VhMap02CoreWitness.dll
-          if-no-files-found: error
-          retention-days: 14
+          echo 'VH_MAP02_STORAGE_POLICY_PASS public_runtime_artifact_upload=0 original_media_upload=0'
