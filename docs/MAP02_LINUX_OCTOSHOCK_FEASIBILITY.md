@@ -27,7 +27,7 @@
 - `tools/map02_linux_octoshock/CMakeLists.txt` builds those same source units as `liboctoshock.dll.so`, with `--no-undefined` and `-iquote` so the game-specific `endian.h` does not shadow glibc's `<endian.h>`.
 - The disposable CI checkout receives four narrow source patches: `posix-export.patch` (C ABI visibility), `posix-header-order.patch` (include ordering and standard declarations), `posix-deinterlacer-include.patch` (explicit `<cstring>` for `memcmp`/`memmove`/`memcpy` in Deinterlacer.cpp), and `posix-local-buffer.patch` (names an MSVC-specific anonymous CD-sector struct without changing layout). `apply_posix_compiler_sanity.py` adds POSIX size macros and GCC attributes using exact, fail-closed anchors. None of these edits touch tracked upstream sources or the official release archive.
 - `tests/test_map02_linux_octoshock_compiler_sanity.py` covers the shim's success path, the upstream commented-out `NO_INLINE` example, unexpected header drift, and partial-shim refusal. The native-port workflow runs this test before installing native build tools.
-- The native workflow checks ELF64/x86-64 identity, referenced managed P/Invoke exports, unresolved symbols, and a safe Mono P/Invoke call to `shock_Util_DisassembleMIPS`. It uses no disc, BIOS, BK2, screenshots, or original game data.
+- The native workflow checks ELF64/x86-64 identity, all declared managed P/Invoke exports except the explicitly audited stale-import exception, verifies that actual managed calls have declarations, checks unresolved symbols, and then performs a safe Mono P/Invoke call to `shock_Util_DisassembleMIPS`. It uses no disc, BIOS, BK2, screenshots, or original game data.
 
 ## Stage521 CI findings (2026-10-23)
 
