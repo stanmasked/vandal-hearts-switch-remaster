@@ -613,6 +613,9 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                 "--auto-core-witness-plugin", str(plugin),
                 "--record-process-identity"]
         with patch.object(sys, "argv", args), patch(
+            "tools.map02_private_bizhawk_poweron_launch.read_expected_psx_u_firmware_sha1",
+            return_value="f" * 40,
+        ), patch(
             "tools.map02_private_bizhawk_poweron_launch.plan_lines",
             return_value=ROWS,
         ), patch(
@@ -729,6 +732,9 @@ class PrivateBizHawkBootTests(unittest.TestCase):
             "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256": "c" * 64,
         }), patch.object(sys, "argv", command), patch(
             "tools.map02_private_bizhawk_poweron_launch.os", fake_windows,
+        ), patch(
+            "tools.map02_private_bizhawk_poweron_launch.read_expected_psx_u_firmware_sha1",
+            return_value="f" * 40,
         ), patch(
             "tools.map02_private_bizhawk_poweron_launch.plan_lines",
             return_value=ROWS,
