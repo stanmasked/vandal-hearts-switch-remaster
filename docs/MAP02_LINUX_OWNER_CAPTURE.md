@@ -431,3 +431,56 @@ Public CI exercises only fictional backend transfers, including a test that
 mutates the original tar during upload and verifies that no changed tar bytes
 were sent or acceptance receipt created. It makes no authentic Google Drive
 upload and creates no new original-game capture evidence.
+
+## Stage539 — independently pinned recurring Drive restore audit
+
+Stage537/538 proved an owner-private upload/download protocol with both
+original runtime and original tar still available. Stage539 adds an independent
+repeat-audit tool: `private_runtime_reaudit.py`. It can restore and inspect
+an archived no-media runtime **after the original owner installation has been
+lost**, provided three separately trusted owner-local SHA-256 pins survived:
+
+1. SHA-256 of the original owner runtime manifest (mode 0600)
+2. SHA-256 of the exact archived tar bytes (mode 0600)
+3. SHA-256 of the original verified transfer receipt JSON (mode 0600)
+
+Important: the trusted receipt digest must be calculated from the **locally
+verified original receipt after Stage538's actual successful upload/readback**,
+and kept outside Drive as an independent reference. Do not trust a digest
+recalculated from a newly downloaded or possibly modified receipt. Keep the
+SHA reference independently in the protected owner backup and record its
+provenance in private handoff notes. Without it, do not claim the full
+independent receipt audit succeeded.
+
+Use two already authenticated folder-scoped rclone Drive remotes, with the
+actual folder IDs saved privately in the existing mode-0600 JSON map:
+
+```bash
+python3 -m tools.map02_linux_octoshock.private_runtime_reaudit \
+  --private-folder-map /private/config/vh-map02-drive-folders.json \
+  --owner-manifest-pin /private/config/map02-owner-manifest.sha256 \
+  --trusted-archive-pin /private/backup/map02-owner-runtime.tar.sha256 \
+  --trusted-receipt-pin /private/config/map02-owner-receipt.sha256 \
+  --new-readback-root /private/readback/independent-reaudit-001 \
+  --builds-remote vh_builds --manifests-remote vh_manifests \
+  --session owner-run-001
+```
+
+The audit refuses pre-existing or insecure local outputs. It checks two
+Google Drive folder-scoped remotes, re-downloads the precise receipt,
+verifies against the independently stored receipt digest, then downloads
+the four runtime objects and compares each Google Drive object ID, size
+and SHA-256 to the pinned receipt. It separately compares tar and manifest
+bytes to their externally trusted SHA-256 files and verifies that the
+downloaded digest files agree. It extracts the tar manually after inspecting
+all member names and types, refusing links, path escapes, duplicate paths,
+large payloads or extra archive roots. Finally it runs the pinned runtime
+verifier with the owner's separate manifest hash and checks restored file
+counts and size against the receipt.
+
+A successful re-audit proves the preserved **no-media runtime archive is
+recoverable against retained trust anchors**. It does not prove private
+cloud sharing controls by itself or authenticate the real PS1 disc/BIOS/
+BK2, cold MAP02 runtime evidence, or native Nintendo Switch playback.
+CI runs only fictional small remotes and cannot substitute for a real
+owner/private archive.

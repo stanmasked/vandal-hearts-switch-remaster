@@ -11,6 +11,7 @@ on:
       - 'tests/test_map02_linux_octoshock_archive_readback.py'
       - 'tests/test_map02_linux_octoshock_private_tar.py'
       - 'tests/test_map02_linux_octoshock_private_drive.py'
+      - 'tests/test_map02_linux_octoshock_private_reaudit.py'
       - '.github/workflows/map02-linux-octoshock-native-port.yml'
   workflow_dispatch:
 
@@ -46,6 +47,9 @@ jobs:
 
       - name: Test private Drive backend and downloaded-byte archive gate (mock transport only)
         run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_private_drive.py' -v
+
+      - name: Test source-free repeat Drive byte readback using fictional remotes
+        run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_private_reaudit.py' -v
 
       - name: Test POSIX compiler-sanity shim against synthetic upstream header
         run: python3 tests/test_map02_linux_octoshock_compiler_sanity.py

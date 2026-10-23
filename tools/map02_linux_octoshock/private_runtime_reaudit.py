@@ -204,23 +204,23 @@ def audit_independent_readback(
         if not root.is_absolute() or root.is_symlink() or root.exists():
             _fail()
         # _outside checks parent is 0700 owner-private and outside Git.
-        root = _outside(root, root.parent, nonexistent=True)
         owner_pin = _private_input(owner_manifest_sha)
+        root = _outside(root, owner_pin, nonexistent=True)
         tar_pin = _private_input(trusted_archive_sha)
         receipt_pin = _private_input(trusted_receipt_sha)
         folder_map = _private_input(private_folder_map)
         if len({str(owner_pin), str(tar_pin), str(receipt_pin),
                 str(folder_map), str(root)}) != 5:
             _fail()
-        builds_id, manifests_id = _folder_map(folder_map, root.parent)
+        builds_id, manifests_id = _folder_map(folder_map, root)
         _check_remote(builds, builds_id, invoke)
         _check_remote(manifests, manifests_id, invoke)
         stem = "map02-runtime-" + session
         receipt_name = stem + ".receipt.json"
         receipt_path = manifests + ":" + receipt_name
+        receipt_size = _read_remote_size(receipt_path, invoke)
         receipt_stat = _stat_remote(
-            receipt_path, receipt_name, _read_remote_size(receipt_path, invoke),
-            invoke,
+            receipt_path, receipt_name, receipt_size, invoke,
         )
         if not receipt_stat:
             _fail()
