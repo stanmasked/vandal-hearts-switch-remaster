@@ -152,7 +152,7 @@ def linux_process_start_ticks(
     second = _linux_proc_start_clock_ticks(pid, root)
     if first != second:
         raise ValueError("Linux process identity changed during observation")
-    # /proc/stat btime is UNIX epoch seconds, whereas the witness V3 field
+    # /proc/stat btime is UNIX epoch seconds, whereas the witness V4 field
     # carries .NET DateTime ticks since 0001-01-01.
     value = MIN_TICKS + ((boot_time * clock_ticks_per_second + first) * 10_000_000
                          // clock_ticks_per_second)
