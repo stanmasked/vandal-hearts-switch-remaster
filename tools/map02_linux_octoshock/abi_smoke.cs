@@ -4,6 +4,16 @@ using System.Text;
 
 internal static class OctoshockNative
 {
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct ShockRenderOptions
+    {
+        public int scanline_start;
+        public int scanline_end;
+        public int renderType;
+        public int deinterlaceMode;
+        public bool skip;
+    }
+
     [DllImport("octoshock.dll", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern int shock_Util_DisassembleMIPS(
         uint pc, uint instruction, StringBuilder output, int outputCapacity);
@@ -12,12 +22,16 @@ internal static class OctoshockNative
     internal static extern int shock_Create(out IntPtr psx, int region, IntPtr firmware512k);
 
     [DllImport("octoshock.dll", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern int shock_SetRenderOptions(IntPtr psx, ref ShockRenderOptions options);
+
+    [DllImport("octoshock.dll", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern int shock_Destroy(IntPtr psx);
 }
 
 internal static class Program
 {
     private const int SyntheticFirmwareSize = 512 * 1024;
+    private const int ShockNoCanDo = -2;
 
     private static int Main()
     {
@@ -36,8 +50,21 @@ internal static class Program
         }
         Console.WriteLine("VH_MAP02_MONO_P_INVOKE_PASS symbol=shock_Util_DisassembleMIPS result=0 output=" + output);
 
-        // Exercise only native allocation and teardown with a zero-filled synthetic
-        // 512 KiB firmware buffer. Do not power on, mount a disc, or run CPU frames.
+        // Check the managed layout for the render-options structure used by the
+        // official Octoshock binding. The native struct is four 32-bit fields,
+        // followed by a one-byte bool and three bytes of alignment padding.
+        int optionsSize = Marshal.SizeOf(typeof(OctoshockNative.ShockRenderOptions));
+        int skipOffset = Marshal.OffsetOf(
+            typeof(OctoshockNative.ShockRenderOptions), "skip").ToInt32();
+        if (optionsSize != 20 || skipOffset != 16)
+        {
+            Console.Error.WriteLine("Unexpected render-options layout size=" + optionsSize
+                + " skip_offset=" + skipOffset);
+            return 3;
+        }
+
+        // Exercise native allocation and teardown with a zero-filled synthetic
+        // 512 KiB firmware buffer. Never power on, mount a disc, or run CPU frames.
         IntPtr firmware = Marshal.AllocHGlobal(SyntheticFirmwareSize);
         bool created = false;
         IntPtr psx = IntPtr.Zero;
@@ -49,18 +76,47 @@ internal static class Program
             if (result != 0)
             {
                 Console.Error.WriteLine("Octoshock synthetic shock_Create returned " + result);
-                return 3;
+                return 4;
             }
             created = true;
+
+            var options = new OctoshockNative.ShockRenderOptions
+            {
+                scanline_start = 0,
+                scanline_end = 240,
+                renderType = 0,      // Normal
+                deinterlaceMode = 0, // Weave
+                skip = false
+            };
+            result = OctoshockNative.shock_SetRenderOptions(psx, ref options);
+            if (result != 0)
+            {
+                Console.Error.WriteLine("Octoshock synthetic shock_SetRenderOptions returned " + result);
+                return 5;
+            }
+            Console.WriteLine("VH_MAP02_MONO_RENDER_OPTIONS_PASS size=" + optionsSize
+                + " skip_offset=" + skipOffset + " result=0");
 
             result = OctoshockNative.shock_Destroy(psx);
             if (result != 0)
             {
                 Console.Error.WriteLine("Octoshock synthetic shock_Destroy returned " + result);
-                return 4;
+                return 6;
             }
             created = false;
-            Console.WriteLine("VH_MAP02_MONO_LIFECYCLE_PASS create=0 destroy=0 firmware=synthetic-zero-filled bytes=524288 power_on=0 disc=0 frames=0");
+
+            // The pinned core explicitly rejects destroy when no instance exists.
+            // This checks its failure guard without dereferencing the stale handle.
+            result = OctoshockNative.shock_Destroy(psx);
+            if (result != ShockNoCanDo)
+            {
+                Console.Error.WriteLine("Octoshock duplicate destroy guard returned " + result);
+                return 7;
+            }
+
+            Console.WriteLine("VH_MAP02_MONO_LIFECYCLE_PASS create=0 render_options=0 destroy=0 "
+                + "destroy_guard=-2 firmware=synthetic-zero-filled bytes=524288 "
+                + "power_on=0 disc=0 frames=0");
             return 0;
         }
         finally
