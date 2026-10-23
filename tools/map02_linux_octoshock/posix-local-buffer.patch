@@ -1,10 +1,16 @@
 diff --git a/psx/octoshock/psx/psx.cpp b/psx/octoshock/psx/psx.cpp
 --- a/psx/octoshock/psx/psx.cpp
 +++ b/psx/octoshock/psx/psx.cpp
-@@ -2610,17 +2610,17 @@
+@@ -2605,21 +2605,21 @@
+ 	static union {
+ 		struct {
+ 			union {
+ 				XASector xasector;
+ 				Sector sector;
  			};
  			u8 subcode[96];
- 		};
+-		};
++		} sectorData;
  		u8 buf2448[2448];
 -	};
 +	} readBuffer;
@@ -16,12 +22,12 @@ diff --git a/psx/octoshock/psx/psx.cpp b/psx/octoshock/psx/psx.cpp
  
 -	if(sector.mode == 1)
 -		memcpy(dst2048,sector.data2048,2048);
-+	if(readBuffer.sector.mode == 1)
-+		memcpy(dst2048,readBuffer.sector.data2048,2048);
++	if(readBuffer.sectorData.sector.mode == 1)
++		memcpy(dst2048,readBuffer.sectorData.sector.data2048,2048);
  	else
 -		memcpy(dst2048,xasector.form1.data2048,2048);
-+		memcpy(dst2048,readBuffer.xasector.form1.data2048,2048);
++		memcpy(dst2048,readBuffer.sectorData.xasector.form1.data2048,2048);
  
 -	return sector.mode;
-+	return readBuffer.sector.mode;
++	return readBuffer.sectorData.sector.mode;
  }
