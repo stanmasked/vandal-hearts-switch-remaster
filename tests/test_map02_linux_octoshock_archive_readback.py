@@ -27,7 +27,7 @@ def private_mock_runtime(root: Path) -> None:
     (root / "ExternalTools").mkdir(mode=0o700)
     payloads = {
         "EmuHawk.exe": b"fictional emuhawk",
-        "EmuHawkMono.sh": b"#!/bin/sh\\nexit 0\\n",
+        "EmuHawkMono.sh": b"#!/bin/sh\nexit 0\n",
         "dll/BizHawk.Emulation.Cores.dll": b"fictional managed",
         "dll/" + NATIVE_NAME: b"fictional native",
         "ExternalTools/VhMap02CoreWitness.dll": b"fictional plugin",
@@ -67,10 +67,10 @@ def private_mock_runtime(root: Path) -> None:
     mp.write_text(json.dumps(manifest), encoding="utf-8")
     mp.chmod(0o600)
     pins = (
-        "export VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256=" + managed + "\\n"
-        "export VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256=" + native + "\\n"
-        "export VH_MAP02_PRIVATE_WITNESS_DLL_SHA256=" + plugin + "\\n"
-        "export VH_MAP02_CORE_EXPECTED_DLL_SHA256=" + plugin + "\\n"
+        "export VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256=" + managed + "\n"
+        "export VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256=" + native + "\n"
+        "export VH_MAP02_PRIVATE_WITNESS_DLL_SHA256=" + plugin + "\n"
+        "export VH_MAP02_CORE_EXPECTED_DLL_SHA256=" + plugin + "\n"
     )
     pp = root / "map02-owner-runtime-pins.env"
     pp.write_text(pins, encoding="ascii")
@@ -90,7 +90,7 @@ class ArchiveReadbackTests(unittest.TestCase):
         self.pin = self.base / "owner-external.sha256"
         self.pin.write_text(
             sha((self.source / "map02-owner-runtime-manifest.json").read_bytes())
-            + "\\n", encoding="ascii"
+            + "\n", encoding="ascii"
         )
         self.pin.chmod(0o600)
 
@@ -133,7 +133,7 @@ class ArchiveReadbackTests(unittest.TestCase):
             self.audit()
 
     def test_rejects_replaced_external_pin(self):
-        self.pin.write_text("0" * 64 + "\\n", encoding="ascii")
+        self.pin.write_text("0" * 64 + "\n", encoding="ascii")
         with self.assertRaises(ArchiveReadbackError):
             self.audit()
 
