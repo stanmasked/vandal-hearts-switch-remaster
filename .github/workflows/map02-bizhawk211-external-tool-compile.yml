@@ -231,4 +231,6 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          python -m unittest discover -s tests -p 'test_map02_public_ci_storage_policy.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'public CI storage policy tests failed' }
           Write-Output 'VH_MAP02_STORAGE_POLICY_PASS public_runtime_artifact_upload=0 original_media_upload=0'
