@@ -156,11 +156,19 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
                         read_witness(self.first)
 
     def test_bios_claim_is_rejected(self):
-        for claim in ("verified", "unverified", "mismatch"):
+        for claim in ("verified", "mismatch"):
             with self.subTest(claim=claim):
                 self.first.write_text(receipt(bios=claim), encoding="ascii")
                 with self.assertRaisesRegex(ValueError, "unsupported evidence"):
                     compare_witnesses(self.first, self.second)
+
+    def test_unverified_bios_receipt_does_not_claim_match(self):
+        self.first.write_text(receipt(bios="unverified"), encoding="ascii")
+        result = compare_witnesses(self.first, self.second)
+        self.assertFalse(
+            result["both_runtime_witnesses_report_psx_u_firmware_matches_bk2_header"]
+        )
+        self.assertFalse(result["actual_loaded_bios_authenticated"])
 
     def test_disc_claim_is_rejected(self):
         self.first.write_text(receipt(disc="verified"), encoding="ascii")
