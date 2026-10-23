@@ -1,7 +1,7 @@
 diff --git a/psx/octoshock/psx/psx.cpp b/psx/octoshock/psx/psx.cpp
 --- a/psx/octoshock/psx/psx.cpp
 +++ b/psx/octoshock/psx/psx.cpp
-@@ -2605,21 +2605,21 @@
+@@ -2605,22 +2605,22 @@
  	static union {
  		struct {
  			union {
