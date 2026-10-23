@@ -52,6 +52,9 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         rows = kwargs.pop("source_rows", ROWS)
         mono = kwargs.pop("mono_executable", None)
         with patch(
+            "tools.map02_private_bizhawk_poweron_launch.read_expected_psx_u_firmware_sha1",
+            return_value="f" * 40,
+        ), patch(
             "tools.map02_private_bizhawk_poweron_launch.plan_lines",
             return_value=rows,
         ) as source, patch(
@@ -88,6 +91,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                          str((self.output / "vh_private_capture.log").resolve()))
         self.assertEqual(env["VH_PRIVATE_PROCESS_LOG"],
                          str((self.output / "vh_emuhawk_process.log").resolve()))
+        self.assertNotIn("VH_MAP02_CORE_EXPECTED_PSX_FIRMWARE_SHA1", env)
         self.assertNotIn("github", str(argv).lower())
 
     @unittest.skipUnless(sys.platform.startswith("linux"), "Linux Mono command only")
@@ -501,6 +505,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.assertEqual(argv[-1], str(self.disc.resolve()))
         self.assertEqual(env["VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR"],
                          str(self.output.resolve()))
+        self.assertEqual(env["VH_MAP02_CORE_EXPECTED_PSX_FIRMWARE_SHA1"], "f" * 40)
         self.assertNotIn("VH_MAP02_CORE_EXPECTED_DLL_SHA256", env)
         self.assertNotIn("VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256", env)
         self.assertNotIn("VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256", env)
@@ -512,12 +517,14 @@ class PrivateBizHawkBootTests(unittest.TestCase):
             "VH_MAP02_CORE_EXPECTED_DLL_SHA256": "b" * 64,
             "VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256": "c" * 64,
             "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256": "d" * 64,
+            "VH_MAP02_CORE_EXPECTED_PSX_FIRMWARE_SHA1": "e" * 40,
         }):
             argv, env, count = self.call()
         self.assertNotIn("VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR", env)
         self.assertNotIn("VH_MAP02_CORE_EXPECTED_DLL_SHA256", env)
         self.assertNotIn("VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256", env)
         self.assertNotIn("VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256", env)
+        self.assertNotIn("VH_MAP02_CORE_EXPECTED_PSX_FIRMWARE_SHA1", env)
         self.assertNotIn("--open-ext-tool-dll", " ".join(argv))
 
     def test_runtime_file_pins_are_passed_only_with_explicit_plugin_optin(self):
@@ -624,7 +631,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         witness = self.output / "vh-map02-runtime-core-auto.txt"
         def core(when):
             return (
-                "VH_MAP02_RUNTIME_CORE_WITNESS_V3\nsystem=PSX\n"
+                "VH_MAP02_RUNTIME_CORE_WITNESS_V4\nsystem=PSX\n"
                 "loaded_core=Octoshock\n"
                 "core_source=IEmulator.Attributes.CoreName\n"
                 "runtime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock\n"
@@ -633,7 +640,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                 "native_core_module_sha256=" + "c" * 64 + "\n"
                 "tool_assembly_sha256=" + "a" * 64 + "\n"
                 f"process_id={pid}\nprocess_start_utc_ticks={when}\n"
-                "frame_count=1666\nbios=unverified\ndisc=unverified\n"
+                "frame_count=1666\nbios=psx_u_firmware_hash_matches_movie_header\ndisc=unverified\n"
                 "movie_sync=unverified\n"
             ).encode("ascii")
         with self.assertRaises((OSError, ValueError)):

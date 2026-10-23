@@ -21,6 +21,7 @@ from tools.map02_private_bk2_capture_plan import plan_lines
 from tools.map02_private_disc_movie_preflight import (
     inspect_pair, read_private_full_bin_sha256,
 )
+from tools.map02_private_psx_firmware_probe import read_expected_psx_u_firmware_sha1
 from tools.map02_private_process_group import run_owned_process
 from tools.map02_windows_private_output_acl import require_windows_private_output
 from tools.map02_private_process_witness_binding import (
@@ -35,6 +36,7 @@ AUTO_WITNESS_ENV = "VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR"
 AUTO_WITNESS_HASH_ENV = "VH_MAP02_CORE_EXPECTED_DLL_SHA256"
 CORE_ASSEMBLY_SHA256_ENV = "VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256"
 NATIVE_MODULE_SHA256_ENV = "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256"
+EXPECTED_PSX_FIRMWARE_SHA1_ENV = "VH_MAP02_CORE_EXPECTED_PSX_FIRMWARE_SHA1"
 from tools.verify_map02_private_neutral_capture_chain import parse_plan
 
 
@@ -238,7 +240,11 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
         raise ValueError("owner core witness digest needs a matching DLL")
     plugin = None
     runtime_core_pin = native_module_pin = None
+    expected_psx_u_firmware_sha1 = None
     if auto_core_witness_plugin is not None:
+        # Compare the live firmware served by BizHawk with the current BK2.
+        # Keep the expected digest in the private child environment only.
+        expected_psx_u_firmware_sha1 = read_expected_psx_u_firmware_sha1(movie)
         plugin = require_matching_core_plugin(executable, auto_core_witness_plugin)
         if core_witness_sha256 is not None:
             require_pinned_core_witness_dll(plugin, core_witness_sha256)
@@ -277,10 +283,14 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
     for name in (
         AUTO_WITNESS_ENV, AUTO_WITNESS_HASH_ENV,
         CORE_ASSEMBLY_SHA256_ENV, NATIVE_MODULE_SHA256_ENV,
+        EXPECTED_PSX_FIRMWARE_SHA1_ENV,
     ):
         env.pop(name, None)
     if plugin is not None:
         env[AUTO_WITNESS_ENV] = str(root)
+        if expected_psx_u_firmware_sha1 is None:
+            raise ValueError("automatic core witness requires PSX/U firmware metadata")
+        env[EXPECTED_PSX_FIRMWARE_SHA1_ENV] = expected_psx_u_firmware_sha1
         if core_witness_sha256 is not None:
             env[AUTO_WITNESS_HASH_ENV] = core_witness_sha256.lower()
         for name, pin in zip(
