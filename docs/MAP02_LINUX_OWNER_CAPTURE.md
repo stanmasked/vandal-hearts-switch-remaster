@@ -309,3 +309,21 @@ The tool makes NO uploads or downloads and always reports
 `drive_upload_authenticated=0`: authentic Google Drive cloud provenance must
 be established separately by checking the actual private Drive upload and
 download. CI regression tests use only synthetic sample files.
+
+## Stage536 — no-media native runtime archive roundtrip in CI
+
+The pinned native Linux workflow now additionally tests the **complete**
+installed BizHawk 2.11 / Octoshock runtime, not merely invented tiny fixture
+files. After building and verifying the temporary installed runtime, it uses
+Stage535's `private_runtime_tar pack` and `restore` commands, copies the tar
+to a separate temporary readback location, and re-verifies the restored
+manifest with the same CI-generated test pin. Any altered/missing file,
+incorrect mode, symlink or unsafe tar member fails this workflow.
+
+This is a **local CI copy**, not a Google Drive upload or a real owner-private
+archive. The temporary trust pin is generated inside the same CI job and is
+not independently established provenance. On every successful run the marker
+`VH_MAP02_STAGE536_NATIVE_RUNTIME_TAR_ROUNDTRIP_PASS` explicitly reports
+`drive_upload=0 trusted_owner_pin=0 capture_ready=0`. The real owner
+runtime must still be installed durably and separately uploaded, downloaded
+and checked in private Google Drive before accepting MAP02 capture evidence.

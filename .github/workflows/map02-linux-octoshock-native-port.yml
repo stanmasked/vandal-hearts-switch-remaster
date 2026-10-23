@@ -77,6 +77,38 @@ jobs:
             --trusted-manifest-pin-file "$RUNNER_TEMP/vh-map02-ci-manifest-test-pin.txt" \
             --require-trusted-pin
 
+      - name: Round-trip actual staged no-media Octoshock runtime using private tar
+        shell: bash
+        env:
+          VH_MAP02_STAGE536_RUNTIME: ${{ runner.temp }}/vh-map02-owner-runtime
+          VH_MAP02_STAGE536_PIN: ${{ runner.temp }}/vh-map02-ci-manifest-test-pin.txt
+        run: |
+          set -euo pipefail
+          umask 077
+          archive_dir="$RUNNER_TEMP/vh-map02-stage536-private-archive"
+          readback_dir="$RUNNER_TEMP/vh-map02-stage536-private-readback"
+          extract_dir="$RUNNER_TEMP/vh-map02-stage536-private-restored-parent"
+          mkdir -m 700 "$archive_dir" "$readback_dir" "$extract_dir"
+          python3 -m tools.map02_linux_octoshock.private_runtime_tar pack \
+            "$VH_MAP02_STAGE536_RUNTIME" \
+            "$archive_dir/owner-runtime.tar" \
+            "$archive_dir/owner-runtime.tar.sha256" \
+            --trusted-manifest-pin-file "$VH_MAP02_STAGE536_PIN"
+          cp --preserve=mode "$archive_dir/owner-runtime.tar" "$readback_dir/owner-runtime.tar"
+          python3 -m tools.map02_linux_octoshock.private_runtime_tar restore \
+            "$VH_MAP02_STAGE536_RUNTIME" \
+            "$readback_dir/owner-runtime.tar" \
+            "$archive_dir/owner-runtime.tar.sha256" \
+            "$extract_dir/runtime" \
+            --trusted-manifest-pin-file "$VH_MAP02_STAGE536_PIN"
+          python3 tools/map02_linux_octoshock/verify_owner_runtime.py \
+            "$extract_dir/runtime" \
+            --trusted-manifest-pin-file "$VH_MAP02_STAGE536_PIN" \
+            --require-trusted-pin
+          cmp "$VH_MAP02_STAGE536_RUNTIME/map02-owner-runtime-manifest.json" \
+            "$extract_dir/runtime/map02-owner-runtime-manifest.json"
+          echo "VH_MAP02_STAGE536_NATIVE_RUNTIME_TAR_ROUNDTRIP_PASS actual_installed_files=1 original_disc=0 bios=0 bk2=0 drive_upload=0 trusted_owner_pin=0 capture_ready=0"
+
       - name: Verify staged runtime manifest and no-media boundary
         env:
           VH_MAP02_OWNER_RUNTIME: ${{ runner.temp }}/vh-map02-owner-runtime
