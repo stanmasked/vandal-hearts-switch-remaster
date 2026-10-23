@@ -513,3 +513,58 @@ matching a trusted tar SHA is **not** a license to accidentally restore
 original game/BIOS assets as part of the no-media runtime. Fictional CI tests
 cover both rejected inputs and the new receipt-pin creation, without
 downloading or uploading actual owner content.
+
+## Stage541 — one-command private owner backup and source-free readback
+
+Stage541 adds `tools/map02_linux_octoshock/owner_drive_session.py`.
+It connects Stage535 pack, Stage538/540 sealed private Drive upload with
+receipt-pin creation, and Stage539 independent source-free download/restore
+audit into a **single fail-closed, owner-local** invocation.
+
+An actual persistent private Linux x86_64 host with pinned `BizHawk 2.11`
+and `Octoshock` build, installed `rclone`, and two already authenticated
+folder-scoped owner-only Drive remotes is required. The command **does not**
+build that runtime or manufacture the independently trusted manifest pin.
+
+Before running: install and verify the real owner no-media runtime outside
+Git; establish the SHA256 of the exact runtime manifest *independently* as a
+private mode-0600 file and retain that anchor outside the cloud/runtime
+session; save the real private Drive folder map in a separate mode-0600 file;
+verify Drive folder access and correct private sharing permissions.
+
+Example (run only on a persistent owner-private Linux host):
+
+```bash
+python3 -m tools.map02_linux_octoshock.owner_drive_session \
+  --runtime /private/runtime/vh-map02-owner-runtime \
+  --trusted-manifest-pin /private/trust/map02-owner-manifest.sha256 \
+  --private-folder-map /private/config/map02-private-drive-folders.json \
+  --new-session-root /private/evidence/sessions/owner541001 \
+  --new-owner-receipt-pin /private/trust/map02-owner541001-receipt.sha256 \
+  --builds-remote vh_builds --manifests-remote vh_manifests \
+  --session owner541001
+```
+
+The parent of the new session root and of the receipt-pin output must be
+existing owner-only `0700` directories, outside Git and the runtime. Both
+destination paths must not exist. Failure does not silently delete
+intermediate private files or retry using the same cloud session name;
+inspect any partial uploads privately and choose new session identifiers.
+The trusted manifest SHA must be an **independently established prior
+reference** — simply hashing an unverified build and calling that owner
+provenance is not acceptable.
+
+On success the program verifies a locally packed complete no-media runtime,
+uploads sealed snapshot files, confirms fresh downloads of all Drive
+objects, creates a new independent local receipt pin, then **downloads the
+archive and receipt once again** for the source-free auditor, safely restores
+the runtime, and compares its file counts/bytes and owner pins. It prints
+only a sanitized success marker, without credential contents, private
+Drive folder IDs, raw file paths or per-file hashes. All original
+PS1 CUE/BIN/BIOS/BK2 and game captures remain excluded.
+
+Public GitHub Actions runs ten tests using fake in-memory Drive transport,
+including a complete upload -> independent SHA -> re-audit -> simulated
+loss of original runtime -> repeat restore sequence. Public CI cannot
+create actual owner-private binary backups, does not contain OAuth tokens
+and never constitutes evidence of authentic MAP02 gameplay.

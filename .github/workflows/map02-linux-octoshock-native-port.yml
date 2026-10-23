@@ -12,6 +12,7 @@ on:
       - 'tests/test_map02_linux_octoshock_private_tar.py'
       - 'tests/test_map02_linux_octoshock_private_drive.py'
       - 'tests/test_map02_linux_octoshock_private_reaudit.py'
+      - 'tests/test_map02_linux_octoshock_owner_drive_session.py'
       - '.github/workflows/map02-linux-octoshock-native-port.yml'
   workflow_dispatch:
 
@@ -50,6 +51,9 @@ jobs:
 
       - name: Test source-free repeat Drive byte readback using fictional remotes
         run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_private_reaudit.py' -v
+
+      - name: Test full owner-only session orchestrator with fictional Drive and independent anchors
+        run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_owner_drive_session.py' -v
 
       - name: Test POSIX compiler-sanity shim against synthetic upstream header
         run: python3 tests/test_map02_linux_octoshock_compiler_sanity.py
