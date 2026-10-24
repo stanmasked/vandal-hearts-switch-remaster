@@ -308,7 +308,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "posix" and hasattr(os, "symlink"),
                          "requires POSIX symbolic-link support")
     def test_symlinked_quarantine_marker_blocks_session_without_following_target(self):
-        target = self.base.parent / (self.base.name + "-stage591-external-target")
+        target = self.base / "stage591-external-target"
         target.mkdir(mode=0o700)
         sentinel = target / "preserve.txt"
         sentinel.write_text("external quarantine target must remain untouched\n",
