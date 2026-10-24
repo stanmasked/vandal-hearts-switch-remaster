@@ -774,3 +774,49 @@ configuration audit, **not** proof of any binary upload, file-level
 visibility of future uploads, authenticated owner `rclone` use, or MAP02
 gameplay. The canonical private builds folder is still empty. Do not
 mark game capture or persistent backup as complete.
+
+## Stage548 — mandatory repeat owner-backup gate before private MAP02 boot
+
+**The real binary archive must ALREADY exist on owner-authenticated,
+folder-scoped private Google Drive remotes.** Stage548 adds
+`tools/map02_linux_octoshock/owner_capture_backup_gate.py`,
+which takes the earlier Stage545–546 SHA-sealed owner admission JSON,
+its independent SHA pin, the three externally trusted owner manifest,
+tar and transfer receipt SHA files, and a NEW readback destination.
+It first authenticates the prior admission's integrity and checks it
+belongs to this exact owner archive session, then re-downloads all five
+Drive objects again, safely reconstructs the entire runtime, and
+compares file count, bytes and all trusted references with the
+previously sealed admission report.
+
+Owner-private execution template (all flags in ONE invocation):
+
+```bash
+python3 -m tools.map02_linux_octoshock.owner_capture_backup_gate \
+  --private-folder-map /private/config/map02-private-drive-folders.json \
+  --owner-manifest-pin /private/trust/map02-owner-manifest.sha256 \
+  --owner-archive-pin /private/trust/owner544001-tar.sha256 \
+  --owner-receipt-pin /private/trust/owner544001-receipt.sha256 \
+  --admission-proof /private/trust/owner545001-admission.json \
+  --admission-proof-pin /private/trust/owner545001-admission.sha256 \
+  --new-restored-root /private/evidence/pre-capture/owner548001 \
+  --builds-remote vh_builds --manifests-remote vh_manifests \
+  --session owner544001
+```
+
+**Only actual rclone subprocess execution with an independently
+SHA-sealed admission that already recorded real rclone may report
+`owner_backup_proven_against_trusted_pins=true`.**
+Even then it reports `capture_ready=false` because original PS1 CUE/BIN,
+matched BIOS and original BK2 playback are different mandatory checks.
+No game media is read or played in this backup test. A successful
+fictional or public-CI fake Drive test always reports no real backup
+and zero actual cold launches, regardless of restored fake bytes.
+
+Seven regression tests emulate upload, destruction of the runtime and
+disposable upload directory, independent first admission and deletion
+of the first local readback, and only then the second fresh remote
+restore. They also reject tampered earlier proof, session mismatch,
+changed owner tar SHA, changed cloud tar or receipt and reused
+download folder. **No OAuth secrets, original game, BIOS, BK2 or
+owner runtime binary are placed into public GitHub.**
