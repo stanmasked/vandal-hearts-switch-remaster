@@ -333,6 +333,58 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertEqual(sentinel.stat().st_mode & 0o777, 0o600)
         self.assertEqual(list(target.iterdir()), [sentinel])
 
+    @unittest.skipUnless(os.name == "posix" and hasattr(os, "symlink"),
+                         "requires POSIX symbolic-link support")
+    def test_quarantine_marker_replaced_by_symlink_after_glob_discovery_fails_closed(self):
+        marker = self.base / ".map02-pin-cleanup-stage592-race"
+        marker.mkdir(mode=0o700)
+        original_payload = marker / "payload"
+        original_payload.write_text("e" * 64 + "\\n", encoding="ascii")
+        original_payload.chmod(0o600)
+        displaced = self.base / "displaced-stage592-quarantine"
+        target = self.base / "stage592-external-target"
+        target.mkdir(mode=0o700)
+        sentinel = target / "preserve.txt"
+        sentinel.write_text("concurrent symlink target stays untouched\\n",
+                            encoding="ascii")
+        sentinel.chmod(0o600)
+
+        real_glob = Path.glob
+        replacements = 0
+
+        def replace_after_glob_discovery(directory, pattern):
+            nonlocal replacements
+            matches = list(real_glob(directory, pattern))
+            if (directory == self.base and pattern == ".map02-pin-cleanup-*"
+                    and matches and replacements == 0):
+                replacements += 1
+                self.assertEqual(matches[0], marker)
+                marker.rename(displaced)
+                marker.symlink_to(target, target_is_directory=True)
+            yield from matches
+
+        with patch.object(Path, "glob", new=replace_after_glob_discovery):
+            with self.assertRaises(PrivateOwnerSessionError):
+                self.execute()
+
+        self.assertEqual(replacements, 1)
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertFalse(self.full_session.exists())
+        self.assertFalse(self.receipt_pin.exists())
+        self.assertFalse(self.archive_pin.exists())
+        self.assertTrue(marker.is_symlink())
+        self.assertEqual(os.readlink(marker), str(target))
+        self.assertEqual(
+            (displaced / "payload").read_text(encoding="ascii"),
+            "e" * 64 + "\\n",
+        )
+        self.assertEqual((displaced / "payload").stat().st_mode & 0o777, 0o600)
+        self.assertEqual(
+            sentinel.read_text(encoding="ascii"),
+            "concurrent symlink target stays untouched\\n",
+        )
+        self.assertEqual(list(target.iterdir()), [sentinel])
+
     def test_previous_unrelated_owner_pin_survives_failed_session(self):
         old_pin = self.base / "unrelated-owner-reference.sha256"
         old_pin.write_text("a" * 64 + "\n", encoding="ascii")
