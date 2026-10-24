@@ -526,8 +526,11 @@ class OwnerDriveSessionTests(unittest.TestCase):
 
 
     @unittest.skipUnless(os.name == "posix", "requires POSIX signal handling")
-    def test_main_restores_previous_sigterm_handler_after_success(self):
-        previous_handler = signal.getsignal(signal.SIGTERM)
+    def test_main_restores_previous_stop_handlers_after_success(self):
+        previous_handlers = {
+            signum: signal.getsignal(signum)
+            for signum in (signal.SIGINT, signal.SIGTERM)
+        }
         argv = [
             "owner_drive_session.py",
             "--runtime", str(self.source),
@@ -542,7 +545,8 @@ class OwnerDriveSessionTests(unittest.TestCase):
         ]
 
         def successful_session(*_args, **_kwargs):
-            self.assertIsNot(signal.getsignal(signal.SIGTERM), previous_handler)
+            for signum, previous_handler in previous_handlers.items():
+                self.assertIsNot(signal.getsignal(signum), previous_handler)
             return {
                 "authenticated_owner_rclone_invoked": True,
                 "owner_archive_pin_written": True,
@@ -558,7 +562,8 @@ class OwnerDriveSessionTests(unittest.TestCase):
             result = owner_drive_session.main()
 
         self.assertEqual(result, 0)
-        self.assertIs(signal.getsignal(signal.SIGTERM), previous_handler)
+        for signum, previous_handler in previous_handlers.items():
+            self.assertIs(signal.getsignal(signum), previous_handler)
 
 
     @unittest.skipUnless(os.name == "posix" and hasattr(signal, "SIGTERM"),
@@ -588,6 +593,39 @@ class OwnerDriveSessionTests(unittest.TestCase):
                 process.wait(timeout=10)
 
         self.assertEqual(process.returncode, 128 + signal.SIGTERM, (stdout, stderr))
+        self.assertFalse((root / "owner-receipt.sha256").exists())
+        self.assertFalse((root / "owner-archive.sha256").exists())
+        self.assertTrue((root / "session").is_dir())
+        self.assertEqual(list(root.glob(".map02-pin-cleanup-*")), [])
+
+
+    @unittest.skipUnless(os.name == "posix" and hasattr(signal, "SIGINT"),
+                         "requires POSIX SIGINT handling")
+    def test_repeated_sigint_during_cleanup_is_ignored(self):
+        import time
+
+        root, process = self._start_owner_signal_child(pause_cleanup=True)
+        try:
+            process.send_signal(signal.SIGINT)
+            cleanup_marker = root / "cleanup-started"
+            deadline = time.monotonic() + 10
+            while (not cleanup_marker.exists() and process.poll() is None
+                   and time.monotonic() < deadline):
+                time.sleep(0.02)
+            self.assertTrue(
+                cleanup_marker.exists(),
+                "first SIGINT did not enter guarded cleanup",
+            )
+            # The child is paused inside cleanup. A second Ctrl+C must not
+            # interrupt deletion or leave an unaccepted pin behind.
+            process.send_signal(signal.SIGINT)
+            stdout, stderr = process.communicate(timeout=15)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+
+        self.assertEqual(process.returncode, 128 + signal.SIGINT, (stdout, stderr))
         self.assertFalse((root / "owner-receipt.sha256").exists())
         self.assertFalse((root / "owner-archive.sha256").exists())
         self.assertTrue((root / "session").is_dir())
