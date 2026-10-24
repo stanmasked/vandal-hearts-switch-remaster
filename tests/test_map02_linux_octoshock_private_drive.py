@@ -37,6 +37,7 @@ class FakeDriveTransport:
         self.mutate_folder_after_upload = None
         self.inject_remote_name_after_upload = None
         self.mutate_folder_after_download = None
+        self.mutate_local_file_after_download = None
         self.upload_sources = []
         self.version = "rclone v1.69.3"
 
@@ -96,6 +97,11 @@ class FakeDriveTransport:
                     if not trigger or filename == trigger[0]:
                         self.folder_ids[folder_remote] = replacement_id
                         self.mutate_folder_after_download = None
+                if self.mutate_local_file_after_download is not None:
+                    trigger_name, target_path, payload = self.mutate_local_file_after_download
+                    if filename == trigger_name:
+                        Path(target_path).write_bytes(payload)
+                        self.mutate_local_file_after_download = None
             return ""
         raise AssertionError("unexpected fictional rclone command: " + name)
 
