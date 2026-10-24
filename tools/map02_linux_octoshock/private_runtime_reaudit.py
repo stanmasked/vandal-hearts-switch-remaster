@@ -274,6 +274,11 @@ def audit_independent_readback(
         # _outside checks parent is 0700 owner-private and outside Git.
         owner_pin = _private_input(owner_manifest_sha)
         root = _outside(root, owner_pin, nonexistent=True)
+        # A prior cleanup conflict deliberately preserves an unresolved object
+        # in this private parent. Do not start another audit beside it until
+        # the owner has inspected and reconciled that quarantine.
+        if any(root.parent.glob(".map02-readback-cleanup-*")):
+            _fail()
         tar_pin = _private_input(trusted_archive_sha)
         receipt_pin = _private_input(trusted_receipt_sha)
         folder_map = _private_input(private_folder_map)
