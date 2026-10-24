@@ -85,6 +85,15 @@ class IndependentReadbackTests(unittest.TestCase):
             )
         self.assertFalse(self.reaudit.exists())
 
+    def test_remote_root_change_during_receipt_readback_rejected(self):
+        self.transport.mutate_folder_after_download = (
+            "vh_manifests", "fictionalReplacementManifestRoot",
+        )
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+        self.assertFalse((self.reaudit / "restored").exists())
+        self.assertEqual(self.transport.uploads, 5)
+
     def test_refuse_corrupted_remote_archive(self):
         key = "map02-runtime-testowner001.tar"
         self.transport.remote["vh_builds"][key] += b"FORGED"
