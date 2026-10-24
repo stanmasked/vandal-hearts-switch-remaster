@@ -114,8 +114,10 @@ def verify_owner_backup_readiness(
         # appearing during inspection invalidates this readiness snapshot.
         _check_remote(builds, builds_id, invoke)
         _check_remote(manifests, manifests_id, invoke)
-        if (_existing_names(builds, invoke) != names_in_builds
-                or _existing_names(manifests, invoke) != names_in_manifests):
+        names_in_builds_after = _existing_names(builds, invoke)
+        names_in_manifests_after = _existing_names(manifests, invoke)
+        if (names_in_builds_after != names_in_builds
+                or names_in_manifests_after != names_in_manifests):
             _fail()
 
         # Reject mixed local/remote snapshots: re-read the folder mapping,
