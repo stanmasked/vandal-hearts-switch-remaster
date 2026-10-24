@@ -170,7 +170,7 @@ def _read_external_manifest_pin(pin_value: Path, runtime_root: Path) -> str:
             if (parent_identity(parent_after) != parent_identity(opened_parent)
                     or parent_identity(parent_path_after) != parent_identity(opened_parent)):
                 _fail()
-            if len(content) != 65 or not content.endswith(b"\\n"):
+            if len(content) != 65 or not content.endswith(b"\n"):
                 _fail()
             digest = content[:-1].decode("ascii")
             if HASH.fullmatch(digest) is None:
