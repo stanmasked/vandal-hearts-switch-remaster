@@ -112,33 +112,74 @@ def _read_external_manifest_pin(pin_value: Path, runtime_root: Path) -> str:
         _fail()
     if path.is_relative_to(runtime_root):
         _fail()
-    # Do not follow a symlink in the parent or its intermediate components.
-    if path.parent.resolve(strict=True) != path.parent:
+    parent = path.parent
+    # The trust anchor must live in an owner-only directory. Resolving before
+    # opening rejects symlinked ancestors; opening the directory itself and
+    # using dir_fd keeps the final file lookup anchored to that same inode.
+    if parent.resolve(strict=True) != parent:
         _fail()
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(path, flags)
+    parent_before = parent.lstat()
+    if (not stat.S_ISDIR(parent_before.st_mode)
+            or parent_before.st_uid != os.geteuid()
+            or stat.S_IMODE(parent_before.st_mode) != 0o700):
+        _fail()
+    parent_flags = (os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                    | getattr(os, "O_NOFOLLOW", 0))
+    parent_fd = os.open(parent, parent_flags)
     try:
-        before = os.fstat(fd)
-        if (not stat.S_ISREG(before.st_mode) or before.st_size != 65
-                or stat.S_IMODE(before.st_mode) != 0o600
-                or before.st_uid != os.geteuid()):
-            _fail()
-        with os.fdopen(fd, "rb", closefd=False) as stream:
-            content = stream.read(66)
-        after = os.fstat(fd)
-        now = path.stat()
-        stable = lambda x: (x.st_dev, x.st_ino, x.st_size, x.st_mtime_ns)
-        if stable(before) != stable(after) or stable(after) != stable(now):
-            _fail()
-        if len(content) != 65 or not content.endswith(b"\n"):
-            _fail()
-        digest = content[:-1].decode("ascii")
-        if HASH.fullmatch(digest) is None:
-            _fail()
-        return digest
-    finally:
-        os.close(fd)
+        opened_parent = os.fstat(parent_fd)
 
+        def parent_identity(info: os.stat_result) -> tuple[int, ...]:
+            return (
+                info.st_dev, info.st_ino, info.st_uid,
+                stat.S_IMODE(info.st_mode), info.st_nlink,
+                info.st_mtime_ns, info.st_ctime_ns,
+            )
+
+        if (not stat.S_ISDIR(opened_parent.st_mode)
+                or parent_identity(opened_parent) != parent_identity(parent_before)):
+            _fail()
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(path.name, flags, dir_fd=parent_fd)
+        try:
+            before = os.fstat(fd)
+            if (not stat.S_ISREG(before.st_mode) or before.st_size != 65
+                    or stat.S_IMODE(before.st_mode) != 0o600
+                    or before.st_uid != os.geteuid()
+                    or before.st_nlink != 1):
+                _fail()
+            with os.fdopen(fd, "rb", closefd=False) as stream:
+                content = stream.read(66)
+            after = os.fstat(fd)
+            # Do not follow the final path if it was replaced by a symlink
+            # while the open descriptor still refers to the trusted inode.
+            now = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+
+            def file_identity(info: os.stat_result) -> tuple[int, ...]:
+                return (
+                    info.st_dev, info.st_ino, info.st_uid,
+                    stat.S_IMODE(info.st_mode), info.st_nlink,
+                    info.st_size, info.st_mtime_ns, info.st_ctime_ns,
+                )
+
+            if (file_identity(before) != file_identity(after)
+                    or file_identity(after) != file_identity(now)):
+                _fail()
+            parent_after = os.fstat(parent_fd)
+            parent_path_after = parent.lstat()
+            if (parent_identity(parent_after) != parent_identity(opened_parent)
+                    or parent_identity(parent_path_after) != parent_identity(opened_parent)):
+                _fail()
+            if len(content) != 65 or not content.endswith(b"\\n"):
+                _fail()
+            digest = content[:-1].decode("ascii")
+            if HASH.fullmatch(digest) is None:
+                _fail()
+            return digest
+        finally:
+            os.close(fd)
+    finally:
+        os.close(parent_fd)
 
 def verify_runtime(root_value: Path, *,
                    trusted_manifest_pin_file: Path | None = None,
