@@ -17,6 +17,7 @@ import re
 import shutil
 import stat
 import tarfile
+import tempfile
 from typing import Callable
 
 from tools.map02_linux_octoshock.archive_owner_runtime import _inventory
@@ -205,18 +206,49 @@ def _safe_restore(archive_path: Path, target: Path) -> None:
 def _cleanup_failed_readback(
     root: Path | None, identity: tuple[int, int] | None,
 ) -> None:
-    """Remove only this invocation's original private readback directory."""
+    """Atomically quarantine, then delete only this invocation's directory."""
     if root is None or identity is None:
         return
+    quarantine_dir: Path | None = None
     try:
-        current = root.lstat()
-        if (stat.S_ISDIR(current.st_mode)
-                and not stat.S_ISLNK(current.st_mode)
-                and (current.st_dev, current.st_ino) == identity):
-            shutil.rmtree(root)
+        # Moving the candidate into a fresh private sibling first closes the
+        # lstat-to-rmtree race: inspect the inode after the atomic rename, and
+        # never delete a different directory that won the path race.
+        quarantine_dir = Path(tempfile.mkdtemp(
+            prefix=".map02-readback-cleanup-", dir=str(root.parent),
+        ))
+        quarantined = quarantine_dir / "payload"
+        try:
+            os.rename(root, quarantined)
+        except FileNotFoundError:
+            pass
+        else:
+            current = quarantined.lstat()
+            if (stat.S_ISDIR(current.st_mode)
+                    and not stat.S_ISLNK(current.st_mode)
+                    and (current.st_dev, current.st_ino) == identity):
+                shutil.rmtree(quarantined)
+            else:
+                # The original path was replaced before the atomic move.
+                # Restore the moved object only if nobody has claimed the
+                # original name in the meantime; otherwise preserve it in
+                # quarantine rather than overwrite or delete anything.
+                try:
+                    root.lstat()
+                except FileNotFoundError:
+                    os.rename(quarantined, root)
+        try:
+            quarantine_dir.rmdir()
+        except OSError:
+            # A non-matching object is intentionally preserved if it cannot
+            # safely be restored. Never delete it merely to empty quarantine.
+            pass
     except OSError:
-        # A failed cleanup never changes a rejected audit into a success.
-        pass
+        if quarantine_dir is not None:
+            try:
+                quarantine_dir.rmdir()
+            except OSError:
+                pass
 
 
 def audit_independent_readback(
