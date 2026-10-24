@@ -116,6 +116,7 @@ class IndependentReadbackTests(unittest.TestCase):
         with self.assertRaises(IndependentAuditError):
             self.run_audit()
         self.assertFalse((self.reaudit / "restored").exists())
+        self.assertFalse(self.reaudit.exists())
         self.assertEqual(self.transport.uploads, 5)
 
     def test_receipt_object_replaced_after_readback_rejected(self):
@@ -125,6 +126,7 @@ class IndependentReadbackTests(unittest.TestCase):
         with self.assertRaises(IndependentAuditError):
             self.run_audit()
         self.assertFalse((self.reaudit / "restored").exists())
+        self.assertFalse(self.reaudit.exists())
 
     def test_archive_object_replaced_after_readback_rejected(self):
         self.transport.replace_remote_object_after_download = (
@@ -134,6 +136,7 @@ class IndependentReadbackTests(unittest.TestCase):
         with self.assertRaises(IndependentAuditError):
             self.run_audit()
         self.assertFalse((self.reaudit / "restored").exists())
+        self.assertFalse(self.reaudit.exists())
 
     def test_remote_object_replaced_after_readback_before_audit_success_rejected(self):
         original_safe_restore = _safe_restore
