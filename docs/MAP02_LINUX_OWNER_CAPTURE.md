@@ -1156,7 +1156,7 @@ remain private; PR #505 remains Draft.
 
 The owner-side upload routine now creates sealed payload copies using retained no-follow directory descriptors for both source and destination parents. It opens the source and target relative to those descriptors, hashes the source through its open file descriptor, copies bytes between descriptors, flushes the destination, and compares file identity, size, timestamps, owner, permissions and content hashes before accepting the copy. The destination is created exclusively with mode 0600. The upload transport receives the sealed snapshot, not the mutable build-output path.
 
-Two regression tests now cover a successful distinct snapshot with matching SHA-256 and mode 0600, and rejection of a pre-existing target without overwriting it. Existing transport tests continue to cover mutation of the original archive during upload and prove the transport reads the sealed copy. Exact-head CI is required before calling this stage complete.
+Four direct regression tests now cover a successful distinct snapshot with matching SHA-256 and mode 0600, rejection of a pre-existing target without overwriting it, and rejection of symlink source and target paths. Existing transport tests continue to cover mutation of the original archive during upload and prove the transport reads the sealed copy. Exact-head CI is required before calling this stage complete.
 
 This protects checked local file identities; it is not a proof of physical storage durability or authenticated Google Drive retention. The permanent owner-private build-artifact folder is still empty, and no real owner-host archive/readback or original MAP02 cold captures are established. Keep PR #505 Draft and preserve original game, BIOS, BK2, audio and capture files unchanged.
 
@@ -1196,9 +1196,12 @@ source bytes or file identity change while the snapshot is being created.
 This is distinct from the existing transfer-race test, which mutates the
 original only after the sealed copy has already been made.
 
-The exact-head CI for the Stage560 commit is pending. Do not mark this new
-race test accepted until the native Linux job and the complete companion
-workflow set finish on the exact head.
+Exact-head CI on revision `428e6099dd34f06be637830d4597a363540566a5`
+completed successfully: all 8 companion GitHub Actions passed. The native
+Linux job explicitly reports `test_seal_payload_rejects_source_mutation_during_copy`
+as `ok` on Python 3.9 and 3.11 and on macOS. The Linux runtime tar roundtrip
+also passed with 413 files and 139,113,478 unpacked bytes. The CI archive is
+still ephemeral; it is not evidence of persistent Drive retention.
 
 The permanent owner-private build-artifact folder remains empty until an
 owner-host publish using scoped real `rclone`, independently trusted pins,
