@@ -108,7 +108,7 @@ class IndependentReadbackTests(unittest.TestCase):
         self.transport.mutate_local_file_after_download = (
             "map02-runtime-testowner001.manifest.sha256",
             self.pin,
-            b"0" * 64 + b"\\n",
+            b"0" * 64 + b"\n",
         )
         with self.assertRaises(IndependentAuditError):
             self.run_audit()
