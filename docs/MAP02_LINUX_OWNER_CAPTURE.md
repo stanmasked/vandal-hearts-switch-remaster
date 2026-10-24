@@ -702,3 +702,29 @@ of both source and upload session, corrupted remote tar or receipt,
 altered local tar digest, wrong Drive remote, existing proof and unsafe
 paths. These results must not be misreported as a genuine owner binary
 archive or two original PS1 cold runs.
+
+## Stage546 — independently SHA-sealed owner admission record
+
+A fully verified source-free Google Drive archive admission produces a new
+private JSON proof, but the proof itself previously lacked an independently
+retained SHA256 reference. The owner-only Stage545 CLI now additionally
+REQUIRES `--new-private-proof-pin`, a never-before-existing mode-0600
+file outside the disposable readback, existing proof, runtime and Git.
+It writes this reference only after the full independent cloud restore
+and owner proof JSON have succeeded; it then rehashes the proof and the
+SHA reference. An interrupted admission is never endorsed with a pin.
+
+`verify_sealed_owner_admission` checks the original proof bytes against
+the external SHA file, private file permissions, three referenced original
+SHA256 anchors, provenance schema, safe record flags and real-vs-fake
+transport distinction. With `require_real_transport=True` it refuses
+fictional CI results. This is an *offline proof-integrity check*, not
+independent confirmation of Google Drive folder permissions, owner
+identity, original PS1 MAP02 gameplay or Nintendo Switch parity.
+
+Run the prior Stage545 owner-only command with an added flag:
+`--new-private-proof-pin /private/trust/owner545001-admission.sha256`.
+Preserve JSON and its trusted SHA outside the source host, in the
+private project's appropriate reports and manifest areas, with a
+separate offline reference to its trusted origin. Public GitHub CI
+tests only fictional remotes and owner-free invented bytes.
