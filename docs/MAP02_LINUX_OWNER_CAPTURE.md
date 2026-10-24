@@ -1613,7 +1613,7 @@ confirms a new session refuses before creating its session tree or uploading
 anything. These are synthetic filesystem/fake-transport tests only.
 
 Stage576 code/test head:
-`65bbf48ffbca629405633cab9cbccef0b3f38512`. Exact-head CI must pass on the
+`1d607f998bb1f2e60cecb86b571d85fc96c6837e`. Exact-head CI must pass on the
 final code and documentation head before Stage576 is accepted. Original PS1
 media, BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
 canonical private `07_Builds_and_Test_Artifacts` folder remains empty until
