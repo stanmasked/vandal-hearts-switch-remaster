@@ -115,6 +115,23 @@ class IndependentReadbackTests(unittest.TestCase):
         self.assertFalse((self.reaudit / "restored").exists())
         self.assertEqual(self.transport.uploads, 5)
 
+    def test_receipt_object_replaced_after_readback_rejected(self):
+        self.transport.replace_remote_object_after_download = (
+            self.receipt_name, b"replacement receipt after readback",
+        )
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+        self.assertFalse((self.reaudit / "restored").exists())
+
+    def test_archive_object_replaced_after_readback_rejected(self):
+        self.transport.replace_remote_object_after_download = (
+            "map02-runtime-testowner001.tar",
+            b"replacement archive after readback",
+        )
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+        self.assertFalse((self.reaudit / "restored").exists())
+
     def test_refuse_corrupted_remote_archive(self):
         key = "map02-runtime-testowner001.tar"
         self.transport.remote["vh_builds"][key] += b"FORGED"
