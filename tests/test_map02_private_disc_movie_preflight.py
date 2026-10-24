@@ -291,7 +291,7 @@ class DiscMoviePreflightTests(unittest.TestCase):
         reference.chmod(0o600)
         self.root.chmod(0o755)
         try:
-            with self.assertRaisesRegex(ValueError, "parent must be owner-only"):
+            with self.assertRaisesRegex(ValueError, "owner-owned mode 0700"):
                 read_private_full_bin_sha256(reference)
         finally:
             self.root.chmod(0o700)
