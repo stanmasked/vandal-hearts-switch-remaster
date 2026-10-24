@@ -1359,8 +1359,32 @@ restored runtime. These tests use fake in-memory transport and do not prove
 authenticated Google Drive persistence.
 
 Stage566 code/test head:
-`0dda87f99f66fc883ff2916988a407aaa580d2bb`. Exact-head CI must pass on the
-final code and documentation head before Stage566 is accepted. Original PS1
+`0dda87f99f66fc883ff2916988a407aaa580d2bb`. Exact-head CI completed with
+8/8 successful workflows on final PR head
+`9d1120a3924fc8e05dd8a9851c13e021a487818b`, with no failures or pending runs.
+The native Linux job passed the receipt and archive post-download replacement
+tests. Stage566 is accepted as a code/test gate only. Original PS1 media, BIOS,
+BK2, extracted audio and gameplay captures remain unchanged. The canonical
+private `07_Builds_and_Test_Artifacts` folder remains empty until a genuine
+owner-host publish and independent readback succeed.
+
+## Stage567 — final remote identity check before audit success
+
+Stage566 revalidates remote object IDs and sizes immediately after local
+readback. Stage567 adds a final pass over the receipt and all four archived
+objects after the local runtime has been restored and verified, immediately
+before a successful audit report can be returned. This detects a remote object
+that changes after its local copy was verified but before the audit completes.
+
+A synthetic test replaces the remote archive during local restore, after the
+downloaded bytes have already passed their hash checks. The local restore may
+complete, but the auditor must reject the final report when the end-of-audit
+remote ID/size check sees the replacement. This tests consistency of the
+remote state through the audit window; it remains a fake transport only.
+
+Stage567 code/test head:
+`d7b215492d685236a7150cc773e9f9fa97a4771b`. Exact-head CI must pass on the
+final code and documentation head before Stage567 is accepted. Original PS1
 media, BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
 canonical private `07_Builds_and_Test_Artifacts` folder remains empty until
 a genuine owner-host publish and independent readback succeed.
