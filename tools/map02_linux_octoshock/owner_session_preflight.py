@@ -109,6 +109,15 @@ def verify_owner_backup_readiness(
                     ".manifest.sha256", ".receipt.json"))):
             _fail()
 
+        # Reconfirm both remote roots and the namespace listings after the
+        # first inventory. A concurrent rclone config change or a new object
+        # appearing during inspection invalidates this readiness snapshot.
+        _check_remote(builds, builds_id, invoke)
+        _check_remote(manifests, manifests_id, invoke)
+        if (_existing_names(builds, invoke) != names_in_builds
+                or _existing_names(manifests, invoke) != names_in_manifests):
+            _fail()
+
         # Reject mixed local/remote snapshots: re-read the folder mapping,
         # trusted pin, runtime manifest and full inventory after all remote
         # queries. Also ensure another process did not reserve output paths.
