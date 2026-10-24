@@ -9,6 +9,10 @@ establish and retain the trusted manifest SHA-256 before running this command.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
+import fcntl
+from functools import wraps
+from inspect import signature
 import os
 from pathlib import Path
 import signal
@@ -115,6 +119,81 @@ def _reject_unresolved_pin_quarantine(
             _fail()
 
 
+@contextmanager
+def _owner_session_lock(private_folder_map: Path):
+    """Hold a persistent owner-only flock for this Drive folder configuration.
+
+    Never unlink the lock file: unlink/recreate would allow two lock inodes.
+    The kernel releases the advisory lock when the owning process exits, even
+    after SIGKILL. This coordinates cooperative users of this owner workflow.
+    """
+    parent = Path(private_folder_map).absolute().parent
+    try:
+        before = parent.lstat()
+        if (not stat.S_ISDIR(before.st_mode)
+                or before.st_uid != os.geteuid()
+                or stat.S_IMODE(before.st_mode) != 0o700):
+            _fail()
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+        directory_fd = os.open(parent, flags)
+    except (OSError, ValueError, AttributeError):
+        _fail()
+    file_fd = None
+    try:
+        current_dir = os.fstat(directory_fd)
+        if ((current_dir.st_dev, current_dir.st_ino)
+                != (before.st_dev, before.st_ino)):
+            _fail()
+        file_fd = os.open(
+            ".map02-owner-session.lock",
+            os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC,
+            0o600, dir_fd=directory_fd,
+        )
+        details = os.fstat(file_fd)
+        if (not stat.S_ISREG(details.st_mode)
+                or details.st_uid != os.geteuid()
+                or stat.S_IMODE(details.st_mode) != 0o600
+                or details.st_nlink != 1):
+            _fail()
+        fcntl.flock(file_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        current = os.stat(
+            ".map02-owner-session.lock", dir_fd=directory_fd,
+            follow_symlinks=False,
+        )
+        if ((current.st_dev, current.st_ino) !=
+                (details.st_dev, details.st_ino)):
+            _fail()
+    except (OSError, ValueError):
+        if file_fd is not None:
+            os.close(file_fd)
+        os.close(directory_fd)
+        _fail()
+    try:
+        yield
+    finally:
+        # Preserve the inode on disk for safe acquisition by later sessions.
+        os.close(file_fd)
+        os.close(directory_fd)
+
+
+def _serialize_owner_session(fn):
+    @wraps(fn)
+    def guarded(*args, **kwargs):
+        bound = signature(fn).bind(*args, **kwargs)
+        receipt = Path(bound.arguments["independently_retained_receipt_pin"])
+        archive = bound.arguments.get("independent_archive_pin_output")
+        # Stage590's stale-quarantine refusal remains side-effect free.
+        _reject_unresolved_pin_quarantine(
+            receipt, Path(archive) if archive is not None else None,
+        )
+        # The same private folder-map location serializes different session
+        # names and independent pin output names used by this owner.
+        with _owner_session_lock(Path(bound.arguments["private_folder_map"])):
+            return fn(*args, **kwargs)
+    return guarded
+
+
+@_serialize_owner_session
 def complete_owner_archive_session(
     runtime: Path,
     trusted_manifest_pin: Path,
