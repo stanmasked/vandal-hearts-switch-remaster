@@ -185,6 +185,128 @@ class PersistentOwnerPipelineTests(unittest.TestCase):
             "-preboot-readback/restored/runtime/EmuHawk.exe")).is_file())
         self.assertTrue(self.source.is_dir())  # the originals were not deleted
 
+    def test_stage601_manifest_pin_mutated_after_cloud_transfer_blocks_admission(self):
+        actual = pipeline.complete_owner_archive_session
+
+        def transfer_then_tamper(*args, **kwargs):
+            result = actual(*args, **kwargs)
+            self.pin.write_text("0" * 64 + "\n", encoding="ascii")
+            self.pin.chmod(0o600)
+            return result
+
+        with patch.object(pipeline, "complete_owner_archive_session",
+                          side_effect=transfer_then_tamper):
+            with patch.object(pipeline, "admit_independent_owner_archive") as admission:
+                with self.assertRaises(OwnerPersistentBackupError):
+                    self.execute()
+                admission.assert_not_called()
+        self.assertEqual(self.transport.uploads, 5)
+        self.assertFalse((self.trust / (self.session + "-admission.json")).exists())
+
+    def test_stage601_same_digest_new_manifest_inode_refused_before_admission(self):
+        original = pipeline.complete_owner_archive_session
+        displaced = self.base / "stage601-original-manifest-sha"
+
+        def transfer_replace_same_digest(*args, **kwargs):
+            result = original(*args, **kwargs)
+            data = self.pin.read_bytes()
+            self.pin.rename(displaced)
+            self.pin.write_bytes(data)
+            self.pin.chmod(0o600)
+            return result
+
+        with patch.object(pipeline, "complete_owner_archive_session",
+                          side_effect=transfer_replace_same_digest):
+            with patch.object(pipeline, "admit_independent_owner_archive") as admission:
+                with self.assertRaises(OwnerPersistentBackupError):
+                    self.execute()
+                admission.assert_not_called()
+        self.assertEqual(self.pin.read_bytes(), displaced.read_bytes())
+        self.assertEqual(self.transport.uploads, 5)
+
+    def test_stage601_archive_pin_replaced_after_admission_blocks_final_readback(self):
+        original = pipeline.admit_independent_owner_archive
+        pinned = self.trust / (self.session + "-archive.sha256")
+        displaced = self.base / "stage601-original-archive-pin"
+
+        def admit_then_replace(*args, **kwargs):
+            report = original(*args, **kwargs)
+            data = pinned.read_bytes()
+            pinned.rename(displaced)
+            pinned.write_bytes(data)
+            pinned.chmod(0o600)
+            return report
+
+        with patch.object(pipeline, "admit_independent_owner_archive",
+                          side_effect=admit_then_replace):
+            with patch.object(pipeline, "audit_capture_backup_gate") as final:
+                with self.assertRaises(OwnerPersistentBackupError):
+                    self.execute()
+                final.assert_not_called()
+        self.assertEqual(pinned.read_bytes(), displaced.read_bytes())
+        self.assertEqual(self.transport.uploads, 5)
+        self.assertTrue((self.trust / (self.session + "-admission.json")).is_file())
+
+    def test_stage601_receipt_pin_mode_change_after_admission_refuses_final_readback(self):
+        original = pipeline.admit_independent_owner_archive
+        pin = self.trust / (self.session + "-receipt.sha256")
+
+        def admit_then_expose_pin(*args, **kwargs):
+            result = original(*args, **kwargs)
+            pin.chmod(0o644)
+            return result
+
+        with patch.object(pipeline, "admit_independent_owner_archive",
+                          side_effect=admit_then_expose_pin):
+            with patch.object(pipeline, "audit_capture_backup_gate") as final:
+                with self.assertRaises(OwnerPersistentBackupError):
+                    self.execute()
+                final.assert_not_called()
+        self.assertEqual(pin.stat().st_mode & 0o777, 0o644)
+        self.assertEqual(self.transport.uploads, 5)
+
+    def test_stage601_proof_pin_corrupted_after_fresh_restore_denies_success(self):
+        original = pipeline.audit_capture_backup_gate
+        pin = self.trust / (self.session + "-admission.sha256")
+
+        def fresh_then_tamper(*args, **kwargs):
+            result = original(*args, **kwargs)
+            pin.write_text("f" * 64 + "\n", encoding="ascii")
+            pin.chmod(0o600)
+            return result
+
+        with patch.object(pipeline, "audit_capture_backup_gate",
+                          side_effect=fresh_then_tamper):
+            with self.assertRaises(OwnerPersistentBackupError):
+                self.execute()
+        self.assertEqual(self.transport.uploads, 5)
+        self.assertTrue(
+            (self.work / (self.session + "-preboot-readback")).exists()
+        )
+        self.assertTrue((self.trust / (self.session + "-admission.json")).is_file())
+
+    def test_stage601_same_content_new_folder_map_inode_denies_final_success(self):
+        original = pipeline.audit_capture_backup_gate
+        displaced = self.base / "stage601-original-folder-map"
+
+        def fresh_then_replace_map(*args, **kwargs):
+            result = original(*args, **kwargs)
+            data = self.private_map.read_bytes()
+            self.private_map.rename(displaced)
+            self.private_map.write_bytes(data)
+            self.private_map.chmod(0o600)
+            return result
+
+        with patch.object(pipeline, "audit_capture_backup_gate",
+                          side_effect=fresh_then_replace_map):
+            with self.assertRaises(OwnerPersistentBackupError):
+                self.execute()
+        self.assertEqual(self.private_map.read_bytes(), displaced.read_bytes())
+        self.assertTrue(
+            (self.work / (self.session + "-preboot-readback")).exists()
+        )
+        self.assertEqual(self.transport.uploads, 5)
+
     def test_missing_independently_trusted_manifest_fails_before_upload(self):
         self.pin.unlink()
         with self.assertRaises(OwnerPersistentBackupError):
