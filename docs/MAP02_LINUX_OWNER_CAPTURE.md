@@ -1335,8 +1335,32 @@ A new synthetic regression mutates the owner-manifest pin after the final
 establish real Google Drive access or durable owner storage.
 
 Stage565 code/test head:
-`7268ca7c2bbc7f3bfdba2e5259d3adfd7e5b5875`. Exact-head CI must pass on the
-final code and documentation head before Stage565 is accepted. Original PS1
+`7268ca7c2bbc7f3bfdba2e5259d3adfd7e5b5875`. Exact-head CI completed with
+8/8 successful workflows on final PR head
+`f1beb1a7d46c751d3241401be6415e399749ad69`, with no failures or pending runs.
+The native Linux job passed
+`test_owner_pin_change_during_final_object_download_rejected_before_restore`.
+Stage565 is accepted as a code/test gate only. Original PS1 media, BIOS, BK2,
+extracted audio and gameplay captures remain unchanged. The canonical private
+`07_Builds_and_Test_Artifacts` folder remains empty until a genuine owner-host
+publish and independent readback succeed.
+
+## Stage566 — revalidate remote object identity after download
+
+The independent auditor now checks each remote object's expected ID and size
+again after the corresponding bytes have been downloaded. It performs the same
+post-download identity check for the receipt. This detects a remote object
+replacement that occurs after the initial stat but during or immediately after
+readback, even when the local bytes were copied before the replacement.
+
+Two synthetic tests replace the remote receipt or runtime archive immediately
+after the local download completes. The auditor must reject before creating a
+restored runtime. These tests use fake in-memory transport and do not prove
+authenticated Google Drive persistence.
+
+Stage566 code/test head:
+`0dda87f99f66fc883ff2916988a407aaa580d2bb`. Exact-head CI must pass on the
+final code and documentation head before Stage566 is accepted. Original PS1
 media, BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
 canonical private `07_Builds_and_Test_Artifacts` folder remains empty until
 a genuine owner-host publish and independent readback succeed.
