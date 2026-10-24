@@ -375,6 +375,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
                                   pause_after_quarantine_move=False,
                                   pause_quarantine_unlink=False,
                                   pause_quarantine_receipt_unlink=False,
+                                  pause_after_quarantine_receipt_unlink=False,
                                   fail_quarantine_unlink=False,
                                   fail_quarantine_receipt=False,
                                   quarantine_target="receipt", both_pins=False):
@@ -394,6 +395,9 @@ class OwnerDriveSessionTests(unittest.TestCase):
             pause_quarantine_unlink = "pause-quarantine-unlink" in sys.argv[2:]
             pause_quarantine_receipt_unlink = (
                 "pause-quarantine-receipt-unlink" in sys.argv[2:]
+            )
+            pause_after_quarantine_receipt_unlink = (
+                "pause-after-quarantine-receipt-unlink" in sys.argv[2:]
             )
             fail_quarantine_unlink = "fail-quarantine-unlink" in sys.argv[2:]
             fail_quarantine_receipt = "fail-quarantine-receipt" in sys.argv[2:]
@@ -481,7 +485,20 @@ class OwnerDriveSessionTests(unittest.TestCase):
                         time.sleep(0.01)
                     if not release.exists():
                         raise RuntimeError("mixed-signal test did not release quarantine unlink")
-                return real_unlink(path, *args, **kwargs)
+                result = real_unlink(path, *args, **kwargs)
+                if (pause_after_quarantine_receipt_unlink
+                        and is_quarantined_payload
+                        and last_quarantined_pin == receipt_pin):
+                    print("QUARANTINE_PAYLOAD_UNLINKED_READY", flush=True)
+                    release = base / "continue-cleanup"
+                    deadline = time.monotonic() + 10
+                    while not release.exists() and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                    if not release.exists():
+                        raise RuntimeError(
+                            "post-unlink crash-window test did not release cleanup"
+                        )
+                return result
 
             def discard_with_optional_pause(path):
                 if pause_cleanup:
@@ -518,6 +535,8 @@ class OwnerDriveSessionTests(unittest.TestCase):
             command.append("pause-quarantine-unlink")
         if pause_quarantine_receipt_unlink:
             command.append("pause-quarantine-receipt-unlink")
+        if pause_after_quarantine_receipt_unlink:
+            command.append("pause-after-quarantine-receipt-unlink")
         if fail_quarantine_unlink:
             command.append("fail-quarantine-unlink")
         if fail_quarantine_receipt:
@@ -1175,6 +1194,63 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertEqual(
             quarantined_receipt.read_text(encoding="ascii"), "b" * 64 + "\n",
         )
+        self.assertFalse((root / "retry-session").exists())
+
+
+    # Stage589: SIGKILL after the second payload is unlinked but before its
+    # quarantine directory is removed leaves an empty quarantine that blocks retry.
+    @unittest.skipUnless(os.name == "posix" and hasattr(signal, "SIGKILL"),
+                         "requires POSIX SIGKILL handling")
+    def test_sigkill_after_second_pin_payload_unlink_preserves_empty_quarantine_and_blocks_retry(self):
+        root, process = self._start_owner_signal_child(
+            pause_after_quarantine_receipt_unlink=True, both_pins=True,
+        )
+        stdout = stderr = ""
+        try:
+            process.send_signal(signal.SIGTERM)
+            ready, _, _ = select.select([process.stdout], [], [], 15)
+            self.assertTrue(ready, "cleanup did not reach post-unlink crash window")
+            marker = process.stdout.readline().strip()
+            self.assertEqual(marker, "QUARANTINE_PAYLOAD_UNLINKED_READY")
+            process.send_signal(signal.SIGKILL)
+            stdout, stderr = process.communicate(timeout=15)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+
+        self.assertEqual(process.returncode, -signal.SIGKILL, (stdout, stderr))
+        receipt_pin = root / "owner-receipt.sha256"
+        archive_pin = root / "owner-archive.sha256"
+        self.assertFalse(receipt_pin.exists())
+        self.assertFalse(archive_pin.exists())
+        self.assertTrue((root / "session").is_dir())
+
+        quarantines = list(root.glob(".map02-pin-cleanup-*"))
+        self.assertEqual(len(quarantines), 1)
+        empty_quarantine = quarantines[0]
+        self.assertTrue(empty_quarantine.is_dir())
+        self.assertEqual(list(empty_quarantine.iterdir()), [])
+        self.assertEqual(empty_quarantine.stat().st_mode & 0o777, 0o700)
+
+        # Although the payload unlink completed, the empty quarantine is an
+        # unresolved crash marker. Never silently clear it or start a new upload.
+        with self.assertRaises(PrivateOwnerSessionError):
+            complete_owner_archive_session(
+                root / "runtime",
+                root / "trusted-manifest.sha256",
+                root / "private-folder-map.json",
+                root / "retry-session",
+                receipt_pin,
+                "vh_builds",
+                "vh_manifests",
+                "owner589retry",
+                independent_archive_pin_output=archive_pin,
+                invoke=self.transport,
+            )
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertTrue(empty_quarantine.is_dir())
+        self.assertEqual(list(empty_quarantine.iterdir()), [])
         self.assertFalse((root / "retry-session").exists())
 
 
