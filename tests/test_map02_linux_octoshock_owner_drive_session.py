@@ -527,6 +527,79 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertEqual(self.transport.uploads, 5)
         self.assertFalse(self.full_session.exists())
 
+    def test_session_lock_blocks_second_caller_before_cloud_or_session_writes(self):
+        lock_path = self.base / ".map02-owner-session.lock"
+        with owner_drive_session._owner_session_lock(self.private_map):
+            self.assertTrue(lock_path.is_file())
+            self.assertEqual(lock_path.stat().st_mode & 0o777, 0o600)
+            with self.assertRaises(PrivateOwnerSessionError):
+                self.execute()
+            self.assertEqual(self.transport.uploads, 0)
+            self.assertFalse(self.full_session.exists())
+            self.assertFalse(self.receipt_pin.exists())
+            self.assertFalse(self.archive_pin.exists())
+        # The lock inode is retained rather than unlinked on exit.
+        original_inode = lock_path.stat().st_ino
+        self.assertTrue(self.execute()["full_private_restore_audited"])
+        self.assertEqual(lock_path.stat().st_ino, original_inode)
+
+    @unittest.skipUnless(os.name == "posix" and hasattr(signal, "SIGKILL"),
+                         "requires POSIX crash release")
+    def test_sigkill_releases_session_flock_without_deleting_lock_file(self):
+        script = (
+            "from pathlib import Path\n"
+            "import signal,sys\n"
+            "from tools.map02_linux_octoshock.owner_drive_session "
+            "import _owner_session_lock\n"
+            "with _owner_session_lock(Path(sys.argv[1])):\n"
+            "    print('LOCKED', flush=True)\n"
+            "    signal.pause()\n"
+        )
+        child = subprocess.Popen(
+            [sys.executable, "-c", script, str(self.private_map)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        self.addCleanup(lambda: child.kill() if child.poll() is None else None)
+        readable, _, _ = select.select([child.stdout], [], [], 10)
+        if not readable:
+            self.fail("fictional lock child did not report acquisition")
+        self.assertEqual(child.stdout.readline().strip(), "LOCKED")
+        lock_path = self.base / ".map02-owner-session.lock"
+        self.assertTrue(lock_path.is_file())
+        inode = lock_path.stat().st_ino
+        with self.assertRaises(PrivateOwnerSessionError):
+            self.execute()
+        self.assertEqual(self.transport.uploads, 0)
+        child.kill()
+        child.wait(timeout=10)
+        self.assertTrue(lock_path.is_file())
+        self.assertEqual(lock_path.stat().st_ino, inode)
+        self.assertTrue(self.execute()["full_private_restore_audited"])
+        self.assertEqual(lock_path.stat().st_ino, inode)
+
+    def test_unsafe_preexisting_session_lock_is_never_followed_or_replaced(self):
+        lock_path = self.base / ".map02-owner-session.lock"
+        sentinel = self.base / "external-sentinel"
+        sentinel.write_text("must remain intact\n", encoding="utf-8")
+        lock_path.symlink_to(sentinel)
+        with self.assertRaises(PrivateOwnerSessionError):
+            self.execute()
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertTrue(lock_path.is_symlink())
+        self.assertEqual(sentinel.read_text(encoding="utf-8"), "must remain intact\n")
+        self.assertFalse(self.full_session.exists())
+
+    def test_world_readable_session_lock_is_rejected_without_chmod(self):
+        lock_path = self.base / ".map02-owner-session.lock"
+        lock_path.write_text("keep\n", encoding="utf-8")
+        lock_path.chmod(0o644)
+        with self.assertRaises(PrivateOwnerSessionError):
+            self.execute()
+        self.assertEqual(lock_path.stat().st_mode & 0o777, 0o644)
+        self.assertEqual(lock_path.read_text(encoding="utf-8"), "keep\n")
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertFalse(self.full_session.exists())
+
     def test_previous_unrelated_owner_pin_survives_failed_session(self):
         old_pin = self.base / "unrelated-owner-reference.sha256"
         old_pin.write_text("a" * 64 + "\n", encoding="ascii")
