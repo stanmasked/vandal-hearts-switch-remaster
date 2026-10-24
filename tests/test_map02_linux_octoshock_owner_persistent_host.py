@@ -7,10 +7,12 @@ import stat
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from tools.map02_linux_octoshock.owner_persistent_host import (
     MINIMUM_PREPARE_BYTES, PersistentHostError, verify_persistent_private_host,
-    snapshot_private_path_identity, require_unchanged_persistent_host,
+    snapshot_private_path_identity, verify_and_snapshot_persistent_host,
+    require_unchanged_persistent_host,
 )
 
 
@@ -199,6 +201,83 @@ class PersistentHostTests(unittest.TestCase):
         self.audit()
         with self.assertRaises(PersistentHostError):
             self.recheck_identity(self.root, ())
+
+    def test_initial_baseline_requires_stable_identity_around_two_audits(self):
+        leaf = self.root / "baseline-stable"
+        leaf.mkdir(mode=0o700)
+        with patch(
+            "tools.map02_linux_octoshock.owner_persistent_host.verify_persistent_private_host",
+            return_value={"platform_accepted": True},
+        ) as audit:
+            saved = verify_and_snapshot_persistent_host(
+                [leaf], minimum_free_bytes=MINIMUM_PREPARE_BYTES,
+            )
+        self.assertEqual(audit.call_count, 2)
+        self.assertEqual(saved, snapshot_private_path_identity([leaf]))
+
+    def test_initial_baseline_rejects_replacement_during_first_audit(self):
+        leaf = self.root / "baseline-race"
+        parked = self.root / "baseline-race-old"
+        leaf.mkdir(mode=0o700)
+        calls = []
+
+        def replace_during_audit(*_args, **_kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                leaf.rename(parked)
+                leaf.mkdir(mode=0o700)
+            return {"platform_accepted": True}
+
+        with patch(
+            "tools.map02_linux_octoshock.owner_persistent_host.verify_persistent_private_host",
+            side_effect=replace_during_audit,
+        ) as audit:
+            with self.assertRaises(PersistentHostError):
+                verify_and_snapshot_persistent_host(
+                    [leaf], minimum_free_bytes=MINIMUM_PREPARE_BYTES,
+                )
+        self.assertEqual(audit.call_count, 1)
+
+    def test_recheck_rejects_replacement_during_audit(self):
+        leaf = self.root / "recheck-race"
+        parked = self.root / "recheck-race-old"
+        leaf.mkdir(mode=0o700)
+        saved = snapshot_private_path_identity([leaf])
+        calls = []
+
+        def replace_during_audit(*_args, **_kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                leaf.rename(parked)
+                leaf.mkdir(mode=0o700)
+            return {"platform_accepted": True}
+
+        with patch(
+            "tools.map02_linux_octoshock.owner_persistent_host.verify_persistent_private_host",
+            side_effect=replace_during_audit,
+        ) as audit:
+            with self.assertRaises(PersistentHostError):
+                require_unchanged_persistent_host(
+                    [leaf], saved, minimum_free_bytes=MINIMUM_PREPARE_BYTES,
+                )
+        self.assertEqual(audit.call_count, 1)
+
+    def test_recheck_revalidates_policy_after_identity_sample(self):
+        leaf = self.root / "policy-race"
+        leaf.mkdir(mode=0o700)
+        saved = snapshot_private_path_identity([leaf])
+        with patch(
+            "tools.map02_linux_octoshock.owner_persistent_host.verify_persistent_private_host",
+            side_effect=[
+                {"platform_accepted": True},
+                PersistentHostError("synthetic mount policy change"),
+            ],
+        ) as audit:
+            with self.assertRaisesRegex(PersistentHostError, "mount policy change"):
+                require_unchanged_persistent_host(
+                    [leaf], saved, minimum_free_bytes=MINIMUM_PREPARE_BYTES,
+                )
+        self.assertEqual(audit.call_count, 2)
 
     def test_repository_checkout_denied(self):
         (self.root / ".git").mkdir(mode=0o700)

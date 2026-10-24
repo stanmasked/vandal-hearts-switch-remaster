@@ -39,8 +39,7 @@ from tools.map02_private_two_capture_audit import _private_root, audit_pair
 from tools.verify_map02_private_neutral_capture_chain import verify
 from tools.map02_linux_octoshock.owner_persistent_host import (
     MINIMUM_CAPTURE_BYTES, capture_guard_directories,
-    verify_persistent_private_host, snapshot_private_path_identity,
-    require_unchanged_persistent_host,
+    verify_and_snapshot_persistent_host, require_unchanged_persistent_host,
 )
 
 
@@ -280,10 +279,9 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             private_psx_bios_candidate=private_psx_bios_candidate,
             auto_core_witness_plugin=auto_core_witness_plugin,
         )
-        verify_persistent_private_host(
+        host_identity = verify_and_snapshot_persistent_host(
             host_guarded_paths, minimum_free_bytes=MINIMUM_CAPTURE_BYTES,
         )
-        host_identity = snapshot_private_path_identity(host_guarded_paths)
 
     def recheck_capture_host() -> None:
         if host_guarded_paths is not None:

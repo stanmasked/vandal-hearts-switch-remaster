@@ -241,6 +241,32 @@ def snapshot_private_path_identity(
         _fail()
 
 
+def verify_and_snapshot_persistent_host(
+    directories: Sequence[Path],
+    *,
+    minimum_free_bytes: int,
+) -> tuple[tuple[str, int, int, int, int], ...]:
+    """Establish a baseline only when path identity is stable around two audits.
+
+    This narrows TOCTOU windows but is not an atomic lock against a hostile
+    same-UID process. Callers must continue rechecking before sensitive steps.
+    """
+    before = snapshot_private_path_identity(directories)
+    verify_persistent_private_host(
+        directories, minimum_free_bytes=minimum_free_bytes,
+    )
+    after_first_audit = snapshot_private_path_identity(directories)
+    if before != after_first_audit:
+        _fail()
+    verify_persistent_private_host(
+        directories, minimum_free_bytes=minimum_free_bytes,
+    )
+    after_second_audit = snapshot_private_path_identity(directories)
+    if after_first_audit != after_second_audit:
+        _fail()
+    return after_second_audit
+
+
 def require_unchanged_persistent_host(
     directories: Sequence[Path],
     initial_identity: tuple[tuple[str, int, int, int, int], ...],
@@ -248,15 +274,28 @@ def require_unchanged_persistent_host(
     minimum_free_bytes: int,
     **verification_overrides: object,
 ) -> dict[str, object]:
-    """Recheck real filesystem policy and exact private pathname identity.
+    """Recheck policy twice and reject identity changes observed around audits.
 
     Overrides exist for simulated tests only. Production code passes none.
+    Repeated snapshots narrow TOCTOU windows; they are not an atomic lock.
     """
+    if not isinstance(initial_identity, tuple):
+        _fail()
+    before = snapshot_private_path_identity(directories)
+    if before != initial_identity:
+        _fail()
+    verify_persistent_private_host(
+        directories, minimum_free_bytes=minimum_free_bytes,
+        **verification_overrides,
+    )
+    after_first_audit = snapshot_private_path_identity(directories)
+    if after_first_audit != before:
+        _fail()
     verified = verify_persistent_private_host(
         directories, minimum_free_bytes=minimum_free_bytes,
         **verification_overrides,
     )
-    if (not isinstance(initial_identity, tuple)
-            or snapshot_private_path_identity(directories) != initial_identity):
+    after_second_audit = snapshot_private_path_identity(directories)
+    if after_second_audit != after_first_audit or after_second_audit != initial_identity:
         _fail()
     return verified

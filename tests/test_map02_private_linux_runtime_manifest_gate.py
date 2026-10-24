@@ -73,9 +73,9 @@ class LinuxManifestGateTests(unittest.TestCase):
             Path(dest).write_text("fake plan",encoding="ascii")
             return 3
         with patch("tools.map02_private_two_replay_runner.require_linux_owner_runtime_pin",side_effect=gate), patch(
-            "tools.map02_private_two_replay_runner.verify_persistent_private_host",
+            "tools.map02_linux_octoshock.owner_persistent_host.verify_persistent_private_host",
             return_value={"platform_accepted":True}), patch(
-            "tools.map02_private_two_replay_runner.snapshot_private_path_identity",
+            "tools.map02_linux_octoshock.owner_persistent_host.snapshot_private_path_identity",
             return_value=(("synthetic",1,2,3,4),)), patch(
             "tools.map02_private_two_replay_runner.require_unchanged_persistent_host",
             return_value={"platform_accepted":True}), patch(
@@ -95,7 +95,7 @@ class LinuxManifestGateTests(unittest.TestCase):
     def test_parent_rejects_ephemeral_host_before_opening_media(self):
         with patch("tools.map02_private_two_replay_runner.require_linux_owner_runtime_pin",
                    return_value=True), patch(
-            "tools.map02_private_two_replay_runner.verify_persistent_private_host",
+            "tools.map02_linux_octoshock.owner_persistent_host.verify_persistent_private_host",
             side_effect=ValueError("synthetic ephemeral host rejected")), patch(
             "tools.map02_private_two_replay_runner._private_movie_identity") as movie, patch(
             "tools.map02_private_two_replay_runner._disc_source_snapshot") as disc, patch(
@@ -119,9 +119,9 @@ class LinuxManifestGateTests(unittest.TestCase):
             return 3
         with patch("tools.map02_private_two_replay_runner.require_linux_owner_runtime_pin",
                    return_value=True), patch(
-            "tools.map02_private_two_replay_runner.verify_persistent_private_host",
+            "tools.map02_linux_octoshock.owner_persistent_host.verify_persistent_private_host",
             return_value={"platform_accepted":True}), patch(
-            "tools.map02_private_two_replay_runner.snapshot_private_path_identity",
+            "tools.map02_linux_octoshock.owner_persistent_host.snapshot_private_path_identity",
             return_value=(("synthetic",1,2,3,4),)), patch(
             "tools.map02_private_two_replay_runner.require_unchanged_persistent_host",
             side_effect=recheck), patch(
@@ -149,7 +149,7 @@ class LinuxManifestGateTests(unittest.TestCase):
         argv=["child.py",str(self.exe),str(self.disc),str(self.movie),str(self.plan),str(self.out),
               "--mono-executable",str(self.mono),"--trusted-runtime-manifest-pin-file",str(self.pin),"--launch"]
         with patch.object(sys,"argv",argv), patch(
-            "tools.map02_private_bizhawk_poweron_launch.verify_persistent_private_host",
+            "tools.map02_linux_octoshock.owner_persistent_host.verify_persistent_private_host",
             side_effect=ValueError("synthetic ephemeral host rejected")), patch(
             "tools.map02_private_bizhawk_poweron_launch.build_launch") as build, patch(
             "tools.map02_private_bizhawk_poweron_launch.run_owned_process") as process:
@@ -165,9 +165,9 @@ class LinuxManifestGateTests(unittest.TestCase):
         argv=["child.py",str(self.exe),str(self.disc),str(self.movie),str(self.plan),str(self.out),
               "--mono-executable",str(self.mono),"--trusted-runtime-manifest-pin-file",str(self.pin),"--launch"]
         with patch.object(sys,"argv",argv), patch(
-            "tools.map02_private_bizhawk_poweron_launch.verify_persistent_private_host",
+            "tools.map02_linux_octoshock.owner_persistent_host.verify_persistent_private_host",
             return_value={"platform_accepted":True}), patch(
-            "tools.map02_private_bizhawk_poweron_launch.snapshot_private_path_identity",
+            "tools.map02_linux_octoshock.owner_persistent_host.snapshot_private_path_identity",
             return_value=(("synthetic",1,2,3,4),)), patch(
             "tools.map02_private_bizhawk_poweron_launch.require_unchanged_persistent_host",
             return_value={"platform_accepted":True}), patch(

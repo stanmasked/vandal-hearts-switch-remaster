@@ -33,8 +33,7 @@ from tools.map02_private_core_witness_audit import SHA256_HEX, read_witness_reco
 from tools.map02_private_witness_plugin_digest import require_pinned_core_witness_dll
 from tools.map02_linux_octoshock.owner_persistent_host import (
     MINIMUM_CAPTURE_BYTES, capture_guard_directories,
-    verify_persistent_private_host, snapshot_private_path_identity,
-    require_unchanged_persistent_host,
+    verify_and_snapshot_persistent_host, require_unchanged_persistent_host,
 )
 
 AUTO_WITNESS_NAME = "vh-map02-runtime-core-auto.txt"
@@ -465,10 +464,9 @@ def main() -> int:
                 private_full_bin_sha256_file=args.private_full_bin_sha256_file,
                 auto_core_witness_plugin=args.auto_core_witness_plugin,
             )
-            verify_persistent_private_host(
+            host_identity = verify_and_snapshot_persistent_host(
                 host_guarded_paths, minimum_free_bytes=MINIMUM_CAPTURE_BYTES,
             )
-            host_identity = snapshot_private_path_identity(host_guarded_paths)
         except (OSError, ValueError, TypeError, RuntimeError):
             parser.error("owner-private persistent Linux capture host preflight failed")
 

@@ -1825,3 +1825,24 @@ path fails closed; a passing synthetic test does not certify any actual owner
 host. The external runtime-manifest pin must still be independently established
 and retained outside runtime and Git, and `capture_ready` remains false until
 real two-run playback and manual MAP02 scene review.
+
+## Stage619 — double-sampled persistent-host identity checkpoints
+
+The capture coordinator and direct child launcher now establish their initial
+host identity with a dedicated helper that snapshots all guarded directories
+and ancestors, runs the real persistent-host policy audit, snapshots again,
+repeats the audit, and takes a final snapshot. Any identity change observed
+around either audit aborts the launch before the capture starts.
+
+At every later checkpoint, the guard first compares the current identity to
+the established baseline, runs the policy audit, compares identity again,
+repeats the policy audit, and takes a final identity sample. This detects
+directory replacement during a sampled audit and a policy change between
+audits, rather than relying on a single verify-then-snapshot sequence.
+
+Synthetic regressions cover replacement during initial baseline establishment,
+replacement during a later checkpoint, and a mount-policy failure on the
+second audit. Repeated checks narrow the time-of-check/time-of-use window but
+are not an atomic filesystem lock against a hostile same-UID process. The
+owner-private host and real gameplay still require separate validation;
+`capture_ready=false`.
