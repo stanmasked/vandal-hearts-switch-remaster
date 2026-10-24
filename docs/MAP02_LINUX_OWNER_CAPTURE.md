@@ -1720,3 +1720,27 @@ gameplay captures remain unchanged. The canonical private
 `07_Builds_and_Test_Artifacts` folder remains empty until a genuine owner-host
 publish and independent readback succeed.
 
+## Stage581 — SIGKILL during quarantine preserves forensic payload
+
+Stage581 tests the narrower crash window after cleanup has atomically moved an
+unaccepted receipt pin into its private `.map02-pin-cleanup-*` quarantine but
+before the identity check and deletion complete. A subprocess test pauses at
+that exact point, then the parent sends SIGKILL, which cannot run Python
+cleanup handlers.
+
+The expected recovery state is intentionally conservative: the original pin
+path remains absent, the quarantined 0600 payload remains intact, and the
+failed session tree is preserved. A retry using the same private parent must
+fail closed before transport activity because the unresolved quarantine still
+exists. It must neither bless the payload as a trusted pin nor remove it
+automatically.
+
+The test uses invented local bytes and fake transport; it does not prove real
+Google Drive behavior. Stage581 test implementation:
+`dff94093ee0192a09eb6575018b0f98accf11603`. Exact-head CI must pass before
+Stage581 is accepted. The preceding Stage580 SIGINT/SIGTERM tests must also
+pass on the same final head. Original PS1 media, BIOS, BK2, extracted audio
+and gameplay captures remain unchanged. The canonical private
+`07_Builds_and_Test_Artifacts` folder remains empty until a genuine owner-host
+publish and independent readback succeed.
+
