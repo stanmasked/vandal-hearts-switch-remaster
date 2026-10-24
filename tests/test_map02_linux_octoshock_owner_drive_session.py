@@ -206,8 +206,8 @@ class OwnerDriveSessionTests(unittest.TestCase):
         pin = self.base / "interrupted-receipt.sha256"
         displaced = self.base / "displaced-original-receipt.sha256"
         target = self.base / "symlink-target.txt"
-        target.write_text("do not follow or remove target\\n", encoding="ascii")
-        pin.write_text("original unaccepted pin\\n", encoding="ascii")
+        target.write_text("do not follow or remove target\n", encoding="ascii")
+        pin.write_text("original unaccepted pin\n", encoding="ascii")
         pin.chmod(0o600)
         original_rename = os.rename
 
@@ -224,10 +224,10 @@ class OwnerDriveSessionTests(unittest.TestCase):
         ):
             owner_drive_session._discard_incomplete_owner_pin(pin)
 
-        self.assertEqual(displaced.read_text(encoding="ascii"), "original unaccepted pin\\n")
+        self.assertEqual(displaced.read_text(encoding="ascii"), "original unaccepted pin\n")
         self.assertTrue(pin.is_symlink())
         self.assertEqual(os.readlink(pin), str(target))
-        self.assertEqual(target.read_text(encoding="ascii"), "do not follow or remove target\\n")
+        self.assertEqual(target.read_text(encoding="ascii"), "do not follow or remove target\n")
         self.assertEqual(list(self.base.glob(".map02-pin-cleanup-*")), [])
 
     def test_pin_cleanup_preserves_quarantine_when_original_name_is_claimed(self):
