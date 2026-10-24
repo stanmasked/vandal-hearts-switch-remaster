@@ -51,7 +51,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_map02_private_process_witness_binding.py' -v 2>&1 | Tee-Object -FilePath $log
           if ($LASTEXITCODE -ne 0) { throw 'owner process-witness binding tests failed' }
           $joined = Get-Content -LiteralPath $log -Raw
-          if ($joined -notmatch 'Ran 26 tests' -or
+          if ($joined -notmatch 'Ran 27 tests' -or
               $joined -notmatch 'test_real_windows_owned_child_creation_time.*ok') {
             throw 'Windows kernel process birth-time probe was not executed'
           }
