@@ -32,6 +32,143 @@ class PersistentOwnerPipelineTests(unittest.TestCase):
             invoke=self.transport,
         )
 
+    def preflight(self, *, session=None):
+        return pipeline.preflight_existing_trusted_runtime(
+            self.source, self.pin, self.private_map,
+            self.work, self.trust, "vh_builds", "vh_manifests",
+            self.session if session is None else session,
+            invoke=self.transport,
+        )
+
+    def test_stage600_readonly_preflight_all_seven_outputs_and_remotes(self):
+        before_work = list(self.work.iterdir())
+        before_trust = list(self.trust.iterdir())
+        result = self.preflight()
+        self.assertEqual(result["schema"], "vh.map02.owner-persistent-preflight.v1")
+        self.assertEqual(result["runtime_files"], 7)
+        self.assertEqual(result["output_paths_available"], 7)
+        self.assertEqual(result["drive_remotes_checked"], 2)
+        self.assertTrue(result["trusted_manifest_pin_verified"])
+        self.assertFalse(result["persistent_host_checked"])
+        self.assertFalse(result["writes_performed"])
+        self.assertFalse(result["remote_upload_performed"])
+        self.assertFalse(result["owner_backup_proven"])
+        self.assertFalse(result["capture_ready"])
+        self.assertEqual(list(self.work.iterdir()), before_work)
+        self.assertEqual(list(self.trust.iterdir()), before_trust)
+        self.assertEqual(self.transport.uploads, 0)
+        # A successful read-only snapshot does NOT reserve the names.
+        publish = self.execute()
+        self.assertTrue(publish["all_three_five_object_readbacks_verified"])
+        self.assertEqual(self.transport.uploads, 5)
+
+    def test_stage600_preflight_blocks_every_preexisting_output_path(self):
+        names = (
+            (self.work, self.session + "-transfer"),
+            (self.work, self.session + "-admission-readback"),
+            (self.work, self.session + "-preboot-readback"),
+            (self.trust, self.session + "-archive.sha256"),
+            (self.trust, self.session + "-receipt.sha256"),
+            (self.trust, self.session + "-admission.json"),
+            (self.trust, self.session + "-admission.sha256"),
+        )
+        for parent, filename in names:
+            with self.subTest(output=filename):
+                target = parent / filename
+                target.write_text("existing owner evidence", encoding="ascii")
+                with self.assertRaises(OwnerPersistentBackupError):
+                    self.preflight()
+                self.assertEqual(
+                    target.read_text(encoding="ascii"), "existing owner evidence",
+                )
+                self.assertEqual(self.transport.uploads, 0)
+                target.unlink()
+        self.assertEqual(list(self.work.iterdir()), [])
+        self.assertEqual(list(self.trust.iterdir()), [])
+
+    def test_stage600_preflight_rejects_bad_trust_before_remote_access(self):
+        self.pin.write_text("0" * 64 + "\n", encoding="ascii")
+        previous = self.transport.uploads
+        with self.assertRaises(OwnerPersistentBackupError):
+            self.preflight()
+        self.assertEqual(self.transport.uploads, previous)
+        self.assertEqual(list(self.work.iterdir()), [])
+        self.assertEqual(list(self.trust.iterdir()), [])
+
+    def test_stage600_preflight_rejects_remote_name_collision(self):
+        self.transport.remote["vh_builds"][
+            "map02-runtime-" + self.session + ".tar"
+        ] = b"fictional existing cloud artifact"
+        with self.assertRaises(OwnerPersistentBackupError):
+            self.preflight()
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertEqual(list(self.work.iterdir()), [])
+        self.assertEqual(list(self.trust.iterdir()), [])
+
+    def test_stage600_preflight_rejects_quarantine_without_remote_mutation(self):
+        quarantine = self.trust / ".map02-pin-cleanup-stage600"
+        quarantine.mkdir(mode=0o700)
+        payload = quarantine / "payload"
+        payload.write_text("forensic data", encoding="ascii")
+        payload.chmod(0o600)
+        with self.assertRaises(OwnerPersistentBackupError):
+            self.preflight()
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertEqual(payload.read_text(encoding="ascii"), "forensic data")
+        self.assertEqual(list(self.trust.iterdir()), [quarantine])
+
+    def test_stage600_preflight_blocks_new_reservation_during_remote_reads(self):
+        late = self.trust / (self.session + "-admission.sha256")
+        real_readiness = pipeline.verify_owner_backup_readiness
+
+        def inject_after_readiness(*args, **kwargs):
+            checked = real_readiness(*args, **kwargs)
+            late.write_text("new concurrent reservation", encoding="ascii")
+            return checked
+
+        with patch.object(
+            pipeline, "verify_owner_backup_readiness",
+            side_effect=inject_after_readiness,
+        ):
+            with self.assertRaises(OwnerPersistentBackupError):
+                self.preflight()
+        self.assertEqual(late.read_text(encoding="ascii"), "new concurrent reservation")
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertEqual(list(self.work.iterdir()), [])
+
+    def test_stage600_preflight_real_host_gate_before_remote_reads(self):
+        # Force only this module's classification to real. No OAuth or host
+        # interrogation is performed: mock the persistent-host boundary.
+        with patch.object(pipeline, "_call_rclone", self.transport):
+            with patch.object(
+                pipeline, "verify_persistent_private_host",
+                side_effect=ValueError("fictional temporary storage"),
+            ) as verify:
+                with self.assertRaises(OwnerPersistentBackupError):
+                    self.preflight()
+        self.assertEqual(verify.call_count, 1)
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertEqual(list(self.trust.iterdir()), [])
+        self.assertEqual(list(self.work.iterdir()), [])
+
+    def test_stage600_preflight_real_host_identity_recheck_after_remote_reads(self):
+        with patch.object(pipeline, "_call_rclone", self.transport):
+            with patch.object(pipeline, "verify_persistent_private_host"):
+                with patch.object(
+                    pipeline, "snapshot_private_path_identity",
+                    return_value=(("fictional", 1, 2, 3, 4),),
+                ):
+                    with patch.object(
+                        pipeline, "require_unchanged_persistent_host",
+                        side_effect=ValueError("fictional mount changed"),
+                    ) as recheck:
+                        with self.assertRaises(OwnerPersistentBackupError):
+                            self.preflight()
+        self.assertEqual(recheck.call_count, 1)
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertEqual(list(self.trust.iterdir()), [])
+        self.assertEqual(list(self.work.iterdir()), [])
+
     def test_full_three_source_free_readbacks_with_invented_drive(self):
         result = self.execute()
         self.assertEqual(result["runtime_files"], 7)
