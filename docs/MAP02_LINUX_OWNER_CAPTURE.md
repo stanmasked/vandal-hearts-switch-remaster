@@ -1045,3 +1045,39 @@ placement check, **not** a claim of race-free openat/fd-based path
 anchoring, physical disk persistence, actual owner-authorized Drive
 upload or MAP02 gameplay proof. Original PS1 data and audio remain
 owner-private and outside GitHub and synthetic CI.
+
+## Stage555 — detect owner-host directory replacement across long operations
+
+Stage551–554 checked the private host placement at the beginning of
+`prepare` and `publish`, but a directory can be renamed and replaced
+after those checks while preserving the same final path and mode 0700.
+The Stage555 owner-only safety checkpoint records the Linux filesystem
+device, inode, UID and permission bits of **every private directory
+and each ancestor**. It compares this read-only identity record with
+fresh kernel stat results and reruns the full persistent filesystem
+preflight after the long build, after runtime digest checking and before
+owner-authenticated upload, and at boundaries before and after the
+subsequent independent archive readbacks. Any mismatch prevents the
+command from reporting success.
+
+Five new synthetic host tests check unchanged inode acceptance, replaced
+leaf rejection, replaced ancestor rejection, modified permissions and
+an invalid empty baseline. Three fictional-Drive orchestration tests
+exercise fail-closed rejection immediately before upload, refusal to
+start admission after a directory swap following upload, and refusing
+a successful `prepare` marker after a build-time storage change.
+
+This is **checkpoint-based replacement detection**, not a lock, an
+atomic file-descriptor-anchored traversal, or a way to rule out all
+time-of-check/time-of-use races between checkpoints. Rejection after
+a partial upload deliberately retains any already uploaded private
+objects for forensics but must never be treated as a sealed final owner
+backup. Retrying requires a fresh session and a new independently
+verified trust path. The prior externally supplied manifest SHA remains
+a separate mandatory input and may never be manufactured by the build.
+
+Game CUE/BIN, BIOS, BK2, original audio, raw private MAP02 captures and
+OAuth credentials remain outside public GitHub. Passing synthetic and
+source-free native CI does **not** demonstrate authentic persistent Drive
+binary retention, two independent PS1 gameplay launches or Switch parity.
+The PR remains Draft pending those independent evidence gates.
