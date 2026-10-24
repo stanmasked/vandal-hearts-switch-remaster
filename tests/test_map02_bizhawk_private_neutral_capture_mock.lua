@@ -7,12 +7,18 @@ local PLAN = "/private/fake-capture-plan.txt"
 local LOG = ROOT .. "/vh_private_capture.log"
 local SIGNATURE = "\137PNG\r\n\26\n"
 local AUTO_FILE = ROOT .. "/vh-map02-runtime-core-auto.txt"
-local CORE_ONLY = "VH_MAP02_RUNTIME_CORE_WITNESS_V1\n"
+local CORE_ONLY = "VH_MAP02_RUNTIME_CORE_WITNESS_V4\n"
   .. "system=PSX\nloaded_core=Octoshock\n"
   .. "core_source=IEmulator.Attributes.CoreName\n"
+  .. "runtime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock\n"
+  .. "core_assembly_sha256=" .. string.rep("a", 64) .. "\n"
+  .. "native_core_module_name=liboctoshock.so\n"
+  .. "native_core_module_sha256=" .. string.rep("b", 64) .. "\n"
+  .. "tool_assembly_sha256=" .. string.rep("c", 64) .. "\n"
   .. "process_id=123\nprocess_start_utc_ticks=639000000000000001\n"
-  .. "frame_count=1662\nbios=unverified\ndisc=unverified\n"
-  .. "movie_sync=unverified\n"
+  .. "frame_count=1662\n"
+  .. "bios=psx_u_firmware_hash_matches_movie_header\n"
+  .. "disc=unverified\nmovie_sync=unverified\n"
 local AUTO_MARK = "VH_PRIVATE_NEUTRAL_AUTOWITNESS_PREFLIGHT "
   .. "stage=before_first_png receipt=present core_only=yes actual_disc=unverified"
 local BASE = "VH_MAP02_CAPTURE_PLAN_V1\nmovie_frames=933949\ncapture_count=3\n" ..
@@ -110,7 +116,7 @@ local function run(option)
       end
       return {
         read = function(_, size)
-          assert(size == 513)
+          assert(size == 769)
           return bytes:sub(1, size)
         end,
         close = function() end,
