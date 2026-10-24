@@ -202,6 +202,23 @@ def _safe_restore(archive_path: Path, target: Path) -> None:
         raise
 
 
+def _cleanup_failed_readback(
+    root: Path | None, identity: tuple[int, int] | None,
+) -> None:
+    """Remove only this invocation's original private readback directory."""
+    if root is None or identity is None:
+        return
+    try:
+        current = root.lstat()
+        if (stat.S_ISDIR(current.st_mode)
+                and not stat.S_ISLNK(current.st_mode)
+                and (current.st_dev, current.st_ino) == identity):
+            shutil.rmtree(root)
+    except OSError:
+        # A failed cleanup never changes a rejected audit into a success.
+        pass
+
+
 def audit_independent_readback(
     private_folder_map: Path, owner_manifest_sha: Path,
     trusted_archive_sha: Path, trusted_receipt_sha: Path,
@@ -364,20 +381,15 @@ def audit_independent_readback(
             "capture_ready": False,
         }
     except (OSError, ValueError, RuntimeError, TypeError, tarfile.TarError):
-        # A failed audit must not leave a partial download or restored runtime
-        # that could be mistaken for an accepted readback. Remove only the
-        # exact private directory created by this invocation; never follow a
-        # symlink or delete a replacement directory.
-        if cleanup_root is not None and cleanup_identity is not None:
-            try:
-                current = cleanup_root.lstat()
-                if (stat.S_ISDIR(current.st_mode)
-                        and not stat.S_ISLNK(current.st_mode)
-                        and (current.st_dev, current.st_ino) == cleanup_identity):
-                    shutil.rmtree(cleanup_root)
-            except OSError:
-                pass
+        # Ordinary validation/I/O failures become a stable audit rejection.
+        _cleanup_failed_readback(cleanup_root, cleanup_identity)
         _fail()
+    except BaseException:
+        # KeyboardInterrupt, SystemExit and unexpected failures must not leave
+        # a partial tree either. Preserve their original exception after the
+        # same identity-guarded cleanup so callers can still stop the process.
+        _cleanup_failed_readback(cleanup_root, cleanup_identity)
+        raise
 
 
 def _read_remote_size(path: str, invoke: Callable[[list[str]], str]) -> int:
