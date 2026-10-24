@@ -39,6 +39,7 @@ class FakeDriveTransport:
         self.mutate_folder_after_download = None
         self.mutate_local_file_after_download = None
         self.replace_remote_object_after_download = None
+        self.replace_readback_root_after_download = None
         self.upload_sources = []
         self.version = "rclone v1.69.3"
 
@@ -108,6 +109,19 @@ class FakeDriveTransport:
                     if filename == trigger_name:
                         self.remote[remote][filename] = payload
                         self.replace_remote_object_after_download = None
+                if self.replace_readback_root_after_download is not None:
+                    trigger_name, root_path, displaced_path = (
+                        self.replace_readback_root_after_download
+                    )
+                    if filename == trigger_name:
+                        root_path = Path(root_path)
+                        displaced_path = Path(displaced_path)
+                        root_path.rename(displaced_path)
+                        root_path.mkdir(mode=0o700)
+                        (root_path / "sentinel").write_text(
+                            "preserve replacement", encoding="utf-8"
+                        )
+                        self.replace_readback_root_after_download = None
             return ""
         raise AssertionError("unexpected fictional rclone command: " + name)
 
