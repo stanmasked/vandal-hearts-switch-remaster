@@ -1152,7 +1152,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertEqual(len(quarantines), 1)
         quarantined_receipt = quarantines[0] / "payload"
         self.assertEqual(
-            quarantined_receipt.read_text(encoding="ascii"), "b" * 64 + "\\n",
+            quarantined_receipt.read_text(encoding="ascii"), "b" * 64 + "\n",
         )
         self.assertEqual(quarantined_receipt.stat().st_mode & 0o777, 0o600)
 
@@ -1173,7 +1173,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
             )
         self.assertEqual(self.transport.uploads, 0)
         self.assertEqual(
-            quarantined_receipt.read_text(encoding="ascii"), "b" * 64 + "\\n",
+            quarantined_receipt.read_text(encoding="ascii"), "b" * 64 + "\n",
         )
         self.assertFalse((root / "retry-session").exists())
 
