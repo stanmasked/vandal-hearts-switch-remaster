@@ -85,7 +85,16 @@ def run_owned_process(command: list[str], *, env: dict[str, str],
         finally:
             # A shell wrapper may exit on SIGTERM while a descendant ignores
             # it: kill the group even when the parent has already returned.
-            _kill_owned_group(process.pid, signal.SIGKILL)
+            # On macOS, however, the original group can disappear after SIGTERM
+            # and its numeric PGID can be reused before this second signal.
+            # If killpg then reports EPERM after the leader exited, do not risk
+            # signaling an unrelated process group. If our leader is still
+            # alive, keep the permission error fatal.
+            try:
+                _kill_owned_group(process.pid, signal.SIGKILL)
+            except PermissionError:
+                if process.poll() is None:
+                    raise
             try:
                 process.wait(timeout=TERMINATION_GRACE_SECONDS)
             except subprocess.TimeoutExpired:
