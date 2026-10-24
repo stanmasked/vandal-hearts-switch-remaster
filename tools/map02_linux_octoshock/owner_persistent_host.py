@@ -175,3 +175,57 @@ def verify_persistent_private_host(
     except (OSError, ValueError, TypeError, AttributeError, UnicodeError,
             OverflowError):
         _fail()
+
+
+def snapshot_private_path_identity(
+    directories: Sequence[Path],
+) -> tuple[tuple[str, int, int, int, int], ...]:
+    """Read-only inode/device snapshot of every named directory AND ancestor.
+
+    This detects replacement of a private pathname or any containing directory
+    between checkpoints. It is not a lock and cannot prevent concurrent swaps.
+    Always run verify_persistent_private_host independently at each checkpoint.
+    """
+    try:
+        if not isinstance(directories, (list, tuple)) or not directories:
+            _fail()
+        unique: dict[str, Path] = {}
+        for original in directories:
+            path = Path(original)
+            if not path.is_absolute() or path.resolve(strict=True) != path:
+                _fail()
+            for candidate in (path, *path.parents):
+                unique[str(candidate)] = candidate
+        items = []
+        for name, candidate in sorted(unique.items()):
+            details = candidate.lstat()
+            if not stat.S_ISDIR(details.st_mode):
+                _fail()
+            items.append((
+                name, details.st_dev, details.st_ino, details.st_uid,
+                stat.S_IMODE(details.st_mode),
+            ))
+        return tuple(items)
+    except (OSError, ValueError, TypeError, AttributeError):
+        _fail()
+
+
+def require_unchanged_persistent_host(
+    directories: Sequence[Path],
+    initial_identity: tuple[tuple[str, int, int, int, int], ...],
+    *,
+    minimum_free_bytes: int,
+    **verification_overrides: object,
+) -> dict[str, object]:
+    """Recheck real filesystem policy and exact private pathname identity.
+
+    Overrides exist for simulated tests only. Production code passes none.
+    """
+    verified = verify_persistent_private_host(
+        directories, minimum_free_bytes=minimum_free_bytes,
+        **verification_overrides,
+    )
+    if (not isinstance(initial_identity, tuple)
+            or snapshot_private_path_identity(directories) != initial_identity):
+        _fail()
+    return verified
