@@ -22,7 +22,7 @@ from tools.map02_private_disc_movie_preflight import (
     _assert_stable, _open_stable, _resolve_private_file,
 )
 
-SCHEMA = "vh.map02.owner-process-to-core-witness-review.v2"
+SCHEMA = "vh.map02.owner-process-to-core-witness-review.v3"
 MAGIC = "VH_MAP02_OWNER_EMUHAWK_PROCESS_START_V1"
 NAME = "vh_emuhawk_process_identity.txt"
 FILETIME_UNIX_EPOCH_OFFSET = 504911232000000000

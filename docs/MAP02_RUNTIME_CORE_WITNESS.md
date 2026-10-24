@@ -515,3 +515,15 @@ than the supported range are rejected before any PNG is written.
 All evidence in this stage remains synthetic and game-free. It proves parser
 contract consistency only—not original-disc playback, authenticated BIOS or
 disc bytes, MAP02 scene identity, or Nintendo Switch execution.
+
+
+### Stage614 — reject a false V5 mount-state claim at the Lua boundary
+
+The executable Lua mock now mutates only the V5 `disc_mount` field to `unverified`
+and verifies that the capture script rejects the receipt before the first PNG. This
+closes the remaining test gap between the strict Python audits and the earliest
+screenshot gate. The Lua scenario total is updated in the workflow label.
+
+Because Stage609 added report fields, the process/core binding, sequential replay,
+one-run audit and paired core/PNG report contracts now use incremented schema versions.
+No stronger claim is made about the mounted disc's full bytes or MAP02 identity.

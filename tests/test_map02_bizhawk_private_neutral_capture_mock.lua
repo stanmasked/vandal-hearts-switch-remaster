@@ -138,7 +138,11 @@ local function run(option)
         bytes = bytes:gsub("frame_count=1662", "frame_count=2000001")
       elseif option == "auto-badcore" then
         bytes = bytes:gsub("loaded_core=Octoshock", "loaded_core=Nymashock")
-      elseif option == "auto-bad-format" then
+      elseif option == "auto-wrong-mount" then
+         bytes = bytes:gsub(
+           "disc_mount=single_mounted_tray_closed_source_name_matches",
+           "disc_mount=unverified")
+       elseif option == "auto-bad-format" then
         bytes = bytes:gsub("\n", "\r\n")
       elseif option == "auto-oversized" then
         bytes = bytes .. string.rep("X", 600)
@@ -376,7 +380,7 @@ for _, option in ipairs({"auto-min-ticks", "auto-max-ticks"}) do
   assert(#exits == 1 and exits[1] == 0, option .. ": accepted boundary did not finish cleanly")
 end
 for _, option in ipairs({
-    "auto-wrong-root", "auto-missing", "auto-late", "auto-badcore",
+    "auto-wrong-root", "auto-missing", "auto-late", "auto-badcore", "auto-wrong-mount",
     "auto-bad-bios", "auto-bad-hash", "auto-bad-module", "auto-bad-pid",
     "auto-bad-ticks", "auto-bad-ticks-low", "auto-bad-ticks-high",
     "auto-bad-ticks-long", "auto-bad-format", "auto-oversized", "auto-mutate",
@@ -392,7 +396,7 @@ for _, option in ipairs({
   assert(rejected, option .. ": fail-closed auto receipt error missing")
   assert(#exits == 1 and exits[1] == 1)
   if option == "auto-wrong-root" or option == "auto-missing"
-      or option == "auto-late" or option == "auto-badcore"
+      or option == "auto-late" or option == "auto-badcore" or option == "auto-wrong-mount"
       or option == "auto-bad-bios" or option == "auto-bad-hash"
       or option == "auto-bad-module" or option == "auto-bad-pid"
       or option == "auto-bad-ticks" or option == "auto-bad-ticks-low"

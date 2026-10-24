@@ -1003,7 +1003,7 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
 
     def test_launch_one_cli_never_emits_paths_or_pair_claims(self):
         data = {
-            "schema": "vh.map02.private-two-sequential-replays.v1",
+            "schema": "vh.map02.private-two-sequential-replays.v2",
             "emulator_processes_started": 1,
             "capture_attempts_audited": 1,
             "original_map02_scene_authenticated": False,

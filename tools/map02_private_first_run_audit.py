@@ -21,7 +21,7 @@ from tools.map02_private_two_capture_audit import _private_root
 from tools.map02_private_two_replay_runner import PLAN_NAME, RUN_NAMES
 from tools.verify_map02_private_neutral_capture_chain import parse_plan, verify
 
-SCHEMA = "vh.map02.owner-one-capture-offline-reaudit.v1"
+SCHEMA = "vh.map02.owner-one-capture-offline-reaudit.v2"
 
 
 def review_first_capture(private_movie: Path, private_workspace: Path,

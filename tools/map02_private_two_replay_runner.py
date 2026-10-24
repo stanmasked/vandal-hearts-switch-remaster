@@ -39,7 +39,7 @@ from tools.map02_private_two_capture_audit import _private_root, audit_pair
 from tools.verify_map02_private_neutral_capture_chain import verify
 
 
-SCHEMA = "vh.map02.private-two-sequential-replays.v1"
+SCHEMA = "vh.map02.private-two-sequential-replays.v2"
 PLAN_NAME = "vh-map02-review-plan.txt"
 RUN_NAMES = ("vh-map02-cold-01", "vh-map02-cold-02")
 MAX_PRIVATE_MOVIE_BYTES = 8 * 1024 * 1024

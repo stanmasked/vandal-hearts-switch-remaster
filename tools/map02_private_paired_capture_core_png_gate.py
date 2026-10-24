@@ -20,7 +20,7 @@ from tools.map02_private_two_capture_audit import _private_root, audit_pair
 from tools.map02_private_bizhawk_poweron_launch import AUTO_WITNESS_NAME
 from tools.map02_private_core_witness_audit import read_witness
 
-SCHEMA = "vh.map02.owner-paired-capture-core-png-gate.v1"
+SCHEMA = "vh.map02.owner-paired-capture-core-png-gate.v2"
 RUN_NAMES = ("vh-map02-cold-01", "vh-map02-cold-02")
 
 
