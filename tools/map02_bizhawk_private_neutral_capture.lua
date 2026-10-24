@@ -95,21 +95,80 @@ local first_auto_core_bytes = nil
 local function core_only_receipt_bytes()
   local file = io.open(auto_core_path, "rb")
   if not file then return nil end
-  local body = file:read(513)
+  -- Keep this bound aligned with MAX_RECEIPT_BYTES in the Python V4 auditor.
+  local body = file:read(769)
   file:close()
-  if type(body) ~= "string" or #body == 0 or #body > 512 then return nil end
-  local pattern = "^VH_MAP02_RUNTIME_CORE_WITNESS_V1\n"
-      .. "system=PSX\nloaded_core=Octoshock\n"
-      .. "core_source=IEmulator%.Attributes%.CoreName\n"
-      .. "process_id=[1-9]%d*\nprocess_start_utc_ticks=[1-9]%d*\n"
-      .. "frame_count=%d+\nbios=unverified\n"
-      .. "disc=unverified\nmovie_sync=unverified\n$"
-  if not body:match(pattern) then return nil end
-  local frame_text = body:match("\nframe_count=(%d+)\n")
-  if not frame_text or #frame_text > 7 then return nil end
+  if type(body) ~= "string" or #body == 0 or #body > 768
+      or body:sub(-1) ~= "\n" or body:find("\r", 1, true) then
+    return nil
+  end
+  local lines = {}
+  for line in body:gmatch("([^\n]*)\n") do
+    table.insert(lines, line)
+  end
+  -- This file is written by CustomMainForm.cs as V4. The previous V1 parser
+  -- could never accept the real external-tool receipt, so a real capture
+  -- would fail closed before its first PNG even though synthetic tests passed.
+  if #lines ~= 15 or lines[1] ~= "VH_MAP02_RUNTIME_CORE_WITNESS_V4" then
+    return nil
+  end
+  local expected = {
+    "system=PSX",
+    "loaded_core=Octoshock",
+    "core_source=IEmulator.Attributes.CoreName",
+    "runtime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock",
+  }
+  for i, value in ipairs(expected) do
+    if lines[i + 1] ~= value then return nil end
+  end
+  local function field(index, key)
+    local prefix = key .. "="
+    local line = lines[index]
+    if type(line) ~= "string" or line:sub(1, #prefix) ~= prefix then
+      return nil
+    end
+    return line:sub(#prefix + 1)
+  end
+  local function sha256(value)
+    return type(value) == "string" and #value == 64
+      and value:match("^[0-9a-fA-F]+$") ~= nil
+  end
+  if not sha256(field(6, "core_assembly_sha256"))
+      or not sha256(field(8, "native_core_module_sha256"))
+      or not sha256(field(9, "tool_assembly_sha256")) then
+    return nil
+  end
+  local native_name = field(7, "native_core_module_name")
+  if native_name ~= "octoshock.dll"
+      and native_name ~= "liboctoshock.dll.so"
+      and native_name ~= "liboctoshock.so" then
+    return nil
+  end
+  local process_id = field(10, "process_id")
+  if not process_id or #process_id > 10
+      or not process_id:match("^[1-9]%d*$")
+      or tonumber(process_id) > 2147483647 then
+    return nil
+  end
+  -- Keep ticks as text: Lua doubles cannot exactly represent 64-bit timestamps.
+  local process_start = field(11, "process_start_utc_ticks")
+  if not process_start or #process_start < 18 or #process_start > 22
+      or not process_start:match("^[1-9]%d*$") then
+    return nil
+  end
+  local frame_text = field(12, "frame_count")
+  if not frame_text or #frame_text > 7 or not frame_text:match("^%d+$") then
+    return nil
+  end
   local frame_count = tonumber(frame_text)
-  if not frame_count or frame_count < 0 or frame_count > 2000000
-      or frame_count % 1 ~= 0 then return nil end
+  if not frame_count or frame_count > 2000000 then return nil end
+  -- Automatic mode requires the plugin to match the live PSX/U BIOS against
+  -- the opened BK2 header. Disc identity and replay delivery remain unverified.
+  if field(13, "bios") ~= "psx_u_firmware_hash_matches_movie_header"
+      or field(14, "disc") ~= "unverified"
+      or field(15, "movie_sync") ~= "unverified" then
+    return nil
+  end
   return body, frame_count
 end
 local normalized_root = root:gsub("\\", "/"):gsub("/+$", "")
