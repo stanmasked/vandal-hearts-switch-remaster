@@ -1021,3 +1021,27 @@ The CI runner uses entirely synthetic Drive transport and does NOT
 store the original game's CUE/BIN, BIOS, BK2, audio or raw private
 captures in GitHub. The original MAP02 two cold gameplay captures
 remain unverified.
+
+## Stage554 — owner-private ancestor directory write protection
+
+The Stage551–553 owner host gate checked the private directory itself,
+local disk filesystem, writeability, and kernel filesystem device identity,
+but an owner-only mode-0700 leaf can still be located under a directory
+writable by other users or groups. Another writer of that ancestor may
+replace a pathname between the preflight and the real operation.
+
+The gate now inspects **each ancestor directory** of every private path
+before any build or cloud write. It refuses group- or world-writable
+ancestors unless an ancestor is a **root-owned sticky directory** (the
+normal Linux `/tmp` exception). The production temporary-path policy
+still independently rejects `/tmp`, `/var/tmp`, `/run`, and related
+temporary roots, so the exception does not make owner runtime under
+a temporary path permissible.
+
+Four additional synthetic tests exercise safe nested ancestry, group
+writability, world writability, and a writable ancestor separated
+from the private leaf by another directory. This is a conservative
+placement check, **not** a claim of race-free openat/fd-based path
+anchoring, physical disk persistence, actual owner-authorized Drive
+upload or MAP02 gameplay proof. Original PS1 data and audio remain
+owner-private and outside GitHub and synthetic CI.
