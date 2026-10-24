@@ -115,7 +115,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
 
     def test_keyboard_interrupt_during_receipt_sealing_discards_new_pins_and_propagates(self):
         def interrupted_upload(*args, **kwargs):
-            self.receipt_pin.write_text("0" * 64 + "\\n", encoding="ascii")
+            self.receipt_pin.write_text("0" * 64 + "\n", encoding="ascii")
             self.receipt_pin.chmod(0o600)
             raise KeyboardInterrupt("synthetic owner session interrupt")
 
@@ -179,7 +179,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
     def test_pin_cleanup_preserves_replacement_won_before_atomic_quarantine(self):
         pin = self.base / "interrupted-receipt.sha256"
         displaced = self.base / "displaced-original-receipt.sha256"
-        pin.write_text("original unaccepted pin\\n", encoding="ascii")
+        pin.write_text("original unaccepted pin\n", encoding="ascii")
         pin.chmod(0o600)
         original_rename = os.rename
 
@@ -187,7 +187,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
             src_path, dst_path = Path(src), Path(dst)
             if src_path == pin and dst_path.name == "payload":
                 original_rename(src_path, displaced)
-                pin.write_text("concurrent replacement pin\\n", encoding="ascii")
+                pin.write_text("concurrent replacement pin\n", encoding="ascii")
                 pin.chmod(0o600)
             return original_rename(src, dst, *args, **kwargs)
 
@@ -197,15 +197,15 @@ class OwnerDriveSessionTests(unittest.TestCase):
         ):
             owner_drive_session._discard_incomplete_owner_pin(pin)
 
-        self.assertEqual(displaced.read_text(encoding="ascii"), "original unaccepted pin\\n")
-        self.assertEqual(pin.read_text(encoding="ascii"), "concurrent replacement pin\\n")
+        self.assertEqual(displaced.read_text(encoding="ascii"), "original unaccepted pin\n")
+        self.assertEqual(pin.read_text(encoding="ascii"), "concurrent replacement pin\n")
         self.assertEqual(pin.stat().st_mode & 0o777, 0o600)
         self.assertEqual(list(self.base.glob(".map02-pin-cleanup-*")), [])
 
     def test_pin_cleanup_preserves_quarantine_when_original_name_is_claimed(self):
-        pin = self.base / "interrupted-receipt.sha256"
+        pin = self.receipt_pin
         displaced = self.base / "displaced-original-receipt.sha256"
-        pin.write_text("original unaccepted pin\\n", encoding="ascii")
+        pin.write_text("original unaccepted pin\n", encoding="ascii")
         pin.chmod(0o600)
         original_rename = os.rename
 
@@ -213,12 +213,12 @@ class OwnerDriveSessionTests(unittest.TestCase):
             src_path, dst_path = Path(src), Path(dst)
             if src_path == pin and dst_path.name == "payload":
                 original_rename(src_path, displaced)
-                pin.write_text("replacement moved to quarantine\\n", encoding="ascii")
+                pin.write_text("replacement moved to quarantine\n", encoding="ascii")
                 pin.chmod(0o600)
                 original_rename(pin, dst_path)
                 # A different writer claims the original name before cleanup
                 # checks whether the moved replacement can be restored.
-                pin.write_text("newly claimed pin path\\n", encoding="ascii")
+                pin.write_text("newly claimed pin path\n", encoding="ascii")
                 pin.chmod(0o600)
                 return None
             return original_rename(src, dst, *args, **kwargs)
@@ -229,14 +229,23 @@ class OwnerDriveSessionTests(unittest.TestCase):
         ):
             owner_drive_session._discard_incomplete_owner_pin(pin)
 
-        self.assertEqual(displaced.read_text(encoding="ascii"), "original unaccepted pin\\n")
-        self.assertEqual(pin.read_text(encoding="ascii"), "newly claimed pin path\\n")
+        self.assertEqual(displaced.read_text(encoding="ascii"), "original unaccepted pin\n")
+        self.assertEqual(pin.read_text(encoding="ascii"), "newly claimed pin path\n")
         quarantines = list(self.base.glob(".map02-pin-cleanup-*"))
         self.assertEqual(len(quarantines), 1)
         self.assertEqual(
             (quarantines[0] / "payload").read_text(encoding="ascii"),
-            "replacement moved to quarantine\\n",
+            "replacement moved to quarantine\n",
         )
+
+        # Remove the concurrent claimant during simulated owner reconciliation.
+        # A fresh session must still refuse to proceed while quarantine remains.
+        pin.unlink()
+        with self.assertRaises(PrivateOwnerSessionError):
+            self.execute()
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertFalse(self.full_session.exists())
+        self.assertEqual(len(list(self.base.glob(".map02-pin-cleanup-*"))), 1)
 
     def test_previous_unrelated_owner_pin_survives_failed_session(self):
         old_pin = self.base / "unrelated-owner-reference.sha256"
