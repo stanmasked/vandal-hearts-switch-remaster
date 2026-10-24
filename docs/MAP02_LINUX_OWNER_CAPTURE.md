@@ -1505,8 +1505,33 @@ removes the empty quarantine wrapper. This is synthetic filesystem testing,
 not evidence of owner-host or Google Drive behavior.
 
 Stage572 code/test head:
-`2981b4a2324f93a1999b43eebb7b65703d9a847b`. Exact-head CI must pass on the
-final code and documentation head before Stage572 is accepted. Original PS1
+`2981b4a2324f93a1999b43eebb7b65703d9a847b`. Exact-head CI completed with
+8/8 successful workflows on final PR head
+`f0a3ca9ab1825dfc83846563a51b0c51f8e9bba8`, with no failures or pending runs.
+The native Linux job passed the atomic-quarantine replacement race test.
+Stage572 is accepted as a code/test gate only. Original PS1 media, BIOS, BK2,
+extracted audio and gameplay captures remain unchanged. The canonical private
+`07_Builds_and_Test_Artifacts` folder remains empty until a genuine owner-host
+publish and independent readback succeed.
+
+## Stage573 — preserve quarantine if the original name is claimed
+
+Stage572 safely restores a mismatching object from quarantine only while the
+original readback name is still free. Stage573 adds an adversarial test for
+the opposite case: after the replacement has been moved into quarantine, a
+different process claims the original path before restoration. The cleanup
+must preserve both objects, must not overwrite the newly claimed path, and
+must leave the quarantined replacement intact for recovery rather than delete
+it merely to complete cleanup.
+
+The test uses a fake transport and synthetic local filesystem only. A
+quarantine left behind in this conflict case is intentional preservation,
+not accepted evidence; it must be inspected or manually reconciled by the
+owner. No real owner-host or Google Drive behavior is established.
+
+Stage573 code/test head:
+`861e191cd0162ff310e8ebfb224670f46f1ef041`. Exact-head CI must pass on the
+final code and documentation head before Stage573 is accepted. Original PS1
 media, BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
 canonical private `07_Builds_and_Test_Artifacts` folder remains empty until
 a genuine owner-host publish and independent readback succeed.
