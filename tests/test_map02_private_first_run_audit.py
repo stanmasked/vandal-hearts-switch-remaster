@@ -165,18 +165,19 @@ class OwnerFirstCaptureAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "native core module SHA256 pin is malformed"):
             self.review(expected_native_sha256="invalid")
 
-    def test_ntfs_fixture_uses_complete_v4_witness_schema(self):
+    def test_ntfs_fixture_uses_complete_v5_witness_schema(self):
         source = (Path(__file__).resolve().parents[1]
                   / "tools" / "map02_windows_first_capture_acl_ci_probe.ps1")
         script = source.read_text(encoding="utf-8")
         for expected in (
-            "VH_MAP02_RUNTIME_CORE_WITNESS_V4",
+            "VH_MAP02_RUNTIME_CORE_WITNESS_V5",
             "runtime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock",
             "core_assembly_sha256=$('b' * 64)",
             "native_core_module_name=octoshock.dll",
             "native_core_module_sha256=$('c' * 64)",
             "tool_assembly_sha256=$('a' * 64)",
             "bios=psx_u_firmware_hash_matches_movie_header",
+            "disc_mount=single_mounted_tray_closed_source_name_matches",
         ):
             with self.subTest(expected=expected):
                 self.assertIn(expected, script)
