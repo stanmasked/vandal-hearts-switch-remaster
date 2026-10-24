@@ -188,6 +188,17 @@ class IndependentReadbackTests(unittest.TestCase):
             "preserve symlink target",
         )
 
+    def test_keyboard_interrupt_cleans_partial_readback_and_propagates(self):
+        self.transport.raise_after_download = (
+            self.receipt_name, KeyboardInterrupt("synthetic interrupted readback"),
+        )
+        with self.assertRaisesRegex(
+            KeyboardInterrupt, "synthetic interrupted readback",
+        ):
+            self.run_audit()
+        self.assertFalse(self.reaudit.exists())
+        self.assertEqual(self.transport.uploads, 5)
+
     def test_refuse_corrupted_remote_archive(self):
         key = "map02-runtime-testowner001.tar"
         self.transport.remote["vh_builds"][key] += b"FORGED"
