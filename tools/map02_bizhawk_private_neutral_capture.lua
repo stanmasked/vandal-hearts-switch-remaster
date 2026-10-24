@@ -89,6 +89,7 @@ if auto_core_enabled then
     return fail("automatic_core_witness_directory_mismatch")
   end
 end
+-- Stage608: malformed V4 witness fields must fail closed before any PNG is written.
 local auto_core_path = root:gsub("\\", "/"):gsub("/+$", "")
     .. "/vh-map02-runtime-core-auto.txt"
 local first_auto_core_bytes = nil
