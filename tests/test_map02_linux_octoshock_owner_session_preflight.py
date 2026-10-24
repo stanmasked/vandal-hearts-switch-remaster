@@ -110,7 +110,7 @@ class OwnerReadinessTests(unittest.TestCase):
             nonlocal changed
             result = self.transport(argv)
             if not changed and argv[0] == "lsf":
-                self.pin.write_text("0" * 64 + "\\n", encoding="ascii")
+                self.pin.write_text("0" * 64 + "\n", encoding="ascii")
                 self.pin.chmod(0o600)
                 changed = True
             return result
