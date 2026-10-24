@@ -205,6 +205,17 @@ def complete_owner_archive_session(
         except (OSError, ValueError):
             _fail()
         _fail()
+    except BaseException:
+        # A stop signal must not leave a newly written owner pin looking like
+        # accepted trust evidence. Keep the failed session tree for forensics,
+        # discard only the session's designated new pin paths, then propagate
+        # KeyboardInterrupt/SystemExit or the original unexpected exception.
+        try:
+            _discard_incomplete_owner_pin(cleanup_archive)
+            _discard_incomplete_owner_pin(cleanup_receipt)
+        except (OSError, ValueError):
+            pass
+        raise
 
 
 def main() -> int:
