@@ -304,7 +304,7 @@ class DiscMoviePreflightTests(unittest.TestCase):
         reference.chmod(0o600)
         alias = self.root / "stage606-hardlink-alias.sha256"
         os.link(reference, alias)
-        with self.assertRaisesRegex(ValueError, "one hard link"):
+        with self.assertRaisesRegex(ValueError, "without hardlinks"):
             read_private_full_bin_sha256(reference)
 
     def test_stage606_digest_reference_final_symlink_swap_is_detected(self):
