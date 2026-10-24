@@ -41,6 +41,7 @@ class FakeDriveTransport:
         self.replace_remote_object_after_download = None
         self.replace_readback_root_after_download = None
         self.symlink_readback_root_after_download = None
+        self.raise_after_download = None
         self.upload_sources = []
         self.version = "rclone v1.69.3"
 
@@ -138,6 +139,11 @@ class FakeDriveTransport:
                         )
                         root_path.symlink_to(target_dir, target_is_directory=True)
                         self.symlink_readback_root_after_download = None
+                if self.raise_after_download is not None:
+                    trigger_name, exception = self.raise_after_download
+                    if filename == trigger_name:
+                        self.raise_after_download = None
+                        raise exception
             return ""
         raise AssertionError("unexpected fictional rclone command: " + name)
 
