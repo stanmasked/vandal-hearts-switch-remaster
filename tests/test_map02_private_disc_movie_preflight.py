@@ -371,7 +371,7 @@ class DiscMoviePreflightTests(unittest.TestCase):
         with patch.object(module.os, "open", side_effect=open_then_widen):
             try:
                 with self.assertRaisesRegex(ValueError, "permissions changed while opening"):
-                    module._open_stable(self.bin)
+                    module._open_stable(self.bin, require_private=True)
             finally:
                 self.bin.chmod(0o600)
         self.assertTrue(changed["done"])
