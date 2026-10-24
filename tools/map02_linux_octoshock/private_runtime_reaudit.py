@@ -329,6 +329,24 @@ def audit_independent_readback(
                 or _pin(tar_pin) != tar_pin_value
                 or _pin(receipt_pin) != receipt_pin_value):
             _fail()
+        # Verify the same remote identities are still present at audit
+        # completion, not merely at the instant each local copy was read.
+        _check_remote(manifests, manifests_id, invoke)
+        if _stat_remote(
+            receipt_path, receipt_name, receipt_size, invoke,
+        ) != receipt_stat:
+            _fail()
+        _check_remote(manifests, manifests_id, invoke)
+        for item in objects:
+            remote = builds if item["folder_id"] == builds_id else manifests
+            expected_folder_id = builds_id if remote == builds else manifests_id
+            path = remote + ":" + item["name"]
+            _check_remote(remote, expected_folder_id, invoke)
+            if _stat_remote(
+                path, item["name"], item["bytes"], invoke,
+            ) != item["google_drive_id"]:
+                _fail()
+            _check_remote(remote, expected_folder_id, invoke)
         # Re-audit receipt immutability after extraction.
         if _hash_file(receipt_file) != receipt_pin_value:
             _fail()
