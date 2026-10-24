@@ -210,6 +210,8 @@ def audit_independent_readback(
     invoke: Callable[[list[str]], str] = _call_rclone,
 ) -> dict[str, object]:
     """Download all five Drive objects independently; no original runtime required."""
+    cleanup_root: Path | None = None
+    cleanup_identity: tuple[int, int] | None = None
     try:
         if not isinstance(session, str) or SESSION_PATTERN.fullmatch(session) is None:
             _fail()
@@ -248,6 +250,11 @@ def audit_independent_readback(
             _fail()
         _check_remote(manifests, manifests_id, invoke)
         root.mkdir(mode=0o700)
+        root_stat = root.lstat()
+        if not stat.S_ISDIR(root_stat.st_mode) or stat.S_ISLNK(root_stat.st_mode):
+            _fail()
+        cleanup_root = root
+        cleanup_identity = (root_stat.st_dev, root_stat.st_ino)
         downloaded = root / "downloaded"
         downloaded.mkdir(mode=0o700)
         receipt_file = downloaded / receipt_name
@@ -357,6 +364,19 @@ def audit_independent_readback(
             "capture_ready": False,
         }
     except (OSError, ValueError, RuntimeError, TypeError, tarfile.TarError):
+        # A failed audit must not leave a partial download or restored runtime
+        # that could be mistaken for an accepted readback. Remove only the
+        # exact private directory created by this invocation; never follow a
+        # symlink or delete a replacement directory.
+        if cleanup_root is not None and cleanup_identity is not None:
+            try:
+                current = cleanup_root.lstat()
+                if (stat.S_ISDIR(current.st_mode)
+                        and not stat.S_ISLNK(current.st_mode)
+                        and (current.st_dev, current.st_ino) == cleanup_identity):
+                    shutil.rmtree(cleanup_root)
+            except OSError:
+                pass
         _fail()
 
 
