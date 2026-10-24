@@ -1284,8 +1284,33 @@ runtime or reports a successful independent readback. This is test-only fake
 Drive state and does not imply authenticated owner-cloud evidence.
 
 Stage563 code/test head:
-`71d547a2e0b66313056e3c710524018878939082`. Exact-head CI must complete
-successfully on the final code and documentation head before Stage563 is
-accepted. Public CI still contains no original PS1 media, BIOS, BK2 or private
-gameplay captures; the canonical private `07_Builds_and_Test_Artifacts` folder
-remains empty until a real owner-host publish and independent readback pass.
+`71d547a2e0b66313056e3c710524018878939082`. Exact-head CI completed with
+8/8 successful workflows on final PR head
+`92c5a6c06f9cc689c08e1fc754646a1bcb3dc5a8`, with no failures or pending runs.
+The native Linux job explicitly passed
+`test_remote_root_change_during_receipt_readback_rejected`; the no-media
+runtime archive roundtrip and both official BizHawk no-media compile workflows
+also passed. Stage563 is accepted as a code/test gate only. Public CI still
+contains no original PS1 media, BIOS, BK2 or private gameplay captures; the
+canonical private `07_Builds_and_Test_Artifacts` folder remains empty until a
+real owner-host publish and independent readback pass.
+
+## Stage564 — recheck Drive scope during archive-object readback
+
+Stage563 verifies the Drive root after downloading the receipt. Stage564
+extends the race test to the archive object itself: the synthetic transport can
+change a configured root only after a selected filename has been downloaded.
+A new regression test changes the builds root immediately after the runtime
+archive bytes have been copied locally. The auditor must recheck the root and
+reject before restoring the archive or reporting success.
+
+This specifically exercises the per-object post-download check, rather than
+only the receipt path. It remains a synthetic race simulation; it does not
+prove real Google Drive authorization, durable storage or owner-host behavior.
+
+Stage564 code/test head:
+`a775192dc30f884008479774bd47c3e2bc89bfa0`. Exact-head CI must pass on the
+final code and documentation head before Stage564 is accepted. Original PS1
+media, BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
+canonical private `07_Builds_and_Test_Artifacts` folder remains empty until
+a genuine owner-host publish and independent readback succeed.
