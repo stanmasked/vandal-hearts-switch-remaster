@@ -77,6 +77,9 @@ class DiscMoviePreflightTests(unittest.TestCase):
             encoding="ascii",
         )
         write_movie(self.movie)
+        if os.name != "nt":
+            for private_file in (self.bin, self.cue, self.movie):
+                private_file.chmod(0o600)
 
     def _write_disc(self, *, volume_id=EXPECTED_VOLUME_ID, valid_pvd=True):
         sectors = MAP02_LBA + (MAP02_BYTES + USER_DATA_BYTES - 1) // USER_DATA_BYTES
@@ -317,6 +320,61 @@ class DiscMoviePreflightTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "sibling BIN"):
             self.call()
+
+    def test_rejects_media_files_with_group_or_world_permissions(self):
+        if os.name == "nt":
+            self.skipTest("POSIX mode-bit enforcement is not applicable")
+        for private_file in (self.bin, self.cue, self.movie):
+            with self.subTest(kind=private_file.suffix):
+                private_file.chmod(0o644)
+                try:
+                    with self.assertRaisesRegex(ValueError, "mode 0600"):
+                        self.call()
+                finally:
+                    private_file.chmod(0o600)
+
+    def test_rejects_nonprivate_media_parent_directory(self):
+        if os.name == "nt":
+            self.skipTest("POSIX mode-bit enforcement is not applicable")
+        self.root.chmod(0o755)
+        try:
+            with self.assertRaisesRegex(ValueError, "parent must be owner-owned mode 0700"):
+                self.call()
+        finally:
+            self.root.chmod(0o700)
+
+    def test_rejects_hardlinked_private_media(self):
+        if os.name == "nt":
+            self.skipTest("POSIX hardlink-count enforcement is not applicable")
+        alias = self.root / "fictional-alias.bin"
+        os.link(self.bin, alias)
+        try:
+            with self.assertRaisesRegex(ValueError, "without hardlinks"):
+                self.call()
+        finally:
+            alias.unlink()
+
+    def test_rejects_permission_change_between_resolution_and_open(self):
+        if os.name == "nt":
+            self.skipTest("POSIX mode-bit enforcement is not applicable")
+        from tools import map02_private_disc_movie_preflight as module
+        real_open = os.open
+        changed = {"done": False}
+
+        def open_then_widen(path, flags, *args, **kwargs):
+            fd = real_open(path, flags, *args, **kwargs)
+            if Path(path) == self.bin and not changed["done"]:
+                self.bin.chmod(0o644)
+                changed["done"] = True
+            return fd
+
+        with patch.object(module.os, "open", side_effect=open_then_widen):
+            try:
+                with self.assertRaisesRegex(ValueError, "permissions changed while opening"):
+                    module._open_stable(self.bin)
+            finally:
+                self.bin.chmod(0o600)
+        self.assertTrue(changed["done"])
 
     def test_parent_directory_inside_git_checkout_is_rejected(self):
         (self.root / ".git").mkdir()
