@@ -1430,8 +1430,30 @@ This uses synthetic local filesystem and fake remote state only. It does not
 establish real owner-host behavior or Google Drive persistence.
 
 Stage569 code/test head:
-`1013745defc729c8dd19a13a84fea9cc70536314`. Exact-head CI must pass on the
-final code and documentation head before Stage569 is accepted. Original PS1
+`1013745defc729c8dd19a13a84fea9cc70536314`. Exact-head CI completed with
+8/8 successful workflows on final PR head
+`743ce2a827cf121e0805e72ba4d13552447c6632`, with no failures or pending runs.
+The native Linux job passed `test_cleanup_does_not_remove_replacement_readback_directory`.
+Stage569 is accepted as a code/test gate only. Original PS1 media, BIOS, BK2,
+extracted audio and gameplay captures remain unchanged. The canonical private
+`07_Builds_and_Test_Artifacts` folder remains empty until a genuine owner-host
+publish and independent readback succeed.
+
+## Stage570 — symlink replacement safety during cleanup
+
+Stage570 adds a second adversarial cleanup case: after a download, the original
+readback directory is moved aside and the original path is replaced with a
+symlink to a separate directory containing a sentinel. The audit must reject
+the run while preserving the symlink target and sentinel. This directly tests
+that failure cleanup does not follow a substituted symlink, in addition to
+the Stage569 different-inode directory replacement case.
+
+The test runs only against a synthetic filesystem and fake remote transport.
+It is not evidence of actual owner-host or Google Drive behavior.
+
+Stage570 code/test head:
+`e5ebeaca7188342b3dc3959ef2fe9b18d7cfcbc9`. Exact-head CI must pass on the
+final code and documentation head before Stage570 is accepted. Original PS1
 media, BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
 canonical private `07_Builds_and_Test_Artifacts` folder remains empty until
 a genuine owner-host publish and independent readback succeed.
