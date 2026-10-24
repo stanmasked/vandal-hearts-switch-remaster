@@ -307,6 +307,112 @@ class PersistentOwnerPipelineTests(unittest.TestCase):
         )
         self.assertEqual(self.transport.uploads, 5)
 
+    def test_stage602_unpinned_new_source_file_after_transfer_denies_completion(self):
+        original = pipeline.complete_owner_archive_session
+
+        def transfer_then_add_source(*args, **kwargs):
+            result = original(*args, **kwargs)
+            extra = self.source / "owner-optional-notes.txt"
+            extra.write_bytes(b"unexpected source file after upload")
+            extra.chmod(0o600)
+            return result
+
+        with patch.object(pipeline, "complete_owner_archive_session",
+                          side_effect=transfer_then_add_source):
+            with self.assertRaises(OwnerPersistentBackupError):
+                self.execute()
+        self.assertEqual(self.transport.uploads, 5)
+        self.assertTrue((self.trust / (self.session + "-admission.json")).is_file())
+        self.assertTrue((self.work / (self.session + "-preboot-readback")).is_dir())
+
+    def test_stage602_unpinned_existing_source_bytes_changed_during_final_restore(self):
+        extra = self.source / "owner-optional-notes.txt"
+        extra.write_bytes(b"pre-upload-owner-extra")
+        extra.chmod(0o600)
+        original = pipeline.audit_capture_backup_gate
+
+        def final_then_mutate_source(*args, **kwargs):
+            result = original(*args, **kwargs)
+            extra.write_bytes(b"different-content-here")
+            return result
+
+        with patch.object(pipeline, "audit_capture_backup_gate",
+                          side_effect=final_then_mutate_source):
+            with self.assertRaises(OwnerPersistentBackupError):
+                self.execute()
+        self.assertEqual(self.transport.uploads, 5)
+        self.assertTrue((self.work / (self.session + "-preboot-readback")).is_dir())
+
+    def test_stage602_extra_file_in_final_restored_runtime_denies_completion(self):
+        original = pipeline.audit_capture_backup_gate
+
+        def final_then_add_restored(*args, **kwargs):
+            result = original(*args, **kwargs)
+            root = self.work / (self.session + "-preboot-readback/restored/runtime")
+            (root / "injected-after-audit.txt").write_bytes(b"untrusted")
+            return result
+
+        with patch.object(pipeline, "audit_capture_backup_gate",
+                          side_effect=final_then_add_restored):
+            with self.assertRaises(OwnerPersistentBackupError):
+                self.execute()
+        self.assertEqual(self.transport.uploads, 5)
+        self.assertTrue((self.work / (self.session +
+                         "-preboot-readback/restored/runtime/injected-after-audit.txt")).exists())
+
+    def test_stage602_restored_unpinned_file_changed_after_audit_denies_completion(self):
+        extra = self.source / "owner-optional-notes.txt"
+        extra.write_bytes(b"expected-extra")
+        extra.chmod(0o600)
+        original = pipeline.audit_capture_backup_gate
+
+        def final_then_change_restored(*args, **kwargs):
+            result = original(*args, **kwargs)
+            root = self.work / (self.session + "-preboot-readback/restored/runtime")
+            (root / extra.name).write_bytes(b"tampered-extra")
+            return result
+
+        with patch.object(pipeline, "audit_capture_backup_gate",
+                          side_effect=final_then_change_restored):
+            with self.assertRaises(OwnerPersistentBackupError):
+                self.execute()
+        self.assertEqual(self.transport.uploads, 5)
+
+    def test_stage602_source_root_replaced_with_same_bytes_denies_completion(self):
+        original = pipeline.audit_capture_backup_gate
+        displaced = self.base / "stage602-original-runtime-before-swap"
+
+        def final_then_swap_source(*args, **kwargs):
+            result = original(*args, **kwargs)
+            self.source.rename(displaced)
+            shutil.copytree(displaced, self.source, copy_function=shutil.copy2)
+            self.source.chmod(0o700)
+            return result
+
+        with patch.object(pipeline, "audit_capture_backup_gate",
+                          side_effect=final_then_swap_source):
+            with self.assertRaises(OwnerPersistentBackupError):
+                self.execute()
+        self.assertTrue(displaced.is_dir())
+        self.assertEqual(self.transport.uploads, 5)
+
+    def test_stage602_restored_subdirectory_mode_drift_denies_completion(self):
+        original = pipeline.audit_capture_backup_gate
+
+        def final_then_change_restored_mode(*args, **kwargs):
+            result = original(*args, **kwargs)
+            directory = self.work / (
+                self.session + "-preboot-readback/restored/runtime/ExternalTools"
+            )
+            directory.chmod(0o755)
+            return result
+
+        with patch.object(pipeline, "audit_capture_backup_gate",
+                          side_effect=final_then_change_restored_mode):
+            with self.assertRaises(OwnerPersistentBackupError):
+                self.execute()
+        self.assertEqual(self.transport.uploads, 5)
+
     def test_missing_independently_trusted_manifest_fails_before_upload(self):
         self.pin.unlink()
         with self.assertRaises(OwnerPersistentBackupError):
