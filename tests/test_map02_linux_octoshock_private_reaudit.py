@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import tarfile
 import unittest
+from unittest.mock import patch
 
 from test_map02_linux_octoshock_private_drive import Stage537TransportTests
 from tools.map02_linux_octoshock.private_runtime_drive import archive_to_private_drive
@@ -131,6 +132,27 @@ class IndependentReadbackTests(unittest.TestCase):
         with self.assertRaises(IndependentAuditError):
             self.run_audit()
         self.assertFalse((self.reaudit / "restored").exists())
+
+    def test_remote_object_replaced_after_readback_before_audit_success_rejected(self):
+        original_safe_restore = _safe_restore
+
+        def replace_remote_during_restore(archive_path, target):
+            self.transport.remote["vh_builds"][
+                "map02-runtime-testowner001.tar"
+            ] = b"replacement after verified local readback"
+            return original_safe_restore(archive_path, target)
+
+        with patch(
+            "tools.map02_linux_octoshock.private_runtime_reaudit._safe_restore",
+            side_effect=replace_remote_during_restore,
+        ):
+            with self.assertRaises(IndependentAuditError):
+                self.run_audit()
+        # The local archive was pinned and verified before restore; failure is
+        # specifically the final remote-state recheck, not a restore failure.
+        self.assertTrue(
+            (self.reaudit / "restored/runtime/EmuHawk.exe").is_file()
+        )
 
     def test_refuse_corrupted_remote_archive(self):
         key = "map02-runtime-testowner001.tar"
