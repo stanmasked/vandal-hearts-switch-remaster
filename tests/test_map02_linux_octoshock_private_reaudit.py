@@ -104,6 +104,17 @@ class IndependentReadbackTests(unittest.TestCase):
         self.assertFalse((self.reaudit / "restored").exists())
         self.assertEqual(self.transport.uploads, 5)
 
+    def test_owner_pin_change_during_final_object_download_rejected_before_restore(self):
+        self.transport.mutate_local_file_after_download = (
+            "map02-runtime-testowner001.manifest.sha256",
+            self.pin,
+            b"0" * 64 + b"\\n",
+        )
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+        self.assertFalse((self.reaudit / "restored").exists())
+        self.assertEqual(self.transport.uploads, 5)
+
     def test_refuse_corrupted_remote_archive(self):
         key = "map02-runtime-testowner001.tar"
         self.transport.remote["vh_builds"][key] += b"FORGED"
