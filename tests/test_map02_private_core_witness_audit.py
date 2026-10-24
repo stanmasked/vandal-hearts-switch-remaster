@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from tools.map02_private_core_witness_audit import (
-    MAGIC, MAX_RECEIPT_BYTES, compare_witnesses, main, read_witness,
+    KEYS, MAGIC, MAX_RECEIPT_BYTES, compare_witnesses, main, read_witness,
     read_witness_record,
 )
 
@@ -243,6 +243,9 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
             {"process_id": "0"},
             {"process_id": "+3001"},
             {"process_start_utc_ticks": "7"},
+            {"process_start_utc_ticks": "621355967999999999"},
+            {"process_start_utc_ticks": "725811840000000001"},
+            {"process_start_utc_ticks": "9999999999999999999"},
             {"frame_count": "-1"},
             {"frame_count": "2000001"},
             {"frame_count": "01666"},
@@ -253,7 +256,33 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "numeric field"):
                     read_witness(self.first)
 
-    def test_oversized_witness_rejected(self):
+    def test_maximal_v5_receipt_fits_shared_cap_and_oversized_witness_is_rejected(self):
+        maximal = receipt(
+            pid=2147483647,
+            start=725811840000000000,
+            frame=2_000_000,
+            native_core_module_name="liboctoshock.dll.so",
+            disc_mount="single_mounted_tray_closed_source_name_matches",
+        )
+        encoded = maximal.encode("ascii")
+        self.assertEqual(len(encoded), 703)
+        self.assertLessEqual(len(encoded), MAX_RECEIPT_BYTES)
+        self.first.write_bytes(encoded)
+        record = read_witness_record(self.first)
+        self.assertEqual(record[:3], (2147483647, 725811840000000000, 2_000_000))
+        self.assertTrue(record[6])
+        self.assertTrue(record[7])
+
+        lua_path = (Path(__file__).resolve().parents[1]
+                    / "tools" / "map02_bizhawk_private_neutral_capture.lua")
+        lua = lua_path.read_text(encoding="utf-8")
+        self.assertIn(f"local body = file:read({MAX_RECEIPT_BYTES + 1})", lua)
+        self.assertIn(f"or #body > {MAX_RECEIPT_BYTES}", lua)
+        self.assertIn(
+            f'if #lines ~= {len(KEYS) + 1} or lines[1] ~= "{MAGIC}" then', lua)
+        self.assertIn('local min_process_start = "621355968000000000"', lua)
+        self.assertIn('local max_process_start = "725811840000000000"', lua)
+
         self.first.write_bytes(b"X" * (MAX_RECEIPT_BYTES + 1))
         with self.assertRaisesRegex(ValueError, "bounded size"):
             read_witness(self.first)

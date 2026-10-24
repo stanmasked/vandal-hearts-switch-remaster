@@ -490,3 +490,28 @@ authenticate the mounted disc's full bytes, prove the BIN is unchanged inside th
 emulator, confirm controller delivery, or identify the original MAP02 scene. The
 Python auditor, Lua first-PNG gate and paired-run binding all validate this V5 field;
 synthetic tests use fictional paths and receipts only.
+
+### Stage613 — V5 receipt size and Lua/Python timestamp parity
+
+The largest valid V5 receipt under the current field contract is **703 ASCII
+bytes across 16 LF-terminated lines**. This case uses all three 64-character
+SHA-256 fields, the longest supported native-module name, the maximum accepted
+PID, the maximum accepted .NET UTC process-start tick value and the maximum
+accepted frame counter. The shared 768-byte ceiling therefore leaves 65 bytes
+of headroom. Lua reads 769 bytes to detect overflow and rejects anything over
+768; the offline Python reader independently enforces the same 768-byte limit.
+A regression test fixes the expected 703-byte size and checks the Lua/Python
+size and field-count contract together.
+
+The Lua pre-first-PNG gate previously checked only that the process-start value
+was a decimal string 18–22 digits long. That was weaker than the Python auditor,
+which accepts only .NET UTC ticks in the inclusive range
+`621355968000000000`–`725811840000000000`. The Lua gate now checks exactly
+18 digits and compares the bounds lexicographically, without converting a
+64-bit timestamp to an inexact Lua number. Synthetic Lua tests verify both
+inclusive endpoints are accepted and values just below, just above, or longer
+than the supported range are rejected before any PNG is written.
+
+All evidence in this stage remains synthetic and game-free. It proves parser
+contract consistency only—not original-disc playback, authenticated BIOS or
+disc bytes, MAP02 scene identity, or Nintendo Switch execution.

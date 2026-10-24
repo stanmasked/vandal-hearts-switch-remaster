@@ -153,8 +153,14 @@ local function core_only_receipt_bytes()
   end
   -- Keep ticks as text: Lua doubles cannot exactly represent 64-bit timestamps.
   local process_start = field(11, "process_start_utc_ticks")
-  if not process_start or #process_start < 18 or #process_start > 22
-      or not process_start:match("^[1-9]%d*$") then
+  -- Match Python's .NET UTC-tick bounds without tonumber(): Lua doubles
+  -- cannot exactly represent these 64-bit values.
+  local min_process_start = "621355968000000000"
+  local max_process_start = "725811840000000000"
+  if not process_start or #process_start ~= 18
+      or not process_start:match("^[1-9]%d*$")
+      or process_start < min_process_start
+      or process_start > max_process_start then
     return nil
   end
   local frame_text = field(12, "frame_count")

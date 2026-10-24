@@ -117,6 +117,21 @@ local function run(option)
       elseif option == "auto-bad-ticks" then
         bytes = bytes:gsub("process_start_utc_ticks=639000000000000001",
                            "process_start_utc_ticks=123")
+      elseif option == "auto-min-ticks" then
+        bytes = bytes:gsub("process_start_utc_ticks=639000000000000001",
+                           "process_start_utc_ticks=621355968000000000")
+      elseif option == "auto-max-ticks" then
+        bytes = bytes:gsub("process_start_utc_ticks=639000000000000001",
+                           "process_start_utc_ticks=725811840000000000")
+      elseif option == "auto-bad-ticks-low" then
+        bytes = bytes:gsub("process_start_utc_ticks=639000000000000001",
+                           "process_start_utc_ticks=621355967999999999")
+      elseif option == "auto-bad-ticks-high" then
+        bytes = bytes:gsub("process_start_utc_ticks=639000000000000001",
+                           "process_start_utc_ticks=725811840000000001")
+      elseif option == "auto-bad-ticks-long" then
+        bytes = bytes:gsub("process_start_utc_ticks=639000000000000001",
+                           "process_start_utc_ticks=9999999999999999999")
       elseif option == "auto-future" then
         bytes = bytes:gsub("frame_count=1662", "frame_count=1765")
       elseif option == "auto-frame-outside-range" then
@@ -354,10 +369,17 @@ do
          "same-frame Octoshock witness should precede the first PNG")
   assert(#exits == 1 and exits[1] == 0)
 end
+for _, option in ipairs({"auto-min-ticks", "auto-max-ticks"}) do
+  local lines, shots, _, exits = run(option)
+  assert(#shots == 3 and #lines == 10, option .. ": inclusive UTC tick boundary rejected")
+  assert(lines[6] == AUTO_MARK, option .. ": witness did not pass pre-PNG validation")
+  assert(#exits == 1 and exits[1] == 0, option .. ": accepted boundary did not finish cleanly")
+end
 for _, option in ipairs({
     "auto-wrong-root", "auto-missing", "auto-late", "auto-badcore",
     "auto-bad-bios", "auto-bad-hash", "auto-bad-module", "auto-bad-pid",
-    "auto-bad-ticks", "auto-bad-format", "auto-oversized", "auto-mutate",
+    "auto-bad-ticks", "auto-bad-ticks-low", "auto-bad-ticks-high",
+    "auto-bad-ticks-long", "auto-bad-format", "auto-oversized", "auto-mutate",
     "auto-disappear", "auto-future", "auto-frame-outside-range"
 }) do
   local lines, shots, _, exits = run(option)
@@ -373,8 +395,10 @@ for _, option in ipairs({
       or option == "auto-late" or option == "auto-badcore"
       or option == "auto-bad-bios" or option == "auto-bad-hash"
       or option == "auto-bad-module" or option == "auto-bad-pid"
-      or option == "auto-bad-ticks" or option == "auto-bad-format"
-      or option == "auto-oversized" or option == "auto-future"
+      or option == "auto-bad-ticks" or option == "auto-bad-ticks-low"
+      or option == "auto-bad-ticks-high" or option == "auto-bad-ticks-long"
+      or option == "auto-bad-format" or option == "auto-oversized"
+      or option == "auto-future"
       or option == "auto-frame-outside-range" then
     assert(#shots == 0, option .. ": first PNG must be blocked")
   end
