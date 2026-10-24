@@ -1530,8 +1530,33 @@ not accepted evidence; it must be inspected or manually reconciled by the
 owner. No real owner-host or Google Drive behavior is established.
 
 Stage573 code/test head:
-`861e191cd0162ff310e8ebfb224670f46f1ef041`. Exact-head CI must pass on the
-final code and documentation head before Stage573 is accepted. Original PS1
+`861e191cd0162ff310e8ebfb224670f46f1ef041`. Exact-head CI completed with
+8/8 successful workflows on final PR head
+`1441be368fd015d831ddddda122b18bbd951f8f1`, with no failures or pending runs.
+The native Linux job passed the quarantine-conflict preservation test.
+Stage573 is accepted as a code/test gate only. Original PS1 media, BIOS, BK2,
+extracted audio and gameplay captures remain unchanged. The canonical private
+`07_Builds_and_Test_Artifacts` folder remains empty until a genuine owner-host
+publish and independent readback succeed.
+
+## Stage574 — fail closed while unresolved cleanup quarantine exists
+
+Stage573 deliberately preserves a quarantined object if a concurrent process
+claims the original readback name before the object can be safely restored.
+Stage574 makes this condition operationally visible: a new independent
+readback refuses to start if its private parent contains any
+`.map02-readback-cleanup-*` quarantine. This prevents a subsequent audit from
+silently proceeding beside unresolved partial data. The quarantine remains
+untouched, and the owner must inspect and reconcile it before retrying.
+
+A regression assertion performs a second audit against a different fresh root
+after the conflict test leaves a quarantine. The second audit must reject
+before creating its new output root and must preserve the quarantined object.
+This is synthetic testing only.
+
+Stage574 code/test head:
+`77185a2feb351dc3b083f7d849392d55805c839b`. Exact-head CI must pass on the
+final code and documentation head before Stage574 is accepted. Original PS1
 media, BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
 canonical private `07_Builds_and_Test_Artifacts` folder remains empty until
 a genuine owner-host publish and independent readback succeed.
