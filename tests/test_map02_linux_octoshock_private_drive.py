@@ -92,9 +92,10 @@ class FakeDriveTransport:
                 assert not path.exists()
                 path.write_bytes(data)
                 if self.mutate_folder_after_download is not None:
-                    folder_remote, replacement_id = self.mutate_folder_after_download
-                    self.folder_ids[folder_remote] = replacement_id
-                    self.mutate_folder_after_download = None
+                    folder_remote, replacement_id, *trigger = self.mutate_folder_after_download
+                    if not trigger or filename == trigger[0]:
+                        self.folder_ids[folder_remote] = replacement_id
+                        self.mutate_folder_after_download = None
             return ""
         raise AssertionError("unexpected fictional rclone command: " + name)
 
