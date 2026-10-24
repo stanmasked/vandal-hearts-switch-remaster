@@ -1613,8 +1613,31 @@ confirms a new session refuses before creating its session tree or uploading
 anything. These are synthetic filesystem/fake-transport tests only.
 
 Stage576 code/test head:
-`1d607f998bb1f2e60cecb86b571d85fc96c6837e`. Exact-head CI must pass on the
-final code and documentation head before Stage576 is accepted. Original PS1
+`1d607f998bb1f2e60cecb86b571d85fc96c6837e`. Exact-head CI completed with
+8/8 successful workflows on final PR head
+`200abadc97df88acccef43cacd15cc169b6b2d90`, with no failures or pending runs.
+The native Linux owner-runtime job passed both owner-pin replacement-race tests,
+the owner-session test suite, and the no-media runtime roundtrip. Stage576 is
+accepted as a code/test gate only. Original PS1 media, BIOS, BK2, extracted
+audio and gameplay captures remain unchanged. The canonical private
+`07_Builds_and_Test_Artifacts` folder remains empty until a genuine owner-host
+publish and independent readback succeed.
+
+## Stage577 — preserve symlink replacements during owner-pin cleanup
+
+Stage577 adds a targeted regression for a symlink substituted after the initial
+owner-pin identity check but before the atomic quarantine move. Cleanup must
+move the symlink itself, recognize that it is not the original owner-owned
+regular 0600 file, restore it only while the original name is free, and never
+follow or delete the symlink target. The test also verifies that the displaced
+original pin remains available and no empty quarantine wrapper is left behind.
+
+This is synthetic local-filesystem testing. It does not establish actual
+owner-host or Google Drive behavior.
+
+Stage577 code/test head:
+`cf01ddee9ce86512f260436cb959dab285de250e`. Exact-head CI must pass on the
+final code and documentation head before Stage577 is accepted. Original PS1
 media, BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
 canonical private `07_Builds_and_Test_Artifacts` folder remains empty until
 a genuine owner-host publish and independent readback succeed.
