@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import os
 from pathlib import Path
 import shutil
 import tarfile
@@ -198,6 +199,42 @@ class IndependentReadbackTests(unittest.TestCase):
             self.run_audit()
         self.assertFalse(self.reaudit.exists())
         self.assertEqual(self.transport.uploads, 5)
+
+    def test_cleanup_preserves_replacement_won_before_atomic_quarantine(self):
+        displaced = self.base / "displaced-original-readback"
+        original_rename = os.rename
+
+        def replace_root_before_quarantine(src, dst, *args, **kwargs):
+            src_path = Path(src)
+            dst_path = Path(dst)
+            if src_path == self.reaudit and dst_path.name == "payload":
+                # Win the race after cleanup starts but immediately before its
+                # atomic rename. The replacement must be preserved, not erased.
+                original_rename(src_path, displaced)
+                src_path.mkdir(mode=0o700)
+                (src_path / "sentinel").write_text(
+                    "preserve concurrent replacement", encoding="utf-8"
+                )
+            return original_rename(src, dst, *args, **kwargs)
+
+        self.transport.raise_after_download = (
+            self.receipt_name, KeyboardInterrupt("synthetic cleanup race"),
+        )
+        with patch(
+            "tools.map02_linux_octoshock.private_runtime_reaudit.os.rename",
+            side_effect=replace_root_before_quarantine,
+        ):
+            with self.assertRaisesRegex(KeyboardInterrupt, "synthetic cleanup race"):
+                self.run_audit()
+        self.assertTrue(displaced.is_dir())
+        self.assertTrue(self.reaudit.is_dir())
+        self.assertEqual(
+            (self.reaudit / "sentinel").read_text(encoding="utf-8"),
+            "preserve concurrent replacement",
+        )
+        self.assertEqual(
+            list(self.base.glob(".map02-readback-cleanup-*")), [],
+        )
 
     def test_refuse_corrupted_remote_archive(self):
         key = "map02-runtime-testowner001.tar"
