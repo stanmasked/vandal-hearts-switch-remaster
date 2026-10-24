@@ -820,3 +820,38 @@ restore. They also reject tampered earlier proof, session mismatch,
 changed owner tar SHA, changed cloud tar or receipt and reused
 download folder. **No OAuth secrets, original game, BIOS, BK2 or
 owner runtime binary are placed into public GitHub.**
+
+## Stage549 — rollback of unfinished owner archive trust references
+
+Before Stage549, the owner archive orchestrator could leave a NEW,
+owner-only receipt SHA-256 on disk if a later source-free independent
+re-audit failed. The receipt represented an earlier successful remote
+readback, **not** the completion of the complete owner archive session,
+so such a leftover was unsafe to treat as final owner backup evidence.
+
+Stage549 treats the newly allocated external `--new-owner-receipt-pin`
+and `--new-owner-archive-pin` as an admission pair. **Only after**
+the read-only owner manifest/remote preflight succeeds does the session
+mark these two new outputs as belonging to the current attempt. If the
+subsequent upload, first receipt sealing, independent remote restore,
+tar-pin write or final rehash fails, any newly created mode-0600
+owner-owned external references from this attempt are removed.
+Pre-existing or unrelated owner trust files are never overwritten
+or removed. Cloud objects and the temporary owner session directory
+are deliberately **left intact on failure** for private forensic
+inspection; a fresh upload attempt must use a NEW session name and
+fresh private output paths.
+
+Four additional fictional CI regression tests simulate a failure
+after all five cloud uploads, a failure after writing an archive SHA,
+a failure during receipt sealing and preservation of a separate
+pre-existing owner reference. They check absence of misleading
+external owner SHA files after rejection. Public CI includes no actual
+Google Drive credentials, original PS1 disc, BIOS, BK2, extracted
+audio, runtime binary artifacts or private captures.
+
+**This is a fail-closed workflow safety improvement, not a real owner
+authenticated upload.** The private canonical `07_Builds_and_Test_Artifacts`
+folder still requires a genuine persistent owner Linux runtime upload
+and independently verified readback, and original MAP02 cold game
+launches remain separate checks.

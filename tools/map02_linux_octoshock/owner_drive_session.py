@@ -36,6 +36,25 @@ def _fail() -> None:
     raise PrivateOwnerSessionError("owner-private archive session not verified")
 
 
+def _discard_incomplete_owner_pin(path: Path | None) -> None:
+    """Discard ONLY a new 0600 owner file from this unfinished session.
+
+    Never remove a previous trusted pin, a symlink, a special file, a
+    world-readable file, the original runtime or any cloud object.
+    """
+    if path is None:
+        return
+    try:
+        details = path.lstat()
+    except FileNotFoundError:
+        return
+    if (not stat.S_ISREG(details.st_mode)
+            or details.st_uid != os.geteuid()
+            or stat.S_IMODE(details.st_mode) != 0o600):
+        _fail()
+    path.unlink()
+
+
 def complete_owner_archive_session(
     runtime: Path,
     trusted_manifest_pin: Path,
@@ -55,6 +74,8 @@ def complete_owner_archive_session(
     an independent owner-controlled process. A CI-created pin is not valid
     evidence of independent owner provenance.
     """
+    cleanup_receipt: Path | None = None
+    cleanup_archive: Path | None = None
     try:
         source = _root(runtime)
         builds = _remote_name(builds_remote)
@@ -107,8 +128,13 @@ def complete_owner_archive_session(
                 or readiness["capture_ready"] is not False):
             _fail()
 
-        # No dangerous partial overwrite / resume. An interrupted session
-        # remains private, is not called a success and requires fresh naming.
+        # At this point the owner-only files are new and the no-write
+        # preflight has succeeded. Mark them as disposable from THIS
+        # attempt, not before: older trust anchors are never removed.
+        cleanup_receipt = receipt_pin
+        cleanup_archive = tar_pin_out
+        # Never delete failed session content or partly uploaded cloud bytes:
+        # they are forensic evidence and require a new session name.
         root.mkdir(mode=0o700)
         archive_folder = root / "archive"
         upload_folder = root / "upload"
@@ -173,6 +199,11 @@ def complete_owner_archive_session(
             "capture_ready": False,
         }
     except (OSError, ValueError, RuntimeError, TypeError, KeyError):
+        try:
+            _discard_incomplete_owner_pin(cleanup_archive)
+            _discard_incomplete_owner_pin(cleanup_receipt)
+        except (OSError, ValueError):
+            _fail()
         _fail()
 
 

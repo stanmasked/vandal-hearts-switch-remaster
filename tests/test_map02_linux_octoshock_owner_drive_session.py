@@ -4,6 +4,9 @@ from __future__ import annotations
 from pathlib import Path
 import shutil
 import unittest
+from unittest.mock import patch
+
+from tools.map02_linux_octoshock import owner_drive_session
 
 from test_map02_linux_octoshock_private_drive import Stage537TransportTests
 from tools.map02_linux_octoshock.owner_drive_session import (
@@ -58,6 +61,67 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertFalse(report["original_runtime_required"])
         self.assertFalse(self.full_session.exists())
         self.assertEqual(report["objects_read_back"], 5)
+
+    def test_late_independent_reaudit_failure_discards_both_new_pins(self):
+        with patch.object(
+            owner_drive_session, "audit_independent_readback",
+            side_effect=RuntimeError("fictional interrupted re-audit"),
+        ):
+            with self.assertRaises(PrivateOwnerSessionError):
+                self.execute()
+        self.assertEqual(self.transport.uploads, 5)
+        self.assertTrue(self.full_session.is_dir())
+        self.assertFalse(self.receipt_pin.exists())
+        self.assertFalse(self.archive_pin.exists())
+
+    def test_post_write_archive_pin_failure_discards_both_pins(self):
+        real_hash = owner_drive_session._hash_file
+        tar = self.full_session / "archive/map02-runtime-owner541001.tar"
+        calls = 0
+
+        def failed_final_hash(path):
+            nonlocal calls
+            if path == tar:
+                calls += 1
+                if calls == 2:
+                    raise RuntimeError("fictional owner tar changed after pin")
+            return real_hash(path)
+
+        with patch.object(owner_drive_session, "_hash_file", side_effect=failed_final_hash):
+            with self.assertRaises(PrivateOwnerSessionError):
+                self.execute()
+        self.assertEqual(calls, 2)
+        self.assertTrue(self.full_session.is_dir())
+        self.assertFalse(self.receipt_pin.exists())
+        self.assertFalse(self.archive_pin.exists())
+
+    def test_interrupted_cloud_receipt_sealing_discards_partial_pin(self):
+        def interrupted_upload(*args, **kwargs):
+            self.receipt_pin.write_text("0" * 64 + "\n", encoding="ascii")
+            self.receipt_pin.chmod(0o600)
+            raise RuntimeError("fictional interrupted owner receipt seal")
+
+        with patch.object(
+            owner_drive_session, "archive_to_private_drive",
+            side_effect=interrupted_upload,
+        ):
+            with self.assertRaises(PrivateOwnerSessionError):
+                self.execute()
+        self.assertFalse(self.receipt_pin.exists())
+        self.assertFalse(self.archive_pin.exists())
+        self.assertTrue(self.full_session.exists())
+
+    def test_previous_unrelated_owner_pin_survives_failed_session(self):
+        old_pin = self.base / "unrelated-owner-reference.sha256"
+        old_pin.write_text("a" * 64 + "\n", encoding="ascii")
+        old_pin.chmod(0o600)
+        self.transport.corrupt_download = True
+        with self.assertRaises(PrivateOwnerSessionError):
+            self.execute()
+        self.assertEqual(old_pin.read_text(), "a" * 64 + "\n")
+        self.assertEqual(old_pin.stat().st_mode & 0o777, 0o600)
+        self.assertFalse(self.receipt_pin.exists())
+        self.assertFalse(self.archive_pin.exists())
 
     def test_existing_independent_archive_pin_rejected_before_transfer(self):
         self.archive_pin.write_text("0" * 64 + "\n", encoding="ascii")
