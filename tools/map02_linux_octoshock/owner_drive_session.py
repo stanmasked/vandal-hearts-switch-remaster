@@ -205,6 +205,11 @@ def complete_owner_archive_session(
         # Never delete failed session content or partly uploaded cloud bytes:
         # they are forensic evidence and require a new session name.
         root.mkdir(mode=0o700)
+        # A concurrent interrupted owner process may leave a quarantine
+        # between the post-readiness check and this first mkdir. Keep the
+        # failed session directory for review, but refuse before packing,
+        # uploading, or creating any output pins.
+        _reject_unresolved_pin_quarantine(receipt_pin, tar_pin_out)
         archive_folder = root / "archive"
         upload_folder = root / "upload"
         audit_folder = root / "independent-reaudit"
