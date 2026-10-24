@@ -1,3 +1,4 @@
+-- Stage608: malformed V4 receipt variants must fail before the first PNG.
 -- Executable Lua capture test with entirely invented BizHawk APIs and PNG bytes.
 -- Does NOT run Octoshock, use the owner's BK2 or publish original gameplay.
 local SCRIPT = "tools/map02_bizhawk_private_neutral_capture.lua"
