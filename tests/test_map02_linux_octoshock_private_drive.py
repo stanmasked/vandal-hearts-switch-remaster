@@ -9,12 +9,13 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from test_map02_linux_octoshock_archive_readback import private_mock_runtime, sha
 from tools.map02_linux_octoshock.private_runtime_tar import pack_runtime
 from tools.map02_linux_octoshock.private_runtime_drive import (
     PrivateDriveError,
-    archive_to_private_drive,
+    archive_to_private_drive, _folder_map,
 )
 
 
@@ -117,6 +118,79 @@ class Stage537TransportTests(unittest.TestCase):
             "vh_builds", "vh_manifests", "testowner001",
             self.private_map, invoke=self.transport,
         )
+
+    def test_folder_map_anchored_descriptor_reads_owner_only_config(self):
+        self.assertEqual(
+            _folder_map(self.private_map, self.source),
+            (BUILDS_FOLDER_ID, MANIFESTS_FOLDER_ID),
+        )
+
+    def test_folder_map_same_contents_inode_swap_before_open_denied(self):
+        original_open = os.open
+        payload = self.private_map.read_bytes()
+        exchanged = self.base / "old-folder-map.json"
+        swapped = False
+
+        def replace_file(file, flags, *args, **kwargs):
+            nonlocal swapped
+            if file == self.private_map.name and "dir_fd" in kwargs and not swapped:
+                swapped = True
+                self.private_map.rename(exchanged)
+                self.private_map.write_bytes(payload)
+                self.private_map.chmod(0o600)
+            return original_open(file, flags, *args, **kwargs)
+
+        with patch("tools.map02_linux_octoshock.private_runtime_drive.os.open",
+                   side_effect=replace_file):
+            with self.assertRaises(PrivateDriveError):
+                _folder_map(self.private_map, self.source)
+        self.assertTrue(swapped)
+
+    def test_folder_map_swap_after_open_but_before_read_denied(self):
+        original_open = os.open
+        payload = self.private_map.read_bytes()
+        exchanged = self.base / "old-folder-map.json"
+        swapped = False
+
+        def replace_after_open(file, flags, *args, **kwargs):
+            nonlocal swapped
+            fd = original_open(file, flags, *args, **kwargs)
+            if file == self.private_map.name and "dir_fd" in kwargs and not swapped:
+                swapped = True
+                self.private_map.rename(exchanged)
+                self.private_map.write_bytes(payload)
+                self.private_map.chmod(0o600)
+            return fd
+
+        with patch("tools.map02_linux_octoshock.private_runtime_drive.os.open",
+                   side_effect=replace_after_open):
+            with self.assertRaises(PrivateDriveError):
+                _folder_map(self.private_map, self.source)
+        self.assertTrue(swapped)
+
+    def test_folder_map_symlink_swap_before_open_denied(self):
+        original_open = os.open
+        exchanged = self.base / "old-folder-map.json"
+        swapped = False
+
+        def replace_with_symlink(file, flags, *args, **kwargs):
+            nonlocal swapped
+            if file == self.private_map.name and "dir_fd" in kwargs and not swapped:
+                swapped = True
+                self.private_map.rename(exchanged)
+                self.private_map.symlink_to(exchanged)
+            return original_open(file, flags, *args, **kwargs)
+
+        with patch("tools.map02_linux_octoshock.private_runtime_drive.os.open",
+                   side_effect=replace_with_symlink):
+            with self.assertRaises(PrivateDriveError):
+                _folder_map(self.private_map, self.source)
+        self.assertTrue(swapped)
+
+    def test_folder_map_oversized_owner_config_denied(self):
+        self.private_map.write_bytes(b" " * 2049)
+        with self.assertRaises(PrivateDriveError):
+            _folder_map(self.private_map, self.source)
 
     def test_entire_mock_transfer_and_readback_receipt(self):
         result = self.run_archive()
