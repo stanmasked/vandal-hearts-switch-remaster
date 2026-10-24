@@ -10,6 +10,7 @@ import unittest
 
 from tools.map02_linux_octoshock.owner_persistent_host import (
     MINIMUM_PREPARE_BYTES, PersistentHostError, verify_persistent_private_host,
+    snapshot_private_path_identity, require_unchanged_persistent_host,
 )
 
 
@@ -136,6 +137,68 @@ class PersistentHostTests(unittest.TestCase):
         parent.chmod(0o770)
         with self.assertRaises(PersistentHostError):
             self.audit(path=child)
+
+    def recheck_identity(self, path, initial):
+        device = path.stat().st_dev
+        mountinfo = (
+            f"1 0 {os.major(device)}:{os.minor(device)} / / "
+            "rw,relatime - ext4 /dev/fake rw\\n"
+        ).replace("\\\\n", "\\n")
+        return require_unchanged_persistent_host(
+            [path], initial, minimum_free_bytes=MINIMUM_PREPARE_BYTES,
+            mountinfo=mountinfo, environ={},
+            host_platform="linux", machine="x86_64",
+            disk_usage=lambda _: SimpleNamespace(free=MINIMUM_PREPARE_BYTES * 2),
+            temporary_prefixes=(),
+        )
+
+    def test_identity_checkpoint_accepts_same_directory(self):
+        leaf = self.root / "stable"
+        leaf.mkdir(mode=0o700)
+        self.audit(path=leaf)
+        saved = snapshot_private_path_identity([leaf])
+        self.assertEqual(
+            self.recheck_identity(leaf, saved)["private_owner_directories_verified"], 1,
+        )
+
+    def test_identity_checkpoint_rejects_leaf_inode_replacement(self):
+        leaf = self.root / "replaceable"
+        leaf.mkdir(mode=0o700)
+        self.audit(path=leaf)
+        saved = snapshot_private_path_identity([leaf])
+        leaf.rename(self.root / "old-replaceable")
+        leaf.mkdir(mode=0o700)
+        self.audit(path=leaf)
+        with self.assertRaises(PersistentHostError):
+            self.recheck_identity(leaf, saved)
+
+    def test_identity_checkpoint_rejects_ancestor_inode_replacement(self):
+        parent = self.root / "private-parent"
+        parent.mkdir(mode=0o700)
+        leaf = parent / "leaf"
+        leaf.mkdir(mode=0o700)
+        self.audit(path=leaf)
+        saved = snapshot_private_path_identity([leaf])
+        parent.rename(self.root / "old-private-parent")
+        parent.mkdir(mode=0o700)
+        leaf.mkdir(mode=0o700)
+        self.audit(path=leaf)
+        with self.assertRaises(PersistentHostError):
+            self.recheck_identity(leaf, saved)
+
+    def test_identity_checkpoint_rejects_changed_owner_mode(self):
+        leaf = self.root / "chmoded"
+        leaf.mkdir(mode=0o700)
+        self.audit(path=leaf)
+        saved = snapshot_private_path_identity([leaf])
+        leaf.chmod(0o755)
+        with self.assertRaises(PersistentHostError):
+            self.recheck_identity(leaf, saved)
+
+    def test_identity_checkpoint_rejects_untrusted_empty_baseline(self):
+        self.audit()
+        with self.assertRaises(PersistentHostError):
+            self.recheck_identity(self.root, ())
 
     def test_repository_checkout_denied(self):
         (self.root / ".git").mkdir(mode=0o700)
