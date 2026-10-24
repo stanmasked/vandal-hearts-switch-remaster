@@ -112,6 +112,16 @@ def _existing_names(remote: str, invoke: Callable[[list[str]], str]) -> set[str]
     return set(names)
 
 
+def _require_remote_target_available(
+    remote: str, folder_id: str, filename: str,
+    invoke: Callable[[list[str]], str],
+) -> None:
+    """Recheck the expected Drive root and reject a name race before upload."""
+    _check_remote(remote, folder_id, invoke)
+    if filename in _existing_names(remote, invoke):
+        _fail()
+
+
 def _stat_remote(remote_path: str, filename: str, size: int,
                  invoke: Callable[[list[str]], str]) -> str:
     raw = invoke(["lsjson", "--stat", remote_path])
@@ -501,13 +511,21 @@ def archive_to_private_drive(
             if (_hash_file(sealed) != expected_sha
                     or _hash_file(original) != expected_sha):
                 _fail()
+            folder_id = builds_id if remote == builds else manifests_id
+            _require_remote_target_available(remote, folder_id, name, invoke)
             target = remote + ":" + name
             invoke(["copyto", "--immutable", "--no-traverse", str(sealed), target])
+            # A changed rclone root after the write must not be mistaken for a
+            # verified upload. Recheck scope both before stat and before the
+            # fresh download, then again after the download completes.
+            _check_remote(remote, folder_id, invoke)
             object_id = _stat_remote(target, name, sealed.stat().st_size, invoke)
+            _check_remote(remote, folder_id, invoke)
             # Download actual remote bytes and compare against the sealed
             # snapshot, not mutable original build output.
             download = staged_files / name
             invoke(["copyto", "--immutable", target, str(download)])
+            _check_remote(remote, folder_id, invoke)
             downloaded = _require_file(download, source)
             if (_hash_file(downloaded) != expected_sha
                     or downloaded.stat().st_size != sealed.stat().st_size):
@@ -515,8 +533,7 @@ def archive_to_private_drive(
             if original == pin or original == archive_pin:
                 os.chmod(downloaded, 0o600)
             metadata.append({
-                "folder_id": (builds_id if remote == builds
-                              else manifests_id),
+                "folder_id": folder_id,
                 "name": name,
                 "google_drive_id": object_id,
                 "sha256": expected_sha,
@@ -555,14 +572,20 @@ def archive_to_private_drive(
         receipt_name = stem + ".receipt.json"
         if receipt_name in existing_manifests:
             _fail()
+        _require_remote_target_available(
+            manifests, manifests_id, receipt_name, invoke,
+        )
         receipt_target = manifests + ":" + receipt_name
         invoke(["copyto", "--immutable", "--no-traverse", str(receipt_file),
                 receipt_target])
+        _check_remote(manifests, manifests_id, invoke)
         receipt_id = _stat_remote(
             receipt_target, receipt_name, receipt_file.stat().st_size, invoke
         )
+        _check_remote(manifests, manifests_id, invoke)
         receipt_download = staged_files / receipt_name
         invoke(["copyto", "--immutable", receipt_target, str(receipt_download)])
+        _check_remote(manifests, manifests_id, invoke)
         receipt_hash = _hash_file(_require_file(receipt_download, source))
         if receipt_hash != _hash_file(receipt_file):
             _fail()
