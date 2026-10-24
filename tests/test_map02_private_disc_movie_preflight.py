@@ -283,6 +283,108 @@ class DiscMoviePreflightTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "nonsymlink"):
             read_private_full_bin_sha256(link)
 
+    def test_stage606_digest_reference_rejects_nonprivate_parent(self):
+        if os.name == "nt":
+            self.skipTest("POSIX private directory mode enforcement not applicable")
+        reference = self.root / "stage606-parent.sha256"
+        reference.write_text("c" * 64 + "\n", encoding="ascii")
+        reference.chmod(0o600)
+        self.root.chmod(0o755)
+        try:
+            with self.assertRaisesRegex(ValueError, "parent must be owner-only"):
+                read_private_full_bin_sha256(reference)
+        finally:
+            self.root.chmod(0o700)
+
+    def test_stage606_digest_reference_rejects_hardlink_alias(self):
+        if os.name == "nt":
+            self.skipTest("POSIX hardlink count enforcement not applicable")
+        reference = self.root / "stage606-hardlink.sha256"
+        reference.write_text("d" * 64 + "\n", encoding="ascii")
+        reference.chmod(0o600)
+        alias = self.root / "stage606-hardlink-alias.sha256"
+        os.link(reference, alias)
+        with self.assertRaisesRegex(ValueError, "one hard link"):
+            read_private_full_bin_sha256(reference)
+
+    def test_stage606_digest_reference_final_symlink_swap_is_detected(self):
+        if os.name == "nt":
+            self.skipTest("POSIX dirfd checks not applicable")
+        reference = self.root / "stage606-symlink.sha256"
+        reference.write_text("e" * 64 + "\n", encoding="ascii")
+        reference.chmod(0o600)
+        displaced = self.root / "stage606-displaced.sha256"
+        real_stat = os.stat
+        swapped = {"value": False}
+
+        def replace_with_symlink(path, *args, **kwargs):
+            if (path == reference.name and kwargs.get("dir_fd") is not None
+                    and kwargs.get("follow_symlinks") is False
+                    and not swapped["value"]):
+                reference.rename(displaced)
+                reference.symlink_to(displaced)
+                swapped["value"] = True
+            return real_stat(path, *args, **kwargs)
+
+        with patch("tools.map02_private_disc_movie_preflight.os.stat",
+                   side_effect=replace_with_symlink):
+            with self.assertRaisesRegex(ValueError, "changed during read"):
+                read_private_full_bin_sha256(reference)
+        self.assertTrue(swapped["value"])
+        self.assertTrue(reference.is_symlink())
+
+    def test_stage606_digest_parent_replacement_during_read_is_detected(self):
+        if os.name == "nt":
+            self.skipTest("POSIX dirfd checks not applicable")
+        trust = self.root / "stage606-trust"
+        trust.mkdir(mode=0o700)
+        reference = trust / "digest.sha256"
+        reference.write_text("f" * 64 + "\n", encoding="ascii")
+        reference.chmod(0o600)
+        displaced = self.root / "stage606-trust-displaced"
+        real_stat = os.stat
+        swapped = {"value": False}
+
+        def replace_parent(path, *args, **kwargs):
+            if (path == reference.name and kwargs.get("dir_fd") is not None
+                    and kwargs.get("follow_symlinks") is False
+                    and not swapped["value"]):
+                trust.rename(displaced)
+                trust.symlink_to(displaced, target_is_directory=True)
+                swapped["value"] = True
+            return real_stat(path, *args, **kwargs)
+
+        with patch("tools.map02_private_disc_movie_preflight.os.stat",
+                   side_effect=replace_parent):
+            with self.assertRaisesRegex(ValueError, "changed during read"):
+                read_private_full_bin_sha256(reference)
+        self.assertTrue(swapped["value"])
+        self.assertTrue(trust.is_symlink())
+
+    def test_stage606_digest_reference_mode_change_during_read_is_detected(self):
+        if os.name == "nt":
+            self.skipTest("POSIX mode enforcement not applicable")
+        reference = self.root / "stage606-mode.sha256"
+        reference.write_text("a" * 64 + "\n", encoding="ascii")
+        reference.chmod(0o600)
+        real_stat = os.stat
+        changed = {"value": False}
+
+        def widen_mode(path, *args, **kwargs):
+            if (path == reference.name and kwargs.get("dir_fd") is not None
+                    and kwargs.get("follow_symlinks") is False
+                    and not changed["value"]):
+                reference.chmod(0o644)
+                changed["value"] = True
+            return real_stat(path, *args, **kwargs)
+
+        with patch("tools.map02_private_disc_movie_preflight.os.stat",
+                   side_effect=widen_mode):
+            with self.assertRaisesRegex(ValueError, "changed during read"):
+                read_private_full_bin_sha256(reference)
+        self.assertTrue(changed["value"])
+        self.assertEqual(reference.stat().st_mode & 0o777, 0o644)
+
     def test_reject_malformed_private_reference(self):
         reference = self.root / "malformed.sha256"
         reference.write_text("A" * 64, encoding="ascii")
