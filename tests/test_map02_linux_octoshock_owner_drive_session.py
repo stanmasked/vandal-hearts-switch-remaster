@@ -512,5 +512,41 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertFalse((root / "retry-session").exists())
 
 
+    @unittest.skipUnless(os.name == "posix", "requires POSIX signal handling")
+    def test_main_restores_previous_sigterm_handler_after_success(self):
+        previous_handler = signal.getsignal(signal.SIGTERM)
+        argv = [
+            "owner_drive_session.py",
+            "--runtime", str(self.source),
+            "--trusted-manifest-pin", str(self.pin),
+            "--private-folder-map", str(self.private_map),
+            "--new-session-root", str(self.full_session),
+            "--new-owner-receipt-pin", str(self.receipt_pin),
+            "--new-owner-archive-pin", str(self.archive_pin),
+            "--builds-remote", "vh_builds",
+            "--manifests-remote", "vh_manifests",
+            "--session", "owner578restore",
+        ]
+
+        def successful_session(*_args, **_kwargs):
+            self.assertIsNot(signal.getsignal(signal.SIGTERM), previous_handler)
+            return {
+                "authenticated_owner_rclone_invoked": True,
+                "owner_archive_pin_written": True,
+                "runtime_files": 7,
+                "runtime_bytes": 123,
+            }
+
+        with patch.object(
+            owner_drive_session,
+            "complete_owner_archive_session",
+            side_effect=successful_session,
+        ), patch.object(sys, "argv", argv):
+            result = owner_drive_session.main()
+
+        self.assertEqual(result, 0)
+        self.assertIs(signal.getsignal(signal.SIGTERM), previous_handler)
+
+
 if __name__ == "__main__":
     unittest.main()

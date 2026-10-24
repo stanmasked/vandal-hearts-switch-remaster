@@ -1663,9 +1663,12 @@ activity. The pin is deliberately not auto-deleted after `SIGKILL`; owner
 inspection/reconciliation is required. Both tests use invented local files
 and fake transport only.
 
-Stage578 code/test head:
-`9c0fc737e78c2b394c5237d4f5dfce1fd8047bc7` (including newline-terminated
-partial-pin fixtures). Exact-head CI must pass on the
+A third regression confirms that normal CLI completion restores the
+previously installed SIGTERM handler.
+
+Stage578 implementation baseline:
+`9c0fc737e78c2b394c5237d4f5dfce1fd8047bc7` (signal cleanup and
+newline-terminated partial-pin fixtures). Exact-head CI must pass on the
 final code and documentation head before Stage578 is accepted. The Stage577
 symlink-replacement test must also pass on that exact head. Original PS1 media,
 BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
