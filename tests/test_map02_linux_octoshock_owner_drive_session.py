@@ -285,7 +285,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
         payload_marker.mkdir(mode=0o700)
         empty_marker.mkdir(mode=0o700)
         payload = payload_marker / "payload"
-        payload.write_text("d" * 64 + "\\n", encoding="ascii")
+        payload.write_text("d" * 64 + "\n", encoding="ascii")
         payload.chmod(0o600)
 
         with self.assertRaises(PrivateOwnerSessionError):
@@ -299,7 +299,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertEqual(markers, [empty_marker, payload_marker])
         self.assertEqual(list(empty_marker.iterdir()), [])
         self.assertEqual(
-            payload.read_text(encoding="ascii"), "d" * 64 + "\\n",
+            payload.read_text(encoding="ascii"), "d" * 64 + "\n",
         )
         self.assertEqual(payload.stat().st_mode & 0o777, 0o600)
         self.assertEqual(payload_marker.stat().st_mode & 0o777, 0o700)
