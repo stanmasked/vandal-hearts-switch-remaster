@@ -1,0 +1,109 @@
+"""Stage551 simulated mount tests, no actual owner machine or media."""
+from __future__ import annotations
+
+from pathlib import Path
+import stat
+import tempfile
+from types import SimpleNamespace
+import unittest
+
+from tools.map02_linux_octoshock.owner_persistent_host import (
+    MINIMUM_PREPARE_BYTES, PersistentHostError, verify_persistent_private_host,
+)
+
+
+def mock_mount(fs="ext4"):
+    return f"1 0 0:1 / / rw,relatime - {fs} /dev/fake rw\n"
+
+
+class PersistentHostTests(unittest.TestCase):
+    def setUp(self):
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        self.root = Path(t.name)
+        self.root.chmod(0o700)
+
+    def audit(self, *, path=None, fs="ext4", env=None, free=None,
+              mountinfo=None, prefixes=()):
+        return verify_persistent_private_host(
+            [self.root if path is None else path],
+            minimum_free_bytes=MINIMUM_PREPARE_BYTES,
+            mountinfo=mock_mount(fs) if mountinfo is None else mountinfo,
+            environ={} if env is None else env,
+            host_platform="linux", machine="x86_64",
+            disk_usage=lambda _: SimpleNamespace(
+                free=MINIMUM_PREPARE_BYTES * 2 if free is None else free),
+            temporary_prefixes=prefixes,
+        )
+
+    def test_permitted_mock_ext4_and_large_owner_private_directory(self):
+        result = self.audit()
+        self.assertTrue(result["platform_accepted"])
+        self.assertEqual(result["private_owner_directories_verified"], 1)
+        self.assertFalse(result["drive_upload_performed"])
+        self.assertFalse(result["capture_ready"])
+
+    def test_ephemeral_overlay_and_tmpfs_denied(self):
+        for fs in ("overlay", "tmpfs", "ramfs", "squashfs", "aufs"):
+            with self.subTest(fs=fs), self.assertRaises(PersistentHostError):
+                self.audit(fs=fs)
+
+    def test_ci_environment_denied_before_write(self):
+        for marker in ("CI", "GITHUB_ACTIONS", "RUNNER_TEMP",
+                       "GITHUB_WORKSPACE"):
+            with self.subTest(marker=marker), self.assertRaises(PersistentHostError):
+                self.audit(env={marker: "1"})
+
+    def test_insufficient_free_space_denied(self):
+        with self.assertRaises(PersistentHostError):
+            self.audit(free=MINIMUM_PREPARE_BYTES - 1)
+
+    def test_owner_directory_must_be_mode_0700(self):
+        self.root.chmod(0o755)
+        with self.assertRaises(PersistentHostError):
+            self.audit()
+
+    def test_symlinked_work_parent_denied(self):
+        link = self.root / "alias"
+        link.symlink_to(self.root, target_is_directory=True)
+        with self.assertRaises(PersistentHostError):
+            self.audit(path=link)
+
+    def test_repository_checkout_denied(self):
+        (self.root / ".git").mkdir(mode=0o700)
+        with self.assertRaises(PersistentHostError):
+            self.audit()
+
+    def test_tmp_location_rejected_with_production_prefix_policy(self):
+        with self.assertRaises(PersistentHostError):
+            self.audit(prefixes=(self.root,))
+
+    def test_nested_persistent_mount_selection_is_most_specific(self):
+        nested = self.root / "private-build"
+        nested.mkdir(mode=0o700)
+        line = ("1 0 0:1 / / rw - overlay none rw\n"
+                + f"2 1 0:2 / {self.root} rw - ext4 /dev/fake rw\n")
+        report = self.audit(path=nested, mountinfo=line)
+        self.assertTrue(report["platform_accepted"])
+
+    def test_malformed_mount_table_rejected(self):
+        with self.assertRaises(PersistentHostError):
+            self.audit(mountinfo="not a valid mountinfo row\n")
+
+    def test_public_mountpoint_without_owner_acl_denied(self):
+        self.root.chmod(0o777)
+        with self.assertRaises(PersistentHostError):
+            self.audit()
+
+    def test_non_linux_architecture_denied(self):
+        with self.assertRaises(PersistentHostError):
+            verify_persistent_private_host(
+                [self.root], minimum_free_bytes=MINIMUM_PREPARE_BYTES,
+                mountinfo=mock_mount(), environ={},
+                host_platform="darwin", machine="x86_64",
+                temporary_prefixes=(),
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()

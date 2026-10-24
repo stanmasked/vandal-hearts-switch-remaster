@@ -27,6 +27,10 @@ from tools.map02_linux_octoshock.private_runtime_reaudit import _private_input
 from tools.map02_linux_octoshock.private_runtime_tar import _outside
 from tools.map02_linux_octoshock.archive_owner_runtime import _root
 from tools.map02_linux_octoshock.verify_owner_runtime import verify_runtime
+from tools.map02_linux_octoshock.owner_persistent_host import (
+    MINIMUM_PREPARE_BYTES, MINIMUM_PUBLISH_BYTES,
+    verify_persistent_private_host,
+)
 
 
 class OwnerPersistentBackupError(ValueError):
@@ -98,6 +102,14 @@ def publish_existing_trusted_runtime(
                 or any(p.exists() or p.is_symlink() for p in paths.values())
                 or any(p == manifest_pin or p == folder_map for p in paths.values())):
             _fail()
+        # REAL owner CLI must reject ephemeral CI/overlay/tmpfs storage and
+        # insufficient host capacity before invoking any cloud operation.
+        # Synthetic test transport does not assert a real persistent machine.
+        if invoke is _call_rclone:
+            verify_persistent_private_host(
+                [source, work, trust],
+                minimum_free_bytes=MINIMUM_PUBLISH_BYTES,
+            )
         checked = verify_runtime(
             source, trusted_manifest_pin_file=manifest_pin,
             require_trusted_pin=True,
@@ -183,6 +195,10 @@ def main() -> int:
     a = p.parse_args()
     try:
         if a.action == "prepare":
+            verify_persistent_private_host(
+                [a.new_runtime_root.parent],
+                minimum_free_bytes=MINIMUM_PREPARE_BYTES,
+            )
             record = build_and_stage(
                 a.new_runtime_root, keep_workdir=a.keep_private_workdir,
             )

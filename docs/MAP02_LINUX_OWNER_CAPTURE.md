@@ -925,3 +925,37 @@ before upload, nested/symlinked parents, fake-transport nonpromotion,
 failed final-stage readback, duplicate session and prepare not issuing
 a trust reference. The test-only synthetic suite is **not**
 evidence of owner-authenticated Google Drive binary retention.
+
+## Stage551 — persistent host storage gate (not a CI-only filesystem)
+
+The Stage550 two-phase `prepare`/`publish` commands now enforce a
+**read-only host storage check** on the real owner execution path before
+any new build or cloud upload. The check refuses:
+- non-Linux / non-x86_64 hosts; GitHub Actions/CI-related environment
+  markers, including `RUNNER_TEMP` and `GITHUB_WORKSPACE`;
+- private work, trust or runtime directories that are not owner-owned
+  mode 0700, contain a symlinked directory component or are within Git;
+- folders on temporary `overlay`, `tmpfs`, `ramfs`,
+  `aufs`, `squashfs` or other ephemeral mounts, evaluated from
+  `/proc/self/mountinfo` using the **most-specific mountpoint**;
+- known temporary directory roots such as `/tmp` and `/run`;
+- insufficient available filesystem space (at least 4 GiB for
+  private runtime preparation and 2 GiB for the upload path).
+
+The validator never creates files or opens original game media, and
+never accesses OAuth tokens or contacts Drive. `prepare` verifies
+the parent of the new runtime; real owner `publish` verifies the
+runtime and both independent owner trust/work directories before
+performing remote writes. Simulated CI Drive transport intentionally
+bypasses any claim that the runner has persistent owner storage.
+The new synthetic test suite checks temp mounts, CI environment,
+public or symlinked private directories, Git checkouts, capacity,
+mountpoint precedence, incorrect platforms and malformed mount tables.
+
+A PASSED host filesystem check verifies only **current filesystem
+placement and access mode**, not that a real cloud binary upload
+occurred or that the disk will survive every host failure.
+Persist a separate independently verified copy of the archive and
+external trust pins in private Google Drive and verify remote ACLs.
+No private original-game media, audio, BIOS, CUE/BIN or BK2 belongs
+in public source CI; MAP02 real cold captures remain unverified.
