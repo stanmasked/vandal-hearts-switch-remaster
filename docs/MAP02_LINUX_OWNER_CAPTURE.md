@@ -1674,3 +1674,26 @@ symlink-replacement test must also pass on that exact head. Original PS1 media,
 BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
 canonical private `07_Builds_and_Test_Artifacts` folder remains empty until
 a genuine owner-host publish and independent readback succeed.
+
+## Stage579 — repeated SIGTERM cannot interrupt guarded cleanup
+
+Stage578 installs a SIGTERM handler that ignores further SIGTERM delivery while
+the owner session unwinds and removes only the unaccepted pin outputs. Stage579
+adds a regression that pauses the subprocess inside the cleanup path, sends a
+second SIGTERM while cleanup is in progress, and verifies the second signal
+does not abort cleanup.
+
+The test requires the subprocess to reach the guarded cleanup marker before
+sending the second signal. It then confirms the CLI exits with the expected
+SIGTERM status, both unaccepted pin outputs are absent, the failed session tree
+remains for forensic inspection, and no cleanup quarantine is left behind.
+This is a synthetic local-filesystem test using invented files and fake
+transport; it does not establish real owner-host or Google Drive behavior.
+
+Stage579 code/test head:
+`29563148cdd1919af0854aa8b7c957869804b97f`. Exact-head CI must pass on the
+final code and documentation head before Stage579 is accepted. Original PS1
+media, BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
+canonical private `07_Builds_and_Test_Artifacts` folder remains empty until
+a genuine owner-host publish and independent readback succeed.
+
