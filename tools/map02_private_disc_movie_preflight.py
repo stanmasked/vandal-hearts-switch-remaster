@@ -75,7 +75,7 @@ def _resolve_private_file(value: Path) -> Path:
         if (info.st_uid != os.geteuid()
                 or stat.S_IMODE(info.st_mode) != 0o600
                 or info.st_nlink != 1):
-            raise ValueError("private media must be owner-owned mode 0600 without hardlinks")
+            raise ValueError("private media must be user-private mode 0600 without hardlinks")
     return real
 
 
