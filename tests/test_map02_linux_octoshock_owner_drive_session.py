@@ -111,6 +111,25 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertFalse(self.archive_pin.exists())
         self.assertTrue(self.full_session.exists())
 
+    def test_keyboard_interrupt_during_receipt_sealing_discards_new_pins_and_propagates(self):
+        def interrupted_upload(*args, **kwargs):
+            self.receipt_pin.write_text("0" * 64 + "\\n", encoding="ascii")
+            self.receipt_pin.chmod(0o600)
+            raise KeyboardInterrupt("synthetic owner session interrupt")
+
+        with patch.object(
+            owner_drive_session, "archive_to_private_drive",
+            side_effect=interrupted_upload,
+        ):
+            with self.assertRaisesRegex(
+                KeyboardInterrupt, "synthetic owner session interrupt",
+            ):
+                self.execute()
+        self.assertFalse(self.receipt_pin.exists())
+        self.assertFalse(self.archive_pin.exists())
+        # The session tree is intentionally retained for forensic inspection.
+        self.assertTrue(self.full_session.is_dir())
+
     def test_previous_unrelated_owner_pin_survives_failed_session(self):
         old_pin = self.base / "unrelated-owner-reference.sha256"
         old_pin.write_text("a" * 64 + "\n", encoding="ascii")
