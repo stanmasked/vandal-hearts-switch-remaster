@@ -1119,5 +1119,64 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertEqual(list(root.glob(".map02-pin-cleanup-*")), [])
 
 
+    # Stage588: SIGKILL after the first pin is gone and the second pin has
+    # moved into quarantine must leave recoverable evidence and block retry.
+    @unittest.skipUnless(os.name == "posix" and hasattr(signal, "SIGKILL"),
+                         "requires POSIX SIGKILL handling")
+    def test_sigkill_during_second_pin_quarantine_unlink_preserves_quarantine_and_blocks_retry(self):
+        root, process = self._start_owner_signal_child(
+            pause_quarantine_receipt_unlink=True, both_pins=True,
+        )
+        stdout = stderr = ""
+        try:
+            process.send_signal(signal.SIGTERM)
+            ready, _, _ = select.select([process.stdout], [], [], 15)
+            self.assertTrue(ready, "cleanup did not reach second-pin quarantine unlink")
+            marker = process.stdout.readline().strip()
+            self.assertEqual(marker, "QUARANTINE_PAYLOAD_READY")
+            process.send_signal(signal.SIGKILL)
+            stdout, stderr = process.communicate(timeout=15)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+
+        self.assertEqual(process.returncode, -signal.SIGKILL, (stdout, stderr))
+        receipt_pin = root / "owner-receipt.sha256"
+        archive_pin = root / "owner-archive.sha256"
+        self.assertFalse(receipt_pin.exists())
+        self.assertFalse(archive_pin.exists())
+        self.assertTrue((root / "session").is_dir())
+
+        quarantines = list(root.glob(".map02-pin-cleanup-*"))
+        self.assertEqual(len(quarantines), 1)
+        quarantined_receipt = quarantines[0] / "payload"
+        self.assertEqual(
+            quarantined_receipt.read_text(encoding="ascii"), "b" * 64 + "\\n",
+        )
+        self.assertEqual(quarantined_receipt.stat().st_mode & 0o777, 0o600)
+
+        # SIGKILL cannot finish cleanup. The unresolved quarantine alone must
+        # be enough to reject a retry before transport and preserve the payload.
+        with self.assertRaises(PrivateOwnerSessionError):
+            complete_owner_archive_session(
+                root / "runtime",
+                root / "trusted-manifest.sha256",
+                root / "private-folder-map.json",
+                root / "retry-session",
+                receipt_pin,
+                "vh_builds",
+                "vh_manifests",
+                "owner588retry",
+                independent_archive_pin_output=archive_pin,
+                invoke=self.transport,
+            )
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertEqual(
+            quarantined_receipt.read_text(encoding="ascii"), "b" * 64 + "\\n",
+        )
+        self.assertFalse((root / "retry-session").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
