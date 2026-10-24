@@ -446,6 +446,43 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertEqual(payload.stat().st_mode & 0o777, 0o600)
         self.assertEqual(marker.stat().st_mode & 0o777, 0o700)
 
+    def test_quarantine_created_after_runtime_pack_blocks_cloud_upload(self):
+        marker = self.base / ".map02-pin-cleanup-stage595-post-pack"
+        payload = marker / "payload"
+        original_pack = owner_drive_session.pack_runtime
+        pack_calls = 0
+
+        def pack_with_late_quarantine(*args, **kwargs):
+            nonlocal pack_calls
+            packed = original_pack(*args, **kwargs)
+            pack_calls += 1
+            marker.mkdir(mode=0o700)
+            payload.write_text("e" * 64 + "\n", encoding="ascii")
+            payload.chmod(0o600)
+            return packed
+
+        with patch.object(
+            owner_drive_session, "pack_runtime", side_effect=pack_with_late_quarantine,
+        ):
+            with self.assertRaises(PrivateOwnerSessionError):
+                self.execute()
+
+        self.assertEqual(pack_calls, 1)
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertTrue(self.full_session.is_dir())
+        tar = self.full_session / "archive/map02-runtime-owner541001.tar"
+        self.assertTrue(tar.is_file())
+        self.assertTrue(
+            (self.full_session / "archive/map02-runtime-owner541001.tar.sha256").is_file()
+        )
+        self.assertFalse(self.receipt_pin.exists())
+        self.assertFalse(self.archive_pin.exists())
+        self.assertTrue(marker.is_dir())
+        self.assertFalse(marker.is_symlink())
+        self.assertEqual(payload.read_text(encoding="ascii"), "e" * 64 + "\n")
+        self.assertEqual(payload.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(marker.stat().st_mode & 0o777, 0o700)
+
     def test_previous_unrelated_owner_pin_survives_failed_session(self):
         old_pin = self.base / "unrelated-owner-reference.sha256"
         old_pin.write_text("a" * 64 + "\n", encoding="ascii")
