@@ -151,6 +151,56 @@ class OwnerReadinessTests(unittest.TestCase):
         self.assertFalse(self.new_root.exists())
         self.assertFalse(self.new_receipt.exists())
 
+    def test_remote_root_change_during_preflight_rejected(self):
+        changed = False
+
+        def mutating_transport(argv):
+            nonlocal changed
+            result = self.transport(argv)
+            if not changed and argv[0] == "lsf" and argv[-1] == "vh_builds:":
+                self.transport.folder_ids["vh_builds"] = "fictionalReplacementBuildsRoot"
+                changed = True
+            return result
+
+        with self.assertRaises(OwnerPreflightError):
+            verify_owner_backup_readiness(
+                self.source, self.pin, self.private_map,
+                self.new_root, self.new_receipt,
+                "vh_builds", "vh_manifests", "owner542001",
+                invoke=mutating_transport, disk_usage=shutil.disk_usage,
+            )
+        self.assertTrue(changed)
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertFalse(self.new_root.exists())
+        self.assertFalse(self.new_receipt.exists())
+
+    def test_remote_namespace_change_during_preflight_rejected(self):
+        lsf_calls = 0
+
+        def mutating_transport(argv):
+            nonlocal lsf_calls
+            result = self.transport(argv)
+            if argv[0] == "lsf":
+                lsf_calls += 1
+                # After the first full name inventory, add an unrelated
+                # object to the builds folder. The second inventory must
+                # detect that the remote namespace changed mid-preflight.
+                if lsf_calls == 4:
+                    self.transport.remote["vh_builds"]["concurrent-object"] = b"fictional"
+            return result
+
+        with self.assertRaises(OwnerPreflightError):
+            verify_owner_backup_readiness(
+                self.source, self.pin, self.private_map,
+                self.new_root, self.new_receipt,
+                "vh_builds", "vh_manifests", "owner542001",
+                invoke=mutating_transport, disk_usage=shutil.disk_usage,
+            )
+        self.assertEqual(lsf_calls, 8)
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertFalse(self.new_root.exists())
+        self.assertFalse(self.new_receipt.exists())
+
     def test_real_transport_preflight_requires_persistent_host_before_remote_queries(self):
         from unittest.mock import patch
         import tools.map02_linux_octoshock.owner_session_preflight as module
