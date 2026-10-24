@@ -30,7 +30,7 @@ from tools.map02_linux_octoshock.private_runtime_drive import (
 )
 from tools.map02_linux_octoshock.private_runtime_reaudit import _private_input
 from tools.map02_linux_octoshock.private_runtime_tar import _outside, _pin, _hash_file
-from tools.map02_linux_octoshock.archive_owner_runtime import _root
+from tools.map02_linux_octoshock.archive_owner_runtime import _root, _inventory
 from tools.map02_linux_octoshock.verify_owner_runtime import verify_runtime
 from tools.map02_linux_octoshock.owner_persistent_host import (
     MINIMUM_PREPARE_BYTES, MINIMUM_PUBLISH_BYTES,
@@ -285,6 +285,13 @@ def publish_existing_trusted_runtime(
                 or checked.get("trusted_manifest_pin_verified") is not True
                 or checked.get("capture_ready") is not False):
             _fail()
+        # Stage602: bind the COMPLETE local source tree before upload, not
+        # merely the files named by the runtime manifest. Extra owner files,
+        # modes, sizes and contents must also survive the three readbacks.
+        source_info = source.lstat()
+        source_identity = (source_info.st_dev, source_info.st_ino,
+                           source_info.st_uid, stat.S_IMODE(source_info.st_mode))
+        baseline_entries, baseline_files, baseline_bytes = _inventory(source)
         # Verify trusted owner inputs after potentially lengthy runtime
         # checks, before the first remote transfer.
         confirm_references()
@@ -349,8 +356,45 @@ def publish_existing_trusted_runtime(
             require_real_transport=real_host,
         )
         recheck_owner_host()
+        # Stage602: a successful source-free audit can still be followed
+        # by a local replacement of the restored directory or an unpinned
+        # change to the ORIGINAL runtime while the network call ran.
+        # Require two fresh complete inventories, with file content hashes,
+        # to agree exactly with the pre-upload local source snapshot.
+        if _root(source) != source:
+            _fail()
+        source_now = source.lstat()
+        if ((source_now.st_dev, source_now.st_ino, source_now.st_uid,
+             stat.S_IMODE(source_now.st_mode)) != source_identity):
+            _fail()
+        restored_root = _root(
+            paths["preboot_readback"] / "restored" / "runtime",
+        )
+        verified_restored = verify_runtime(
+            restored_root, trusted_manifest_pin_file=manifest_pin,
+            require_trusted_pin=True,
+        )
+        if (verified_restored.get("verified") is not True
+                or verified_restored.get("trusted_manifest_pin_verified") is not True
+                or verified_restored.get("capture_ready") is not False):
+            _fail()
+        source_entries_now, source_files_now, source_bytes_now = _inventory(source)
+        restored_entries, restored_files, restored_bytes = _inventory(restored_root)
+        if (source_entries_now != baseline_entries
+                or restored_entries != baseline_entries
+                or source_files_now != baseline_files
+                or restored_files != baseline_files
+                or source_bytes_now != baseline_bytes
+                or restored_bytes != baseline_bytes):
+            _fail()
+        # Inventories are potentially long-running; verify the mount and
+        # all six owner trust references again before final attestation.
+        confirm_references()
+        recheck_owner_host()
         if (admission.get("runtime_files") != uploaded.get("runtime_files")
+                or admission.get("runtime_files") != baseline_files
                 or admission.get("runtime_bytes") != uploaded.get("runtime_bytes")
+                or admission.get("runtime_bytes") != baseline_bytes
                 or fresh.get("runtime_files") != admission.get("runtime_files")
                 or fresh.get("runtime_bytes") != admission.get("runtime_bytes")
                 or fresh.get("fresh_remote_objects_verified") != 5
