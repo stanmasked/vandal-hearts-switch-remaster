@@ -1555,8 +1555,34 @@ before creating its new output root and must preserve the quarantined object.
 This is synthetic testing only.
 
 Stage574 code/test head:
-`77185a2feb351dc3b083f7d849392d55805c839b`. Exact-head CI must pass on the
-final code and documentation head before Stage574 is accepted. Original PS1
+`77185a2feb351dc3b083f7d849392d55805c839b`. Exact-head CI completed with
+8/8 successful workflows on final PR head
+`198b9bbacc49610ba2be94dd8dc7868d38b9fb71`, with no failures or pending runs.
+The native Linux job passed the quarantine-conflict preservation and retry
+refusal assertions. Stage574 is accepted as a code/test gate only. Original
+PS1 media, BIOS, BK2, extracted audio and gameplay captures remain unchanged.
+The canonical private `07_Builds_and_Test_Artifacts` folder remains empty
+until a genuine owner-host publish and independent readback succeed.
+
+## Stage575 — discard unaccepted owner pins on interruption
+
+The owner archive session already discarded newly designated receipt/archive
+pins on handled validation failures, while preserving failed session trees
+for forensic inspection. Stage575 extends that cleanup to `KeyboardInterrupt`,
+`SystemExit`, and unexpected exceptions. It removes only the new receipt and
+archive pin paths designated for this session, then re-raises the original
+exception so an interruption is not converted into a success or hidden behind
+a generic audit error. Failed session content and remote objects remain
+preserved for a new session name.
+
+A synthetic test interrupts the owner session during receipt sealing after
+a 0600 receipt pin has been written. It verifies that both unaccepted pin
+outputs are removed, the failed session tree is retained, and the original
+`KeyboardInterrupt` propagates. This is fake-transport testing only.
+
+Stage575 code/test head:
+`e93bf167e693d005c1e6f6ad54bf2c2b83ec36ea`. Exact-head CI must pass on the
+final code and documentation head before Stage575 is accepted. Original PS1
 media, BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
 canonical private `07_Builds_and_Test_Artifacts` folder remains empty until
 a genuine owner-host publish and independent readback succeed.
