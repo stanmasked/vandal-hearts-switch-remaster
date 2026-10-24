@@ -1309,8 +1309,34 @@ only the receipt path. It remains a synthetic race simulation; it does not
 prove real Google Drive authorization, durable storage or owner-host behavior.
 
 Stage564 code/test head:
-`a775192dc30f884008479774bd47c3e2bc89bfa0`. Exact-head CI must pass on the
-final code and documentation head before Stage564 is accepted. Original PS1
+`a775192dc30f884008479774bd47c3e2bc89bfa0`. Exact-head CI completed with
+8/8 successful workflows on final PR head
+`306ff20b8dcf256009ad0a5f437f28a5114e0e33`, with no failures or pending runs.
+The native Linux job passed both receipt-root and archive-object-root race
+tests. Stage564 is accepted as a code/test gate only. Original PS1 media, BIOS,
+BK2, extracted audio and gameplay captures remain unchanged. The canonical
+private `07_Builds_and_Test_Artifacts` folder remains empty until a genuine
+owner-host publish and independent readback succeed.
+
+## Stage565 — pin integrity gate before restoring downloaded archive
+
+The independent readback auditor now compares the downloaded archive and
+manifest against the trusted SHA-256 values captured before any remote
+inspection, rather than rereading mutable pin files as the expected truth.
+Immediately before creating the restored runtime, it rechecks both configured
+Drive roots, the private folder-map IDs, and the owner-manifest, archive and
+receipt pins. A pin changed during remote readback must be rejected before
+archive extraction begins. The existing post-restore checks remain as a second
+consistency gate.
+
+A new synthetic regression mutates the owner-manifest pin after the final
+`.manifest.sha256` object is downloaded. The audit must reject and leave no
+`restored` directory. This is an in-memory fake-transport test; it does not
+establish real Google Drive access or durable owner storage.
+
+Stage565 code/test head:
+`7268ca7c2bbc7f3bfdba2e5259d3adfd7e5b5875`. Exact-head CI must pass on the
+final code and documentation head before Stage565 is accepted. Original PS1
 media, BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
 canonical private `07_Builds_and_Test_Artifacts` folder remains empty until
 a genuine owner-host publish and independent readback succeed.
