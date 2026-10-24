@@ -279,6 +279,32 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertFalse(self.full_session.exists())
         self.assertEqual(len(list(self.base.glob(".map02-pin-cleanup-*"))), 1)
 
+    def test_multiple_stale_quarantine_markers_block_new_session_without_mutation(self):
+        payload_marker = self.base / ".map02-pin-cleanup-stage590-payload"
+        empty_marker = self.base / ".map02-pin-cleanup-stage590-empty"
+        payload_marker.mkdir(mode=0o700)
+        empty_marker.mkdir(mode=0o700)
+        payload = payload_marker / "payload"
+        payload.write_text("d" * 64 + "\\n", encoding="ascii")
+        payload.chmod(0o600)
+
+        with self.assertRaises(PrivateOwnerSessionError):
+            self.execute()
+
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertFalse(self.full_session.exists())
+        self.assertFalse(self.receipt_pin.exists())
+        self.assertFalse(self.archive_pin.exists())
+        markers = sorted(self.base.glob(".map02-pin-cleanup-*"))
+        self.assertEqual(markers, [empty_marker, payload_marker])
+        self.assertEqual(list(empty_marker.iterdir()), [])
+        self.assertEqual(
+            payload.read_text(encoding="ascii"), "d" * 64 + "\\n",
+        )
+        self.assertEqual(payload.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(payload_marker.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(empty_marker.stat().st_mode & 0o777, 0o700)
+
     def test_previous_unrelated_owner_pin_survives_failed_session(self):
         old_pin = self.base / "unrelated-owner-reference.sha256"
         old_pin.write_text("a" * 64 + "\n", encoding="ascii")
