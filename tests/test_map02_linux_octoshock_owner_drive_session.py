@@ -674,7 +674,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
         quarantines = list(root.glob(".map02-pin-cleanup-*"))
         self.assertEqual(len(quarantines), 1)
         payload = quarantines[0] / "payload"
-        self.assertEqual(payload.read_text(encoding="ascii"), "b" * 64 + "\\n")
+        self.assertEqual(payload.read_text(encoding="ascii"), "b" * 64 + "\n")
         self.assertEqual(payload.stat().st_mode & 0o777, 0o600)
 
         # The orphaned quarantine is evidence, not disposable debris. A retry
@@ -693,7 +693,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
                 invoke=self.transport,
             )
         self.assertEqual(self.transport.uploads, 0)
-        self.assertEqual(payload.read_text(encoding="ascii"), "b" * 64 + "\\n")
+        self.assertEqual(payload.read_text(encoding="ascii"), "b" * 64 + "\n")
         self.assertFalse((root / "retry-session").exists())
 
 
