@@ -57,9 +57,25 @@ def _resolve_private_file(value: Path) -> Path:
     if not path.is_absolute() or path.is_symlink() or not path.is_file():
         raise ValueError("private media must be absolute regular nonsymlink files")
     real = path.resolve(strict=True)
-    if not stat.S_ISREG(real.stat().st_mode):
+    if real.is_symlink() or not stat.S_ISREG(real.lstat().st_mode):
         raise ValueError("private media must be regular files")
     _reject_git(real)
+    if os.name != "nt":
+        # Original media, CUE descriptors, and BK2 input logs are private
+        # owner data. A valid content hash does not compensate for unsafe
+        # local permissions or a second hardlink outside the private folder.
+        parent = real.parent
+        parent_info = parent.lstat()
+        info = real.lstat()
+        if (parent.resolve(strict=True) != parent
+                or not stat.S_ISDIR(parent_info.st_mode)
+                or parent_info.st_uid != os.geteuid()
+                or stat.S_IMODE(parent_info.st_mode) != 0o700):
+            raise ValueError("private media parent must be owner-owned mode 0700")
+        if (info.st_uid != os.geteuid()
+                or stat.S_IMODE(info.st_mode) != 0o600
+                or info.st_nlink != 1):
+            raise ValueError("private media must be owner-owned mode 0600 without hardlinks")
     return real
 
 
@@ -76,6 +92,15 @@ def _open_stable(path: Path) -> tuple[int, os.stat_result]:
             or _identity(info) != _identity(named)):
         os.close(fd)
         raise ValueError("private source changed while opening")
+    if os.name != "nt":
+        parent_info = path.parent.stat(follow_symlinks=False)
+        if (parent_info.st_uid != os.geteuid()
+                or stat.S_IMODE(parent_info.st_mode) != 0o700
+                or info.st_uid != os.geteuid()
+                or stat.S_IMODE(info.st_mode) != 0o600
+                or info.st_nlink != 1):
+            os.close(fd)
+            raise ValueError("private source permissions changed while opening")
     return fd, info
 
 
