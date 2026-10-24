@@ -423,18 +423,82 @@ def inspect_pair(cue_path: Path, movie_path: Path, *,
 def read_private_full_bin_sha256(path: Path) -> str:
     """Load a private pinned digest without exposing it in CLI or JSON output."""
     private_ref = _resolve_private_file(path, require_owner_private=True)
-    if os.name != "nt":
-        info = private_ref.stat()
-        if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o600:
-            raise ValueError("full-BIN digest reference must be user-private")
-    fd, before = _open_stable(private_ref, require_private=True)
-    try:
-        if before.st_size not in (64, 65):
-            raise ValueError("private full-BIN digest must be exactly 64 hex digits")
-        raw = _read_at(fd, 0, before.st_size)
-        _assert_stable(fd, private_ref, before, require_private=True)
-    finally:
-        os.close(fd)
+    if os.name == "nt":
+        fd, before = _open_stable(private_ref, require_private=True)
+        try:
+            if before.st_size not in (64, 65):
+                raise ValueError("private full-BIN digest must be exactly 64 hex digits")
+            raw = _read_at(fd, 0, before.st_size)
+            _assert_stable(fd, private_ref, before, require_private=True)
+        finally:
+            os.close(fd)
+    else:
+        # Anchor the read to the same private directory inode. A final path
+        # symlink, hardlink alias, or directory replacement during the read
+        # must not be able to redefine the private digest reference.
+        parent = private_ref.parent
+        if parent.resolve(strict=True) != parent:
+            raise ValueError("private full-BIN digest parent must not use symlinked paths")
+        parent_before = parent.lstat()
+        if (not stat.S_ISDIR(parent_before.st_mode)
+                or parent_before.st_uid != os.geteuid()
+                or stat.S_IMODE(parent_before.st_mode) != 0o700):
+            raise ValueError("private full-BIN digest parent must be owner-only mode 0700")
+        parent_fd = os.open(
+            parent,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        try:
+            opened_parent = os.fstat(parent_fd)
+
+            def parent_identity(info: os.stat_result) -> tuple[int, ...]:
+                return (
+                    info.st_dev, info.st_ino, info.st_uid,
+                    stat.S_IMODE(info.st_mode), info.st_nlink,
+                    info.st_mtime_ns, info.st_ctime_ns,
+                )
+
+            if (not stat.S_ISDIR(opened_parent.st_mode)
+                    or parent_identity(opened_parent) != parent_identity(parent_before)):
+                raise ValueError("private full-BIN digest parent changed while opening")
+            fd = os.open(
+                private_ref.name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=parent_fd,
+            )
+            try:
+                before = os.fstat(fd)
+                if (not stat.S_ISREG(before.st_mode)
+                        or before.st_size not in (64, 65)
+                        or before.st_uid != os.geteuid()
+                        or stat.S_IMODE(before.st_mode) != 0o600
+                        or before.st_nlink != 1):
+                    raise ValueError("private full-BIN digest must be mode 0600 with one hard link")
+
+                def file_identity(info: os.stat_result) -> tuple[int, ...]:
+                    return (
+                        info.st_dev, info.st_ino, info.st_uid,
+                        stat.S_IMODE(info.st_mode), info.st_nlink,
+                        info.st_size, info.st_mtime_ns, info.st_ctime_ns,
+                    )
+
+                raw = _read_at(fd, 0, before.st_size)
+                after = os.fstat(fd)
+                named = os.stat(
+                    private_ref.name, dir_fd=parent_fd, follow_symlinks=False,
+                )
+                parent_after = os.fstat(parent_fd)
+                parent_path_after = parent.lstat()
+                if (file_identity(before) != file_identity(after)
+                        or file_identity(after) != file_identity(named)
+                        or parent_identity(parent_after) != parent_identity(opened_parent)
+                        or parent_identity(parent_path_after) != parent_identity(opened_parent)
+                        or parent.resolve(strict=True) != parent):
+                    raise ValueError("private full-BIN digest changed during read")
+            finally:
+                os.close(fd)
+        finally:
+            os.close(parent_fd)
     try:
         reference = raw.decode("ascii").strip()
     except UnicodeError as exc:
@@ -442,7 +506,6 @@ def read_private_full_bin_sha256(path: Path) -> str:
     if not re.fullmatch(r"[0-9a-f]{64}", reference):
         raise ValueError("private full-BIN digest must be lowercase SHA-256")
     return reference
-
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
