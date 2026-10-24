@@ -12,6 +12,7 @@ import argparse
 import os
 from pathlib import Path
 import stat
+import tempfile
 
 from tools.map02_linux_octoshock.archive_owner_runtime import _root
 from tools.map02_linux_octoshock.private_runtime_drive import (
@@ -37,10 +38,10 @@ def _fail() -> None:
 
 
 def _discard_incomplete_owner_pin(path: Path | None) -> None:
-    """Discard ONLY a new 0600 owner file from this unfinished session.
+    """Discard only the original private pin file from this unfinished session.
 
-    Never remove a previous trusted pin, a symlink, a special file, a
-    world-readable file, the original runtime or any cloud object.
+    Atomically quarantine before deletion so a concurrent replacement between
+    lstat and unlink is preserved rather than mistaken for our output.
     """
     if path is None:
         return
@@ -52,7 +53,45 @@ def _discard_incomplete_owner_pin(path: Path | None) -> None:
             or details.st_uid != os.geteuid()
             or stat.S_IMODE(details.st_mode) != 0o600):
         _fail()
-    path.unlink()
+    identity = (details.st_dev, details.st_ino)
+    quarantine_dir: Path | None = None
+    try:
+        quarantine_dir = Path(tempfile.mkdtemp(
+            prefix=".map02-pin-cleanup-", dir=str(path.parent),
+        ))
+        quarantined = quarantine_dir / "payload"
+        try:
+            os.rename(path, quarantined)
+        except FileNotFoundError:
+            pass
+        else:
+            current = quarantined.lstat()
+            if (stat.S_ISREG(current.st_mode)
+                    and current.st_uid == os.geteuid()
+                    and stat.S_IMODE(current.st_mode) == 0o600
+                    and (current.st_dev, current.st_ino) == identity):
+                quarantined.unlink()
+            else:
+                # The designated path changed after the initial lstat. Never
+                # delete the replacement; restore it only if the original name
+                # remains free, otherwise preserve it in quarantine.
+                try:
+                    path.lstat()
+                except FileNotFoundError:
+                    os.rename(quarantined, path)
+        try:
+            quarantine_dir.rmdir()
+        except OSError:
+            # A non-matching object is deliberately retained if it cannot be
+            # restored without overwriting another path.
+            pass
+    except OSError:
+        if quarantine_dir is not None:
+            try:
+                quarantine_dir.rmdir()
+            except OSError:
+                pass
+        raise
 
 
 def complete_owner_archive_session(
