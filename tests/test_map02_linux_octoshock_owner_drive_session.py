@@ -449,7 +449,12 @@ class OwnerDriveSessionTests(unittest.TestCase):
                 if (pause_quarantine_unlink and Path(path).name == "payload"
                         and Path(path).parent.name.startswith(".map02-pin-cleanup-")):
                     print("QUARANTINE_PAYLOAD_READY", flush=True)
-                    time.sleep(2)
+                    release = Path(sys.argv[1]) / "continue-cleanup"
+                    deadline = time.monotonic() + 10
+                    while not release.exists() and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                    if not release.exists():
+                        raise RuntimeError("mixed-signal test did not release quarantine unlink")
                 return real_unlink(path, *args, **kwargs)
 
             def discard_with_optional_pause(path):
@@ -861,6 +866,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
             marker = process.stdout.readline().strip()
             self.assertEqual(marker, "QUARANTINE_PAYLOAD_READY")
             process.send_signal(signal.SIGINT)
+            (root / "continue-cleanup").write_text("release\n", encoding="ascii")
             stdout, stderr = process.communicate(timeout=15)
         finally:
             if process.poll() is None:
@@ -888,6 +894,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
             marker = process.stdout.readline().strip()
             self.assertEqual(marker, "QUARANTINE_PAYLOAD_READY")
             process.send_signal(signal.SIGTERM)
+            (root / "continue-cleanup").write_text("release\n", encoding="ascii")
             stdout, stderr = process.communicate(timeout=15)
         finally:
             if process.poll() is None:
