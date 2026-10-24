@@ -151,6 +151,57 @@ class OwnerReadinessTests(unittest.TestCase):
         self.assertFalse(self.new_root.exists())
         self.assertFalse(self.new_receipt.exists())
 
+    def test_real_transport_preflight_requires_persistent_host_before_remote_queries(self):
+        from unittest.mock import patch
+        import tools.map02_linux_octoshock.owner_session_preflight as module
+
+        def unexpected_remote_call(argv):
+            raise AssertionError("remote must not be queried before host verification")
+
+        with patch.object(module, "_call_rclone", unexpected_remote_call):
+            with patch.object(
+                module, "verify_persistent_private_host",
+                side_effect=ValueError("fictional ephemeral host"),
+            ) as host_check:
+                with self.assertRaises(OwnerPreflightError):
+                    verify_owner_backup_readiness(
+                        self.source, self.pin, self.private_map,
+                        self.new_root, self.new_receipt,
+                        "vh_builds", "vh_manifests", "owner542001",
+                        invoke=module._call_rclone, disk_usage=shutil.disk_usage,
+                    )
+        self.assertEqual(host_check.call_count, 1)
+        self.assertEqual(self.transport.uploads, 0)
+
+    def test_real_transport_preflight_rejects_host_replacement_after_remote_queries(self):
+        from unittest.mock import patch
+        import tools.map02_linux_octoshock.owner_session_preflight as module
+
+        fake_identity = (("fictional", 1, 2, 3, 4),)
+        with patch.object(module, "_call_rclone", self.transport):
+            with patch.object(module, "verify_persistent_private_host") as host_check:
+                with patch.object(
+                    module, "snapshot_private_path_identity",
+                    return_value=fake_identity,
+                ) as snapshot:
+                    with patch.object(
+                        module, "require_unchanged_persistent_host",
+                        side_effect=ValueError("fictional mount changed"),
+                    ) as recheck:
+                        with self.assertRaises(OwnerPreflightError):
+                            verify_owner_backup_readiness(
+                                self.source, self.pin, self.private_map,
+                                self.new_root, self.new_receipt,
+                                "vh_builds", "vh_manifests", "owner542001",
+                                invoke=module._call_rclone, disk_usage=shutil.disk_usage,
+                            )
+        self.assertEqual(host_check.call_count, 1)
+        self.assertEqual(snapshot.call_count, 1)
+        self.assertEqual(recheck.call_count, 1)
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertFalse(self.new_root.exists())
+        self.assertFalse(self.new_receipt.exists())
+
     def test_full_session_also_requires_preflight_space_gate(self):
         from unittest.mock import patch
         class LowDisk:
