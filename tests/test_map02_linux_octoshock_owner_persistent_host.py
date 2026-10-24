@@ -101,6 +101,42 @@ class PersistentHostTests(unittest.TestCase):
         with self.assertRaises(PersistentHostError):
             self.audit(path=link)
 
+    def test_secure_private_ancestor_allows_nested_directory(self):
+        parent = self.root / "private-parent"
+        parent.mkdir(mode=0o700)
+        child = parent / "private-child"
+        child.mkdir(mode=0o700)
+        self.assertTrue(self.audit(path=child)["platform_accepted"])
+
+    def test_group_writable_ancestor_rejected(self):
+        parent = self.root / "shared-parent"
+        parent.mkdir(mode=0o700)
+        child = parent / "private-child"
+        child.mkdir(mode=0o700)
+        parent.chmod(0o770)
+        with self.assertRaises(PersistentHostError):
+            self.audit(path=child)
+
+    def test_world_writable_ancestor_rejected(self):
+        parent = self.root / "world-parent"
+        parent.mkdir(mode=0o700)
+        child = parent / "private-child"
+        child.mkdir(mode=0o700)
+        parent.chmod(0o777)
+        with self.assertRaises(PersistentHostError):
+            self.audit(path=child)
+
+    def test_second_level_group_writable_ancestor_rejected(self):
+        parent = self.root / "shared-parent"
+        parent.mkdir(mode=0o700)
+        middle = parent / "middle"
+        middle.mkdir(mode=0o700)
+        child = middle / "private-child"
+        child.mkdir(mode=0o700)
+        parent.chmod(0o770)
+        with self.assertRaises(PersistentHostError):
+            self.audit(path=child)
+
     def test_repository_checkout_denied(self):
         (self.root / ".git").mkdir(mode=0o700)
         with self.assertRaises(PersistentHostError):
