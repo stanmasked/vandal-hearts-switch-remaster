@@ -125,6 +125,19 @@ def verify_persistent_private_host(
                    for prefix in temporary_prefixes):
                 _fail()
             for ancestor in (candidate, *candidate.parents):
+                # An owner-only leaf beneath a group/world-writable parent
+                # is not a stable private pathname: another writer could
+                # replace a component between preflight and the real build.
+                # A root-owned sticky directory is the narrow exception
+                # required for normal Linux /tmp semantics; production
+                # still rejects /tmp via the temporary-prefix policy.
+                parent_info = ancestor.stat()
+                if not stat.S_ISDIR(parent_info.st_mode):
+                    _fail()
+                if ancestor != candidate and parent_info.st_mode & 0o022:
+                    if not (parent_info.st_uid == 0
+                            and parent_info.st_mode & stat.S_ISVTX):
+                        _fail()
                 marker = ancestor / ".git"
                 if marker.exists() or marker.is_symlink():
                     _fail()
