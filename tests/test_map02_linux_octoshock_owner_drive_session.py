@@ -373,6 +373,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
 
     def _start_owner_signal_child(self, *, pause_cleanup=False,
                                   pause_after_quarantine_move=False,
+                                  pause_quarantine_unlink=False,
                                   quarantine_target="receipt", both_pins=False):
         root = self.base / "stage578-owner-signal-child"
         root.mkdir(mode=0o700)
@@ -387,6 +388,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
             base = Path(sys.argv[1])
             pause_cleanup = "pause-cleanup" in sys.argv[2:]
             pause_after_quarantine_move = "pause-quarantine" in sys.argv[2:]
+            pause_quarantine_unlink = "pause-quarantine-unlink" in sys.argv[2:]
             pause_quarantine_archive = "pause-quarantine-archive" in sys.argv[2:]
             both_pins = "both-pins" in sys.argv[2:]
             runtime = base / "runtime"
@@ -433,6 +435,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
             ]
             real_discard = module._discard_incomplete_owner_pin
             real_rename = module.os.rename
+            real_unlink = module.Path.unlink
 
             def rename_with_optional_pause(src, dst):
                 real_rename(src, dst)
@@ -442,6 +445,13 @@ class OwnerDriveSessionTests(unittest.TestCase):
                     while True:
                         time.sleep(1)
 
+            def unlink_with_optional_pause(path, *args, **kwargs):
+                if (pause_quarantine_unlink and Path(path).name == "payload"
+                        and Path(path).parent.name.startswith(".map02-pin-cleanup-")):
+                    print("QUARANTINE_PAYLOAD_READY", flush=True)
+                    time.sleep(2)
+                return real_unlink(path, *args, **kwargs)
+
             def discard_with_optional_pause(path):
                 if pause_cleanup:
                     (base / "cleanup-started").write_text("cleanup started", encoding="ascii")
@@ -450,6 +460,8 @@ class OwnerDriveSessionTests(unittest.TestCase):
 
             with patch.object(
                     module.os, "rename", side_effect=rename_with_optional_pause,
+                ), patch.object(
+                    module.Path, "unlink", new=unlink_with_optional_pause,
                 ), patch.object(
                     module, "_discard_incomplete_owner_pin",
                     side_effect=discard_with_optional_pause,
@@ -471,6 +483,8 @@ class OwnerDriveSessionTests(unittest.TestCase):
             command.append("pause-cleanup")
         if pause_after_quarantine_move:
             command.append("pause-quarantine")
+        if pause_quarantine_unlink:
+            command.append("pause-quarantine-unlink")
         if quarantine_target == "archive":
             command.append("pause-quarantine-archive")
         if both_pins:
@@ -817,6 +831,62 @@ class OwnerDriveSessionTests(unittest.TestCase):
                 time.sleep(0.02)
             self.assertTrue(cleanup_marker.exists(),
                             "SIGINT did not enter guarded cleanup")
+            process.send_signal(signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=15)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+
+        self.assertEqual(process.returncode, 128 + signal.SIGINT, (stdout, stderr))
+        self.assertFalse((root / "owner-receipt.sha256").exists())
+        self.assertFalse((root / "owner-archive.sha256").exists())
+        self.assertTrue((root / "session").is_dir())
+        self.assertEqual(list(root.glob(".map02-pin-cleanup-*")), [])
+
+
+    # Stage584: inject the second stop signal after the first pin has already
+    # moved into quarantine and while the quarantined payload is being deleted.
+    @unittest.skipUnless(os.name == "posix" and hasattr(signal, "SIGINT")
+                         and hasattr(signal, "SIGTERM"),
+                         "requires POSIX SIGINT/SIGTERM handling")
+    def test_sigterm_then_sigint_during_quarantine_payload_unlink_is_ignored(self):
+        root, process = self._start_owner_signal_child(
+            pause_quarantine_unlink=True, both_pins=True,
+        )
+        try:
+            process.send_signal(signal.SIGTERM)
+            ready, _, _ = select.select([process.stdout], [], [], 15)
+            self.assertTrue(ready, "cleanup did not reach quarantined payload unlink")
+            marker = process.stdout.readline().strip()
+            self.assertEqual(marker, "QUARANTINE_PAYLOAD_READY")
+            process.send_signal(signal.SIGINT)
+            stdout, stderr = process.communicate(timeout=15)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+
+        self.assertEqual(process.returncode, 128 + signal.SIGTERM, (stdout, stderr))
+        self.assertFalse((root / "owner-receipt.sha256").exists())
+        self.assertFalse((root / "owner-archive.sha256").exists())
+        self.assertTrue((root / "session").is_dir())
+        self.assertEqual(list(root.glob(".map02-pin-cleanup-*")), [])
+
+
+    @unittest.skipUnless(os.name == "posix" and hasattr(signal, "SIGINT")
+                         and hasattr(signal, "SIGTERM"),
+                         "requires POSIX SIGINT/SIGTERM handling")
+    def test_sigint_then_sigterm_during_quarantine_payload_unlink_is_ignored(self):
+        root, process = self._start_owner_signal_child(
+            pause_quarantine_unlink=True, both_pins=True,
+        )
+        try:
+            process.send_signal(signal.SIGINT)
+            ready, _, _ = select.select([process.stdout], [], [], 15)
+            self.assertTrue(ready, "cleanup did not reach quarantined payload unlink")
+            marker = process.stdout.readline().strip()
+            self.assertEqual(marker, "QUARANTINE_PAYLOAD_READY")
             process.send_signal(signal.SIGTERM)
             stdout, stderr = process.communicate(timeout=15)
         finally:
