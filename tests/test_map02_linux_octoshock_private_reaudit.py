@@ -236,6 +236,42 @@ class IndependentReadbackTests(unittest.TestCase):
             list(self.base.glob(".map02-readback-cleanup-*")), [],
         )
 
+    def test_cleanup_preserves_quarantined_object_if_original_name_is_claimed(self):
+        displaced = self.base / "displaced-original-readback"
+        self.transport.replace_readback_root_after_download = (
+            "map02-runtime-testowner001.tar", self.reaudit, displaced,
+        )
+        original_lstat = Path.lstat
+
+        def claim_original_name_during_restore_check(path):
+            if (path == self.reaudit and not os.path.lexists(path)
+                    and list(self.base.glob(".map02-readback-cleanup-*/payload"))):
+                path.mkdir(mode=0o700)
+                (path / "sentinel").write_text(
+                    "preserve newly claimed root", encoding="utf-8"
+                )
+            return original_lstat(path)
+
+        with patch(
+            "tools.map02_linux_octoshock.private_runtime_reaudit.Path.lstat",
+            autospec=True, side_effect=claim_original_name_during_restore_check,
+        ):
+            with self.assertRaises(IndependentAuditError):
+                self.run_audit()
+
+        self.assertTrue(displaced.is_dir())
+        self.assertTrue(self.reaudit.is_dir())
+        self.assertEqual(
+            (self.reaudit / "sentinel").read_text(encoding="utf-8"),
+            "preserve newly claimed root",
+        )
+        quarantines = list(self.base.glob(".map02-readback-cleanup-*"))
+        self.assertEqual(len(quarantines), 1)
+        self.assertEqual(
+            (quarantines[0] / "payload" / "sentinel").read_text(encoding="utf-8"),
+            "preserve replacement",
+        )
+
     def test_refuse_corrupted_remote_archive(self):
         key = "map02-runtime-testowner001.tar"
         self.transport.remote["vh_builds"][key] += b"FORGED"
