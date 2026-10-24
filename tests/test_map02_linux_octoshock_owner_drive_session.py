@@ -136,7 +136,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
         original_rename = os.rename
 
         def interrupted_upload(*args, **kwargs):
-            self.receipt_pin.write_text("0" * 64 + "\\n", encoding="ascii")
+            self.receipt_pin.write_text("0" * 64 + "\n", encoding="ascii")
             self.receipt_pin.chmod(0o600)
             raise RuntimeError("synthetic interrupted owner receipt seal")
 
@@ -146,7 +146,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
             if src_path == self.receipt_pin and dst_path.name == "payload":
                 original_rename(src_path, displaced)
                 src_path.write_text(
-                    "concurrent replacement\\n", encoding="ascii"
+                    "concurrent replacement\n", encoding="ascii"
                 )
                 src_path.chmod(0o600)
             return original_rename(src, dst, *args, **kwargs)
@@ -162,11 +162,11 @@ class OwnerDriveSessionTests(unittest.TestCase):
                 self.execute()
 
         self.assertEqual(
-            displaced.read_text(encoding="ascii"), "0" * 64 + "\\n",
+            displaced.read_text(encoding="ascii"), "0" * 64 + "\n",
         )
         self.assertEqual(
             self.receipt_pin.read_text(encoding="ascii"),
-            "concurrent replacement\\n",
+            "concurrent replacement\n",
         )
         self.assertEqual(self.receipt_pin.stat().st_mode & 0o777, 0o600)
         self.assertFalse(self.archive_pin.exists())
