@@ -15,7 +15,7 @@ from test_map02_linux_octoshock_archive_readback import private_mock_runtime, sh
 from tools.map02_linux_octoshock.private_runtime_tar import pack_runtime
 from tools.map02_linux_octoshock.private_runtime_drive import (
     PrivateDriveError,
-    archive_to_private_drive, _folder_map,
+    archive_to_private_drive, _folder_map, _seal_payload,
 )
 
 
@@ -118,6 +118,26 @@ class Stage537TransportTests(unittest.TestCase):
             "vh_builds", "vh_manifests", "testowner001",
             self.private_map, invoke=self.transport,
         )
+
+    def test_seal_payload_snapshot_hash_and_mode(self):
+        parent = self.base / "sealed-unit"
+        parent.mkdir(mode=0o700)
+        target = parent / "runtime-copy.tar"
+        expected = sha(self.tar.read_bytes())
+        self.assertEqual(_seal_payload(self.tar, target), expected)
+        self.assertEqual(target.read_bytes(), self.tar.read_bytes())
+        self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+        self.assertNotEqual(target.stat().st_ino, self.tar.stat().st_ino)
+
+    def test_seal_payload_rejects_preexisting_target(self):
+        parent = self.base / "sealed-existing"
+        parent.mkdir(mode=0o700)
+        target = parent / "runtime-copy.tar"
+        target.write_bytes(b"preserve")
+        target.chmod(0o600)
+        with self.assertRaises(PrivateDriveError):
+            _seal_payload(self.tar, target)
+        self.assertEqual(target.read_bytes(), b"preserve")
 
     def test_folder_map_anchored_descriptor_reads_owner_only_config(self):
         self.assertEqual(
