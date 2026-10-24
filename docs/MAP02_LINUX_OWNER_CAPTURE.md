@@ -1081,3 +1081,35 @@ OAuth credentials remain outside public GitHub. Passing synthetic and
 source-free native CI does **not** demonstrate authentic persistent Drive
 binary retention, two independent PS1 gameplay launches or Switch parity.
 The PR remains Draft pending those independent evidence gates.
+
+## Stage556 — descriptor-anchored read of private Drive folder-map
+
+The Stage555 storage checkpoints can detect changes between observations,
+but they do not pin an individual file during the read. Previously the
+folder-scoped Google Drive mapping was checked by path, then reopened with
+`Path.read_text`. An attacker able to replace its directory entry between
+the two operations could redirect the requested Drive destination.
+
+Stage556 confines this specific sensitive read to an owner-private directory
+file descriptor opened with `O_DIRECTORY|O_NOFOLLOW`. The mapping itself
+is opened relative to that directory with `O_NOFOLLOW`, under its existing
+owner-only mode-0600 rule. The reader compares device/inode and metadata
+against the original path observation, checks bytes before JSON parsing,
+enforces a 2048-byte limit, and rechecks both directory and file identity
+after reading. If a path is replaced before open, after open, or with a
+symlink, the operation rejects instead of interpreting the mapping. The
+old normal behavior remains for an unchanged valid private mapping.
+
+Five new simulated-only tests exercise accepted owner-only mapping, an
+identical-content inode swap before open, a pathname swap after open,
+a symlink swap, and oversized input. All existing fictional transfer
+and independent readback checks must continue to pass.
+
+The scoped directory FD prevents a swapped leaf from being silently read.
+It is **not** a comprehensive FD-anchored traversal of all ancestors or a
+cryptographic attestation of owner identity; the wider Stage555 path
+checkpoints and independently trusted manifest references remain mandatory.
+No original game, BIOS, BK2, audio, private captures or OAuth secrets are
+used in public tests. CI and its fictional transport never prove genuine
+owner-authenticated binary retention. Original MAP02 two-cold-run evidence
+and Switch parity remain pending; PR #505 stays Draft.
