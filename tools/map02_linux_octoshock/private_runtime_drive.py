@@ -139,13 +139,84 @@ def _require_file(path_value: Path, source: Path, *, mode: int | None = None) ->
     return path
 
 
-def _folder_map(path: Path, root: Path) -> tuple[str, str]:
-    """Read true private folder IDs from an outside-Git owner-only file."""
+def _read_owner_folder_map_bytes(path: Path, root: Path) -> bytes:
+    """Read an owner-only mapping via an anchored parent and no-follow file FD.
+
+    Compare both descriptor identities with the pre- and post-read path
+    identities. This prevents switching the mapping file between permission
+    checking and opening it, even when a replacement has identical contents.
+    It does not lock or authenticate higher ancestor directory components.
+    """
     owner_file = _require_file(path, root, mode=0o600)
-    if owner_file.stat().st_size > 2048:
-        _fail()
+    directory = owner_file.parent
     try:
-        data = json.loads(owner_file.read_text(encoding="utf-8"))
+        parent_before = directory.lstat()
+        file_before = owner_file.lstat()
+        if (not stat.S_ISDIR(parent_before.st_mode)
+                or parent_before.st_uid != os.geteuid()
+                or stat.S_IMODE(parent_before.st_mode) != 0o700
+                or not stat.S_ISREG(file_before.st_mode)
+                or file_before.st_uid != os.geteuid()
+                or stat.S_IMODE(file_before.st_mode) != 0o600
+                or file_before.st_size > 2048):
+            _fail()
+        parent_flags = (os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                        | getattr(os, "O_NOFOLLOW", 0))
+        parent_fd = os.open(directory, parent_flags)
+        try:
+            parent_opened = os.fstat(parent_fd)
+            identity = lambda info: (
+                info.st_dev, info.st_ino, info.st_uid,
+                stat.S_IMODE(info.st_mode),
+            )
+            if (not stat.S_ISDIR(parent_opened.st_mode)
+                    or identity(parent_before) != identity(parent_opened)):
+                _fail()
+            fd = os.open(
+                owner_file.name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=parent_fd,
+            )
+            try:
+                original = os.fstat(fd)
+                if (not stat.S_ISREG(original.st_mode)
+                        or original.st_uid != os.geteuid()
+                        or stat.S_IMODE(original.st_mode) != 0o600
+                        or original.st_size > 2048
+                        or (original.st_dev, original.st_ino)
+                        != (file_before.st_dev, file_before.st_ino)):
+                    _fail()
+                with os.fdopen(fd, "rb", closefd=False) as stream:
+                    payload = stream.read(2049)
+                after = os.fstat(fd)
+                path_after = os.stat(
+                    owner_file.name, dir_fd=parent_fd, follow_symlinks=False,
+                )
+                stable = lambda info: (
+                    info.st_dev, info.st_ino, info.st_size,
+                    info.st_mtime_ns, info.st_ctime_ns,
+                    info.st_uid, stat.S_IMODE(info.st_mode),
+                )
+                if (len(payload) > 2048 or stable(original) != stable(after)
+                        or stable(after) != stable(path_after)
+                        or stable(path_after) != stable(owner_file.lstat())):
+                    _fail()
+            finally:
+                os.close(fd)
+            if (identity(parent_before) != identity(os.fstat(parent_fd))
+                    or identity(parent_before) != identity(directory.lstat())):
+                _fail()
+            return payload
+        finally:
+            os.close(parent_fd)
+    except (OSError, ValueError, TypeError, AttributeError):
+        _fail()
+
+
+def _folder_map(path: Path, root: Path) -> tuple[str, str]:
+    """Read true private folder IDs from an anchored owner-only descriptor."""
+    payload = _read_owner_folder_map_bytes(path, root)
+    try:
+        data = json.loads(payload)
     except (OSError, UnicodeError, ValueError):
         _fail()
     if not isinstance(data, dict) or set(data) != {
