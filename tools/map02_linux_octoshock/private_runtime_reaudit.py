@@ -253,6 +253,11 @@ def audit_independent_readback(
         receipt_file = downloaded / receipt_name
         invoke(["copyto", "--immutable", receipt_path, str(receipt_file)])
         _check_remote(manifests, manifests_id, invoke)
+        if _stat_remote(
+            receipt_path, receipt_name, receipt_size, invoke,
+        ) != receipt_stat:
+            _fail()
+        _check_remote(manifests, manifests_id, invoke)
         receipt_file.chmod(0o600)
         if _hash_file(receipt_file) != receipt_pin_value:
             _fail()
@@ -270,6 +275,9 @@ def audit_independent_readback(
             _check_remote(remote, expected_folder_id, invoke)
             output = downloaded / name
             invoke(["copyto", "--immutable", path, str(output)])
+            _check_remote(remote, expected_folder_id, invoke)
+            if _stat_remote(path, name, item["bytes"], invoke) != item["google_drive_id"]:
+                _fail()
             _check_remote(remote, expected_folder_id, invoke)
             output.chmod(0o600)
             if (_hash_file(output) != item["sha256"] or
