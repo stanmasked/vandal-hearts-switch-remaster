@@ -550,3 +550,64 @@ class OwnerDriveSessionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_hard_kill_leaves_partial_pin_and_blocks_retry(self):
+        """SIGKILL cannot run cleanup; a retry must fail closed on its partial pin."""
+        import multiprocessing
+        import signal
+        import time
+
+        ready = self.base / "stage577-partial-receipt-ready"
+
+        def child_session():
+            def stop_after_partial_receipt(*args, **kwargs):
+                self.receipt_pin.write_text("0" * 64 + "\\n", encoding="ascii")
+                self.receipt_pin.chmod(0o600)
+                ready.write_text("partial receipt exists", encoding="ascii")
+                # Parent deliberately kills this process. No Python finally or
+                # exception handler can be relied upon to run after SIGKILL.
+                while True:
+                    time.sleep(0.05)
+
+            with patch.object(
+                owner_drive_session, "archive_to_private_drive",
+                side_effect=stop_after_partial_receipt,
+            ):
+                self.execute(session="owner577001")
+
+        # The native Linux CI job supports fork; this preserves the synthetic
+        # fixture and fake transport without serializing private test objects.
+        context = multiprocessing.get_context("fork")
+        process = context.Process(target=child_session)
+        process.start()
+        try:
+            deadline = time.monotonic() + 15
+            while (not ready.exists() and process.is_alive()
+                   and time.monotonic() < deadline):
+                time.sleep(0.02)
+            self.assertTrue(
+                ready.exists(),
+                "child session did not reach the partial-receipt crash point",
+            )
+            self.assertTrue(self.full_session.is_dir())
+            os.kill(process.pid, signal.SIGKILL)
+            process.join(timeout=10)
+            self.assertFalse(process.is_alive(), "SIGKILLed owner child did not exit")
+            self.assertEqual(process.exitcode, -signal.SIGKILL)
+        finally:
+            if process.is_alive():
+                os.kill(process.pid, signal.SIGKILL)
+                process.join(timeout=10)
+
+        # SIGKILL intentionally leaves the partial output and forensic session
+        # tree in place. A new owner session must refuse before remote writes.
+        self.assertEqual(
+            self.receipt_pin.read_text(encoding="ascii"), "0" * 64 + "\\n",
+        )
+        self.assertEqual(self.receipt_pin.stat().st_mode & 0o777, 0o600)
+        self.assertTrue(self.full_session.is_dir())
+        self.assertFalse(self.archive_pin.exists())
+        with self.assertRaises(PrivateOwnerSessionError):
+            self.execute(session="owner577002")
+        self.assertEqual(self.transport.uploads, 0)
+
