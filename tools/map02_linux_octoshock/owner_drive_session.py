@@ -38,11 +38,11 @@ def _fail() -> None:
     raise PrivateOwnerSessionError("owner-private archive session not verified")
 
 
-def _raise_on_sigterm(signum: int, _frame: object) -> None:
-    """Unwind the owner session on SIGTERM so its guarded cleanup can run."""
-    # Prevent repeated SIGTERM delivery from interrupting cleanup. main()
-    # restores the previous handler after the session has unwound.
-    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+def _raise_on_stop_signal(signum: int, _frame: object) -> None:
+    """Unwind safely on SIGINT/SIGTERM without accepting repeated stop signals."""
+    # Prevent a second stop signal from interrupting the cleanup triggered by
+    # the first one. main() restores both previous handlers in its finally.
+    signal.signal(signum, signal.SIG_IGN)
     raise SystemExit(128 + signum)
 
 
@@ -286,8 +286,12 @@ def main() -> int:
     parser.add_argument("--manifests-remote", required=True)
     parser.add_argument("--session", required=True)
     args = parser.parse_args()
-    previous_sigterm_handler = signal.getsignal(signal.SIGTERM)
-    signal.signal(signal.SIGTERM, _raise_on_sigterm)
+    stop_signals = (signal.SIGINT, signal.SIGTERM)
+    previous_stop_handlers = {
+        signum: signal.getsignal(signum) for signum in stop_signals
+    }
+    for signum in stop_signals:
+        signal.signal(signum, _raise_on_stop_signal)
     try:
         try:
             result = complete_owner_archive_session(
@@ -311,7 +315,8 @@ def main() -> int:
         )
         return 0
     finally:
-        signal.signal(signal.SIGTERM, previous_sigterm_handler)
+        for signum, handler in previous_stop_handlers.items():
+            signal.signal(signum, handler)
 
 
 if __name__ == "__main__":
