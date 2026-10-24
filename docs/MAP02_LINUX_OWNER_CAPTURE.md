@@ -1236,6 +1236,6 @@ This remains a no-game-media readiness check, not evidence of a real Drive
 upload, actual MAP02 launch, or Nintendo Switch parity. The private
 07_Builds_and_Test_Artifacts folder must remain empty until an authenticated
 owner-host publish and independent remote readbacks are completed.
-The Stage561 code/test head is `902d714150e99cb0154e3ac97c95f49323933690`.
+The Stage561 code/test head is `439b09c00f4df623dfa839e67adffb67e0f5d8f2`.
 Exact-head CI must complete successfully on the final code and documentation
 head before Stage561 is accepted.
