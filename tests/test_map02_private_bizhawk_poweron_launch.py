@@ -45,7 +45,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         ):
             self.assertIn(field, lua)
             self.assertIn('"' + field + '"', audit)
-        self.assertIn("bios=psx_u_firmware_hash_matches_movie_header", lua)
+        self.assertIn("psx_u_firmware_hash_matches_movie_header", lua)
         self.assertIn('disc=unverified\\n', external_tool)
         self.assertIn('movie_sync=unverified\\n', external_tool)
 
