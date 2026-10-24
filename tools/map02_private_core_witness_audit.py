@@ -19,8 +19,8 @@ from tools.map02_private_disc_movie_preflight import (
     _assert_stable, _open_stable, _resolve_private_file,
 )
 
-SCHEMA = "vh.map02.private-runtime-core-witness-review.v3"
-MAGIC = "VH_MAP02_RUNTIME_CORE_WITNESS_V4"
+SCHEMA = "vh.map02.private-runtime-core-witness-review.v4"
+MAGIC = "VH_MAP02_RUNTIME_CORE_WITNESS_V5"
 MAX_RECEIPT_BYTES = 768
 RUNTIME_CORE_TYPE = "BizHawk.Emulation.Cores.Sony.PSX.Octoshock"
 NATIVE_CORE_MODULE_NAME = "octoshock.dll"
@@ -44,6 +44,7 @@ KEYS = (
     "frame_count",
     "bios",
     "disc",
+    "disc_mount",
     "movie_sync",
 )
 DECIMAL = re.compile(r"(?:0|[1-9][0-9]*)\Z")
@@ -59,8 +60,8 @@ def _decimal(value: str, *, maximum: int, minimum: int = 0) -> int:
     return number
 
 
-def read_witness_record(source: Path) -> tuple[int, int, int, str, str, str, bool]:
-    """Read a strict V4 witness; keep all runtime file hashes and IDs local."""
+def read_witness_record(source: Path) -> tuple[int, int, int, str, str, str, bool, bool]:
+    """Read a strict V5 witness; keep all runtime file hashes and IDs local."""
     path = _resolve_private_file(source)
     fd, before = _open_stable(path)
     try:
@@ -105,6 +106,9 @@ def read_witness_record(source: Path) -> tuple[int, int, int, str, str, str, boo
     if fields["bios"] not in (
             "psx_u_firmware_hash_matches_movie_header", "unverified"):
         raise ValueError("private core witness has unsupported evidence claim")
+    if fields["disc_mount"] not in (
+            "unverified", "single_mounted_tray_closed_source_name_matches"):
+        raise ValueError("private core witness has unsupported evidence claim")
     if fields["native_core_module_name"] not in NATIVE_CORE_MODULE_NAMES:
         raise ValueError("private core witness has unsupported evidence: native module name")
     digests = {}
@@ -127,6 +131,7 @@ def read_witness_record(source: Path) -> tuple[int, int, int, str, str, str, boo
         digests["core_assembly_sha256"],
         digests["native_core_module_sha256"],
         fields["bios"] == "psx_u_firmware_hash_matches_movie_header",
+        fields["disc_mount"] == "single_mounted_tray_closed_source_name_matches",
     )
 
 
@@ -165,6 +170,8 @@ def compare_witnesses(first: Path, second: Path) -> dict:
         "witnesses_tied_to_specific_bk2_or_png_capture": False,
         "both_runtime_witnesses_report_psx_u_firmware_matches_bk2_header":
             a[6] and b[6],
+        "both_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match":
+            a[7] and b[7],
         "actual_loaded_bios_authenticated": False,
         "mounted_ps1_disc_authenticated": False,
         "original_map02_scene_authenticated": False,

@@ -84,6 +84,9 @@ def review_owner_capture(movie: Path, plan: Path, workspace: Path,
         raise ValueError("private emulator processes not distinct")
     if auto and bound.get("both_witnesses_report_psx_u_firmware_matches_bk2_header") is not True:
         raise ValueError("automatic runtime witnesses do not confirm PSX/U firmware match")
+    if auto and bound.get(
+            "both_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match") is not True:
+        raise ValueError("automatic runtime witnesses do not confirm mounted-disc state/source CUE basename")
 
     return {
         "schema": SCHEMA,
@@ -93,6 +96,8 @@ def review_owner_capture(movie: Path, plan: Path, workspace: Path,
         "owner_logs_confirm_auto_core_receipt_before_png": auto,
         "both_runtime_witnesses_report_psx_u_firmware_matches_bk2_header":
             bound.get("both_witnesses_report_psx_u_firmware_matches_bk2_header") is True,
+        "both_runtime_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match":
+            bound.get("both_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match") is True,
         "auto_core_frame_no_later_than_first_capture_counter": auto,
         "reported_emuhawk_processes_distinct": True,
         "psx_core_fallback_reported_blocked_for_both_replays": True,

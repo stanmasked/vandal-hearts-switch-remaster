@@ -96,7 +96,7 @@ local first_auto_core_bytes = nil
 local function core_only_receipt_bytes()
   local file = io.open(auto_core_path, "rb")
   if not file then return nil end
-  -- Keep this bound aligned with MAX_RECEIPT_BYTES in the Python V4 auditor.
+  -- Keep this bound aligned with MAX_RECEIPT_BYTES in the Python V5 auditor.
   local body = file:read(769)
   file:close()
   if type(body) ~= "string" or #body == 0 or #body > 768
@@ -110,7 +110,7 @@ local function core_only_receipt_bytes()
   -- This file is written by CustomMainForm.cs as V4. The previous V1 parser
   -- could never accept the real external-tool receipt, so a real capture
   -- would fail closed before its first PNG even though synthetic tests passed.
-  if #lines ~= 15 or lines[1] ~= "VH_MAP02_RUNTIME_CORE_WITNESS_V4" then
+  if #lines ~= 16 or lines[1] ~= "VH_MAP02_RUNTIME_CORE_WITNESS_V5" then
     return nil
   end
   local expected = {
@@ -167,7 +167,8 @@ local function core_only_receipt_bytes()
   -- the opened BK2 header. Disc identity and replay delivery remain unverified.
   if field(13, "bios") ~= "psx_u_firmware_hash_matches_movie_header"
       or field(14, "disc") ~= "unverified"
-      or field(15, "movie_sync") ~= "unverified" then
+      or field(15, "disc_mount") ~= "single_mounted_tray_closed_source_name_matches"
+      or field(16, "movie_sync") ~= "unverified" then
     return nil
   end
   return body, frame_count

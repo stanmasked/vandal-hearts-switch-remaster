@@ -21,7 +21,7 @@ ROWS = [
 
 
 class PrivateBizHawkBootTests(unittest.TestCase):
-    def test_first_png_lua_gate_matches_actual_v4_external_tool_contract(self):
+    def test_first_png_lua_gate_matches_actual_v5_external_tool_contract(self):
         root = Path(__file__).resolve().parents[1]
         lua = (root / "tools/map02_bizhawk_private_neutral_capture.lua").read_text(
             encoding="utf-8")
@@ -31,9 +31,9 @@ class PrivateBizHawkBootTests(unittest.TestCase):
             encoding="utf-8")
         self.assertIn('.. "/vh-map02-runtime-core-auto.txt"', lua)
         self.assertIn('AutomaticWitnessFile = "vh-map02-runtime-core-auto.txt"', external_tool)
-        self.assertIn('VH_MAP02_RUNTIME_CORE_WITNESS_V4', lua)
-        self.assertIn('VH_MAP02_RUNTIME_CORE_WITNESS_V4', external_tool)
-        self.assertIn('MAGIC = "VH_MAP02_RUNTIME_CORE_WITNESS_V4"', audit)
+        self.assertIn('VH_MAP02_RUNTIME_CORE_WITNESS_V5', lua)
+        self.assertIn('VH_MAP02_RUNTIME_CORE_WITNESS_V5', external_tool)
+        self.assertIn('MAGIC = "VH_MAP02_RUNTIME_CORE_WITNESS_V5"', audit)
         self.assertNotIn('VH_MAP02_RUNTIME_CORE_WITNESS_V1', lua)
         self.assertIn('local body = file:read(769)', lua)
         self.assertIn('MAX_RECEIPT_BYTES = 768', audit)
@@ -41,12 +41,18 @@ class PrivateBizHawkBootTests(unittest.TestCase):
             "core_assembly_sha256", "native_core_module_name",
             "native_core_module_sha256", "tool_assembly_sha256",
             "process_id", "process_start_utc_ticks", "frame_count",
-            "bios", "disc", "movie_sync",
+            "bios", "disc", "disc_mount", "movie_sync",
         ):
             self.assertIn(field, lua)
             self.assertIn('"' + field + '"', audit)
         self.assertIn("psx_u_firmware_hash_matches_movie_header", lua)
         self.assertIn('disc=unverified\\n', external_tool)
+        self.assertIn('disc_mount=', external_tool)
+        self.assertIn("RequireMountedDiscMatchesSourceCueName", external_tool)
+        self.assertIn("ExpectedDiscCueNameEnvironment", external_tool)
+        self.assertIn("CurrentTrayOpen", external_tool)
+        self.assertIn("CurrentDiscIndexMounted", external_tool)
+        self.assertIn("single_mounted_tray_closed_source_name_matches", lua)
         self.assertIn('movie_sync=unverified\\n', external_tool)
 
     def setUp(self):
@@ -544,6 +550,8 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.assertEqual(env["VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR"],
                          str(self.output.resolve()))
         self.assertEqual(env["VH_MAP02_CORE_EXPECTED_PSX_FIRMWARE_SHA1"], "f" * 40)
+        self.assertEqual(env["VH_MAP02_EXPECTED_DISC_CUE_NAME"], self.disc.name)
+        self.assertNotIn(str(self.disc.resolve()), env["VH_MAP02_EXPECTED_DISC_CUE_NAME"])
         self.assertNotIn("VH_MAP02_CORE_EXPECTED_DLL_SHA256", env)
         self.assertNotIn("VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256", env)
         self.assertNotIn("VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256", env)
@@ -556,6 +564,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
             "VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256": "c" * 64,
             "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256": "d" * 64,
             "VH_MAP02_CORE_EXPECTED_PSX_FIRMWARE_SHA1": "e" * 40,
+            "VH_MAP02_EXPECTED_DISC_CUE_NAME": "ambient-private.cue",
         }):
             argv, env, count = self.call()
         self.assertNotIn("VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR", env)
@@ -563,6 +572,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.assertNotIn("VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256", env)
         self.assertNotIn("VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256", env)
         self.assertNotIn("VH_MAP02_CORE_EXPECTED_PSX_FIRMWARE_SHA1", env)
+        self.assertNotIn("VH_MAP02_EXPECTED_DISC_CUE_NAME", env)
         self.assertNotIn("--open-ext-tool-dll", " ".join(argv))
 
     def test_runtime_file_pins_are_passed_only_with_explicit_plugin_optin(self):
@@ -672,7 +682,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         witness = self.output / "vh-map02-runtime-core-auto.txt"
         def core(when):
             return (
-                "VH_MAP02_RUNTIME_CORE_WITNESS_V4\nsystem=PSX\n"
+                "VH_MAP02_RUNTIME_CORE_WITNESS_V5\nsystem=PSX\n"
                 "loaded_core=Octoshock\n"
                 "core_source=IEmulator.Attributes.CoreName\n"
                 "runtime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock\n"
@@ -682,6 +692,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                 "tool_assembly_sha256=" + "a" * 64 + "\n"
                 f"process_id={pid}\nprocess_start_utc_ticks={when}\n"
                 "frame_count=1666\nbios=psx_u_firmware_hash_matches_movie_header\ndisc=unverified\n"
+                "disc_mount=single_mounted_tray_closed_source_name_matches\n"
                 "movie_sync=unverified\n"
             ).encode("ascii")
         with self.assertRaises((OSError, ValueError)):
@@ -692,6 +703,11 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         witness.write_bytes(core(birth).replace(
             b"bios=psx_u_firmware_hash_matches_movie_header", b"bios=unverified"))
         with self.assertRaisesRegex(ValueError, "does not confirm PSX/U firmware match"):
+            verify_private_auto_witness(self.output)
+        witness.write_bytes(core(birth).replace(
+            b"disc_mount=single_mounted_tray_closed_source_name_matches",
+            b"disc_mount=unverified"))
+        with self.assertRaisesRegex(ValueError, "does not confirm mounted-disc state"):
             verify_private_auto_witness(self.output)
         witness.write_bytes(core(birth))
         self.assertIsNone(verify_private_auto_witness(self.output))

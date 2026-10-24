@@ -404,6 +404,9 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
                 raise ValueError("owner automatic core witness differs from captured process")
             if observed[6] is not True:
                 raise ValueError("owner automatic core witness does not confirm PSX/U firmware match")
+            if observed[7] is not True:
+                raise ValueError(
+                    "owner automatic core witness does not confirm mounted-disc state and source CUE basename")
             if (core_witness_sha256 is not None
                     and observed[3] != core_witness_sha256.lower()):
                 raise ValueError(
@@ -444,6 +447,8 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
                 auto_core_witness_plugin is not None,
             "first_runtime_witness_reports_loaded_psx_u_bios_matches_bk2_header":
                 auto_core_witness_plugin is not None and observed[6] is True,
+            "first_runtime_witness_reports_single_mounted_disc_tray_closed_source_cue_name_match":
+                auto_core_witness_plugin is not None and observed[7] is True,
             "first_auto_core_frame_not_later_than_first_png":
                 auto_core_witness_plugin is not None,
             "same_bk2_bytes_across_capture_attempts": False,
@@ -478,6 +483,9 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             raise ValueError("automatic core witness binding rejected")
         if bound.get("both_witnesses_report_psx_u_firmware_matches_bk2_header") is not True:
             raise ValueError("paired automatic witnesses do not confirm PSX/U firmware match")
+        if bound.get(
+                "both_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match") is not True:
+            raise ValueError("paired automatic witnesses do not confirm mounted-disc state/source CUE basename")
     # Third parent-side full read: the final PNG/pair audit may take time.
     require_linux_owner_runtime_pin(
         private_emuhawk, mono_executable, trusted_runtime_manifest_pin_file
@@ -504,6 +512,9 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         "both_runtime_witnesses_report_loaded_psx_u_bios_matches_bk2_header":
             auto_core_witness_plugin is not None
             and bound.get("both_witnesses_report_psx_u_firmware_matches_bk2_header") is True,
+        "both_runtime_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match":
+            auto_core_witness_plugin is not None
+            and bound.get("both_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match") is True,
         "capture_attempts_audited": 2,
         "same_reported_bizhawk_runtime_profile":
             paired["same_reported_bizhawk_runtime_profile"],

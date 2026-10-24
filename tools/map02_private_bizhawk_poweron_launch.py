@@ -38,6 +38,7 @@ AUTO_WITNESS_HASH_ENV = "VH_MAP02_CORE_EXPECTED_DLL_SHA256"
 CORE_ASSEMBLY_SHA256_ENV = "VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256"
 NATIVE_MODULE_SHA256_ENV = "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256"
 EXPECTED_PSX_FIRMWARE_SHA1_ENV = "VH_MAP02_CORE_EXPECTED_PSX_FIRMWARE_SHA1"
+EXPECTED_DISC_CUE_NAME_ENV = "VH_MAP02_EXPECTED_DISC_CUE_NAME"
 from tools.verify_map02_private_neutral_capture_chain import parse_plan
 
 
@@ -324,7 +325,7 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
     for name in (
         AUTO_WITNESS_ENV, AUTO_WITNESS_HASH_ENV,
         CORE_ASSEMBLY_SHA256_ENV, NATIVE_MODULE_SHA256_ENV,
-        EXPECTED_PSX_FIRMWARE_SHA1_ENV,
+        EXPECTED_PSX_FIRMWARE_SHA1_ENV, EXPECTED_DISC_CUE_NAME_ENV,
     ):
         env.pop(name, None)
     if plugin is not None:
@@ -332,6 +333,8 @@ def build_launch(private_emuhawk: Path, private_disc: Path,
         if expected_psx_u_firmware_sha1 is None:
             raise ValueError("automatic core witness requires PSX/U firmware metadata")
         env[EXPECTED_PSX_FIRMWARE_SHA1_ENV] = expected_psx_u_firmware_sha1
+        # Only a basename is passed; the witness never emits a private path.
+        env[EXPECTED_DISC_CUE_NAME_ENV] = disc.name
         if core_witness_sha256 is not None:
             env[AUTO_WITNESS_HASH_ENV] = core_witness_sha256.lower()
         for name, pin in zip(
@@ -359,6 +362,9 @@ def verify_private_auto_witness(
     launch = read_started_process(source / OWNER_PROCESS_RECEIPT_NAME)
     if witness[6] is not True:
         raise ValueError("private automatic core witness does not confirm PSX/U firmware match")
+    if witness[7] is not True:
+        raise ValueError(
+            "private automatic core witness does not confirm mounted-disc state and source CUE basename")
     if witness[:2] != launch:
         raise ValueError("private automatic core witness does not match launched process")
     if expected_sha256 is not None:

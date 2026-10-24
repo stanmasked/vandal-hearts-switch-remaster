@@ -30,9 +30,10 @@ def started(pid, ticks):
 
 
 def core(pid, ticks, frame=1666, tool_hash="a" * 64,
-         core_hash="b" * 64, native_hash="c" * 64):
+         core_hash="b" * 64, native_hash="c" * 64,
+         disc_mount="unverified"):
     return (
-        "VH_MAP02_RUNTIME_CORE_WITNESS_V4\n"
+        "VH_MAP02_RUNTIME_CORE_WITNESS_V5\n"
         "system=PSX\nloaded_core=Octoshock\n"
         "core_source=IEmulator.Attributes.CoreName\n"
         "runtime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock\n"
@@ -42,7 +43,9 @@ def core(pid, ticks, frame=1666, tool_hash="a" * 64,
         "tool_assembly_sha256=" + tool_hash + "\n"
         f"process_id={pid}\nprocess_start_utc_ticks={ticks}\n"
         f"frame_count={frame}\nbios=psx_u_firmware_hash_matches_movie_header\n"
-        "disc=unverified\nmovie_sync=unverified\n"
+        "disc=unverified\n"
+        f"disc_mount={disc_mount}\n"
+        "movie_sync=unverified\n"
     )
 
 
@@ -78,6 +81,8 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
         self.assertTrue(result["both_witnesses_report_same_runtime_core_assembly_file_hash"])
         self.assertTrue(result["both_witnesses_report_same_native_core_module_file_hash"])
         self.assertTrue(result["both_witnesses_report_psx_u_firmware_matches_bk2_header"])
+        self.assertFalse(result[
+            "both_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match"])
         self.assertFalse(result["tool_assembly_file_hash_independently_pinned"])
         self.assertFalse(result["runtime_core_assembly_file_hash_independently_pinned"])
         self.assertFalse(result["native_core_module_file_hash_independently_pinned"])
@@ -87,6 +92,15 @@ class PrivateProcessWitnessBindingTests(unittest.TestCase):
         self.assertFalse(result["original_bk2_input_or_map02_scene_authenticated"])
         for private in ("3011", str(BIRTH_A), str(self.root), "a" * 64):
             self.assertNotIn(private, json.dumps(result))
+
+    def test_mount_state_is_reported_without_authenticating_disc_bytes(self):
+        state = "single_mounted_tray_closed_source_name_matches"
+        _lf_fixture(self.a_core, core(3011, BIRTH_A, disc_mount=state))
+        _lf_fixture(self.b_core, core(3012, BIRTH_B, disc_mount=state))
+        result = self.bind()
+        self.assertTrue(result[
+            "both_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match"])
+        self.assertFalse(result["actual_bios_and_mounted_disc_authenticated"])
 
     def test_read_receipt_returns_local_only_pid_and_birth(self):
         self.assertEqual(read_started_process(self.a_start), (3011, BIRTH_A))

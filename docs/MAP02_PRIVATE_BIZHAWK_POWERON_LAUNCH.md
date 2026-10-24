@@ -599,3 +599,16 @@ RU-образа и USA-прохождения. Настоящий EmuHawk/Octosh
 в реальный путь, и генератор отказывается создавать план внутри Git,
 в том числе когда исходный путь к папке был символической ссылкой.
 Тесты используют только вымышленные файлы и не содержат настоящего BK2.
+
+
+## Stage609 — live mount-state gate
+
+The V5 automatic witness now records whether the active Octoshock instance had exactly
+one disc listed, index 1 mounted, the tray closed, and a loaded disc basename matching
+the selected CUE basename. The launcher passes only the basename in the private child
+environment. A missing or mismatching mount state blocks the first PNG and the offline
+first-run and paired-run audits.
+
+This does not change the privacy boundary and does not authenticate disc bytes. Keep
+`disc=unverified` and `movie_sync=unverified` in all reports until separate evidence
+establishes stronger claims.

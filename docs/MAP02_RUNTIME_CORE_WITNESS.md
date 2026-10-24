@@ -471,3 +471,22 @@ is obsolete. All fixture media and receipt values remain fictional.
 These checks compare the receipt's reported file hashes to supplied pins.
 They do not attest to the in-memory bytes of loaded modules, and they do not
 prove that the original game reached MAP02.
+
+
+### Stage609 — V5 live mounted-disc state and source CUE basename
+
+The automatic owner-local witness now uses schema V5. In addition to the existing
+live PSX/Octoshock and PSX/U firmware checks, it reads the actual Octoshock instance's
+mounted-disc index, tray state and loaded disc name. The launcher supplies only the
+expected CUE basename to the child process; neither the full private path nor the name
+is written into the witness. Automatic capture fails closed unless exactly one disc
+is listed, disc index 1 is mounted, the tray is closed, and the loaded disc's source
+basename matches the selected CUE basename.
+
+The receipt keeps `disc=unverified` and `movie_sync=unverified`. The new
+`disc_mount=single_mounted_tray_closed_source_name_matches` value is deliberately
+narrow: it establishes only a live mount/tray/name consistency check. It does not
+authenticate the mounted disc's full bytes, prove the BIN is unchanged inside the
+emulator, confirm controller delivery, or identify the original MAP02 scene. The
+Python auditor, Lua first-PNG gate and paired-run binding all validate this V5 field;
+synthetic tests use fictional paths and receipts only.

@@ -1,4 +1,4 @@
--- Stage608: malformed V4 receipt variants must fail before the first PNG.
+-- Stage609: malformed V5 receipt variants must fail before the first PNG.
 -- Executable Lua capture test with entirely invented BizHawk APIs and PNG bytes.
 -- Does NOT run Octoshock, use the owner's BK2 or publish original gameplay.
 local SCRIPT = "tools/map02_bizhawk_private_neutral_capture.lua"
@@ -8,7 +8,7 @@ local PLAN = "/private/fake-capture-plan.txt"
 local LOG = ROOT .. "/vh_private_capture.log"
 local SIGNATURE = "\137PNG\r\n\26\n"
 local AUTO_FILE = ROOT .. "/vh-map02-runtime-core-auto.txt"
-local CORE_ONLY = "VH_MAP02_RUNTIME_CORE_WITNESS_V4\n"
+local CORE_ONLY = "VH_MAP02_RUNTIME_CORE_WITNESS_V5\n"
   .. "system=PSX\nloaded_core=Octoshock\n"
   .. "core_source=IEmulator.Attributes.CoreName\n"
   .. "runtime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock\n"
@@ -19,7 +19,8 @@ local CORE_ONLY = "VH_MAP02_RUNTIME_CORE_WITNESS_V4\n"
   .. "process_id=123\nprocess_start_utc_ticks=639000000000000001\n"
   .. "frame_count=1662\n"
   .. "bios=psx_u_firmware_hash_matches_movie_header\n"
-  .. "disc=unverified\nmovie_sync=unverified\n"
+  .. "disc=unverified\ndisc_mount=single_mounted_tray_closed_source_name_matches\n"
+  .. "movie_sync=unverified\n"
 local AUTO_MARK = "VH_PRIVATE_NEUTRAL_AUTOWITNESS_PREFLIGHT "
   .. "stage=before_first_png receipt=present core_only=yes actual_disc=unverified"
 local BASE = "VH_MAP02_CAPTURE_PLAN_V1\nmovie_frames=933949\ncapture_count=3\n" ..

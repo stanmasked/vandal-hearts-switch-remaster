@@ -41,6 +41,7 @@ namespace VhMap02CoreWitness
         private const string ExpectedCoreAssemblySha256Environment = "VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256";
         private const string ExpectedNativeModuleSha256Environment = "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256";
         private const string ExpectedPsxFirmwareSha1Environment = "VH_MAP02_CORE_EXPECTED_PSX_FIRMWARE_SHA1";
+        private const string ExpectedDiscCueNameEnvironment = "VH_MAP02_EXPECTED_DISC_CUE_NAME";
         private const string ExpectedRuntimeCoreType = "BizHawk.Emulation.Cores.Sony.PSX.Octoshock";
 #if VH_MAP02_UNIX_BUILD
         private static readonly string[] NativeCoreModuleNames =
@@ -166,7 +167,8 @@ namespace VhMap02CoreWitness
                     + Environment.NewLine
                     + "PSX/U firmware hash matched the opened BK2 header."
                     + Environment.NewLine
-                    + "Disc identity, replay delivery and MAP02 scene remain unverified.";
+                    + "Disc bytes, replay delivery and MAP02 remain unverified; "
+                    + "only tray state and source basename were checked.";
             }
             catch (Exception)
             {
@@ -389,6 +391,57 @@ namespace VhMap02CoreWitness
             return true;
         }
 
+        private bool RequireMountedDiscMatchesSourceCueName(IEmulator actualCore)
+        {
+            // Only the explicitly opted-in owner launcher supplies this value.
+            // It is a basename, not a path, and is never written into the receipt.
+            if (string.IsNullOrEmpty(
+                    Environment.GetEnvironmentVariable(AutomaticWitnessEnvironment)))
+                return false;
+
+            var expectedName = Environment.GetEnvironmentVariable(
+                ExpectedDiscCueNameEnvironment);
+            if (string.IsNullOrEmpty(expectedName) || expectedName == "."
+                || expectedName == ".."
+                || expectedName.IndexOfAny(new[] { '/', '\\' }) >= 0
+                || !string.Equals(Path.GetFileName(expectedName), expectedName,
+                    StringComparison.Ordinal))
+                throw new InvalidOperationException();
+
+            var runtimeType = actualCore.GetType();
+            var trayProperty = runtimeType.GetProperty("CurrentTrayOpen");
+            var mountedIndexProperty = runtimeType.GetProperty("CurrentDiscIndexMounted");
+            var discsField = runtimeType.GetField("Discs");
+            if (trayProperty == null || mountedIndexProperty == null || discsField == null)
+                throw new InvalidOperationException();
+
+            var trayValue = trayProperty.GetValue(actualCore, null);
+            var mountedIndexValue = mountedIndexProperty.GetValue(actualCore, null);
+            if (!(trayValue is bool) || (bool)trayValue
+                || !(mountedIndexValue is int) || (int)mountedIndexValue != 1)
+                throw new InvalidOperationException();
+
+            var discs = discsField.GetValue(actualCore) as System.Collections.ICollection;
+            if (discs == null || discs.Count != 1)
+                throw new InvalidOperationException();
+            var iterator = discs.GetEnumerator();
+            if (!iterator.MoveNext() || iterator.Current == null)
+                throw new InvalidOperationException();
+            var discObject = iterator.Current;
+            if (iterator.MoveNext())
+                throw new InvalidOperationException();
+            var nameField = discObject.GetType().GetField("Name");
+            var loadedName = nameField == null ? null : nameField.GetValue(discObject) as string;
+            var comparison = Environment.OSVersion.Platform == PlatformID.Win32NT
+                ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            if (!string.Equals(loadedName, expectedName, comparison))
+                throw new InvalidOperationException();
+
+            // This checks live mount/tray state and the source basename only.
+            // It does NOT authenticate full disc bytes or the original MAP02 scene.
+            return true;
+        }
+
         private string Snapshot(IEmulator actualCore)
         {
             // A recorded BK2 Core header or configured preferred core is NOT
@@ -405,6 +458,8 @@ namespace VhMap02CoreWitness
                 throw new InvalidOperationException();
 
             var firmwareMatchesMovieHeader = RequireLoadedPsxUFirmwareMatchesMovieHeader();
+            var mountedDiscMatchesSourceName =
+                RequireMountedDiscMatchesSourceCueName(actualCore);
 
             var coreAssemblySha256 = FileSha256(runtimeType.Assembly.Location);
             var nativeModulePath = FindLoadedNativeCoreModulePath();
@@ -430,7 +485,7 @@ namespace VhMap02CoreWitness
                 var start = process.StartTime.ToUniversalTime().Ticks;
 #endif
                 if (process.Id <= 0 || start <= 0) throw new InvalidOperationException();
-                return "VH_MAP02_RUNTIME_CORE_WITNESS_V4\n"
+                return "VH_MAP02_RUNTIME_CORE_WITNESS_V5\n"
                     + "system=PSX\n"
                     + "loaded_core=Octoshock\n"
                     + "core_source=IEmulator.Attributes.CoreName\n"
@@ -445,6 +500,8 @@ namespace VhMap02CoreWitness
                     + "bios=" + (firmwareMatchesMovieHeader
                         ? "psx_u_firmware_hash_matches_movie_header" : "unverified") + "\n"
                     + "disc=unverified\n"
+                    + "disc_mount=" + (mountedDiscMatchesSourceName
+                        ? "single_mounted_tray_closed_source_name_matches" : "unverified") + "\n"
                     + "movie_sync=unverified\n";
             }
         }

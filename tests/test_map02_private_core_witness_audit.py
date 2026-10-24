@@ -27,7 +27,7 @@ def receipt(*, pid=3001, start=639000000000000001, frame=1666, **changes):
         tool_assembly_sha256="a" * 64,
         process_id=str(pid), process_start_utc_ticks=str(start),
         frame_count=str(frame), bios="psx_u_firmware_hash_matches_movie_header",
-        disc="unverified", movie_sync="unverified",
+        disc="unverified", disc_mount="unverified", movie_sync="unverified",
     )
     values.update(changes)
     return "\n".join([MAGIC] + [
@@ -54,6 +54,8 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
         self.assertTrue(result["both_witnesses_report_same_tool_assembly_file_hash"])
         self.assertFalse(result["tool_assembly_file_hash_independently_pinned"])
         self.assertTrue(result["both_runtime_witnesses_report_psx_u_firmware_matches_bk2_header"])
+        self.assertFalse(result[
+            "both_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match"])
         for label in (
             "process_or_witness_origin_cryptographically_authenticated",
             "witnesses_tied_to_specific_bk2_or_png_capture",
@@ -172,6 +174,22 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
 
     def test_disc_claim_is_rejected(self):
         self.first.write_text(receipt(disc="verified"), encoding="ascii")
+        with self.assertRaisesRegex(ValueError, "unsupported evidence"):
+            compare_witnesses(self.first, self.second)
+
+    def test_mounted_disc_state_and_source_name_match_is_reported_without_authentication(self):
+        state = "single_mounted_tray_closed_source_name_matches"
+        self.first.write_text(receipt(disc_mount=state), encoding="ascii")
+        self.second.write_text(receipt(
+            pid=3002, start=639000000000000002, disc_mount=state,
+        ), encoding="ascii")
+        result = compare_witnesses(self.first, self.second)
+        self.assertTrue(result[
+            "both_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match"])
+        self.assertFalse(result["mounted_ps1_disc_authenticated"])
+
+    def test_unsupported_disc_mount_state_is_rejected(self):
+        self.first.write_text(receipt(disc_mount="verified"), encoding="ascii")
         with self.assertRaisesRegex(ValueError, "unsupported evidence"):
             compare_witnesses(self.first, self.second)
 

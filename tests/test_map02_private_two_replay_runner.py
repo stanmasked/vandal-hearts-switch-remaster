@@ -1160,7 +1160,7 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
 
     def _exercise_first_png_frame_boundary(
             self, observed_frame, *, pinned=False, witness_hash=None,
-            firmware_matches=True):
+            firmware_matches=True, disc_mount_matches=True):
         fake_windows = type(
             "FakeOs", (), {
                 "name": "nt",
@@ -1203,7 +1203,7 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
             "tools.map02_private_core_witness_audit.read_witness_record",
             return_value=(
                 123, 456, observed_frame, reported_sha256, "b" * 64, "c" * 64,
-                firmware_matches,
+                firmware_matches, disc_mount_matches,
             ),
         ), patch(
             "tools.verify_map02_private_neutral_capture_chain.parse_plan",
@@ -1244,6 +1244,14 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
             3001, firmware_matches=False)
         self.assertIsInstance(result, ValueError)
         self.assertIn("does not confirm PSX/U firmware match", str(result))
+        process.assert_called_once()
+        pair.assert_not_called()
+
+    def test_auto_core_witness_without_mounted_disc_name_match_is_rejected(self):
+        result, process, audit, pair = self._exercise_first_png_frame_boundary(
+            3001, disc_mount_matches=False)
+        self.assertIsInstance(result, ValueError)
+        self.assertIn("does not confirm mounted-disc state and source CUE basename", str(result))
         process.assert_called_once()
         pair.assert_not_called()
 

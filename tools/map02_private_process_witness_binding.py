@@ -292,6 +292,8 @@ def bind_owner_private_replays(
         "both_witnesses_report_same_native_core_module_file_hash": True,
         "both_witnesses_report_psx_u_firmware_matches_bk2_header":
             witness[0][6] and witness[1][6],
+        "both_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match":
+            witness[0][7] and witness[1][7],
         "native_core_module_file_hash_independently_pinned": False,
         "binding_authenticated_against_os_without_editable_receipts": False,
         "witnesses_linked_to_lua_or_png_by_cryptography": False,

@@ -49,7 +49,7 @@ try {
     $process = "VH_MAP02_OWNER_EMUHAWK_PROCESS_START_V1`nprocess_id=4041`nprocess_start_utc_ticks=639000000000000123`n"
     [System.IO.File]::WriteAllText((Join-Path $first 'vh_emuhawk_process_identity.txt'),
         $process, $utf8)
-    $witness = "VH_MAP02_RUNTIME_CORE_WITNESS_V4`nsystem=PSX`nloaded_core=Octoshock`ncore_source=IEmulator.Attributes.CoreName`nruntime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock`ncore_assembly_sha256=$('b' * 64)`nnative_core_module_name=octoshock.dll`nnative_core_module_sha256=$('c' * 64)`ntool_assembly_sha256=$('a' * 64)`nprocess_id=4041`nprocess_start_utc_ticks=639000000000000123`nframe_count=1800`nbios=psx_u_firmware_hash_matches_movie_header`ndisc=unverified`nmovie_sync=unverified`n"
+    $witness = "VH_MAP02_RUNTIME_CORE_WITNESS_V5`nsystem=PSX`nloaded_core=Octoshock`ncore_source=IEmulator.Attributes.CoreName`nruntime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock`ncore_assembly_sha256=$('b' * 64)`nnative_core_module_name=octoshock.dll`nnative_core_module_sha256=$('c' * 64)`ntool_assembly_sha256=$('a' * 64)`nprocess_id=4041`nprocess_start_utc_ticks=639000000000000123`nframe_count=1800`nbios=psx_u_firmware_hash_matches_movie_header`ndisc=unverified`ndisc_mount=single_mounted_tray_closed_source_name_matches`nmovie_sync=unverified`n"
     [System.IO.File]::WriteAllText((Join-Path $first 'vh-map02-runtime-core-auto.txt'),
         $witness, $utf8)
 

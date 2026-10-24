@@ -41,8 +41,9 @@ def launch_bytes(pid=PID, ticks=TICKS):
 
 
 def witness_bytes(pid=PID, ticks=TICKS, frame=1800,
-                  bios="psx_u_firmware_hash_matches_movie_header"):
-    return ("VH_MAP02_RUNTIME_CORE_WITNESS_V4\n"
+                  bios="psx_u_firmware_hash_matches_movie_header",
+                  disc_mount="single_mounted_tray_closed_source_name_matches"):
+    return ("VH_MAP02_RUNTIME_CORE_WITNESS_V5\n"
             "system=PSX\nloaded_core=Octoshock\n"
             "core_source=IEmulator.Attributes.CoreName\n"
             "runtime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock\n"
@@ -52,7 +53,7 @@ def witness_bytes(pid=PID, ticks=TICKS, frame=1800,
             "tool_assembly_sha256=" + "a" * 64 + "\n"
             f"process_id={pid}\nprocess_start_utc_ticks={ticks}\n"
             f"frame_count={frame}\nbios={bios}\ndisc=unverified\n"
-            "movie_sync=unverified\n").encode("ascii")
+            f"disc_mount={disc_mount}\nmovie_sync=unverified\n").encode("ascii")
 
 
 class OwnerFirstCaptureAuditTests(unittest.TestCase):
@@ -209,6 +210,12 @@ class OwnerFirstCaptureAuditTests(unittest.TestCase):
         (self.first / AUTO_WITNESS_NAME).write_bytes(
             witness_bytes(bios="unverified"))
         with self.assertRaisesRegex(ValueError, "does not confirm PSX/U firmware match"):
+            self.review()
+
+    def test_automatic_witness_without_mount_state_match_rejected(self):
+        (self.first / AUTO_WITNESS_NAME).write_bytes(
+            witness_bytes(disc_mount="unverified"))
+        with self.assertRaisesRegex(ValueError, "does not confirm mounted-disc state"):
             self.review()
 
     def test_missing_auto_core_witness_rejected(self):
