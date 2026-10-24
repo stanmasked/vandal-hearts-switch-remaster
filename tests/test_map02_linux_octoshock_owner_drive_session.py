@@ -605,6 +605,87 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertEqual(self.transport.uploads, 0)
         self.assertFalse(self.full_session.exists())
 
+    def test_live_lock_replaced_after_pack_blocks_upload(self):
+        lock = self.base / ".map02-owner-session.lock"
+        displaced = self.base / "stage598-original-lock-after-pack"
+        original_pack = owner_drive_session.pack_runtime
+
+        def replace_lock_after_pack(*args, **kwargs):
+            result = original_pack(*args, **kwargs)
+            lock.rename(displaced)
+            lock.write_text("replacement lock\n", encoding="utf-8")
+            lock.chmod(0o600)
+            return result
+
+        with patch.object(owner_drive_session, "pack_runtime",
+                          side_effect=replace_lock_after_pack):
+            with self.assertRaises(PrivateOwnerSessionError):
+                self.execute()
+
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertTrue(displaced.is_file())
+        self.assertEqual(displaced.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(lock.read_text(encoding="utf-8"), "replacement lock\n")
+        self.assertTrue(
+            (self.full_session / "archive/map02-runtime-owner541001.tar").is_file()
+        )
+        self.assertFalse(self.receipt_pin.exists())
+        self.assertFalse(self.archive_pin.exists())
+
+    def test_live_lock_symlink_after_cloud_transfer_blocks_reaudit(self):
+        lock = self.base / ".map02-owner-session.lock"
+        displaced = self.base / "stage598-original-lock-after-upload"
+        sentinel = self.base / "stage598-symlink-target"
+        sentinel.write_text("do not follow\n", encoding="utf-8")
+        original_upload = owner_drive_session.archive_to_private_drive
+
+        def replace_lock_after_upload(*args, **kwargs):
+            result = original_upload(*args, **kwargs)
+            lock.rename(displaced)
+            lock.symlink_to(sentinel)
+            return result
+
+        with patch.object(owner_drive_session, "archive_to_private_drive",
+                          side_effect=replace_lock_after_upload):
+            with patch.object(owner_drive_session,
+                              "audit_independent_readback") as reaudit:
+                with self.assertRaises(PrivateOwnerSessionError):
+                    self.execute()
+                reaudit.assert_not_called()
+
+        self.assertEqual(self.transport.uploads, 5)
+        self.assertTrue(displaced.is_file())
+        self.assertTrue(lock.is_symlink())
+        self.assertEqual(sentinel.read_text(encoding="utf-8"), "do not follow\n")
+        self.assertFalse(self.receipt_pin.exists())
+        self.assertFalse(self.archive_pin.exists())
+        self.assertTrue(self.full_session.is_dir())
+
+    def test_live_lock_disappears_after_reaudit_blocks_archive_pin(self):
+        lock = self.base / ".map02-owner-session.lock"
+        displaced = self.base / "stage598-original-lock-after-reaudit"
+        original_audit = owner_drive_session.audit_independent_readback
+
+        def unlink_named_lock_after_reaudit(*args, **kwargs):
+            result = original_audit(*args, **kwargs)
+            lock.rename(displaced)
+            return result
+
+        with patch.object(owner_drive_session, "audit_independent_readback",
+                          side_effect=unlink_named_lock_after_reaudit):
+            with self.assertRaises(PrivateOwnerSessionError):
+                self.execute()
+
+        self.assertEqual(self.transport.uploads, 5)
+        self.assertTrue(displaced.is_file())
+        self.assertFalse(lock.exists())
+        self.assertTrue(
+            (self.full_session / "independent-reaudit/new-copy").exists()
+        )
+        self.assertFalse(self.receipt_pin.exists())
+        self.assertFalse(self.archive_pin.exists())
+        self.assertTrue(self.full_session.is_dir())
+
     def test_previous_unrelated_owner_pin_survives_failed_session(self):
         old_pin = self.base / "unrelated-owner-reference.sha256"
         old_pin.write_text("a" * 64 + "\n", encoding="ascii")
