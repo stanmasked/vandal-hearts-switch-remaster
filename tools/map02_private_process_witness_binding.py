@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Owner-local process-start receipt and offline PSX core-witness binding.
 
-Only links the PID + Windows process creation time of an EmuHawk process
+Only links the PID + OS-backed Windows/Linux process creation time of an EmuHawk process
 launched by our private wrapper to an owner-saved External Tool receipt.
 No ROM, BIOS, BK2, screenshot bytes or identifying values reach public
 stdout/GitHub. This DOES NOT cryptographically authenticate the receipts.
@@ -15,13 +15,14 @@ import os
 from pathlib import Path
 import re
 import stat
+import sys
 
 from tools.map02_private_core_witness_audit import read_witness_record
 from tools.map02_private_disc_movie_preflight import (
     _assert_stable, _open_stable, _resolve_private_file,
 )
 
-SCHEMA = "vh.map02.owner-process-to-core-witness-review.v2"
+SCHEMA = "vh.map02.owner-process-to-core-witness-review.v3"
 MAGIC = "VH_MAP02_OWNER_EMUHAWK_PROCESS_START_V1"
 NAME = "vh_emuhawk_process_identity.txt"
 FILETIME_UNIX_EPOCH_OFFSET = 504911232000000000
@@ -97,6 +98,81 @@ def windows_process_start_ticks(
             kernel.CloseHandle(handle)
 
 
+def _linux_proc_start_clock_ticks(pid: int, proc_root: Path = Path("/proc")) -> int:
+    """Read field 22 from Linux /proc/PID/stat without trusting the comm field.
+
+    The command name is parenthesized and may itself contain spaces or ')',
+    so parse after its final closing parenthesis, then select field 22.
+    """
+    source = (proc_root / str(pid) / "stat").read_text(encoding="ascii")
+    close = source.rfind(")")
+    if close < 0:
+        raise ValueError("Linux process stat record is malformed")
+    try:
+        observed_pid = int(source[:source.find(" ")], 10)
+        fields_after_comm = source[close + 1:].strip().split()
+        # The first tail field is process state (field 3); starttime is field 22.
+        start_ticks = int(fields_after_comm[19], 10)
+    except (ValueError, IndexError):
+        raise ValueError("Linux process start-time fields are malformed") from None
+    if observed_pid != pid or start_ticks < 0:
+        raise ValueError("Linux process stat identity is inconsistent")
+    return start_ticks
+
+
+def linux_process_start_ticks(
+        pid: int, *, proc_root: Path = Path("/proc"),
+        clock_ticks_per_second: int | None = None) -> int:
+    """Map the kernel's stable Linux process-start clock tick to .NET UTC ticks.
+
+    Python and the Linux External Tool use the same integer-only formula, so
+    process binding does not depend on wall-clock rounding or Mono DateTime
+    precision. Read the start tick twice to reject PID exit/reuse during the
+    observation. This is Linux x86_64 support, not a macOS fallback.
+    """
+    if type(pid) is not int or not 1 <= pid <= 2_147_483_647:
+        raise ValueError("invalid owned process ID")
+    root = Path(proc_root)
+    if clock_ticks_per_second is None:
+        try:
+            clock_ticks_per_second = int(os.sysconf("SC_CLK_TCK"))
+        except (OSError, ValueError, AttributeError):
+            raise ValueError("Linux kernel clock tick rate is unavailable") from None
+    if type(clock_ticks_per_second) is not int or not 1 <= clock_ticks_per_second <= 1_000_000:
+        raise ValueError("Linux kernel clock tick rate is outside bounds")
+    try:
+        boot_time_line = next(
+            line for line in (root / "stat").read_text(encoding="ascii").splitlines()
+            if line.startswith("btime ")
+        )
+        boot_time = int(boot_time_line.split()[1], 10)
+    except (OSError, UnicodeError, ValueError, IndexError, StopIteration):
+        raise ValueError("Linux kernel boot-time reference is unavailable") from None
+    first = _linux_proc_start_clock_ticks(pid, root)
+    second = _linux_proc_start_clock_ticks(pid, root)
+    if first != second:
+        raise ValueError("Linux process identity changed during observation")
+    # /proc/stat btime is UNIX epoch seconds, whereas the witness V4 field
+    # carries .NET DateTime ticks since 0001-01-01.
+    value = MIN_TICKS + ((boot_time * clock_ticks_per_second + first) * 10_000_000
+                         // clock_ticks_per_second)
+    if not MIN_TICKS <= value <= MAX_TICKS:
+        raise ValueError("Linux process birth time outside supported period")
+    return value
+
+
+def process_start_utc_ticks(
+        pid: int, *, process_handle: int | None = None) -> int:
+    """Select an OS-backed process birth-time implementation, fail closed elsewhere."""
+    if os.name == "nt":
+        return windows_process_start_ticks(pid, process_handle=process_handle)
+    if sys.platform.startswith("linux"):
+        if process_handle is not None:
+            raise ValueError("Linux process identity does not accept a Windows handle")
+        return linux_process_start_ticks(pid)
+    raise ValueError("owner process identity supports Windows and Linux x86_64 only")
+
+
 def record_started_process(
         pid: int, owner_private_dir: Path, *,
         process_handle: int | None = None) -> None:
@@ -108,7 +184,12 @@ def record_started_process(
     # as owner-only and rejects any Git checkout input/output directories.
     if (directory / ".git").exists():
         raise ValueError("process identity receipt must be outside Git")
-    ticks = windows_process_start_ticks(pid, process_handle=process_handle)
+    if os.name != "nt":
+        info = directory.stat()
+        if (info.st_uid != os.geteuid()
+                or stat.S_IMODE(info.st_mode) & 0o077):
+            raise ValueError("process identity receipt directory must be owner-only")
+    ticks = process_start_utc_ticks(pid, process_handle=process_handle)
     path = directory / NAME
     payload = (
         f"{MAGIC}\nprocess_id={pid}\n"
@@ -209,6 +290,10 @@ def bind_owner_private_replays(
         "both_witnesses_report_same_runtime_core_assembly_file_hash": True,
         "runtime_core_assembly_file_hash_independently_pinned": False,
         "both_witnesses_report_same_native_core_module_file_hash": True,
+        "both_witnesses_report_psx_u_firmware_matches_bk2_header":
+            witness[0][6] and witness[1][6],
+        "both_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match":
+            witness[0][7] and witness[1][7],
         "native_core_module_file_hash_independently_pinned": False,
         "binding_authenticated_against_os_without_editable_receipts": False,
         "witnesses_linked_to_lua_or_png_by_cryptography": False,

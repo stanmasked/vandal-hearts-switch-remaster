@@ -36,8 +36,11 @@ def start_receipt(pid: int, birth: int) -> bytes:
             f"process_start_utc_ticks={birth}\n").encode("ascii")
 
 
-def core_receipt(pid: int, birth: int) -> bytes:
-    return ("VH_MAP02_RUNTIME_CORE_WITNESS_V3\n"
+def core_receipt(
+        pid: int, birth: int,
+        disc_mount: str = "single_mounted_tray_closed_source_name_matches",
+) -> bytes:
+    return ("VH_MAP02_RUNTIME_CORE_WITNESS_V5\n"
             "system=PSX\nloaded_core=Octoshock\n"
             "core_source=IEmulator.Attributes.CoreName\n"
             "runtime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock\n"
@@ -46,8 +49,8 @@ def core_receipt(pid: int, birth: int) -> bytes:
             "native_core_module_sha256=" + "c" * 64 + "\n"
             "tool_assembly_sha256=" + "a" * 64 + "\n"
             f"process_id={pid}\nprocess_start_utc_ticks={birth}\n"
-            "frame_count=1800\nbios=unverified\ndisc=unverified\n"
-            "movie_sync=unverified\n").encode("ascii")
+            "frame_count=1800\nbios=psx_u_firmware_hash_matches_movie_header\ndisc=unverified\n"
+            f"disc_mount={disc_mount}\nmovie_sync=unverified\n").encode("ascii")
 
 
 class OwnerCombinedGateTests(unittest.TestCase):
@@ -96,6 +99,8 @@ class OwnerCombinedGateTests(unittest.TestCase):
         self.assertEqual(result["owner_private_capture_chains_reaudited"], 2)
         self.assertEqual(result["manual_psx_octoshock_core_witnesses_process_matched"], 2)
         self.assertTrue(result["all_reviewed_decoded_png_pixels_equal"])
+        self.assertTrue(result[
+            "both_runtime_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match"])
         self.assertFalse(result["authentic_map02_scene_identified"])
         self.assertFalse(result["actual_emuhawk_loaded_bios_authenticated"])
         self.assertFalse(result["original_bk2_controller_delivery_authenticated"])
@@ -184,6 +189,19 @@ class OwnerCombinedGateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "outside Git"):
             self.review()
 
+    def test_automatic_pair_rejects_unverified_mounted_disc_state(self):
+        from tools.map02_private_bizhawk_poweron_launch import AUTO_WITNESS_NAME
+        for run, witness in zip(self.runs, self.witness):
+            (run / AUTO_WITNESS_NAME).write_bytes(witness.read_bytes())
+        (self.runs[1] / AUTO_WITNESS_NAME).write_bytes(
+            core_receipt(3012, TICKS_B, disc_mount="unverified"))
+        with patch(
+            "tools.map02_private_paired_capture_core_png_gate.audit_pair",
+            return_value=dict(PAIR, both_owner_logs_report_auto_core_witness_before_first_png=True),
+        ):
+            with self.assertRaisesRegex(ValueError, "mounted-disc state/source CUE basename"):
+                review_owner_capture(self.movie, self.plan, self.workspace)
+
     def test_cli_only_prints_redacted_json(self):
         output = io.StringIO()
         with patch.object(sys, "argv", [
@@ -261,6 +279,21 @@ class OwnerCombinedGateTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "before first PNG"):
                 review_owner_capture(self.movie, self.plan, self.workspace)
 
+
+    def test_auto_core_receipts_without_firmware_match_refused(self):
+        from tools.map02_private_bizhawk_poweron_launch import AUTO_WITNESS_NAME
+        for run, witness in zip(self.runs, self.witness):
+            (run / AUTO_WITNESS_NAME).write_bytes(
+                witness.read_bytes().replace(
+                    b"bios=psx_u_firmware_hash_matches_movie_header",
+                    b"bios=unverified"))
+        with patch(
+            "tools.map02_private_paired_capture_core_png_gate.audit_pair",
+            return_value=dict(
+                PAIR, both_owner_logs_report_auto_core_witness_before_first_png=True),
+        ):
+            with self.assertRaisesRegex(ValueError, "firmware match"):
+                review_owner_capture(self.movie, self.plan, self.workspace)
 
     def test_auto_core_receipt_frame_after_first_png_refused(self):
         from tools.map02_private_bizhawk_poweron_launch import AUTO_WITNESS_NAME

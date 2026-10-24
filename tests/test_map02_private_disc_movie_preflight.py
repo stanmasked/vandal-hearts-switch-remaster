@@ -77,6 +77,9 @@ class DiscMoviePreflightTests(unittest.TestCase):
             encoding="ascii",
         )
         write_movie(self.movie)
+        if os.name != "nt":
+            for private_file in (self.bin, self.cue, self.movie):
+                private_file.chmod(0o600)
 
     def _write_disc(self, *, volume_id=EXPECTED_VOLUME_ID, valid_pvd=True):
         sectors = MAP02_LBA + (MAP02_BYTES + USER_DATA_BYTES - 1) // USER_DATA_BYTES
@@ -280,6 +283,108 @@ class DiscMoviePreflightTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "nonsymlink"):
             read_private_full_bin_sha256(link)
 
+    def test_stage606_digest_reference_rejects_nonprivate_parent(self):
+        if os.name == "nt":
+            self.skipTest("POSIX private directory mode enforcement not applicable")
+        reference = self.root / "stage606-parent.sha256"
+        reference.write_text("c" * 64 + "\n", encoding="ascii")
+        reference.chmod(0o600)
+        self.root.chmod(0o755)
+        try:
+            with self.assertRaisesRegex(ValueError, "owner-owned mode 0700"):
+                read_private_full_bin_sha256(reference)
+        finally:
+            self.root.chmod(0o700)
+
+    def test_stage606_digest_reference_rejects_hardlink_alias(self):
+        if os.name == "nt":
+            self.skipTest("POSIX hardlink count enforcement not applicable")
+        reference = self.root / "stage606-hardlink.sha256"
+        reference.write_text("d" * 64 + "\n", encoding="ascii")
+        reference.chmod(0o600)
+        alias = self.root / "stage606-hardlink-alias.sha256"
+        os.link(reference, alias)
+        with self.assertRaisesRegex(ValueError, "without hardlinks"):
+            read_private_full_bin_sha256(reference)
+
+    def test_stage606_digest_reference_final_symlink_swap_is_detected(self):
+        if os.name == "nt":
+            self.skipTest("POSIX dirfd checks not applicable")
+        reference = self.root / "stage606-symlink.sha256"
+        reference.write_text("e" * 64 + "\n", encoding="ascii")
+        reference.chmod(0o600)
+        displaced = self.root / "stage606-displaced.sha256"
+        real_stat = os.stat
+        swapped = {"value": False}
+
+        def replace_with_symlink(path, *args, **kwargs):
+            if (path == reference.name and kwargs.get("dir_fd") is not None
+                    and kwargs.get("follow_symlinks") is False
+                    and not swapped["value"]):
+                reference.rename(displaced)
+                reference.symlink_to(displaced)
+                swapped["value"] = True
+            return real_stat(path, *args, **kwargs)
+
+        with patch("tools.map02_private_disc_movie_preflight.os.stat",
+                   side_effect=replace_with_symlink):
+            with self.assertRaisesRegex(ValueError, "changed during read"):
+                read_private_full_bin_sha256(reference)
+        self.assertTrue(swapped["value"])
+        self.assertTrue(reference.is_symlink())
+
+    def test_stage606_digest_parent_replacement_during_read_is_detected(self):
+        if os.name == "nt":
+            self.skipTest("POSIX dirfd checks not applicable")
+        trust = self.root / "stage606-trust"
+        trust.mkdir(mode=0o700)
+        reference = trust / "digest.sha256"
+        reference.write_text("f" * 64 + "\n", encoding="ascii")
+        reference.chmod(0o600)
+        displaced = self.root / "stage606-trust-displaced"
+        real_stat = os.stat
+        swapped = {"value": False}
+
+        def replace_parent(path, *args, **kwargs):
+            if (path == reference.name and kwargs.get("dir_fd") is not None
+                    and kwargs.get("follow_symlinks") is False
+                    and not swapped["value"]):
+                trust.rename(displaced)
+                trust.symlink_to(displaced, target_is_directory=True)
+                swapped["value"] = True
+            return real_stat(path, *args, **kwargs)
+
+        with patch("tools.map02_private_disc_movie_preflight.os.stat",
+                   side_effect=replace_parent):
+            with self.assertRaisesRegex(ValueError, "changed during read"):
+                read_private_full_bin_sha256(reference)
+        self.assertTrue(swapped["value"])
+        self.assertTrue(trust.is_symlink())
+
+    def test_stage606_digest_reference_mode_change_during_read_is_detected(self):
+        if os.name == "nt":
+            self.skipTest("POSIX mode enforcement not applicable")
+        reference = self.root / "stage606-mode.sha256"
+        reference.write_text("a" * 64 + "\n", encoding="ascii")
+        reference.chmod(0o600)
+        real_stat = os.stat
+        changed = {"value": False}
+
+        def widen_mode(path, *args, **kwargs):
+            if (path == reference.name and kwargs.get("dir_fd") is not None
+                    and kwargs.get("follow_symlinks") is False
+                    and not changed["value"]):
+                reference.chmod(0o644)
+                changed["value"] = True
+            return real_stat(path, *args, **kwargs)
+
+        with patch("tools.map02_private_disc_movie_preflight.os.stat",
+                   side_effect=widen_mode):
+            with self.assertRaisesRegex(ValueError, "changed during read"):
+                read_private_full_bin_sha256(reference)
+        self.assertTrue(changed["value"])
+        self.assertEqual(reference.stat().st_mode & 0o777, 0o644)
+
     def test_reject_malformed_private_reference(self):
         reference = self.root / "malformed.sha256"
         reference.write_text("A" * 64, encoding="ascii")
@@ -317,6 +422,61 @@ class DiscMoviePreflightTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "sibling BIN"):
             self.call()
+
+    def test_rejects_media_files_with_group_or_world_permissions(self):
+        if os.name == "nt":
+            self.skipTest("POSIX mode-bit enforcement is not applicable")
+        for private_file in (self.bin, self.cue, self.movie):
+            with self.subTest(kind=private_file.suffix):
+                private_file.chmod(0o644)
+                try:
+                    with self.assertRaisesRegex(ValueError, "mode 0600"):
+                        self.call()
+                finally:
+                    private_file.chmod(0o600)
+
+    def test_rejects_nonprivate_media_parent_directory(self):
+        if os.name == "nt":
+            self.skipTest("POSIX mode-bit enforcement is not applicable")
+        self.root.chmod(0o755)
+        try:
+            with self.assertRaisesRegex(ValueError, "parent must be owner-owned mode 0700"):
+                self.call()
+        finally:
+            self.root.chmod(0o700)
+
+    def test_rejects_hardlinked_private_media(self):
+        if os.name == "nt":
+            self.skipTest("POSIX hardlink-count enforcement is not applicable")
+        alias = self.root / "fictional-alias.bin"
+        os.link(self.bin, alias)
+        try:
+            with self.assertRaisesRegex(ValueError, "without hardlinks"):
+                self.call()
+        finally:
+            alias.unlink()
+
+    def test_rejects_permission_change_between_resolution_and_open(self):
+        if os.name == "nt":
+            self.skipTest("POSIX mode-bit enforcement is not applicable")
+        from tools import map02_private_disc_movie_preflight as module
+        real_open = os.open
+        changed = {"done": False}
+
+        def open_then_widen(path, flags, *args, **kwargs):
+            fd = real_open(path, flags, *args, **kwargs)
+            if Path(path) == self.bin and not changed["done"]:
+                self.bin.chmod(0o644)
+                changed["done"] = True
+            return fd
+
+        with patch.object(module.os, "open", side_effect=open_then_widen):
+            try:
+                with self.assertRaisesRegex(ValueError, "permissions changed while opening"):
+                    module._open_stable(self.bin, require_private=True)
+            finally:
+                self.bin.chmod(0o600)
+        self.assertTrue(changed["done"])
 
     def test_parent_directory_inside_git_checkout_is_rejected(self):
         (self.root / ".git").mkdir()

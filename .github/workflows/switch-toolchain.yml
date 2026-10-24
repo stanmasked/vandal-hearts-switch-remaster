@@ -16,7 +16,57 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
+  cancel-stale-queued-runs:
+    name: Cancel stale queued runs for current branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Cancel only queued runs from older commits on this branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+          CURRENT_SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          runs_json="$(curl -fsSL --get \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            --data-urlencode "branch=$BRANCH" \
+            --data-urlencode "status=queued" \
+            --data-urlencode "per_page=100" \
+            "$GH_API_URL/repos/$REPOSITORY/actions/runs")"
+          stale_ids="$(jq -r --arg sha "$CURRENT_SHA" \
+            '.workflow_runs[]? | select(.head_sha != $sha) | .id' <<< "$runs_json")"
+          if [[ -z "$stale_ids" ]]; then
+            echo "No superseded queued runs found for $BRANCH"
+            exit 0
+          fi
+          while IFS= read -r run_id; do
+            [[ -n "$run_id" ]] || continue
+            code="$(curl -sS -o "$RUNNER_TEMP/cancel-response.json" -w '%{http_code}' \
+              -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "$GH_API_URL/repos/$REPOSITORY/actions/runs/$run_id/cancel")"
+            case "$code" in
+              202) echo "Requested cancellation of superseded queued run $run_id" ;;
+              409|422) echo "Run $run_id became non-cancellable before the request (HTTP $code)" ;;
+              *) echo "::warning::Could not cancel stale queued run $run_id (HTTP $code)" ;;
+            esac
+          done <<< "$stale_ids"
+
   toolchain:
     name: Verify devkitPro Switch toolchain
     runs-on: ubuntu-latest

@@ -1,0 +1,167 @@
+name: MAP02 real BizHawk 2.11 Linux External Tool compile (no game media)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-bizhawk211-linux-external-tool-compile.yml'
+      - 'tests/test_map02_public_ci_storage_policy.py'
+      - 'tools/map02_runtime_core_witness/**'
+      - 'tools/map02_private_process_witness_binding.py'
+      - 'tools/map02_private_core_witness_audit.py'
+      - 'tools/map02_private_bizhawk_poweron_launch.py'
+      - 'tools/map02_private_two_replay_runner.py'
+      - 'tests/test_map02_private_process_witness_binding.py'
+      - 'tests/test_map02_private_core_witness_audit.py'
+      - 'tests/test_map02_private_bizhawk_poweron_launch.py'
+      - 'tests/test_map02_private_two_replay_runner.py'
+      - 'tools/map02_owner_core_witness_install_linux.py'
+      - 'tests/test_map02_owner_core_witness_install_linux.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  linux-witness-real-assembly-compile:
+    name: Compile and smoke-test against official BizHawk 2.11 Linux x64 (no game)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: x64
+      - name: Install the official Linux runtime dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y mono-complete libopenal1 liblua5.4-0 lsb-release xvfb libgl1
+          test -d /usr/lib/mono/4.8-api
+          posix="$(find /usr/lib/mono -type f -name Mono.Posix.dll | sort | grep '/4\.5-api/' | head -n 1)"
+          test -n "$posix"
+          echo "VH_MONO_POSIX_PATH=$posix" >> "$GITHUB_ENV"
+          netstandard='/usr/lib/mono/4.8-api/Facades/netstandard.dll'
+          test -f "$netstandard"
+          echo "VH_MONO_NETSTANDARD_PATH=$netstandard" >> "$GITHUB_ENV"
+          echo 'VH_MAP02_LINUX_MONO_DEPENDENCIES_READY no_game_assets=0'
+      - name: Download and verify the exact official BizHawk 2.11 Linux x64 release
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/BizHawk-2.11-linux-x64.tar.gz"
+          root="$RUNNER_TEMP/bizhawk211-linux-x64"
+          expected='cdaf9650d880bae660d63a388430f630b8d8a96b1ba59ebf0e0195a645c3bab8'
+          curl --fail --location --silent --show-error \
+            'https://github.com/TASEmulators/BizHawk/releases/download/2.11/BizHawk-2.11-linux-x64.tar.gz' \
+            --output "$archive"
+          actual="$(sha256sum "$archive" | awk '{print $1}')"
+          if [[ "$actual" != "$expected" ]]; then echo "official Linux release SHA256 mismatch" >&2; exit 1; fi
+          echo "VH_MAP02_LINUX_ARCHIVE_SHA256_VERIFIED"
+          mkdir -p "$root"
+          tar -xzf "$archive" -C "$root"
+          echo "VH_MAP02_LINUX_OFFICIAL_ARCHIVE_EXTRACTED"
+          mapfile -t emuhawk_files < <(find "$root" -type f -name EmuHawk.exe -print)
+          if [[ "${#emuhawk_files[@]}" -ne 1 ]]; then echo "expected exactly one official Linux EmuHawk.exe" >&2; exit 1; fi
+          bizhawk_root="$(dirname "${emuhawk_files[0]}")"
+          if [[ ! -f "$bizhawk_root/EmuHawkMono.sh" ]]; then echo "official Linux Mono launcher absent" >&2; exit 1; fi
+          if [[ ! -f "$bizhawk_root/dll/BizHawk.Emulation.Common.dll" ]]; then echo "official Linux BizHawk.Emulation.Common.dll absent" >&2; exit 1; fi
+          mapfile -t core_files < <(find "$bizhawk_root" -type f -name BizHawk.Emulation.Cores.dll -print | sort)
+          if [[ "${#core_files[@]}" -lt 1 ]]; then echo "official Linux runtime core assembly absent" >&2; exit 1; fi
+          core_hashes="$(sha256sum "${core_files[@]}" | awk '{print $1}' | sort -u)"
+          test "$(printf '%s\n' "$core_hashes" | wc -l)" -eq 1
+          mapfile -t native_files < <(find "$bizhawk_root" -type f \
+            \( -name 'liboctoshock.dll.so' -o -name 'liboctoshock.so' -o -name 'octoshock.dll' \) -print | sort)
+          if [[ "${#native_files[@]}" -lt 1 ]]; then
+            # Upstream #2423 explicitly records Octoshock as never built for
+            # Linux. Continue game-free managed assembly compilation and tests,
+            # but require a terminal fail-closed PSX gate before artifacts.
+            echo "VH_MAP02_LINUX_NATIVE_OCTOSHOCK_MISSING official_archive_verified=1 psx_capture_ready=0"
+            echo "VH_BIZHAWK_LINUX_NATIVE_AVAILABLE=0" >> "$GITHUB_ENV"
+            native_hash='unavailable'
+            native_name='unavailable'
+          else
+            native_hashes="$(sha256sum "${native_files[@]}" | awk '{print $1}' | sort -u)"
+            if [[ "$(printf '%s\n' "$native_hashes" | wc -l)" -ne 1 ]]; then
+              echo "official Linux native module copies differ" >&2
+              exit 1
+            fi
+            native_hash="$(printf '%s\n' "$native_hashes" | head -n 1)"
+            native_name="$(basename "${native_files[0]}")"
+            case "$native_name" in
+              liboctoshock.dll.so|liboctoshock.so|octoshock.dll) ;;
+              *) echo "unexpected native module name" >&2; exit 1 ;;
+            esac
+            echo "VH_BIZHAWK_LINUX_NATIVE_AVAILABLE=1" >> "$GITHUB_ENV"
+          fi
+          core_hash="$(printf '%s\n' "$core_hashes" | head -n 1)"
+          echo "VH_BIZHAWK_LINUX_ROOT=$bizhawk_root" >> "$GITHUB_ENV"
+          echo "VH_BIZHAWK_LINUX_CORE_SHA256=$core_hash" >> "$GITHUB_ENV"
+          echo "VH_BIZHAWK_LINUX_NATIVE_SHA256=$native_hash" >> "$GITHUB_ENV"
+          echo "VH_BIZHAWK_LINUX_NATIVE_NAME=$native_name" >> "$GITHUB_ENV"
+          echo 'VH_MAP02_OFFICIAL_BIZHAWK211_LINUX_PIN_VERIFIED original_disc=0 original_bk2=0 bios=0'
+          echo "VH_BIZHAWK211_LINUX_CORE_ASSEMBLY_SHA256=$core_hash"
+          echo "VH_BIZHAWK211_LINUX_NATIVE_OCTOSHOCK_SHA256=$native_hash"
+      - name: Compile the actual witness project against official Linux assemblies
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FrameworkPathOverride=/usr/lib/mono/4.8-api
+          dotnet build tools/map02_runtime_core_witness/VhMap02CoreWitness.csproj \
+            -c Release --nologo -v:minimal \
+            -p:VH_BIZHAWK_RELEASE_ROOT="$VH_BIZHAWK_LINUX_ROOT" \
+            -p:VH_MAP02_UNIX_BUILD=true \
+            -p:VH_MONO_POSIX_PATH="$VH_MONO_POSIX_PATH" \
+            -p:VH_MONO_NETSTANDARD_PATH="$VH_MONO_NETSTANDARD_PATH"
+          dll='tools/map02_runtime_core_witness/bin/Release/net48/VhMap02CoreWitness.dll'
+          test -f "$dll"
+          digest="$(sha256sum "$dll" | awk '{print toupper($1)}')"
+          echo "VH_MAP02_LINUX_EXPERIMENTAL_DLL_SHA256=$digest"
+          echo 'VH_MAP02_REAL_BIZHAWK211_LINUX_ASSEMBLY_COMPILE_PASS original_disc=0 original_bk2=0 bios=0 emulator_launched=0'
+      - name: Smoke-test real EmuHawkMono startup without game data
+        shell: bash
+        run: |
+          set -euo pipefail
+          private_home="$(mktemp -d)"
+          chmod 700 "$private_home"
+          trap 'rm -rf "$private_home"' EXIT
+          set +e
+          HOME="$private_home" timeout 45s xvfb-run -a \
+            "$VH_BIZHAWK_LINUX_ROOT/EmuHawkMono.sh" --help \
+            > "$RUNNER_TEMP/vh-map02-linux-emuhawk-help.log" 2>&1
+          result=$?
+          set -e
+          if [ "$result" -ne 0 ]; then
+            tail -n 30 "$RUNNER_TEMP/vh-map02-linux-emuhawk-help.log"
+            exit 1
+          fi
+          echo 'VH_MAP02_OFFICIAL_LINUX_EMUHAWK_SMOKE_PASS game_loaded=0 psx=0 map02=unverified'
+      - name: Test Linux process identity and private capture preflight logic with invented inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_map02_private_process_witness_binding.py' -v
+          python -m unittest discover -s tests -p 'test_map02_private_core_witness_audit.py' -v
+          python -m unittest discover -s tests -p 'test_map02_private_bizhawk_poweron_launch.py' -v
+          python -m unittest discover -s tests -p 'test_map02_private_two_replay_runner.py' -v
+          python -m unittest discover -s tests -p 'test_map02_owner_core_witness_install_linux.py' -v
+          echo 'VH_MAP02_LINUX_OWNER_CAPTURE_SYNTHETIC_TESTS_PASS original_disc=0 original_bk2=0 bios=0'
+          python -m unittest discover -s tests -p 'test_map02_public_ci_storage_policy.py' -v
+      - name: Record the official Linux PSX capture block without failing compile CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${VH_BIZHAWK_LINUX_NATIVE_AVAILABLE:-0}" != "1" ]]; then
+            echo "::warning::Official BizHawk 2.11 Linux package has no Octoshock. This workflow proves compile/startup only; private PSX capture remains blocked until the custom source-built module is installed and a real runtime witness is verified."
+            echo 'VH_MAP02_LINUX_OFFICIAL_OCTOSHOCK_ABSENT_EXPECTED psx_capture_ready=0 native_port_workflow=separate'
+          else
+            echo 'VH_MAP02_LINUX_OFFICIAL_OCTOSHOCK_PRESENT psx_capture_ready=0 no_game_media=1'
+          fi
+          echo 'VH_MAP02_STORAGE_POLICY_PASS public_runtime_artifact_upload=0 original_media_upload=0'

@@ -58,6 +58,8 @@ namespace VhMap02LoaderSmoke
 
                 Environment.SetEnvironmentVariable("VH_MAP02_CORE_EXPECTED_DLL_SHA256", null);
                 AppDomain.CurrentDomain.AssemblyResolve += Resolve;
+                _stage = "official-octoshock-disc-mount-metadata";
+                AuditOfficialOctoshockDiscMountMetadata();
                 _stage = "typed-assembly-load";
                 RunSmoke(plug);
                 Console.WriteLine(
@@ -65,6 +67,8 @@ namespace VhMap02LoaderSmoke
                     + " metadata=1 activation=1 missing_core_fail_closed=1"
                     + " fake_octoshock_impersonation_rejected=1 fake_negative_gates=5"
                     + " exact_runtime_type_gate=1 in_memory_fake_witness_schema=0"
+                    + " official_disc_mount_metadata=1"
+                    + " synthetic_live_mount_gate=1"
                     + " official_nullhawk_service_injected=1"
                     + " official_nullhawk_snapshot_rejected=1"
                     + " owner_only_ntfs_folder_accepted=1"
@@ -166,7 +170,7 @@ namespace VhMap02LoaderSmoke
                 throw new InvalidOperationException("unsafe save enabled on invalid fake core");
             try
             {
-                snapshot.Invoke(null, new object[] { invented });
+                snapshot.Invoke(form, new object[] { invented });
             }
             catch (TargetInvocationException ex)
             {
@@ -232,6 +236,36 @@ namespace VhMap02LoaderSmoke
         }
 
 
+        // Verify the exact public metadata contract consumed by the V5 live
+        // mount witness. This loads only the official core assembly metadata:
+        // it does not instantiate Octoshock or open a disc, BIOS or movie.
+        private static void AuditOfficialOctoshockDiscMountMetadata()
+        {
+            var coreAssembly = Assembly.Load("BizHawk.Emulation.Cores");
+            var coreType = coreAssembly.GetType(
+                "BizHawk.Emulation.Cores.Sony.PSX.Octoshock", true);
+            var trayOpen = coreType.GetProperty(
+                "CurrentTrayOpen", BindingFlags.Public | BindingFlags.Instance);
+            var mountedIndex = coreType.GetProperty(
+                "CurrentDiscIndexMounted", BindingFlags.Public | BindingFlags.Instance);
+            var discs = coreType.GetField(
+                "Discs", BindingFlags.Public | BindingFlags.Instance);
+            if (trayOpen == null || trayOpen.PropertyType != typeof(bool)
+                || mountedIndex == null || mountedIndex.PropertyType != typeof(int)
+                || discs == null
+                || !typeof(System.Collections.ICollection).IsAssignableFrom(discs.FieldType)
+                || !discs.FieldType.IsGenericType)
+                throw new InvalidOperationException("official Octoshock disc metadata mismatch");
+
+            var discTypes = discs.FieldType.GetGenericArguments();
+            if (discTypes.Length != 1)
+                throw new InvalidOperationException("official Octoshock disc collection mismatch");
+            var name = discTypes[0].GetField(
+                "Name", BindingFlags.Public | BindingFlags.Instance);
+            if (name == null || name.FieldType != typeof(string))
+                throw new InvalidOperationException("official Disc.Name metadata mismatch");
+        }
+
         private static string FileSha256(string path)
         {
             using (var input = new FileStream(
@@ -247,7 +281,7 @@ namespace VhMap02LoaderSmoke
             Type entrypoint, PropertyInfo property)
         {
             var snapshot = entrypoint.GetMethod(
-                "Snapshot", BindingFlags.NonPublic | BindingFlags.Static);
+                "Snapshot", BindingFlags.NonPublic | BindingFlags.Instance);
             if (snapshot == null) throw new InvalidOperationException();
             var key = "VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR";
             var hashKey = "VH_MAP02_CORE_EXPECTED_DLL_SHA256";
@@ -294,7 +328,7 @@ namespace VhMap02LoaderSmoke
                     var rejected = false;
                     try
                     {
-                        snapshot.Invoke(null, new object[] { fake });
+                        snapshot.Invoke(optedIn, new object[] { fake });
                     }
                     catch (TargetInvocationException ex)
                     {
@@ -363,13 +397,16 @@ namespace VhMap02LoaderSmoke
                         throw new InvalidOperationException(
                             "witness save must start disabled before core injection");
                     _stage = "null-core-restart";
+                    // Keep the pre-injection case explicit: the form must not depend
+                    // on a stale or framework-provided emulator reference.
+                    property.SetValue(form, null);
                     ((IExternalToolForm)form).Restart();
                     if (saveButtons[0].Enabled)
                         throw new InvalidOperationException(
                             "save must remain disabled without a loaded IEmulator");
 
                     var snapshot = entrypoint.GetMethod(
-                        "Snapshot", BindingFlags.NonPublic | BindingFlags.Static);
+                        "Snapshot", BindingFlags.NonPublic | BindingFlags.Instance);
                     if (snapshot == null || snapshot.ReturnType != typeof(string))
                         throw new InvalidOperationException("witness snapshot contract missing");
 
@@ -398,7 +435,7 @@ namespace VhMap02LoaderSmoke
                         var rejected = false;
                         try
                         {
-                            snapshot.Invoke(null, new object[] { genuineNoGameCore });
+                            snapshot.Invoke(form, new object[] { genuineNoGameCore });
                         }
                         catch (TargetInvocationException ex)
                         {
@@ -421,7 +458,127 @@ namespace VhMap02LoaderSmoke
                 }
                 _stage = "synthetic-optin-fake-core-rejection";
                 AuditSyntheticAutomaticWitness(entrypoint, property);
+                _stage = "synthetic-official-disc-mount-gate";
+                AuditSyntheticMountedDiscGate(entrypoint);
 
+        }
+
+        // Exercise the production V5 mount gate using an uninitialized object
+        // of the official Octoshock type and synthetic Disc metadata. No core
+        // constructor, frame, disc file, BIOS or movie is opened or executed.
+        private static void AuditSyntheticMountedDiscGate(Type entrypoint)
+        {
+            var coreAssembly = Assembly.Load("BizHawk.Emulation.Cores");
+            var coreType = coreAssembly.GetType(
+                "BizHawk.Emulation.Cores.Sony.PSX.Octoshock", true);
+            var tray = coreType.GetProperty(
+                "CurrentTrayOpen", BindingFlags.Public | BindingFlags.Instance);
+            var mountedIndex = coreType.GetProperty(
+                "CurrentDiscIndexMounted", BindingFlags.Public | BindingFlags.Instance);
+            var discsField = coreType.GetField(
+                "Discs", BindingFlags.Public | BindingFlags.Instance);
+            var nameFieldInfo = discsField?.FieldType.GetGenericArguments().Single()
+                .GetField("Name", BindingFlags.Public | BindingFlags.Instance);
+            var gate = entrypoint.GetMethod(
+                "RequireMountedDiscMatchesSourceCueName",
+                BindingFlags.NonPublic | BindingFlags.Instance);
+            var autoKeyField = entrypoint.GetField(
+                "AutomaticWitnessEnvironment", BindingFlags.NonPublic | BindingFlags.Static);
+            var cueKeyField = entrypoint.GetField(
+                "ExpectedDiscCueNameEnvironment", BindingFlags.NonPublic | BindingFlags.Static);
+            var traySetter = tray?.GetSetMethod(true);
+            var indexSetter = mountedIndex?.GetSetMethod(true);
+            var autoKey = autoKeyField?.GetRawConstantValue() as string;
+            var cueKey = cueKeyField?.GetRawConstantValue() as string;
+            if (tray == null || tray.PropertyType != typeof(bool)
+                || mountedIndex == null || mountedIndex.PropertyType != typeof(int)
+                || discsField == null || !discsField.FieldType.IsGenericType
+                || nameFieldInfo == null || nameFieldInfo.FieldType != typeof(string)
+                || gate == null || traySetter == null || indexSetter == null
+                || string.IsNullOrEmpty(autoKey) || string.IsNullOrEmpty(cueKey))
+                throw new InvalidOperationException("official synthetic mount-gate contract missing");
+
+            var priorAuto = Environment.GetEnvironmentVariable(autoKey);
+            var priorCue = Environment.GetEnvironmentVariable(cueKey);
+            const string expectedName = "vandal-hearts.cue";
+            try
+            {
+                // The output directory is only an opt-in sentinel for this
+                // direct helper call; no file write is performed by the gate.
+                Environment.SetEnvironmentVariable(autoKey, null);
+                Environment.SetEnvironmentVariable(cueKey, expectedName);
+                using (var form = Activator.CreateInstance(entrypoint) as Form)
+                {
+                    if (form == null) throw new InvalidOperationException("mount-gate form unavailable");
+                    var core = System.Runtime.Serialization.FormatterServices
+                        .GetUninitializedObject(coreType);
+                    var disc = System.Runtime.Serialization.FormatterServices
+                        .GetUninitializedObject(nameFieldInfo.DeclaringType);
+                    nameFieldInfo.SetValue(disc, expectedName);
+                    var discs = Activator.CreateInstance(discsField.FieldType)
+                        as System.Collections.IList;
+                    if (discs == null) throw new InvalidOperationException("synthetic disc list unavailable");
+                    discs.Add(disc);
+                    discsField.SetValue(core, discs);
+                    traySetter.Invoke(core, new object[] { false });
+                    indexSetter.Invoke(core, new object[] { 1 });
+
+                    var notOptedIn = gate.Invoke(form, new object[] { core });
+                    if (!(notOptedIn is bool) || (bool)notOptedIn)
+                        throw new InvalidOperationException("mount gate accepted absent auto opt-in");
+
+                    Environment.SetEnvironmentVariable(autoKey, "synthetic-owner-private-output");
+                    var accepted = gate.Invoke(form, new object[] { core });
+                    if (!(accepted is bool) || !(bool)accepted)
+                        throw new InvalidOperationException("matching synthetic disc mount rejected");
+
+                    nameFieldInfo.SetValue(disc, "other.cue");
+                    AssertMountGateRejected(gate, form, core, "wrong-name");
+                    nameFieldInfo.SetValue(disc, expectedName);
+
+                    traySetter.Invoke(core, new object[] { true });
+                    AssertMountGateRejected(gate, form, core, "tray-open");
+                    traySetter.Invoke(core, new object[] { false });
+
+                    indexSetter.Invoke(core, new object[] { 0 });
+                    AssertMountGateRejected(gate, form, core, "no-disc-mounted");
+                    indexSetter.Invoke(core, new object[] { 1 });
+
+                    discs.Clear();
+                    AssertMountGateRejected(gate, form, core, "empty-disc-list");
+                    discs.Add(disc);
+
+                    var extra = System.Runtime.Serialization.FormatterServices
+                        .GetUninitializedObject(nameFieldInfo.DeclaringType);
+                    nameFieldInfo.SetValue(extra, expectedName);
+                    discs.Add(extra);
+                    AssertMountGateRejected(gate, form, core, "multiple-discs");
+                    discs.RemoveAt(1);
+
+                    Environment.SetEnvironmentVariable(cueKey, "folder/vandal-hearts.cue");
+                    AssertMountGateRejected(gate, form, core, "cue-name-is-path");
+                }
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(autoKey, priorAuto);
+                Environment.SetEnvironmentVariable(cueKey, priorCue);
+            }
+        }
+
+        private static void AssertMountGateRejected(
+            MethodInfo gate, object form, object core, string scenario)
+        {
+            try
+            {
+                gate.Invoke(form, new object[] { core });
+            }
+            catch (TargetInvocationException ex)
+            {
+                if (ex.InnerException is InvalidOperationException) return;
+                throw new InvalidOperationException("synthetic mount gate threw unexpected error");
+            }
+            throw new InvalidOperationException("synthetic mount gate accepted " + scenario);
         }
     }
 }

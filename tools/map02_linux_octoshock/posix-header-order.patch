@@ -1,0 +1,26 @@
+diff --git a/psx/octoshock/psx/psx.h b/psx/octoshock/psx/psx.h
+--- a/psx/octoshock/psx/psx.h
++++ b/psx/octoshock/psx/psx.h
+@@ -24,8 +24,8 @@
+ #include "octoshock.h"
+ #include "emuware/emuware.h"
+ #include "video/surface.h"
+-#include "masmem.h"
+ #include "endian.h"
++#include "masmem.h"
+ #include "emuware/EW_state.h"
+ #include "math_ops.h"
+ 
+diff --git a/psx/octoshock/endian.h b/psx/octoshock/endian.h
+--- a/psx/octoshock/endian.h
++++ b/psx/octoshock/endian.h
+@@ -24,6 +24,9 @@
+ #ifndef __MDFN_ENDIAN_H
+ #define __MDFN_ENDIAN_H
+ 
++#include <algorithm>
++#include <cstring>
++
+ void Endian_A16_Swap(void *src, uint32 nelements);
+ void Endian_A32_Swap(void *src, uint32 nelements);
+ void Endian_A64_Swap(void *src, uint32 nelements);

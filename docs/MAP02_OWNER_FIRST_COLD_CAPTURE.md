@@ -408,3 +408,15 @@ remains blocked. Keep all original media, screenshots, owner-local receipts,
 private paths, process IDs and game hashes out of GitHub comments and artifacts.
 The trusted no-media compile workflow intentionally publishes a DLL SHA-256
 marker; use it only to verify the artifact downloaded from that exact run.
+
+
+## Stage609 — current V5 first-capture guard
+
+The automatic capture now refuses to proceed unless the live Octoshock instance reports
+one loaded disc, index 1 mounted, a closed tray, and a source disc basename matching
+the CUE basename passed to EmuHawk. The launcher supplies the basename privately through
+`VH_MAP02_EXPECTED_DISC_CUE_NAME`; it never writes a private path into a receipt.
+
+This is a mount-state consistency check, not full disc authentication. The witness still
+states `disc=unverified`, `movie_sync=unverified`, and the audits continue to report
+that actual disc bytes, controller delivery and MAP02 identity are not authenticated.

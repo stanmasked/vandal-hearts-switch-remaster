@@ -1,0 +1,381 @@
+"""Stage539 independently pinned fictional Drive readback, no original runtime."""
+from __future__ import annotations
+
+import io
+import os
+from pathlib import Path
+import shutil
+import tarfile
+import unittest
+from unittest.mock import patch
+
+from test_map02_linux_octoshock_private_drive import Stage537TransportTests
+from tools.map02_linux_octoshock.private_runtime_drive import archive_to_private_drive
+from tools.map02_linux_octoshock.private_runtime_reaudit import (
+    IndependentAuditError, _safe_restore, audit_independent_readback,
+)
+
+
+class IndependentReadbackTests(unittest.TestCase):
+    def setUp(self):
+        # Use the actual Stage540 owner receipt pin creation, not a fake
+        # test-generated digest computed from downloaded untrusted bytes.
+        Stage537TransportTests.setUp(self)
+        self.receipt_name = "map02-runtime-testowner001.receipt.json"
+        self.receipt_pin = self.base / "trusted-receipt.sha256"
+        result = archive_to_private_drive(
+            self.source, self.pin, self.tar, self.tar_sha, self.readback,
+            "vh_builds", "vh_manifests", "testowner001", self.private_map,
+            owner_receipt_pin_output=self.receipt_pin, invoke=self.transport,
+        )
+        assert result["owner_receipt_pin_written"] is True
+        self.reaudit = self.base / "new-readback-audit"
+
+    def run_audit(self):
+        return audit_independent_readback(
+            self.private_map, self.pin, self.tar_sha, self.receipt_pin,
+            self.reaudit, "vh_builds", "vh_manifests",
+            "testowner001", invoke=self.transport
+        )
+
+    def test_complete_independent_readback_without_source_runtime(self):
+        shutil.rmtree(self.source)
+        report = self.run_audit()
+        self.assertEqual(report["files"], 7)
+        self.assertEqual(report["objects_read_back"], 5)
+        self.assertTrue(report["independent_receipt_pin_verified"])
+        self.assertFalse(report["original_runtime_required"])
+        self.assertFalse(report["capture_ready"])
+        self.assertTrue((self.reaudit / "restored/runtime/EmuHawk.exe").is_file())
+
+    def test_refuse_owner_sha_in_nonprivate_parent(self):
+        self.base.chmod(0o755)
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+        self.assertFalse(self.reaudit.exists())
+
+    def test_refuse_owner_sha_inside_git_checkout(self):
+        checkout = self.base / "fictional-worktree"
+        checkout.mkdir(mode=0o700)
+        (checkout / ".git").mkdir(mode=0o700)
+        unsafe_pin = checkout / "untrusted-manifest.sha256"
+        unsafe_pin.write_bytes(self.pin.read_bytes())
+        unsafe_pin.chmod(0o600)
+        with self.assertRaises(IndependentAuditError):
+            audit_independent_readback(
+                self.private_map, unsafe_pin, self.tar_sha,
+                self.receipt_pin, self.reaudit,
+                "vh_builds", "vh_manifests", "testowner001",
+                invoke=self.transport,
+            )
+        self.assertFalse(self.reaudit.exists())
+
+    def test_refuse_parent_symlink_in_owner_sha_path(self):
+        vault = self.base / "private-trust-vault"
+        vault.mkdir(mode=0o700)
+        real_pin = vault / "trusted-manifest.sha256"
+        real_pin.write_bytes(self.pin.read_bytes())
+        real_pin.chmod(0o600)
+        alias = self.base / "symlinked-trust-vault"
+        alias.symlink_to(vault, target_is_directory=True)
+        with self.assertRaises(IndependentAuditError):
+            audit_independent_readback(
+                self.private_map, alias / "trusted-manifest.sha256",
+                self.tar_sha, self.receipt_pin, self.reaudit,
+                "vh_builds", "vh_manifests", "testowner001",
+                invoke=self.transport,
+            )
+        self.assertFalse(self.reaudit.exists())
+
+    def test_remote_root_change_during_receipt_readback_rejected(self):
+        self.transport.mutate_folder_after_download = (
+            "vh_manifests", "fictionalReplacementManifestRoot",
+        )
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+        self.assertFalse((self.reaudit / "restored").exists())
+        self.assertFalse(self.reaudit.exists())
+        self.assertEqual(self.transport.uploads, 5)
+
+    def test_remote_root_change_during_archive_readback_rejected(self):
+        self.transport.mutate_folder_after_download = (
+            "vh_builds", "fictionalReplacementBuildsRoot",
+            "map02-runtime-testowner001.tar",
+        )
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+        self.assertFalse((self.reaudit / "restored").exists())
+        self.assertFalse(self.reaudit.exists())
+        self.assertEqual(self.transport.uploads, 5)
+
+    def test_owner_pin_change_during_final_object_download_rejected_before_restore(self):
+        self.transport.mutate_local_file_after_download = (
+            "map02-runtime-testowner001.manifest.sha256",
+            self.pin,
+            b"0" * 64 + b"\n",
+        )
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+        self.assertFalse((self.reaudit / "restored").exists())
+        self.assertFalse(self.reaudit.exists())
+        self.assertEqual(self.transport.uploads, 5)
+
+    def test_receipt_object_replaced_after_readback_rejected(self):
+        self.transport.replace_remote_object_after_download = (
+            self.receipt_name, b"replacement receipt after readback",
+        )
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+        self.assertFalse((self.reaudit / "restored").exists())
+        self.assertFalse(self.reaudit.exists())
+
+    def test_archive_object_replaced_after_readback_rejected(self):
+        self.transport.replace_remote_object_after_download = (
+            "map02-runtime-testowner001.tar",
+            b"replacement archive after readback",
+        )
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+        self.assertFalse((self.reaudit / "restored").exists())
+        self.assertFalse(self.reaudit.exists())
+
+    def test_remote_object_replaced_after_readback_before_audit_success_rejected(self):
+        original_safe_restore = _safe_restore
+
+        def replace_remote_during_restore(archive_path, target):
+            self.transport.remote["vh_builds"][
+                "map02-runtime-testowner001.tar"
+            ] = b"replacement after verified local readback"
+            return original_safe_restore(archive_path, target)
+
+        with patch(
+            "tools.map02_linux_octoshock.private_runtime_reaudit._safe_restore",
+            side_effect=replace_remote_during_restore,
+        ):
+            with self.assertRaises(IndependentAuditError):
+                self.run_audit()
+        # The local archive was pinned and verified before restore; failure is
+        # specifically the final remote-state recheck. The failed audit must
+        # remove the whole partial readback tree rather than leave a result
+        # that could be mistaken for accepted evidence.
+        self.assertFalse(self.reaudit.exists())
+
+    def test_cleanup_does_not_remove_replacement_readback_directory(self):
+        displaced = self.base / "displaced-readback-root"
+        self.transport.replace_readback_root_after_download = (
+            "map02-runtime-testowner001.tar", self.reaudit, displaced,
+        )
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+        self.assertTrue(displaced.is_dir())
+        self.assertTrue(self.reaudit.is_dir())
+        self.assertEqual(
+            (self.reaudit / "sentinel").read_text(encoding="utf-8"),
+            "preserve replacement",
+        )
+
+    def test_cleanup_does_not_follow_symlink_replacement_readback_root(self):
+        displaced = self.base / "displaced-readback-root"
+        target = self.base / "outside-readback-target"
+        self.transport.symlink_readback_root_after_download = (
+            "map02-runtime-testowner001.tar", self.reaudit, displaced, target,
+        )
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+        self.assertTrue(self.reaudit.is_symlink())
+        self.assertTrue(displaced.is_dir())
+        self.assertEqual(
+            (target / "sentinel").read_text(encoding="utf-8"),
+            "preserve symlink target",
+        )
+
+    def test_keyboard_interrupt_cleans_partial_readback_and_propagates(self):
+        self.transport.raise_after_download = (
+            self.receipt_name, KeyboardInterrupt("synthetic interrupted readback"),
+        )
+        with self.assertRaisesRegex(
+            KeyboardInterrupt, "synthetic interrupted readback",
+        ):
+            self.run_audit()
+        self.assertFalse(self.reaudit.exists())
+        self.assertEqual(self.transport.uploads, 5)
+
+    def test_cleanup_preserves_replacement_won_before_atomic_quarantine(self):
+        displaced = self.base / "displaced-original-readback"
+        original_rename = os.rename
+
+        def replace_root_before_quarantine(src, dst, *args, **kwargs):
+            src_path = Path(src)
+            dst_path = Path(dst)
+            if src_path == self.reaudit and dst_path.name == "payload":
+                # Win the race after cleanup starts but immediately before its
+                # atomic rename. The replacement must be preserved, not erased.
+                original_rename(src_path, displaced)
+                src_path.mkdir(mode=0o700)
+                (src_path / "sentinel").write_text(
+                    "preserve concurrent replacement", encoding="utf-8"
+                )
+            return original_rename(src, dst, *args, **kwargs)
+
+        self.transport.raise_after_download = (
+            self.receipt_name, KeyboardInterrupt("synthetic cleanup race"),
+        )
+        with patch(
+            "tools.map02_linux_octoshock.private_runtime_reaudit.os.rename",
+            side_effect=replace_root_before_quarantine,
+        ):
+            with self.assertRaisesRegex(KeyboardInterrupt, "synthetic cleanup race"):
+                self.run_audit()
+        self.assertTrue(displaced.is_dir())
+        self.assertTrue(self.reaudit.is_dir())
+        self.assertEqual(
+            (self.reaudit / "sentinel").read_text(encoding="utf-8"),
+            "preserve concurrent replacement",
+        )
+        self.assertEqual(
+            list(self.base.glob(".map02-readback-cleanup-*")), [],
+        )
+
+    def test_cleanup_preserves_quarantined_object_if_original_name_is_claimed(self):
+        displaced = self.base / "displaced-original-readback"
+        self.transport.replace_readback_root_after_download = (
+            "map02-runtime-testowner001.tar", self.reaudit, displaced,
+        )
+        original_lstat = Path.lstat
+
+        def claim_original_name_during_restore_check(path):
+            if (path == self.reaudit and not os.path.lexists(path)
+                    and list(self.base.glob(".map02-readback-cleanup-*/payload"))):
+                path.mkdir(mode=0o700)
+                (path / "sentinel").write_text(
+                    "preserve newly claimed root", encoding="utf-8"
+                )
+            return original_lstat(path)
+
+        with patch(
+            "tools.map02_linux_octoshock.private_runtime_reaudit.Path.lstat",
+            autospec=True, side_effect=claim_original_name_during_restore_check,
+        ):
+            with self.assertRaises(IndependentAuditError):
+                self.run_audit()
+
+        self.assertTrue(displaced.is_dir())
+        self.assertTrue(self.reaudit.is_dir())
+        self.assertEqual(
+            (self.reaudit / "sentinel").read_text(encoding="utf-8"),
+            "preserve newly claimed root",
+        )
+        quarantines = list(self.base.glob(".map02-readback-cleanup-*"))
+        self.assertEqual(len(quarantines), 1)
+        self.assertEqual(
+            (quarantines[0] / "payload" / "sentinel").read_text(encoding="utf-8"),
+            "preserve replacement",
+        )
+
+        # A new readback in the same parent must fail closed until the owner
+        # reconciles the intentionally retained quarantine.
+        next_root = self.base / "subsequent-readback"
+        with self.assertRaises(IndependentAuditError):
+            audit_independent_readback(
+                self.private_map, self.pin, self.tar_sha, self.receipt_pin,
+                next_root, "vh_builds", "vh_manifests", "testowner001",
+                invoke=self.transport,
+            )
+        self.assertFalse(next_root.exists())
+        self.assertEqual(
+            len(list(self.base.glob(".map02-readback-cleanup-*"))), 1,
+        )
+
+    def test_refuse_corrupted_remote_archive(self):
+        key = "map02-runtime-testowner001.tar"
+        self.transport.remote["vh_builds"][key] += b"FORGED"
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+        self.assertFalse(self.reaudit.exists())
+
+    def test_refuse_corrupted_remote_receipt(self):
+        self.transport.remote["vh_manifests"][self.receipt_name] += b"x"
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+
+    def test_refuse_changed_local_receipt_pin(self):
+        self.receipt_pin.write_text("0" * 64 + "\n", encoding="ascii")
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+
+    def test_refuse_changed_owner_manifest_pin(self):
+        self.pin.write_text("0" * 64 + "\n", encoding="ascii")
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+
+    def test_refuse_wrong_folder_root(self):
+        self.transport.folder_ids["vh_manifests"] = "anotherFolderWhichIsFake1"
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+
+    def test_refuse_already_existing_readback(self):
+        self.reaudit.mkdir(mode=0o700)
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+
+    def test_refuse_archive_tar_symlink_entry(self):
+        tar = self.base / "malicious.tar"
+        target = self.base / "new-malicious-runtime"
+        with tarfile.open(tar, "w") as stream:
+            top = tarfile.TarInfo("runtime")
+            top.type, top.mode = tarfile.DIRTYPE, 0o700
+            stream.addfile(top)
+            bad = tarfile.TarInfo("runtime/link")
+            bad.type, bad.mode = tarfile.SYMTYPE, 0o777
+            bad.linkname = "../../private-owner"
+            stream.addfile(bad)
+        with self.assertRaises(IndependentAuditError):
+            # This inner helper throws same generic no-path rejection.
+            _safe_restore(tar, target)
+        self.assertFalse(target.exists())
+
+    def test_refuse_archive_with_ps1_bios_even_with_valid_tar_structure(self):
+        tar = self.base / "disc-leak.tar"
+        target = self.base / "new-disc-leak-runtime"
+        with tarfile.open(tar, "w") as stream:
+            top = tarfile.TarInfo("runtime")
+            top.type, top.mode = tarfile.DIRTYPE, 0o700
+            stream.addfile(top)
+            bios = tarfile.TarInfo("runtime/firmware/scph1001.BIN")
+            bios.size, bios.mode = 6, 0o600
+            stream.addfile(bios, io.BytesIO(b"PS1ROM"))
+        with self.assertRaises(IndependentAuditError):
+            _safe_restore(tar, target)
+        self.assertFalse(target.exists())
+
+    def test_refuse_archive_with_game_movie_inside_subdirectory(self):
+        tar = self.base / "movie-leak.tar"
+        target = self.base / "new-movie-leak-runtime"
+        with tarfile.open(tar, "w") as stream:
+            top = tarfile.TarInfo("runtime")
+            top.type, top.mode = tarfile.DIRTYPE, 0o700
+            stream.addfile(top)
+            movie = tarfile.TarInfo("runtime/captures/inputs.BK2")
+            movie.size, movie.mode = 3, 0o600
+            stream.addfile(movie, io.BytesIO(b"BK2"))
+        with self.assertRaises(IndependentAuditError):
+            _safe_restore(tar, target)
+        self.assertFalse(target.exists())
+
+    def test_refuse_tar_path_traversal(self):
+        tar = self.base / "traversal.tar"
+        target = self.base / "new-traversal-runtime"
+        with tarfile.open(tar, "w") as stream:
+            top = tarfile.TarInfo("runtime")
+            top.type, top.mode = tarfile.DIRTYPE, 0o700
+            stream.addfile(top)
+            bad = tarfile.TarInfo("runtime/../../escape.txt")
+            bad.size, bad.mode = 4, 0o600
+            stream.addfile(bad, io.BytesIO(b"EVIL"))
+        with self.assertRaises(IndependentAuditError):
+            _safe_restore(tar, target)
+        self.assertFalse(target.exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

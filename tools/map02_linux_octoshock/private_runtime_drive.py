@@ -1,0 +1,649 @@
+#!/usr/bin/env python3
+"""Owner-local MAP02 runtime upload + independent Google Drive byte readback.
+
+Requires two already authenticated, folder-scoped rclone Google Drive remotes.
+Never configures OAuth, prints credentials/paths/checksums, or uploads game media.
+This is NOT executed by public CI against any real Drive account.
+"""
+from __future__ import annotations
+
+import argparse
+from contextlib import ExitStack
+from datetime import datetime, timezone
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import stat
+import subprocess
+from typing import Callable
+
+from tools.map02_linux_octoshock.archive_owner_runtime import _root, _inventory
+from tools.map02_linux_octoshock.private_runtime_tar import (
+    _hash_file, _outside, _pin, restore_runtime,
+)
+from tools.map02_linux_octoshock.verify_owner_runtime import verify_runtime
+
+FOLDER_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{15,128}\Z")
+REMOTE_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,40}\Z")
+SESSION_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]{7,62}\Z")
+MAX_STDOUT = 262144
+MEDIA_SUFFIXES = (".cue", ".iso", ".chd", ".bk2", ".sav", ".bin",
+                  ".rom", ".img", ".pbp", ".srm", ".m3u", ".ccd", ".sub", ".mdf")
+
+
+def forbidden_original_media_path(value: str) -> bool:
+    """Conservative no-game-media rule shared by upload and re-audit."""
+    if not isinstance(value, str):
+        return True
+    return any(part.lower().endswith(MEDIA_SUFFIXES)
+               for part in value.replace("\\", "/").split("/") if part)
+
+
+class PrivateDriveError(ValueError):
+    """Generic fail-closed error; never prints private paths or tokens."""
+
+
+def _fail() -> None:
+    raise PrivateDriveError("private Google Drive archive upload/readback rejected")
+
+
+def _call_rclone(arguments: list[str]) -> str:
+    try:
+        proc = subprocess.run(
+            ["rclone", *arguments], capture_output=True, text=True,
+            timeout=1800, check=False,
+        )
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        _fail()
+    if proc.returncode or len(proc.stdout) > MAX_STDOUT:
+        _fail()
+    return proc.stdout
+
+
+def _remote_name(remote: str) -> str:
+    if not isinstance(remote, str) or REMOTE_PATTERN.fullmatch(remote) is None:
+        _fail()
+    return remote
+
+
+def _check_rclone_compatibility(invoke: Callable[[list[str]], str]) -> None:
+    """rclone config redacted was introduced in 1.64; reject older clients."""
+    output = invoke(["version"])
+    first_line = output.splitlines()[0] if output else ""
+    match = re.fullmatch(r"rclone v(\d+)\.(\d+)(?:\.(\d+))?(?:[-+][A-Za-z0-9._-]+)?", first_line)
+    if not match:
+        _fail()
+    major, minor = int(match.group(1)), int(match.group(2))
+    if (major, minor) < (1, 64):
+        _fail()
+
+
+def _check_remote(remote: str, folder_id: str,
+                  invoke: Callable[[list[str]], str]) -> None:
+    _check_rclone_compatibility(invoke)
+    # Capture output; never emit even "redacted" config to stdout or a report.
+    details = invoke(["config", "redacted", remote])
+    if len(details) > 16384:
+        _fail()
+    config = {}
+    for line in details.splitlines():
+        if "=" in line:
+            key, value = line.split("=", 1)
+            config[key.strip().lower()] = value.strip()
+    if config.get("type") != "drive" or config.get("root_folder_id") != folder_id:
+        _fail()
+    if f"[{remote}]" not in details:
+        _fail()
+    # Environment overrides can silently redirect uploads to a different root.
+    for name in os.environ:
+        if (name.startswith("RCLONE_CONFIG_") or
+                name.startswith("RCLONE_DRIVE_ROOT_FOLDER_ID")):
+            _fail()
+    invoke(["lsf", "--files-only", remote + ":"])
+
+
+def _existing_names(remote: str, invoke: Callable[[list[str]], str]) -> set[str]:
+    names = invoke(["lsf", "--files-only", remote + ":"]).splitlines()
+    if any("/" in n or "\\" in n for n in names):
+        _fail()
+    return set(names)
+
+
+def _require_remote_target_available(
+    remote: str, folder_id: str, filename: str,
+    invoke: Callable[[list[str]], str],
+) -> None:
+    """Recheck the expected Drive root and reject a name race before upload."""
+    _check_remote(remote, folder_id, invoke)
+    if filename in _existing_names(remote, invoke):
+        _fail()
+
+
+def _stat_remote(remote_path: str, filename: str, size: int,
+                 invoke: Callable[[list[str]], str]) -> str:
+    raw = invoke(["lsjson", "--stat", remote_path])
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        _fail()
+    if (not isinstance(data, dict) or data.get("IsDir") is not False
+            or data.get("Name") != filename or data.get("Size") != size):
+        _fail()
+    object_id = data.get("ID")
+    if (not isinstance(object_id, str) or not 8 <= len(object_id) <= 256
+            or not re.fullmatch(r"[A-Za-z0-9_-]+", object_id)):
+        _fail()
+    return object_id
+
+
+def _require_file(path_value: Path, source: Path, *, mode: int | None = None) -> Path:
+    path = _outside(path_value, source)
+    if not path.is_file() or path.is_symlink():
+        _fail()
+    info = path.stat()
+    if info.st_uid != os.geteuid() or (
+            mode is not None and stat.S_IMODE(info.st_mode) != mode):
+        _fail()
+    return path
+
+
+def _directory_identity(info: os.stat_result) -> tuple[int, int, int, int]:
+    return (info.st_dev, info.st_ino, info.st_uid,
+            stat.S_IMODE(info.st_mode))
+
+
+def _open_anchored_owner_parent(
+    directory: Path, handles: ExitStack,
+) -> tuple[int, list[tuple[Path, int, os.stat_result]]]:
+    """Walk the absolute directory from /, retaining each no-follow dirfd.
+
+    Require a consistent device/inode/owner/mode for the kernel-opened entry
+    and its named path at every level. Higher-level ancestors stay open until
+    the caller has read and rechecked the private leaf.
+    """
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    root_fd = os.open("/", flags)
+    handles.callback(os.close, root_fd)
+    root_stat = os.fstat(root_fd)
+    chain: list[tuple[Path, int, os.stat_result]] = [
+        (Path("/"), root_fd, root_stat)
+    ]
+    current_fd = root_fd
+    current_path = Path("/")
+    for component in directory.parts[1:]:
+        if component in ("", ".", ".."):
+            _fail()
+        before = os.stat(component, dir_fd=current_fd,
+                         follow_symlinks=False)
+        if not stat.S_ISDIR(before.st_mode):
+            _fail()
+        child_fd = os.open(component, flags, dir_fd=current_fd)
+        handles.callback(os.close, child_fd)
+        opened = os.fstat(child_fd)
+        current_path = current_path / component
+        if (not stat.S_ISDIR(opened.st_mode)
+                or _directory_identity(before) != _directory_identity(opened)
+                or _directory_identity(current_path.lstat())
+                != _directory_identity(opened)):
+            _fail()
+        chain.append((current_path, child_fd, opened))
+        current_fd = child_fd
+    return current_fd, chain
+
+
+def _check_anchored_owner_chain(
+    chain: list[tuple[Path, int, os.stat_result]],
+) -> None:
+    """Check every retained directory still has the same named ancestry."""
+    for index, (path, fd, original) in enumerate(chain):
+        expected = _directory_identity(original)
+        if (not stat.S_ISDIR(original.st_mode)
+                or _directory_identity(os.fstat(fd)) != expected
+                or _directory_identity(path.lstat()) != expected):
+            _fail()
+        if index:
+            parent_fd = chain[index - 1][1]
+            named = os.stat(path.name, dir_fd=parent_fd,
+                            follow_symlinks=False)
+            if (not stat.S_ISDIR(named.st_mode)
+                    or _directory_identity(named) != expected):
+                _fail()
+
+
+def _read_owner_folder_map_bytes(path: Path, root: Path) -> bytes:
+    """Read folder-map through no-follow file and entire retained parent chain.
+
+    All ancestor directory FDs are held open while the leaf is read. A
+    transient rename restored between checks cannot be cryptographically
+    excluded; this is not a guarantee against privileged adversaries.
+    """
+    owner_file = _require_file(path, root, mode=0o600)
+    if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
+        _fail()
+    try:
+        with ExitStack() as handles:
+            parent_fd, chain = _open_anchored_owner_parent(
+                owner_file.parent, handles,
+            )
+            parent_before = chain[-1][2]
+            file_before = os.stat(
+                owner_file.name, dir_fd=parent_fd, follow_symlinks=False,
+            )
+            if (parent_before.st_uid != os.geteuid()
+                    or stat.S_IMODE(parent_before.st_mode) != 0o700
+                    or not stat.S_ISREG(file_before.st_mode)
+                    or file_before.st_uid != os.geteuid()
+                    or stat.S_IMODE(file_before.st_mode) != 0o600
+                    or file_before.st_size > 2048
+                    or not stat.S_ISREG(owner_file.lstat().st_mode)):
+                _fail()
+            fd = os.open(
+                owner_file.name, os.O_RDONLY | os.O_NOFOLLOW,
+                dir_fd=parent_fd,
+            )
+            handles.callback(os.close, fd)
+            original = os.fstat(fd)
+            stable = lambda info: (
+                info.st_dev, info.st_ino, info.st_size,
+                info.st_mtime_ns, info.st_ctime_ns,
+                info.st_uid, stat.S_IMODE(info.st_mode),
+            )
+            if (not stat.S_ISREG(original.st_mode)
+                    or stable(original) != stable(file_before)):
+                _fail()
+            with os.fdopen(fd, "rb", closefd=False) as stream:
+                payload = stream.read(2049)
+            after = os.fstat(fd)
+            named = os.stat(
+                owner_file.name, dir_fd=parent_fd, follow_symlinks=False,
+            )
+            if (len(payload) > 2048 or stable(original) != stable(after)
+                    or stable(after) != stable(named)
+                    or stable(named) != stable(owner_file.lstat())):
+                _fail()
+            _check_anchored_owner_chain(chain)
+            return payload
+    except (OSError, ValueError, TypeError, AttributeError):
+        _fail()
+
+
+def _folder_map(path: Path, root: Path) -> tuple[str, str]:
+    """Read true private folder IDs from an anchored owner-only descriptor."""
+    payload = _read_owner_folder_map_bytes(path, root)
+    try:
+        data = json.loads(payload)
+    except (OSError, UnicodeError, ValueError):
+        _fail()
+    if not isinstance(data, dict) or set(data) != {
+            "builds_folder_id", "manifests_folder_id"}:
+        _fail()
+    builds_id = data["builds_folder_id"]
+    manifests_id = data["manifests_folder_id"]
+    if (not isinstance(builds_id, str)
+            or not isinstance(manifests_id, str)
+            or FOLDER_ID_PATTERN.fullmatch(builds_id) is None
+            or FOLDER_ID_PATTERN.fullmatch(manifests_id) is None
+            or builds_id == manifests_id):
+        _fail()
+    return builds_id, manifests_id
+
+
+def _sha_bytes(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def _hash_open_fd(fd: int) -> tuple[str, int]:
+    """Hash an already-open regular-file descriptor without reopening its path."""
+    digest = hashlib.sha256()
+    total = 0
+    os.lseek(fd, 0, os.SEEK_SET)
+    while True:
+        chunk = os.read(fd, 1024 * 1024)
+        if not chunk:
+            break
+        digest.update(chunk)
+        total += len(chunk)
+    os.lseek(fd, 0, os.SEEK_SET)
+    return digest.hexdigest(), total
+
+
+def _file_identity(info: os.stat_result) -> tuple[int, int, int, int, int, int, int, int]:
+    return (
+        info.st_dev, info.st_ino, stat.S_IFMT(info.st_mode),
+        info.st_uid, stat.S_IMODE(info.st_mode), info.st_size,
+        info.st_mtime_ns, info.st_ctime_ns,
+    )
+
+
+def _seal_payload(source: Path, target: Path) -> str:
+    """Create a stable owner-only snapshot using held no-follow descriptors."""
+    if (not source.is_absolute() or not target.is_absolute()
+            or source == target or not hasattr(os, "O_NOFOLLOW")
+            or not hasattr(os, "O_DIRECTORY")):
+        _fail()
+    try:
+        with ExitStack() as handles:
+            source_parent_fd, source_chain = _open_anchored_owner_parent(
+                source.parent, handles,
+            )
+            target_parent_fd, target_chain = _open_anchored_owner_parent(
+                target.parent, handles,
+            )
+            source_before = os.stat(
+                source.name, dir_fd=source_parent_fd, follow_symlinks=False,
+            )
+            if (not stat.S_ISREG(source_before.st_mode)
+                    or source_before.st_uid != os.geteuid()):
+                _fail()
+            source_fd = os.open(
+                source.name, os.O_RDONLY | os.O_NOFOLLOW,
+                dir_fd=source_parent_fd,
+            )
+            handles.callback(os.close, source_fd)
+            source_opened = os.fstat(source_fd)
+            if _file_identity(source_before) != _file_identity(source_opened):
+                _fail()
+            baseline, source_bytes = _hash_open_fd(source_fd)
+            if _file_identity(source_opened) != _file_identity(os.fstat(source_fd)):
+                _fail()
+
+            try:
+                os.stat(target.name, dir_fd=target_parent_fd,
+                        follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                _fail()
+            target_fd = os.open(
+                target.name, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                0o600, dir_fd=target_parent_fd,
+            )
+            handles.callback(os.close, target_fd)
+            os.fchmod(target_fd, 0o600)
+            while True:
+                chunk = os.read(source_fd, 1024 * 1024)
+                if not chunk:
+                    break
+                view = memoryview(chunk)
+                while view:
+                    written = os.write(target_fd, view)
+                    if written <= 0:
+                        _fail()
+                    view = view[written:]
+            os.fsync(target_fd)
+
+            source_after = os.fstat(source_fd)
+            source_named = os.stat(
+                source.name, dir_fd=source_parent_fd, follow_symlinks=False,
+            )
+            target_after = os.fstat(target_fd)
+            target_named = os.stat(
+                target.name, dir_fd=target_parent_fd, follow_symlinks=False,
+            )
+            source_hash, source_size = _hash_open_fd(source_fd)
+            target_hash, target_size = _hash_open_fd(target_fd)
+            if (
+                _file_identity(source_opened) != _file_identity(source_after)
+                or _file_identity(source_after) != _file_identity(source_named)
+                or _file_identity(source_named) != _file_identity(source.lstat())
+                or source_hash != baseline or source_size != source_bytes
+                or _file_identity(target_after) != _file_identity(target_named)
+                or _file_identity(target_named) != _file_identity(target.lstat())
+                or not stat.S_ISREG(target_after.st_mode)
+                or target_after.st_uid != os.geteuid()
+                or stat.S_IMODE(target_after.st_mode) != 0o600
+                or target_hash != baseline or target_size != source_bytes
+            ):
+                _fail()
+            _check_anchored_owner_chain(source_chain)
+            _check_anchored_owner_chain(target_chain)
+            return baseline
+    except (OSError, ValueError, TypeError, AttributeError):
+        _fail()
+
+
+def archive_to_private_drive(
+    runtime: Path, owner_manifest_pin: Path, tar: Path, tar_pin: Path,
+    private_readback_folder: Path, builds_remote: str, manifests_remote: str,
+    session: str, private_folder_map: Path, *,
+    owner_receipt_pin_output: Path | None = None,
+    invoke: Callable[[list[str]], str] = _call_rclone,
+) -> dict[str, object]:
+    """Archive previously pinned runtime; confirm exact remote-byte readback.
+
+    Produces a local verified receipt and uploads/re-downloads that receipt to
+    the folder-scoped manifest remote. A test double for invoke is synthetic
+    only; actual external execution requires an authenticated rclone.
+    """
+    try:
+        source = _root(runtime)
+        builds = _remote_name(builds_remote)
+        manifests = _remote_name(manifests_remote)
+        if builds == manifests or SESSION_PATTERN.fullmatch(session) is None:
+            _fail()
+        staging = _outside(private_readback_folder, source, nonexistent=True)
+        builds_id, manifests_id = _folder_map(private_folder_map, source)
+        manifest_file = source / "map02-owner-runtime-manifest.json"
+        pin = _require_file(owner_manifest_pin, source, mode=0o600)
+        archive = _require_file(tar, source, mode=0o600)
+        archive_pin = _require_file(tar_pin, source, mode=0o600)
+        if len({str(staging), str(archive), str(archive_pin), str(pin)}) != 4:
+            _fail()
+        receipt_pin_out = None
+        if owner_receipt_pin_output is not None:
+            receipt_pin_out = _outside(
+                owner_receipt_pin_output, source, nonexistent=True,
+            )
+            if (receipt_pin_out.is_relative_to(staging)
+                    or receipt_pin_out in (pin, archive, archive_pin)
+                    or receipt_pin_out == manifest_file):
+                _fail()
+        result = verify_runtime(source, trusted_manifest_pin_file=pin,
+                                require_trusted_pin=True)
+        if result.get("verified") is not True or result.get("capture_ready") is not False:
+            _fail()
+        files, count, total = _inventory(source)
+        if not files or count == 0 or _hash_file(archive) != _pin(archive_pin):
+            _fail()
+        if _sha_bytes(manifest_file.read_bytes()) != _pin(pin):
+            _fail()
+        for name in files:
+            if forbidden_original_media_path(name):
+                _fail()
+
+        # Reject malicious or contaminated tar BEFORE uploading even one byte.
+        # A matching locally regenerated tar hash is not sufficient.
+        staging.mkdir(mode=0o700)
+        preflight_parent = staging / "preflight"
+        preflight_parent.mkdir(mode=0o700)
+        preflight_result = restore_runtime(
+            source, pin, archive, archive_pin, preflight_parent / "runtime",
+        )
+        if (preflight_result["files"] != count or
+                preflight_result["bytes"] != total):
+            _fail()
+        stem = "map02-runtime-" + session
+        originals = [
+            (builds, stem + ".tar", archive),
+            (manifests, stem + ".tar.sha256", archive_pin),
+            (manifests, stem + ".manifest.json", manifest_file),
+            (manifests, stem + ".manifest.sha256", pin),
+        ]
+        # Seal all upload sources in a separate owner-only directory. Never
+        # hand mutable build-output files directly to a remote transport.
+        sealed_dir = staging / "sealed-for-upload"
+        sealed_dir.mkdir(mode=0o700)
+        payloads = []
+        for remote, name, original in originals:
+            sealed = sealed_dir / name
+            expected_sha = _seal_payload(original, sealed)
+            payloads.append((remote, name, original, sealed, expected_sha))
+        if (_hash_file(sealed_dir / (stem + ".tar")) != _pin(archive_pin)
+                or _hash_file(sealed_dir / (stem + ".manifest.json")) != _pin(pin)):
+            _fail()
+        # Validate the actual sealed tar snapshot as well, before *any*
+        # cloud operation. The earlier source tar preflight is insufficient
+        # if mutable originals change in between checks.
+        sealed_preflight = staging / "sealed-preflight"
+        sealed_preflight.mkdir(mode=0o700)
+        check = restore_runtime(
+            source, pin, sealed_dir / (stem + ".tar"),
+            archive_pin, sealed_preflight / "runtime",
+        )
+        if check["files"] != count or check["bytes"] != total:
+            _fail()
+        _check_remote(builds, builds_id, invoke)
+        _check_remote(manifests, manifests_id, invoke)
+        existing_builds = _existing_names(builds, invoke)
+        existing_manifests = _existing_names(manifests, invoke)
+        if any(name in (existing_builds if remote == builds else existing_manifests)
+               for remote, name, _, _, _ in payloads):
+            _fail()
+        staged_files = staging / "downloaded"
+        staged_files.mkdir(mode=0o700)
+        restored = staging / "restored"
+        restored.mkdir(mode=0o700)
+        metadata: list[dict[str, object]] = []
+        for remote, name, original, sealed, expected_sha in payloads:
+            if (_hash_file(sealed) != expected_sha
+                    or _hash_file(original) != expected_sha):
+                _fail()
+            folder_id = builds_id if remote == builds else manifests_id
+            _require_remote_target_available(remote, folder_id, name, invoke)
+            target = remote + ":" + name
+            invoke(["copyto", "--immutable", "--no-traverse", str(sealed), target])
+            # A changed rclone root after the write must not be mistaken for a
+            # verified upload. Recheck scope both before stat and before the
+            # fresh download, then again after the download completes.
+            _check_remote(remote, folder_id, invoke)
+            object_id = _stat_remote(target, name, sealed.stat().st_size, invoke)
+            _check_remote(remote, folder_id, invoke)
+            # Download actual remote bytes and compare against the sealed
+            # snapshot, not mutable original build output.
+            download = staged_files / name
+            invoke(["copyto", "--immutable", target, str(download)])
+            _check_remote(remote, folder_id, invoke)
+            downloaded = _require_file(download, source)
+            if (_hash_file(downloaded) != expected_sha
+                    or downloaded.stat().st_size != sealed.stat().st_size):
+                _fail()
+            if original == pin or original == archive_pin:
+                os.chmod(downloaded, 0o600)
+            metadata.append({
+                "folder_id": folder_id,
+                "name": name,
+                "google_drive_id": object_id,
+                "sha256": expected_sha,
+                "bytes": downloaded.stat().st_size,
+                "readback_verified": True,
+            })
+        # No success receipt if any owner-source or staged file changed
+        # after preflight. The upload itself always used sealed bytes.
+        if any(_hash_file(original) != expected_sha
+               or _hash_file(sealed) != expected_sha
+               for _, _, original, sealed, expected_sha in payloads):
+            _fail()
+        restored_result = restore_runtime(
+            source, pin, staged_files / (stem + ".tar"),
+            archive_pin, restored / "runtime",
+        )
+        if restored_result["files"] != count or restored_result["bytes"] != total:
+            _fail()
+        receipt = {
+            "schema": "vh.map02.owner-runtime-private-drive-readback.v1",
+            "created_at_utc": datetime.now(timezone.utc).isoformat(),
+            "session": session,
+            "source_verified_against_owner_pin": True,
+            "remote_type": "drive",
+            "runtime_file_count": count,
+            "runtime_total_bytes": total,
+            "objects": metadata,
+            "full_restored_tree_compared": True,
+            "original_game_media_used": False,
+            "capture_ready": False,
+        }
+        receipt_file = staging / (stem + ".receipt.json")
+        fd = os.open(receipt_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "wb") as stream:
+            stream.write((json.dumps(receipt, indent=2, sort_keys=True) + "\n").encode())
+        receipt_name = stem + ".receipt.json"
+        if receipt_name in existing_manifests:
+            _fail()
+        _require_remote_target_available(
+            manifests, manifests_id, receipt_name, invoke,
+        )
+        receipt_target = manifests + ":" + receipt_name
+        invoke(["copyto", "--immutable", "--no-traverse", str(receipt_file),
+                receipt_target])
+        _check_remote(manifests, manifests_id, invoke)
+        receipt_id = _stat_remote(
+            receipt_target, receipt_name, receipt_file.stat().st_size, invoke
+        )
+        _check_remote(manifests, manifests_id, invoke)
+        receipt_download = staged_files / receipt_name
+        invoke(["copyto", "--immutable", receipt_target, str(receipt_download)])
+        _check_remote(manifests, manifests_id, invoke)
+        receipt_hash = _hash_file(_require_file(receipt_download, source))
+        if receipt_hash != _hash_file(receipt_file):
+            _fail()
+        # Owner-only external reference: create it ONLY after a real verified
+        # round-trip. Must be retained independently from Drive and readback.
+        if receipt_pin_out is not None:
+            fd = os.open(receipt_pin_out,
+                         os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                         getattr(os, "O_NOFOLLOW", 0), 0o600)
+            with os.fdopen(fd, "wb") as stream:
+                stream.write((receipt_hash + "\n").encode("ascii"))
+            if _pin(receipt_pin_out) != receipt_hash:
+                _fail()
+        return {
+            "schema": receipt["schema"],
+            "remote_receipt_id": receipt_id,
+            "objects_read_back": len(metadata) + 1,
+            "files": count,
+            "bytes": total,
+            "drive_download_bytes_verified": True,
+            "owner_receipt_pin_written": receipt_pin_out is not None,
+            "capture_ready": False,
+        }
+    except (OSError, ValueError, TypeError, RuntimeError, subprocess.SubprocessError):
+        _fail()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("runtime", type=Path)
+    parser.add_argument("owner_manifest_pin", type=Path)
+    parser.add_argument("packed_tar", type=Path)
+    parser.add_argument("tar_sha256_pin", type=Path)
+    parser.add_argument("new_private_readback_dir", type=Path)
+    parser.add_argument("--builds-remote", required=True)
+    parser.add_argument("--manifests-remote", required=True)
+    parser.add_argument("--session", required=True)
+    parser.add_argument("--private-folder-map", required=True, type=Path)
+    parser.add_argument("--new-owner-receipt-pin", required=True, type=Path,
+                        help="New outside-Git 0600 SHA256 file retained separately")
+    args = parser.parse_args()
+    try:
+        report = archive_to_private_drive(
+            args.runtime, args.owner_manifest_pin,
+            args.packed_tar, args.tar_sha256_pin, args.new_private_readback_dir,
+            args.builds_remote, args.manifests_remote, args.session,
+            args.private_folder_map,
+            owner_receipt_pin_output=args.new_owner_receipt_pin,
+        )
+    except PrivateDriveError:
+        print("VH_MAP02_STAGE537_PRIVATE_DRIVE_READBACK_REJECTED capture_ready=0")
+        return 1
+    print("VH_MAP02_STAGE537_PRIVATE_DRIVE_READBACK_PASS "
+          "downloaded_objects=%d runtime_files=%d "
+          "reconstructed_bytes=%d original_game=0 capture_ready=0" %
+          (report["objects_read_back"], report["files"], report["bytes"]))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

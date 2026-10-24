@@ -471,3 +471,59 @@ is obsolete. All fixture media and receipt values remain fictional.
 These checks compare the receipt's reported file hashes to supplied pins.
 They do not attest to the in-memory bytes of loaded modules, and they do not
 prove that the original game reached MAP02.
+
+
+### Stage609 — V5 live mounted-disc state and source CUE basename
+
+The automatic owner-local witness now uses schema V5. In addition to the existing
+live PSX/Octoshock and PSX/U firmware checks, it reads the actual Octoshock instance's
+mounted-disc index, tray state and loaded disc name. The launcher supplies only the
+expected CUE basename to the child process; neither the full private path nor the name
+is written into the witness. Automatic capture fails closed unless exactly one disc
+is listed, disc index 1 is mounted, the tray is closed, and the loaded disc's source
+basename matches the selected CUE basename.
+
+The receipt keeps `disc=unverified` and `movie_sync=unverified`. The new
+`disc_mount=single_mounted_tray_closed_source_name_matches` value is deliberately
+narrow: it establishes only a live mount/tray/name consistency check. It does not
+authenticate the mounted disc's full bytes, prove the BIN is unchanged inside the
+emulator, confirm controller delivery, or identify the original MAP02 scene. The
+Python auditor, Lua first-PNG gate and paired-run binding all validate this V5 field;
+synthetic tests use fictional paths and receipts only.
+
+### Stage613 — V5 receipt size and Lua/Python timestamp parity
+
+The largest valid V5 receipt under the current field contract is **703 ASCII
+bytes across 16 LF-terminated lines**. This case uses all three 64-character
+SHA-256 fields, the longest supported native-module name, the maximum accepted
+PID, the maximum accepted .NET UTC process-start tick value and the maximum
+accepted frame counter. The shared 768-byte ceiling therefore leaves 65 bytes
+of headroom. Lua reads 769 bytes to detect overflow and rejects anything over
+768; the offline Python reader independently enforces the same 768-byte limit.
+A regression test fixes the expected 703-byte size and checks the Lua/Python
+size and field-count contract together.
+
+The Lua pre-first-PNG gate previously checked only that the process-start value
+was a decimal string 18–22 digits long. That was weaker than the Python auditor,
+which accepts only .NET UTC ticks in the inclusive range
+`621355968000000000`–`725811840000000000`. The Lua gate now checks exactly
+18 digits and compares the bounds lexicographically, without converting a
+64-bit timestamp to an inexact Lua number. Synthetic Lua tests verify both
+inclusive endpoints are accepted and values just below, just above, or longer
+than the supported range are rejected before any PNG is written.
+
+All evidence in this stage remains synthetic and game-free. It proves parser
+contract consistency only—not original-disc playback, authenticated BIOS or
+disc bytes, MAP02 scene identity, or Nintendo Switch execution.
+
+
+### Stage614 — reject a false V5 mount-state claim at the Lua boundary
+
+The executable Lua mock now mutates only the V5 `disc_mount` field to `unverified`
+and verifies that the capture script rejects the receipt before the first PNG. This
+closes the remaining test gap between the strict Python audits and the earliest
+screenshot gate. The Lua scenario total is updated in the workflow label.
+
+Because Stage609 added report fields, the process/core binding, sequential replay,
+one-run audit and paired core/PNG report contracts now use incremented schema versions.
+No stronger claim is made about the mounted disc's full bytes or MAP02 identity.

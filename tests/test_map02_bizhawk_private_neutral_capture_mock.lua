@@ -1,3 +1,4 @@
+-- Stage609: malformed V5 receipt variants must fail before the first PNG.
 -- Executable Lua capture test with entirely invented BizHawk APIs and PNG bytes.
 -- Does NOT run Octoshock, use the owner's BK2 or publish original gameplay.
 local SCRIPT = "tools/map02_bizhawk_private_neutral_capture.lua"
@@ -7,11 +8,18 @@ local PLAN = "/private/fake-capture-plan.txt"
 local LOG = ROOT .. "/vh_private_capture.log"
 local SIGNATURE = "\137PNG\r\n\26\n"
 local AUTO_FILE = ROOT .. "/vh-map02-runtime-core-auto.txt"
-local CORE_ONLY = "VH_MAP02_RUNTIME_CORE_WITNESS_V1\n"
+local CORE_ONLY = "VH_MAP02_RUNTIME_CORE_WITNESS_V5\n"
   .. "system=PSX\nloaded_core=Octoshock\n"
   .. "core_source=IEmulator.Attributes.CoreName\n"
+  .. "runtime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock\n"
+  .. "core_assembly_sha256=" .. string.rep("a", 64) .. "\n"
+  .. "native_core_module_name=liboctoshock.so\n"
+  .. "native_core_module_sha256=" .. string.rep("b", 64) .. "\n"
+  .. "tool_assembly_sha256=" .. string.rep("c", 64) .. "\n"
   .. "process_id=123\nprocess_start_utc_ticks=639000000000000001\n"
-  .. "frame_count=1662\nbios=unverified\ndisc=unverified\n"
+  .. "frame_count=1662\n"
+  .. "bios=psx_u_firmware_hash_matches_movie_header\n"
+  .. "disc=unverified\ndisc_mount=single_mounted_tray_closed_source_name_matches\n"
   .. "movie_sync=unverified\n"
 local AUTO_MARK = "VH_PRIVATE_NEUTRAL_AUTOWITNESS_PREFLIGHT "
   .. "stage=before_first_png receipt=present core_only=yes actual_disc=unverified"
@@ -95,13 +103,46 @@ local function run(option)
       local bytes = CORE_ONLY
       if option == "auto-equal" then
         bytes = bytes:gsub("frame_count=1662", "frame_count=1665")
+      elseif option == "auto-bad-bios" then
+        bytes = bytes:gsub(
+          "bios=psx_u_firmware_hash_matches_movie_header", "bios=unverified")
+      elseif option == "auto-bad-hash" then
+        bytes = bytes:gsub("core_assembly_sha256=" .. string.rep("a", 64),
+                           "core_assembly_sha256=bad")
+      elseif option == "auto-bad-module" then
+        bytes = bytes:gsub("native_core_module_name=liboctoshock.so",
+                           "native_core_module_name=unknown.so")
+      elseif option == "auto-bad-pid" then
+        bytes = bytes:gsub("process_id=123", "process_id=0")
+      elseif option == "auto-bad-ticks" then
+        bytes = bytes:gsub("process_start_utc_ticks=639000000000000001",
+                           "process_start_utc_ticks=123")
+      elseif option == "auto-min-ticks" then
+        bytes = bytes:gsub("process_start_utc_ticks=639000000000000001",
+                           "process_start_utc_ticks=621355968000000000")
+      elseif option == "auto-max-ticks" then
+        bytes = bytes:gsub("process_start_utc_ticks=639000000000000001",
+                           "process_start_utc_ticks=725811840000000000")
+      elseif option == "auto-bad-ticks-low" then
+        bytes = bytes:gsub("process_start_utc_ticks=639000000000000001",
+                           "process_start_utc_ticks=621355967999999999")
+      elseif option == "auto-bad-ticks-high" then
+        bytes = bytes:gsub("process_start_utc_ticks=639000000000000001",
+                           "process_start_utc_ticks=725811840000000001")
+      elseif option == "auto-bad-ticks-long" then
+        bytes = bytes:gsub("process_start_utc_ticks=639000000000000001",
+                           "process_start_utc_ticks=9999999999999999999")
       elseif option == "auto-future" then
         bytes = bytes:gsub("frame_count=1662", "frame_count=1765")
       elseif option == "auto-frame-outside-range" then
         bytes = bytes:gsub("frame_count=1662", "frame_count=2000001")
       elseif option == "auto-badcore" then
         bytes = bytes:gsub("loaded_core=Octoshock", "loaded_core=Nymashock")
-      elseif option == "auto-bad-format" then
+      elseif option == "auto-wrong-mount" then
+         bytes = bytes:gsub(
+           "disc_mount=single_mounted_tray_closed_source_name_matches",
+           "disc_mount=unverified")
+       elseif option == "auto-bad-format" then
         bytes = bytes:gsub("\n", "\r\n")
       elseif option == "auto-oversized" then
         bytes = bytes .. string.rep("X", 600)
@@ -110,7 +151,7 @@ local function run(option)
       end
       return {
         read = function(_, size)
-          assert(size == 513)
+          assert(size == 769)
           return bytes:sub(1, size)
         end,
         close = function() end,
@@ -332,10 +373,18 @@ do
          "same-frame Octoshock witness should precede the first PNG")
   assert(#exits == 1 and exits[1] == 0)
 end
+for _, option in ipairs({"auto-min-ticks", "auto-max-ticks"}) do
+  local lines, shots, _, exits = run(option)
+  assert(#shots == 3 and #lines == 10, option .. ": inclusive UTC tick boundary rejected")
+  assert(lines[6] == AUTO_MARK, option .. ": witness did not pass pre-PNG validation")
+  assert(#exits == 1 and exits[1] == 0, option .. ": accepted boundary did not finish cleanly")
+end
 for _, option in ipairs({
-    "auto-wrong-root", "auto-missing", "auto-late", "auto-badcore",
-    "auto-bad-format", "auto-oversized", "auto-mutate", "auto-disappear",
-    "auto-future", "auto-frame-outside-range"
+    "auto-wrong-root", "auto-missing", "auto-late", "auto-badcore", "auto-wrong-mount",
+    "auto-bad-bios", "auto-bad-hash", "auto-bad-module", "auto-bad-pid",
+    "auto-bad-ticks", "auto-bad-ticks-low", "auto-bad-ticks-high",
+    "auto-bad-ticks-long", "auto-bad-format", "auto-oversized", "auto-mutate",
+    "auto-disappear", "auto-future", "auto-frame-outside-range"
 }) do
   local lines, shots, _, exits = run(option)
   assert(#shots < 3, option .. ": unsafe auto capture was accepted")
@@ -347,9 +396,14 @@ for _, option in ipairs({
   assert(rejected, option .. ": fail-closed auto receipt error missing")
   assert(#exits == 1 and exits[1] == 1)
   if option == "auto-wrong-root" or option == "auto-missing"
-      or option == "auto-late" or option == "auto-badcore"
+      or option == "auto-late" or option == "auto-badcore" or option == "auto-wrong-mount"
+      or option == "auto-bad-bios" or option == "auto-bad-hash"
+      or option == "auto-bad-module" or option == "auto-bad-pid"
+      or option == "auto-bad-ticks" or option == "auto-bad-ticks-low"
+      or option == "auto-bad-ticks-high" or option == "auto-bad-ticks-long"
       or option == "auto-bad-format" or option == "auto-oversized"
-      or option == "auto-future" or option == "auto-frame-outside-range" then
+      or option == "auto-future"
+      or option == "auto-frame-outside-range" then
     assert(#shots == 0, option .. ": first PNG must be blocked")
   end
 end

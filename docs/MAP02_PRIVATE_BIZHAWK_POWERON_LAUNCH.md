@@ -81,9 +81,22 @@ EmuHawk. При несовпадении запуск блокируется, а
 сопоставимости BIOS, не передавайте параметр — итоговый отчёт
 явно сохраняет значение
 `candidate_bios_matched_bk2_metadata_at_checkpoints=false`.
-Флаг `actual_emuhawk_loaded_bios_authenticated` всегда
-`false`: данные о кандидате не доказывают, какую прошивку
-загрузил запущенный Octoshock.
+Флаг `actual_emuhawk_loaded_bios_authenticated` остаётся `false`:
+одна проверка кандидата не доказывает, какую прошивку загрузил Octoshock.
+В режиме автоматического свидетельства (External Tool) версия V4
+дополнительно читает `FirmwareManager.RecentlyServed` в текущем EmuHawk
+и требует, чтобы фактически обслуженный `PSX/U` SHA-1 совпал с
+`PSX_Firmware_U` исходной BK2. В локальное свидетельство записывается
+только булев маркер `bios=psx_u_firmware_hash_matches_movie_header`;
+сам отпечаток не выводится. Если запись FirmwareManager отсутствует,
+регион не совпадает или SHA-1 отличается, свидетельство не создаётся.
+Это более сильное runtime-свидетельство, но не криптографическая
+аутентификация текстового receipt; проверяйте привязку к PID/времени
+создания процесса и отдельно закреплённый хеш DLL инструмента.
+В ручном режиме без VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR свидетельство
+сохраняет bios=unverified: это полезно для диагностики, но не проходит
+автоматический одно- или двухзапусковый gate, где требуется фактическое
+совпадение PSX/U fingerprint с заголовком BK2.
 
 Этот параметр применим к `tools.map02_private_two_replay_runner`.
 Он **не передаётся как BIOS-переключатель самому EmuHawk**,
@@ -436,6 +449,10 @@ Lua-проверка останавливает захват ещё до пер�
 недоступность блокирует захват, а не подменяется успешным утверждением.
 Для ручного контроля посмотрите предпочтительное ядро PSX в меню
 конфигурации BizHawk и проверьте BIOS в `Config → Firmwares`.
+Для этой BK2 ожидается американский слот `PSX/U`; локально проверенный
+кандидат SCPH-7003 v3.0 совпадает с метаданными записи. Не считайте
+название файла доказательством: окончательный маркер должен прийти
+из `FirmwareManager.RecentlyServed` работающего EmuHawk.
 
 ### Два повтора: контроль лаг-кадров PSX (этап №496)
 
@@ -582,3 +599,16 @@ RU-образа и USA-прохождения. Настоящий EmuHawk/Octosh
 в реальный путь, и генератор отказывается создавать план внутри Git,
 в том числе когда исходный путь к папке был символической ссылкой.
 Тесты используют только вымышленные файлы и не содержат настоящего BK2.
+
+
+## Stage609 — live mount-state gate
+
+The V5 automatic witness now records whether the active Octoshock instance had exactly
+one disc listed, index 1 mounted, the tray closed, and a loaded disc basename matching
+the selected CUE basename. The launcher passes only the basename in the private child
+environment. A missing or mismatching mount state blocks the first PNG and the offline
+first-run and paired-run audits.
+
+This does not change the privacy boundary and does not authenticate disc bytes. Keep
+`disc=unverified` and `movie_sync=unverified` in all reports until separate evidence
+establishes stronger claims.

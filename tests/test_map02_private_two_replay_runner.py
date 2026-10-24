@@ -1003,7 +1003,7 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
 
     def test_launch_one_cli_never_emits_paths_or_pair_claims(self):
         data = {
-            "schema": "vh.map02.private-two-sequential-replays.v1",
+            "schema": "vh.map02.private-two-sequential-replays.v2",
             "emulator_processes_started": 1,
             "capture_attempts_audited": 1,
             "original_map02_scene_authenticated": False,
@@ -1159,7 +1159,8 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
 
 
     def _exercise_first_png_frame_boundary(
-            self, observed_frame, *, pinned=False, witness_hash=None):
+            self, observed_frame, *, pinned=False, witness_hash=None,
+            firmware_matches=True, disc_mount_matches=True):
         fake_windows = type(
             "FakeOs", (), {
                 "name": "nt",
@@ -1200,7 +1201,10 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
             return_value=(123, 456),
         ), patch(
             "tools.map02_private_core_witness_audit.read_witness_record",
-            return_value=(123, 456, observed_frame, reported_sha256),
+            return_value=(
+                123, 456, observed_frame, reported_sha256, "b" * 64, "c" * 64,
+                firmware_matches, disc_mount_matches,
+            ),
         ), patch(
             "tools.verify_map02_private_neutral_capture_chain.parse_plan",
             return_value=("fictional-plan", [
@@ -1229,9 +1233,26 @@ class PrivateTwoReplayRunnerTests(unittest.TestCase):
         report, process, audit, pair = self._exercise_first_png_frame_boundary(3001)
         self.assertIsInstance(report, dict)
         self.assertTrue(report["first_auto_core_frame_not_later_than_first_png"])
+        self.assertTrue(report["first_runtime_witness_reports_loaded_psx_u_bios_matches_bk2_header"])
         self.assertEqual(report["emulator_processes_started"], 1)
         process.assert_called_once()
         audit.assert_called_once()
+        pair.assert_not_called()
+
+    def test_auto_core_witness_without_bios_match_is_rejected(self):
+        result, process, audit, pair = self._exercise_first_png_frame_boundary(
+            3001, firmware_matches=False)
+        self.assertIsInstance(result, ValueError)
+        self.assertIn("does not confirm PSX/U firmware match", str(result))
+        process.assert_called_once()
+        pair.assert_not_called()
+
+    def test_auto_core_witness_without_mounted_disc_name_match_is_rejected(self):
+        result, process, audit, pair = self._exercise_first_png_frame_boundary(
+            3001, disc_mount_matches=False)
+        self.assertIsInstance(result, ValueError)
+        self.assertIn("does not confirm mounted-disc state and source CUE basename", str(result))
+        process.assert_called_once()
         pair.assert_not_called()
 
     def test_runtime_tool_hash_matches_installed_pin(self):

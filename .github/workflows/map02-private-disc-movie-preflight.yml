@@ -26,6 +26,10 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   disc-movie-preflight:
     name: Fictional CD sectors and BK2 metadata (${{ matrix.os }} Python ${{ matrix.python }})
@@ -91,7 +95,7 @@ jobs:
             -p 'test_map02_private_bin_digest_init.py' -v \
             2>&1 | tee /tmp/vh-map02-private-bin-bootstrap.log
           count=$(sed -nE 's/^Ran ([1-9][0-9]*) tests? in .*$/\1/p' /tmp/vh-map02-private-bin-bootstrap.log)
-          if [[ "$count" != "14" ]]; then
+          if [[ "$count" != "15" ]]; then
             echo 'unexpected fictional BIN bootstrap test count' >&2
             exit 1
           fi
@@ -108,7 +112,7 @@ jobs:
             -p 'test_map02_private_psx_firmware_probe.py' -v \
             2>&1 | tee /tmp/vh-map02-psx-firmware-probe.log
           count=$(sed -nE 's/^Ran ([1-9][0-9]*) tests? in .*$/\1/p' /tmp/vh-map02-psx-firmware-probe.log)
-          if [[ "$count" != "17" ]]; then
+          if [[ "$count" != "20" ]]; then
             echo 'unexpected fictional PSX firmware candidate test count' >&2
             exit 1
           fi
@@ -117,7 +121,7 @@ jobs:
           fi
           grep -qx 'OK' /tmp/vh-map02-psx-firmware-probe.log
           echo "VH_MAP02_PRIVATE_PSX_FIRMWARE_METADATA_PASS cases=$count actual_bios=0 original_bk2=0 emuhawk=0"
-      - name: Audit 27 fictional in-process PSX runtime/core/native-module witnesses
+      - name: Audit V5 fictional in-process PSX runtime/core/native-module witnesses
         shell: bash
         run: |
           set -euo pipefail
@@ -125,7 +129,7 @@ jobs:
             -p 'test_map02_private_core_witness_audit.py' -v \
             2>&1 | tee /tmp/vh-map02-runtime-core-witness.log
           count=$(sed -nE 's/^Ran ([1-9][0-9]*) tests? in .*$/\1/p' /tmp/vh-map02-runtime-core-witness.log)
-          if [[ "$count" != "27" ]]; then
+          if [[ "$count" != "31" ]]; then
             echo 'unexpected synthetic runtime core witness test count' >&2
             exit 1
           fi

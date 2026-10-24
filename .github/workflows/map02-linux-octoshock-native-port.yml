@@ -1,0 +1,168 @@
+name: MAP02 pinned Linux Octoshock native-port feasibility
+
+on:
+  pull_request:
+    paths:
+      - 'tools/map02_linux_octoshock/**'
+      - 'tools/map02_linux_octoshock/official_managed_binding_smoke.cs'
+      - 'tests/test_map02_public_ci_storage_policy.py'
+      - 'tests/test_map02_linux_octoshock_owner_stage.py'
+      - 'tests/test_map02_linux_octoshock_owner_runtime_verify.py'
+      - 'tests/test_map02_linux_octoshock_archive_readback.py'
+      - 'tests/test_map02_linux_octoshock_private_tar.py'
+      - 'tests/test_map02_linux_octoshock_private_drive.py'
+      - 'tests/test_map02_linux_octoshock_private_reaudit.py'
+      - 'tests/test_map02_linux_octoshock_owner_drive_session.py'
+      - 'tests/test_map02_linux_octoshock_owner_session_preflight.py'
+      - 'tests/test_map02_linux_octoshock_owner_archive_admission.py'
+      - 'tests/test_map02_linux_octoshock_owner_capture_backup_gate.py'
+      - 'tests/test_map02_linux_octoshock_owner_persistent_backup.py'
+      - 'tests/test_map02_linux_octoshock_owner_persistent_host.py'
+      - '.github/workflows/map02-linux-octoshock-native-port.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  pinned-source-linux-compile-spike:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out project tooling only
+        uses: actions/checkout@v4
+
+      - name: Enforce public CI storage policy
+        run: python3 -m unittest discover -s tests -p 'test_map02_public_ci_storage_policy.py' -v
+
+      - name: Test owner-local runtime staging safety contracts
+        run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_owner_stage.py' -v
+
+      - name: Test staged runtime integrity verifier against synthetic corruption
+        run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_owner_runtime_verify.py' -v
+
+      - name: Test private archive restore comparison using invented runtime bytes
+        run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_archive_readback.py' -v
+
+      - name: Test protected owner runtime tar pack and restore with fictional bytes
+        run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_private_tar.py' -v
+
+      - name: Test private Drive backend and downloaded-byte archive gate (mock transport only)
+        run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_private_drive.py' -v
+
+      - name: Test source-free repeat Drive byte readback using fictional remotes
+        run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_private_reaudit.py' -v
+
+      - name: Test full owner-only session orchestrator with fictional Drive and independent anchors
+        run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_owner_drive_session.py' -v
+
+      - name: Test owner-private read-only archive readiness with fictional Drive remotes
+        run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_owner_session_preflight.py' -v
+
+      - name: Test source-free private backup admission against fictional Drive
+        run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_owner_archive_admission.py' -v
+
+      - name: Test repeat owner-backup gate with fictional second cloud restore
+        run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_owner_capture_backup_gate.py' -v
+
+      - name: Test all-in-one owner persistent backup with fictional Drive only
+        run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_owner_persistent_backup.py' -v
+
+      - name: Test persistent owner host filesystem and CI safety with simulated mounts
+        run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_owner_persistent_host.py' -v
+
+      - name: Test POSIX compiler-sanity shim against synthetic upstream header
+        run: python3 tests/test_map02_linux_octoshock_compiler_sanity.py
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install native build and no-media runtime dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake git binutils python3 mono-complete curl file xvfb libopenal1 liblua5.4-0 lsb-release libgl1
+
+      - name: Build and stage the owner-local runtime with the pinned source builder
+        run: |
+          set -euo pipefail
+          python3 tools/map02_linux_octoshock/build_and_stage_owner.py \
+            --output-root "$RUNNER_TEMP/vh-map02-owner-runtime"
+
+      - name: Independently verify staged runtime files, private permissions and pins
+        run: python3 tools/map02_linux_octoshock/verify_owner_runtime.py "$RUNNER_TEMP/vh-map02-owner-runtime"
+
+      - name: Exercise external-manifest pin gate with CI-generated fictional trust anchor
+        run: |
+          set -euo pipefail
+          # CI tests mechanics only; this local pin is NOT a stored owner-trusted reference.
+          umask 077
+          ci_trust_dir="$RUNNER_TEMP/vh-map02-ci-trust"
+          mkdir -m 700 "$ci_trust_dir"
+          ci_manifest_pin="$ci_trust_dir/manifest.sha256"
+          sha256sum "$RUNNER_TEMP/vh-map02-owner-runtime/map02-owner-runtime-manifest.json" \
+            | cut -d ' ' -f1 > "$ci_manifest_pin"
+          python3 tools/map02_linux_octoshock/verify_owner_runtime.py \
+            "$RUNNER_TEMP/vh-map02-owner-runtime" \
+            --trusted-manifest-pin-file "$ci_manifest_pin" \
+            --require-trusted-pin
+
+      - name: Round-trip actual staged no-media Octoshock runtime using private tar
+        shell: bash
+        env:
+          VH_MAP02_STAGE536_RUNTIME: ${{ runner.temp }}/vh-map02-owner-runtime
+          VH_MAP02_STAGE536_PIN: ${{ runner.temp }}/vh-map02-ci-trust/manifest.sha256
+        run: |
+          set -euo pipefail
+          umask 077
+          archive_dir="$RUNNER_TEMP/vh-map02-stage536-private-archive"
+          readback_dir="$RUNNER_TEMP/vh-map02-stage536-private-readback"
+          extract_dir="$RUNNER_TEMP/vh-map02-stage536-private-restored-parent"
+          mkdir -m 700 "$archive_dir" "$readback_dir" "$extract_dir"
+          python3 -m tools.map02_linux_octoshock.private_runtime_tar pack \
+            "$VH_MAP02_STAGE536_RUNTIME" \
+            "$archive_dir/owner-runtime.tar" \
+            "$archive_dir/owner-runtime.tar.sha256" \
+            --trusted-manifest-pin-file "$VH_MAP02_STAGE536_PIN"
+          cp --preserve=mode "$archive_dir/owner-runtime.tar" "$readback_dir/owner-runtime.tar"
+          python3 -m tools.map02_linux_octoshock.private_runtime_tar restore \
+            "$VH_MAP02_STAGE536_RUNTIME" \
+            "$readback_dir/owner-runtime.tar" \
+            "$archive_dir/owner-runtime.tar.sha256" \
+            "$extract_dir/runtime" \
+            --trusted-manifest-pin-file "$VH_MAP02_STAGE536_PIN"
+          python3 tools/map02_linux_octoshock/verify_owner_runtime.py \
+            "$extract_dir/runtime" \
+            --trusted-manifest-pin-file "$VH_MAP02_STAGE536_PIN" \
+            --require-trusted-pin
+          cmp "$VH_MAP02_STAGE536_RUNTIME/map02-owner-runtime-manifest.json" \
+            "$extract_dir/runtime/map02-owner-runtime-manifest.json"
+          echo "VH_MAP02_STAGE536_NATIVE_RUNTIME_TAR_ROUNDTRIP_PASS actual_installed_files=1 original_disc=0 bios=0 bk2=0 drive_upload=0 trusted_owner_pin=0 capture_ready=0"
+
+      - name: Verify staged runtime manifest and no-media boundary
+        env:
+          VH_MAP02_OWNER_RUNTIME: ${{ runner.temp }}/vh-map02-owner-runtime
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ["VH_MAP02_OWNER_RUNTIME"]).resolve(strict=True)
+          manifest = json.loads((root / "map02-owner-runtime-manifest.json").read_text(encoding="utf-8"))
+          assert manifest["schema"] == "vh.map02.owner-local-runtime.v2"
+          assert manifest["game_media_used"] is False
+          assert manifest["bios_used"] is False
+          assert manifest["bk2_used"] is False
+          assert manifest["game_loaded"] is False
+          assert manifest["psx_capture_ready"] is False
+          assert (root / "dll/liboctoshock.dll.so").is_file()
+          assert (root / "ExternalTools/VhMap02CoreWitness.dll").is_file()
+          assert (root / "map02-owner-runtime-pins.env").is_file()
+          assert not (root / "vandalhearts.bk2").exists()
+          print("VH_MAP02_OWNER_RUNTIME_STAGED_NO_MEDIA_PASS native=1 witness_plugin=1 original_disc=0 bios=0 bk2=0 capture_ready=0")
+          PY

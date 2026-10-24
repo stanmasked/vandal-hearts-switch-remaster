@@ -40,8 +40,10 @@ def launch_bytes(pid=PID, ticks=TICKS):
             f"process_start_utc_ticks={ticks}\n").encode("ascii")
 
 
-def witness_bytes(pid=PID, ticks=TICKS, frame=1800):
-    return ("VH_MAP02_RUNTIME_CORE_WITNESS_V3\n"
+def witness_bytes(pid=PID, ticks=TICKS, frame=1800,
+                  bios="psx_u_firmware_hash_matches_movie_header",
+                  disc_mount="single_mounted_tray_closed_source_name_matches"):
+    return ("VH_MAP02_RUNTIME_CORE_WITNESS_V5\n"
             "system=PSX\nloaded_core=Octoshock\n"
             "core_source=IEmulator.Attributes.CoreName\n"
             "runtime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock\n"
@@ -50,8 +52,8 @@ def witness_bytes(pid=PID, ticks=TICKS, frame=1800):
             "native_core_module_sha256=" + "c" * 64 + "\n"
             "tool_assembly_sha256=" + "a" * 64 + "\n"
             f"process_id={pid}\nprocess_start_utc_ticks={ticks}\n"
-            f"frame_count={frame}\nbios=unverified\ndisc=unverified\n"
-            "movie_sync=unverified\n").encode("ascii")
+            f"frame_count={frame}\nbios={bios}\ndisc=unverified\n"
+            f"disc_mount={disc_mount}\nmovie_sync=unverified\n").encode("ascii")
 
 
 class OwnerFirstCaptureAuditTests(unittest.TestCase):
@@ -163,17 +165,19 @@ class OwnerFirstCaptureAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "native core module SHA256 pin is malformed"):
             self.review(expected_native_sha256="invalid")
 
-    def test_ntfs_fixture_uses_complete_v3_witness_schema(self):
+    def test_ntfs_fixture_uses_complete_v5_witness_schema(self):
         source = (Path(__file__).resolve().parents[1]
                   / "tools" / "map02_windows_first_capture_acl_ci_probe.ps1")
         script = source.read_text(encoding="utf-8")
         for expected in (
-            "VH_MAP02_RUNTIME_CORE_WITNESS_V3",
+            "VH_MAP02_RUNTIME_CORE_WITNESS_V5",
             "runtime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock",
             "core_assembly_sha256=$('b' * 64)",
             "native_core_module_name=octoshock.dll",
             "native_core_module_sha256=$('c' * 64)",
             "tool_assembly_sha256=$('a' * 64)",
+            "bios=psx_u_firmware_hash_matches_movie_header",
+            "disc_mount=single_mounted_tray_closed_source_name_matches",
         ):
             with self.subTest(expected=expected):
                 self.assertIn(expected, script)
@@ -203,6 +207,18 @@ class OwnerFirstCaptureAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "schema|LF"):
             self.review()
 
+    def test_automatic_witness_without_firmware_match_rejected(self):
+        (self.first / AUTO_WITNESS_NAME).write_bytes(
+            witness_bytes(bios="unverified"))
+        with self.assertRaisesRegex(ValueError, "does not confirm PSX/U firmware match"):
+            self.review()
+
+    def test_automatic_witness_without_mount_state_match_rejected(self):
+        (self.first / AUTO_WITNESS_NAME).write_bytes(
+            witness_bytes(disc_mount="unverified"))
+        with self.assertRaisesRegex(ValueError, "does not confirm mounted-disc state"):
+            self.review()
+
     def test_missing_auto_core_witness_rejected(self):
         (self.first / AUTO_WITNESS_NAME).unlink()
         with self.assertRaises((OSError, ValueError)):
@@ -210,6 +226,7 @@ class OwnerFirstCaptureAuditTests(unittest.TestCase):
 
     def test_manual_core_witness_allowed_only_with_manual_log_mode(self):
         manual_chain = dict(CHAIN, owner_log_reports_auto_core_witness_before_first_png=False)
+        self.fake.write_bytes(witness_bytes(bios="unverified"))
         result = self.review(manual=self.fake, chain=manual_chain)
         self.assertFalse(result["owner_log_reports_automatic_witness_before_first_png"])
         self.assertFalse(result["auto_core_frame_not_later_than_first_png"])
@@ -217,7 +234,7 @@ class OwnerFirstCaptureAuditTests(unittest.TestCase):
 
     def test_manual_witness_can_be_saved_after_first_png(self):
         manual_chain = dict(CHAIN, owner_log_reports_auto_core_witness_before_first_png=False)
-        self.fake.write_bytes(witness_bytes(frame=4000))
+        self.fake.write_bytes(witness_bytes(frame=4000, bios="unverified"))
         result = self.review(manual=self.fake, chain=manual_chain)
         self.assertTrue(result["private_octoshock_core_witness_matches_launched_pid_and_birth"])
 

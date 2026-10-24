@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from tools.map02_private_core_witness_audit import (
-    MAGIC, MAX_RECEIPT_BYTES, compare_witnesses, main, read_witness,
+    KEYS, MAGIC, MAX_RECEIPT_BYTES, compare_witnesses, main, read_witness,
     read_witness_record,
 )
 
@@ -26,8 +26,8 @@ def receipt(*, pid=3001, start=639000000000000001, frame=1666, **changes):
         native_core_module_sha256="c" * 64,
         tool_assembly_sha256="a" * 64,
         process_id=str(pid), process_start_utc_ticks=str(start),
-        frame_count=str(frame), bios="unverified",
-        disc="unverified", movie_sync="unverified",
+        frame_count=str(frame), bios="psx_u_firmware_hash_matches_movie_header",
+        disc="unverified", disc_mount="unverified", movie_sync="unverified",
     )
     values.update(changes)
     return "\n".join([MAGIC] + [
@@ -53,6 +53,9 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
         self.assertTrue(result["reported_emuhawk_process_identities_distinct"])
         self.assertTrue(result["both_witnesses_report_same_tool_assembly_file_hash"])
         self.assertFalse(result["tool_assembly_file_hash_independently_pinned"])
+        self.assertTrue(result["both_runtime_witnesses_report_psx_u_firmware_matches_bk2_header"])
+        self.assertFalse(result[
+            "both_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match"])
         for label in (
             "process_or_witness_origin_cryptographically_authenticated",
             "witnesses_tied_to_specific_bk2_or_png_capture",
@@ -103,6 +106,12 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported evidence"):
             compare_witnesses(self.first, self.second)
 
+    def test_linux_native_core_module_name_is_accepted(self):
+        self.first.write_text(receipt(
+            native_core_module_name="liboctoshock.dll.so"
+        ), encoding="ascii")
+        self.assertEqual(read_witness_record(self.first)[5], "c" * 64)
+
     def test_wrong_native_core_module_name_rejected(self):
         self.first.write_text(receipt(native_core_module_name="fake-octoshock.dll"),
                               encoding="ascii")
@@ -149,12 +158,38 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
                         read_witness(self.first)
 
     def test_bios_claim_is_rejected(self):
-        self.first.write_text(receipt(bios="verified"), encoding="ascii")
-        with self.assertRaisesRegex(ValueError, "unsupported evidence"):
-            compare_witnesses(self.first, self.second)
+        for claim in ("verified", "mismatch"):
+            with self.subTest(claim=claim):
+                self.first.write_text(receipt(bios=claim), encoding="ascii")
+                with self.assertRaisesRegex(ValueError, "unsupported evidence"):
+                    compare_witnesses(self.first, self.second)
+
+    def test_unverified_bios_receipt_does_not_claim_match(self):
+        self.first.write_text(receipt(bios="unverified"), encoding="ascii")
+        result = compare_witnesses(self.first, self.second)
+        self.assertFalse(
+            result["both_runtime_witnesses_report_psx_u_firmware_matches_bk2_header"]
+        )
+        self.assertFalse(result["actual_loaded_bios_authenticated"])
 
     def test_disc_claim_is_rejected(self):
         self.first.write_text(receipt(disc="verified"), encoding="ascii")
+        with self.assertRaisesRegex(ValueError, "unsupported evidence"):
+            compare_witnesses(self.first, self.second)
+
+    def test_mounted_disc_state_and_source_name_match_is_reported_without_authentication(self):
+        state = "single_mounted_tray_closed_source_name_matches"
+        self.first.write_text(receipt(disc_mount=state), encoding="ascii")
+        self.second.write_text(receipt(
+            pid=3002, start=639000000000000002, disc_mount=state,
+        ), encoding="ascii")
+        result = compare_witnesses(self.first, self.second)
+        self.assertTrue(result[
+            "both_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match"])
+        self.assertFalse(result["mounted_ps1_disc_authenticated"])
+
+    def test_unsupported_disc_mount_state_is_rejected(self):
+        self.first.write_text(receipt(disc_mount="verified"), encoding="ascii")
         with self.assertRaisesRegex(ValueError, "unsupported evidence"):
             compare_witnesses(self.first, self.second)
 
@@ -208,6 +243,9 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
             {"process_id": "0"},
             {"process_id": "+3001"},
             {"process_start_utc_ticks": "7"},
+            {"process_start_utc_ticks": "621355967999999999"},
+            {"process_start_utc_ticks": "725811840000000001"},
+            {"process_start_utc_ticks": "9999999999999999999"},
             {"frame_count": "-1"},
             {"frame_count": "2000001"},
             {"frame_count": "01666"},
@@ -218,7 +256,33 @@ class RuntimeCoreWitnessTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "numeric field"):
                     read_witness(self.first)
 
-    def test_oversized_witness_rejected(self):
+    def test_maximal_v5_receipt_fits_shared_cap_and_oversized_witness_is_rejected(self):
+        maximal = receipt(
+            pid=2147483647,
+            start=725811840000000000,
+            frame=2_000_000,
+            native_core_module_name="liboctoshock.dll.so",
+            disc_mount="single_mounted_tray_closed_source_name_matches",
+        )
+        encoded = maximal.encode("ascii")
+        self.assertEqual(len(encoded), 703)
+        self.assertLessEqual(len(encoded), MAX_RECEIPT_BYTES)
+        self.first.write_bytes(encoded)
+        record = read_witness_record(self.first)
+        self.assertEqual(record[:3], (2147483647, 725811840000000000, 2_000_000))
+        self.assertTrue(record[6])
+        self.assertTrue(record[7])
+
+        lua_path = (Path(__file__).resolve().parents[1]
+                    / "tools" / "map02_bizhawk_private_neutral_capture.lua")
+        lua = lua_path.read_text(encoding="utf-8")
+        self.assertIn(f"local body = file:read({MAX_RECEIPT_BYTES + 1})", lua)
+        self.assertIn(f"or #body > {MAX_RECEIPT_BYTES}", lua)
+        self.assertIn(
+            f'if #lines ~= {len(KEYS) + 1} or lines[1] ~= "{MAGIC}" then', lua)
+        self.assertIn('local min_process_start = "621355968000000000"', lua)
+        self.assertIn('local max_process_start = "725811840000000000"', lua)
+
         self.first.write_bytes(b"X" * (MAX_RECEIPT_BYTES + 1))
         with self.assertRaisesRegex(ValueError, "bounded size"):
             read_witness(self.first)

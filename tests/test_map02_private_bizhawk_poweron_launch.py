@@ -21,6 +21,40 @@ ROWS = [
 
 
 class PrivateBizHawkBootTests(unittest.TestCase):
+    def test_first_png_lua_gate_matches_actual_v5_external_tool_contract(self):
+        root = Path(__file__).resolve().parents[1]
+        lua = (root / "tools/map02_bizhawk_private_neutral_capture.lua").read_text(
+            encoding="utf-8")
+        external_tool = (root / "tools/map02_runtime_core_witness/CustomMainForm.cs").read_text(
+            encoding="utf-8")
+        audit = (root / "tools/map02_private_core_witness_audit.py").read_text(
+            encoding="utf-8")
+        self.assertIn('.. "/vh-map02-runtime-core-auto.txt"', lua)
+        self.assertIn('AutomaticWitnessFile = "vh-map02-runtime-core-auto.txt"', external_tool)
+        self.assertIn('VH_MAP02_RUNTIME_CORE_WITNESS_V5', lua)
+        self.assertIn('VH_MAP02_RUNTIME_CORE_WITNESS_V5', external_tool)
+        self.assertIn('MAGIC = "VH_MAP02_RUNTIME_CORE_WITNESS_V5"', audit)
+        self.assertNotIn('VH_MAP02_RUNTIME_CORE_WITNESS_V1', lua)
+        self.assertIn('local body = file:read(769)', lua)
+        self.assertIn('MAX_RECEIPT_BYTES = 768', audit)
+        for field in (
+            "core_assembly_sha256", "native_core_module_name",
+            "native_core_module_sha256", "tool_assembly_sha256",
+            "process_id", "process_start_utc_ticks", "frame_count",
+            "bios", "disc", "disc_mount", "movie_sync",
+        ):
+            self.assertIn(field, lua)
+            self.assertIn('"' + field + '"', audit)
+        self.assertIn("psx_u_firmware_hash_matches_movie_header", lua)
+        self.assertIn('disc=unverified\\n', external_tool)
+        self.assertIn('disc_mount=', external_tool)
+        self.assertIn("RequireMountedDiscMatchesSourceCueName", external_tool)
+        self.assertIn("ExpectedDiscCueNameEnvironment", external_tool)
+        self.assertIn("CurrentTrayOpen", external_tool)
+        self.assertIn("CurrentDiscIndexMounted", external_tool)
+        self.assertIn("single_mounted_tray_closed_source_name_matches", lua)
+        self.assertIn('movie_sync=unverified\\n', external_tool)
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -50,7 +84,12 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         output = kwargs.pop("output", self.output)
         lua = kwargs.pop("lua", self.lua)
         rows = kwargs.pop("source_rows", ROWS)
+        mono = kwargs.pop("mono_executable", None)
+        trusted = kwargs.pop("trusted_runtime_manifest_pin_file", None)
         with patch(
+            "tools.map02_private_bizhawk_poweron_launch.read_expected_psx_u_firmware_sha1",
+            return_value="f" * 40,
+        ), patch(
             "tools.map02_private_bizhawk_poweron_launch.plan_lines",
             return_value=rows,
         ) as source, patch(
@@ -65,6 +104,8 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                 before=kwargs.pop("before", 933949),
                 auto_core_witness_plugin=kwargs.pop("auto_core_witness_plugin", None),
                 core_witness_sha256=kwargs.pop("core_witness_sha256", None),
+                mono_executable=mono,
+                trusted_runtime_manifest_pin_file=trusted,
             )
         self.assertFalse(kwargs)
         self.assertEqual(source.call_args.kwargs["limit"], 1)
@@ -86,7 +127,40 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                          str((self.output / "vh_private_capture.log").resolve()))
         self.assertEqual(env["VH_PRIVATE_PROCESS_LOG"],
                          str((self.output / "vh_emuhawk_process.log").resolve()))
+        self.assertNotIn("VH_MAP02_CORE_EXPECTED_PSX_FIRMWARE_SHA1", env)
         self.assertNotIn("github", str(argv).lower())
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux Mono command only")
+    def test_linux_launch_uses_explicit_mono_without_shell(self):
+        mono = self.root / "mono"
+        mono.write_bytes(b"fictional mono launcher")
+        mono.chmod(0o700)
+        with patch(
+            "tools.map02_private_bizhawk_poweron_launch.require_linux_owner_runtime_pin",
+            return_value=True,
+        ) as trust_gate:
+            argv, env, count = self.call(
+                mono_executable=mono,
+                trusted_runtime_manifest_pin_file=self.root / "synthetic-trust-pin",
+            )
+        trust_gate.assert_called_once()
+        self.assertEqual(count, 3)
+        self.assertEqual(argv[:2], [str(mono.resolve()), str(self.program.resolve())])
+        self.assertEqual(argv[-1], str(self.disc.resolve()))
+        self.assertNotIn("sh", argv[0].lower())
+        self.assertEqual(env["VH_PRIVATE_EXPECTED_MOVIE"], str(self.bk2.resolve()))
+        expected_system_lib = (
+            Path("/usr/lib/x86_64-linux-gnu")
+            if Path("/usr/lib/x86_64-linux-gnu").is_dir()
+            else Path("/usr/lib64") if Path("/usr/lib64").is_dir()
+            else Path("/usr/lib")
+        )
+        self.assertEqual(env["LD_LIBRARY_PATH"], os.pathsep.join((
+            str(self.program.resolve().parent / "dll"),
+            str(self.program.resolve().parent), str(expected_system_lib),
+        )))
+        self.assertEqual(env["MONO_CRASH_NOFILE"], "1")
+        self.assertEqual(env["MONO_WINFORMS_XIM_STYLE"], "disabled")
 
     def test_refuses_cue_with_missing_track_file(self):
         self.track.unlink()
@@ -475,6 +549,9 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         self.assertEqual(argv[-1], str(self.disc.resolve()))
         self.assertEqual(env["VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR"],
                          str(self.output.resolve()))
+        self.assertEqual(env["VH_MAP02_CORE_EXPECTED_PSX_FIRMWARE_SHA1"], "f" * 40)
+        self.assertEqual(env["VH_MAP02_EXPECTED_DISC_CUE_NAME"], self.disc.name)
+        self.assertNotIn(str(self.disc.resolve()), env["VH_MAP02_EXPECTED_DISC_CUE_NAME"])
         self.assertNotIn("VH_MAP02_CORE_EXPECTED_DLL_SHA256", env)
         self.assertNotIn("VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256", env)
         self.assertNotIn("VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256", env)
@@ -486,12 +563,16 @@ class PrivateBizHawkBootTests(unittest.TestCase):
             "VH_MAP02_CORE_EXPECTED_DLL_SHA256": "b" * 64,
             "VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256": "c" * 64,
             "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256": "d" * 64,
+            "VH_MAP02_CORE_EXPECTED_PSX_FIRMWARE_SHA1": "e" * 40,
+            "VH_MAP02_EXPECTED_DISC_CUE_NAME": "ambient-private.cue",
         }):
             argv, env, count = self.call()
         self.assertNotIn("VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR", env)
         self.assertNotIn("VH_MAP02_CORE_EXPECTED_DLL_SHA256", env)
         self.assertNotIn("VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256", env)
         self.assertNotIn("VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256", env)
+        self.assertNotIn("VH_MAP02_CORE_EXPECTED_PSX_FIRMWARE_SHA1", env)
+        self.assertNotIn("VH_MAP02_EXPECTED_DISC_CUE_NAME", env)
         self.assertNotIn("--open-ext-tool-dll", " ".join(argv))
 
     def test_runtime_file_pins_are_passed_only_with_explicit_plugin_optin(self):
@@ -574,6 +655,9 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                 "--auto-core-witness-plugin", str(plugin),
                 "--record-process-identity"]
         with patch.object(sys, "argv", args), patch(
+            "tools.map02_private_bizhawk_poweron_launch.read_expected_psx_u_firmware_sha1",
+            return_value="f" * 40,
+        ), patch(
             "tools.map02_private_bizhawk_poweron_launch.plan_lines",
             return_value=ROWS,
         ), patch(
@@ -598,7 +682,7 @@ class PrivateBizHawkBootTests(unittest.TestCase):
         witness = self.output / "vh-map02-runtime-core-auto.txt"
         def core(when):
             return (
-                "VH_MAP02_RUNTIME_CORE_WITNESS_V3\nsystem=PSX\n"
+                "VH_MAP02_RUNTIME_CORE_WITNESS_V5\nsystem=PSX\n"
                 "loaded_core=Octoshock\n"
                 "core_source=IEmulator.Attributes.CoreName\n"
                 "runtime_core_type=BizHawk.Emulation.Cores.Sony.PSX.Octoshock\n"
@@ -607,13 +691,23 @@ class PrivateBizHawkBootTests(unittest.TestCase):
                 "native_core_module_sha256=" + "c" * 64 + "\n"
                 "tool_assembly_sha256=" + "a" * 64 + "\n"
                 f"process_id={pid}\nprocess_start_utc_ticks={when}\n"
-                "frame_count=1666\nbios=unverified\ndisc=unverified\n"
+                "frame_count=1666\nbios=psx_u_firmware_hash_matches_movie_header\ndisc=unverified\n"
+                "disc_mount=single_mounted_tray_closed_source_name_matches\n"
                 "movie_sync=unverified\n"
             ).encode("ascii")
         with self.assertRaises((OSError, ValueError)):
             verify_private_auto_witness(self.output)
         witness.write_bytes(core(birth + 1))
         with self.assertRaisesRegex(ValueError, "does not match"):
+            verify_private_auto_witness(self.output)
+        witness.write_bytes(core(birth).replace(
+            b"bios=psx_u_firmware_hash_matches_movie_header", b"bios=unverified"))
+        with self.assertRaisesRegex(ValueError, "does not confirm PSX/U firmware match"):
+            verify_private_auto_witness(self.output)
+        witness.write_bytes(core(birth).replace(
+            b"disc_mount=single_mounted_tray_closed_source_name_matches",
+            b"disc_mount=unverified"))
+        with self.assertRaisesRegex(ValueError, "does not confirm mounted-disc state"):
             verify_private_auto_witness(self.output)
         witness.write_bytes(core(birth))
         self.assertIsNone(verify_private_auto_witness(self.output))
@@ -690,6 +784,9 @@ class PrivateBizHawkBootTests(unittest.TestCase):
             "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256": "c" * 64,
         }), patch.object(sys, "argv", command), patch(
             "tools.map02_private_bizhawk_poweron_launch.os", fake_windows,
+        ), patch(
+            "tools.map02_private_bizhawk_poweron_launch.read_expected_psx_u_firmware_sha1",
+            return_value="f" * 40,
         ), patch(
             "tools.map02_private_bizhawk_poweron_launch.plan_lines",
             return_value=ROWS,

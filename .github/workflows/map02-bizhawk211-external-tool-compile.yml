@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/map02-bizhawk211-external-tool-compile.yml'
+      - 'tests/test_map02_public_ci_storage_policy.py'
       - 'tools/map02_runtime_core_witness/**'
       - 'tools/map02_owner_core_witness_install.ps1'
       - 'tools/map02_private_witness_plugin_digest.py'
@@ -22,6 +23,10 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   witness-real-assembly-compile:
     name: Compile core witness against verified official BizHawk 2.11 (Windows)
@@ -46,7 +51,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_map02_private_process_witness_binding.py' -v 2>&1 | Tee-Object -FilePath $log
           if ($LASTEXITCODE -ne 0) { throw 'owner process-witness binding tests failed' }
           $joined = Get-Content -LiteralPath $log -Raw
-          if ($joined -notmatch 'Ran 23 tests' -or
+          if ($joined -notmatch 'Ran 27 tests' -or
               $joined -notmatch 'test_real_windows_owned_child_creation_time.*ok') {
             throw 'Windows kernel process birth-time probe was not executed'
           }
@@ -112,10 +117,9 @@ jobs:
           try {
             Copy-Item -LiteralPath $builder -Destination $source -ErrorAction Stop
             $hash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
-            # This public experimental DLL contains NO owner PS1 or BK2 data.
-            # The log allows an owner to independently verify an extracted
-            # Actions artifact before installing it on a personal PC.
-            Write-Output "VH_MAP02_EXPERIMENTAL_DLL_PUBLIC_SHA256=$hash"
+            # The DLL exists only in this ephemeral runner. It is never published
+            # as an Actions artifact; the hash is used only for local installer checks.
+            Write-Output 'VH_MAP02_EXPERIMENTAL_DLL_TEMP_COPY_SHA256_CHECKED artifact_upload=0 media=0'
             $helper = 'tools/map02_owner_core_witness_install.ps1'
             $args = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
                       '-File', $helper,
@@ -203,7 +207,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw 'BizHawk 2.11 external tool loader smoke rejected compiled DLL'
           }
-          $expected = 'VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_PASS metadata=1 activation=1 missing_core_fail_closed=1 fake_octoshock_impersonation_rejected=1 fake_negative_gates=5 exact_runtime_type_gate=1 in_memory_fake_witness_schema=0 official_nullhawk_service_injected=1 official_nullhawk_snapshot_rejected=1 owner_only_ntfs_folder_accepted=1 publicly_readable_ntfs_folder_rejected=1 synthetic_optin_fake_core_rejected=1 emulator_process_started=0 original_disc=0 bios=0 bk2=0'
+          $expected = 'VH_MAP02_REAL_EXTERNAL_TOOL_LOADER_SMOKE_PASS metadata=1 activation=1 missing_core_fail_closed=1 fake_octoshock_impersonation_rejected=1 fake_negative_gates=5 exact_runtime_type_gate=1 in_memory_fake_witness_schema=0 official_disc_mount_metadata=1 synthetic_live_mount_gate=1 official_nullhawk_service_injected=1 official_nullhawk_snapshot_rejected=1 owner_only_ntfs_folder_accepted=1 publicly_readable_ntfs_folder_rejected=1 synthetic_optin_fake_core_rejected=1 emulator_process_started=0 original_disc=0 bios=0 bk2=0'
           if (@($output).Count -ne 1 -or [string]$output -cne $expected) {
             throw 'strict synthetic IEmulator loader smoke marker mismatch'
           }
@@ -223,10 +227,10 @@ jobs:
             throw 'no-media EmuHawk core witness UI observation not confirmed'
           }
           Write-Output $expected
-      - name: Publish only the compiled experimental witness DLL (no original assets)
-        uses: actions/upload-artifact@v4
-        with:
-          name: vh-map02-bizhawk211-experimental-core-witness
-          path: tools/map02_runtime_core_witness/bin/Release/net48/VhMap02CoreWitness.dll
-          if-no-files-found: error
-          retention-days: 14
+      - name: Enforce public CI storage boundary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m unittest discover -s tests -p 'test_map02_public_ci_storage_policy.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'public CI storage policy tests failed' }
+          Write-Output 'VH_MAP02_STORAGE_POLICY_PASS public_runtime_artifact_upload=0 original_media_upload=0'

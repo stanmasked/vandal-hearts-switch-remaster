@@ -15,6 +15,7 @@ import zipfile
 
 from tools.map02_private_psx_firmware_probe import (
     MAX_BIOS_FILE_BYTES, compare_firmware, main,
+    read_expected_psx_u_firmware_sha1,
 )
 
 PREFIX = "tools.map02_private_psx_firmware_probe."
@@ -62,6 +63,23 @@ class PrivatePsxFirmwareProbeTests(unittest.TestCase):
         self.assertNotIn(self.sha1, json.dumps(outcome))
         self.assertNotIn(str(self.root), json.dumps(outcome))
         self.assertNotIn(self.bios.name, json.dumps(outcome))
+
+    def test_expected_psx_u_firmware_reader_returns_only_the_exact_u_field(self):
+        self.make_movie("PSX_Firmware_U", self.sha1.upper())
+        self.assertEqual(read_expected_psx_u_firmware_sha1(self.movie), self.sha1)
+
+    def test_expected_psx_u_firmware_reader_rejects_other_region(self):
+        self.make_movie("PSX_Firmware_E", self.sha1)
+        with self.assertRaisesRegex(ValueError, "PSX_Firmware_U"):
+            read_expected_psx_u_firmware_sha1(self.movie)
+
+    def test_expected_psx_u_firmware_reader_rejects_multiple_firmware_fields(self):
+        raw = ("Platform PSX\nGameName Vandal Hearts (USA)\nCore Octoshock\n"
+               "PSX_Firmware_U " + self.sha1 + "\n"
+               "PSX_Firmware_E " + self.sha1 + "\n")
+        self.make_movie(raw_header=raw)
+        with self.assertRaisesRegex(ValueError, "PSX_Firmware_U"):
+            read_expected_psx_u_firmware_sha1(self.movie)
 
     def test_uppercase_sha1_is_accepted(self):
         self.make_movie("PSX_Firmware_BIOS", self.sha1.upper())

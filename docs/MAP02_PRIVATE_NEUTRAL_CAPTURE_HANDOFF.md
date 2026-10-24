@@ -124,3 +124,25 @@ Lua-зонд теперь проверяет папку `VH_PRIVATE_PNG_DIR` и 
 нестандартные Git-репозитории. Поэтому выбирайте отдельную приватную
 папку вне проекта. Финальный Python-аудитор дополнительно разрешает
 реальный путь папки и ищет `.git` у её родителей.
+
+
+## Runtime witness contract for the first PNG
+
+The C# External Tool writes the bounded VH_MAP02_RUNTIME_CORE_WITNESS_V4
+receipt. Before allowing any PNG, Lua validates that same V4 schema and
+filename, the PSX/Octoshock identity, the three SHA-256 field formats,
+the supported native-module name, process identity fields and frame count.
+Automatic mode also requires the plugin's PSX/U BIOS match against the
+opened BK2 header. The receipt deliberately leaves disc-content identity,
+actual input delivery and MAP02 scene identity unverified.
+
+The synthetic Lua mock now uses the same V4 field order as the real writer.
+Negative cases cover an unverified BIOS, malformed assembly hash, unsupported
+native-module name, invalid process ID, invalid process-start ticks, a
+future frame count, oversized and CRLF receipts, and receipt mutation or
+disappearance. The workflow validates a positive scenario count rather than
+hard-coding a specific number, so the matrix can grow without breaking CI.
+
+These checks prove only the local capture gate's fail-closed behavior with
+invented APIs. They are not evidence that an original disc was loaded or that
+the real game reached MAP02.

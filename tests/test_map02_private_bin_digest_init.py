@@ -40,6 +40,9 @@ class PrivateDigestBootstrapTests(unittest.TestCase):
             '  TRACK 01 MODE2/2352\n'
             '    INDEX 01 00:00:00\n', encoding="ascii",
         )
+        if os.name != "nt":
+            self.bin.chmod(0o600)
+            self.cue.chmod(0o600)
         self.reference = self.private / "owner-disc.sha256"
 
     def run_bootstrap(self, *, expected_profile=(True, True, True, None),
@@ -87,6 +90,17 @@ class PrivateDigestBootstrapTests(unittest.TestCase):
     def test_destination_must_be_absolute(self):
         with self.assertRaisesRegex(ValueError, "new absolute path"):
             create_private_reference(self.cue, Path("owner-disc.sha256"))
+
+    def test_rejects_source_media_permissions_that_are_not_private(self):
+        if os.name == "nt":
+            self.skipTest("POSIX mode-bit enforcement is not applicable")
+        self.bin.chmod(0o644)
+        try:
+            with self.assertRaisesRegex(ValueError, "mode 0600"):
+                self.run_bootstrap()
+        finally:
+            self.bin.chmod(0o600)
+        self.assertFalse(self.reference.exists())
 
     def test_rejects_public_or_wrong_owner_directory(self):
         if os.name == "nt":

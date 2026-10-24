@@ -1,7 +1,9 @@
 // Optional owner-local BizHawk 2.11 External Tool, NOT part of public CI.
 // Build inside a private BizHawk source checkout with the .csproj alongside.
 // This observes the *loaded* IEmulator, unlike client.getconfig() which
-// observes only PreferredCores; no BIOS, disc or movie is inspected.
+// observes only PreferredCores. It also compares BizHawk's actual served
+// PSX/U firmware hash with the current BK2 header, without recording the hash
+// or reading/recording disc bytes or movie input.
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -9,6 +11,11 @@ using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Security.Cryptography;
 using System.Text;
+using System.Globalization;
+using System.Collections.Generic;
+#if VH_MAP02_UNIX_BUILD
+using Mono.Unix.Native;
+#endif
 using System.Windows.Forms;
 using BizHawk.Client.Common;
 using BizHawk.Client.EmuHawk;
@@ -33,8 +40,15 @@ namespace VhMap02CoreWitness
         private const string ExpectedAssemblySha256Environment = "VH_MAP02_CORE_EXPECTED_DLL_SHA256";
         private const string ExpectedCoreAssemblySha256Environment = "VH_MAP02_CORE_EXPECTED_CORE_ASSEMBLY_SHA256";
         private const string ExpectedNativeModuleSha256Environment = "VH_MAP02_CORE_EXPECTED_NATIVE_MODULE_SHA256";
+        private const string ExpectedPsxFirmwareSha1Environment = "VH_MAP02_CORE_EXPECTED_PSX_FIRMWARE_SHA1";
+        private const string ExpectedDiscCueNameEnvironment = "VH_MAP02_EXPECTED_DISC_CUE_NAME";
         private const string ExpectedRuntimeCoreType = "BizHawk.Emulation.Cores.Sony.PSX.Octoshock";
-        private const string NativeCoreModuleName = "octoshock.dll";
+#if VH_MAP02_UNIX_BUILD
+        private static readonly string[] NativeCoreModuleNames =
+            { "liboctoshock.dll.so", "liboctoshock.so" };
+#else
+        private static readonly string[] NativeCoreModuleNames = { "octoshock.dll" };
+#endif
         protected override string WindowTitleStatic => "VH MAP02 PSX core witness";
 
         public CoreWitnessForm()
@@ -137,15 +151,24 @@ namespace VhMap02CoreWitness
                 // CreateNew prevents replacing stale/manual evidence.
                 using (var output = new FileStream(
                     target, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                using (var writer = new StreamWriter(output, new UTF8Encoding(false)))
                 {
-                    writer.Write(payload);
-                    writer.Flush();
-                    output.Flush(true);
+#if VH_MAP02_UNIX_BUILD
+                    if (Syscall.chmod(target, FilePermissions.S_IRUSR | FilePermissions.S_IWUSR) != 0)
+                        throw new InvalidOperationException();
+#endif
+                    using (var writer = new StreamWriter(output, new UTF8Encoding(false)))
+                    {
+                        writer.Write(payload);
+                        writer.Flush();
+                        output.Flush(true);
+                    }
                 }
-                _summary.Text = "PSX/Octoshock automatic private core-only witness saved."
+                _summary.Text = "PSX/Octoshock automatic private core witness saved."
                     + Environment.NewLine
-                    + "BIOS, disc, BK2 and MAP02 remain unverified.";
+                    + "PSX/U firmware hash matched the opened BK2 header."
+                    + Environment.NewLine
+                    + "Disc bytes, replay delivery and MAP02 remain unverified; "
+                    + "only tray state and source basename were checked.";
             }
             catch (Exception)
             {
@@ -169,6 +192,15 @@ namespace VhMap02CoreWitness
                 if (File.Exists(marker) || Directory.Exists(marker))
                     throw new InvalidOperationException();
             }
+#if VH_MAP02_UNIX_BUILD
+            // Linux x86_64 uses POSIX owner/mode checks. The Python launcher
+            // repeats these checks before creating output; the tool independently
+            // refuses group/world access and folders owned by another UID.
+            if (Syscall.stat(directory.FullName, out var unixStat) != 0
+                || unixStat.st_uid != Syscall.geteuid()
+                || (unixStat.st_mode & (FilePermissions.S_IRWXG | FilePermissions.S_IRWXO)) != 0)
+                throw new InvalidOperationException();
+#else
             // A Windows folder can be publicly readable despite chmod(0700)
             // semantics elsewhere. Check the effective NTFS DACL, including
             // inherited ALLOW ACEs. No ACL or SID is ever logged or exported.
@@ -198,16 +230,47 @@ namespace VhMap02CoreWitness
                 }
                 if (!writableByOwner) throw new InvalidOperationException();
             }
+#endif
         }
 
         private static string FindLoadedNativeCoreModulePath()
         {
+#if VH_MAP02_UNIX_BUILD
+            // Process.Modules is not consistently implemented by Mono on Unix.
+            // The kernel maps file is the authoritative list of this process's
+            // mapped shared objects. Reject deleted/missing or ambiguous modules.
+            var found = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var line in File.ReadLines("/proc/self/maps"))
+            {
+                var columns = line.Split(new[] { ' ' }, 6,
+                    StringSplitOptions.RemoveEmptyEntries);
+                if (columns.Length < 6) continue;
+                var mapped = DecodeProcMapsPath(columns[5]);
+                var deletedSuffix = " (deleted)";
+                if (mapped.EndsWith(deletedSuffix, StringComparison.Ordinal))
+                {
+                    var deletedName = Path.GetFileName(mapped.Substring(
+                        0, mapped.Length - deletedSuffix.Length));
+                    if (Array.IndexOf(NativeCoreModuleNames, deletedName) >= 0)
+                        throw new InvalidOperationException();
+                    continue;
+                }
+                if (Array.IndexOf(NativeCoreModuleNames, Path.GetFileName(mapped)) < 0)
+                    continue;
+                if (!Path.IsPathRooted(mapped) || !File.Exists(mapped))
+                    throw new InvalidOperationException();
+                found.Add(Path.GetFullPath(mapped));
+            }
+            if (found.Count != 1) throw new InvalidOperationException();
+            foreach (var path in found) return path;
+            throw new InvalidOperationException();
+#else
             string? found = null;
             using (var process = Process.GetCurrentProcess())
             {
                 foreach (ProcessModule module in process.Modules)
                 {
-                    if (!string.Equals(module.ModuleName, NativeCoreModuleName,
+                    if (!string.Equals(module.ModuleName, NativeCoreModuleNames[0],
                             StringComparison.OrdinalIgnoreCase))
                         continue;
                     if (!string.IsNullOrEmpty(found))
@@ -219,7 +282,30 @@ namespace VhMap02CoreWitness
                 || !File.Exists(found))
                 throw new InvalidOperationException();
             return found!;
+#endif
         }
+
+#if VH_MAP02_UNIX_BUILD
+        private static string DecodeProcMapsPath(string value)
+        {
+            var result = new StringBuilder(value.Length);
+            for (var i = 0; i < value.Length; i++)
+            {
+                if (value[i] == (char)92 && i + 3 < value.Length
+                    && value[i + 1] >= '0' && value[i + 1] <= '7'
+                    && value[i + 2] >= '0' && value[i + 2] <= '7'
+                    && value[i + 3] >= '0' && value[i + 3] <= '7')
+                {
+                    var code = (value[i + 1] - '0') * 64
+                        + (value[i + 2] - '0') * 8 + value[i + 3] - '0';
+                    result.Append((char)code);
+                    i += 3;
+                }
+                else result.Append(value[i]);
+            }
+            return result.ToString();
+        }
+#endif
 
         private static string FileSha256(string location)
         {
@@ -260,7 +346,103 @@ namespace VhMap02CoreWitness
             return true;
         }
 
-        private static string Snapshot(IEmulator actualCore)
+        private static bool IsSha1Hex(string? value)
+        {
+            if (value == null || value.Length != 40) return false;
+            foreach (var c in value)
+                if (!((c >= '0' && c <= '9')
+                    || (c >= 'a' && c <= 'f')
+                    || (c >= 'A' && c <= 'F'))) return false;
+            return true;
+        }
+
+        private bool RequireLoadedPsxUFirmwareMatchesMovieHeader()
+        {
+            // Manual receipts remain explicitly unverified. Only the owner-local
+            // launcher opts into the automatic path and supplies a BK2-derived
+            // PSX/U fingerprint through this process's private environment.
+            var automatic = !string.IsNullOrEmpty(
+                Environment.GetEnvironmentVariable(AutomaticWitnessEnvironment));
+            if (!automatic) return false;
+            var expected = Environment.GetEnvironmentVariable(ExpectedPsxFirmwareSha1Environment);
+            if (!IsSha1Hex(expected)) throw new InvalidOperationException();
+
+            // MainForm's firmware manager records the resolved firmware ID,
+            // SHA-1 and size when CoreFileProvider serves the bytes to a core.
+            // BizHawk clears RecentlyServed immediately before loading a ROM,
+            // so this list describes requests from the current core load.
+            // Require PSX/U to match the source BK2 field; never emit the digest.
+            var firmwareMainForm = MainForm as IMainFormForRetroAchievements;
+            if (firmwareMainForm == null || firmwareMainForm.FirmwareManager == null)
+                throw new InvalidOperationException();
+
+            var matchedRequests = 0;
+            foreach (var served in firmwareMainForm.FirmwareManager.RecentlyServed)
+            {
+                if (!string.Equals(served.ID.System, "PSX", StringComparison.Ordinal)
+                    || !string.Equals(served.ID.Firmware, "U", StringComparison.Ordinal))
+                    continue;
+                if (!IsSha1Hex(served.Hash)
+                    || !string.Equals(served.Hash, expected, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException();
+                matchedRequests++;
+            }
+            if (matchedRequests == 0) throw new InvalidOperationException();
+            return true;
+        }
+
+        private bool RequireMountedDiscMatchesSourceCueName(IEmulator actualCore)
+        {
+            // Only the explicitly opted-in owner launcher supplies this value.
+            // It is a basename, not a path, and is never written into the receipt.
+            if (string.IsNullOrEmpty(
+                    Environment.GetEnvironmentVariable(AutomaticWitnessEnvironment)))
+                return false;
+
+            var expectedName = Environment.GetEnvironmentVariable(
+                ExpectedDiscCueNameEnvironment);
+            if (string.IsNullOrEmpty(expectedName) || expectedName == "."
+                || expectedName == ".."
+                || expectedName.IndexOfAny(new[] { '/', '\\' }) >= 0
+                || !string.Equals(Path.GetFileName(expectedName), expectedName,
+                    StringComparison.Ordinal))
+                throw new InvalidOperationException();
+
+            var runtimeType = actualCore.GetType();
+            var trayProperty = runtimeType.GetProperty("CurrentTrayOpen");
+            var mountedIndexProperty = runtimeType.GetProperty("CurrentDiscIndexMounted");
+            var discsField = runtimeType.GetField("Discs");
+            if (trayProperty == null || mountedIndexProperty == null || discsField == null)
+                throw new InvalidOperationException();
+
+            var trayValue = trayProperty.GetValue(actualCore, null);
+            var mountedIndexValue = mountedIndexProperty.GetValue(actualCore, null);
+            if (!(trayValue is bool) || (bool)trayValue
+                || !(mountedIndexValue is int) || (int)mountedIndexValue != 1)
+                throw new InvalidOperationException();
+
+            var discs = discsField.GetValue(actualCore) as System.Collections.ICollection;
+            if (discs == null || discs.Count != 1)
+                throw new InvalidOperationException();
+            var iterator = discs.GetEnumerator();
+            if (!iterator.MoveNext() || iterator.Current == null)
+                throw new InvalidOperationException();
+            var discObject = iterator.Current;
+            if (iterator.MoveNext())
+                throw new InvalidOperationException();
+            var nameField = discObject.GetType().GetField("Name");
+            var loadedName = nameField == null ? null : nameField.GetValue(discObject) as string;
+            var comparison = Environment.OSVersion.Platform == PlatformID.Win32NT
+                ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            if (!string.Equals(loadedName, expectedName, comparison))
+                throw new InvalidOperationException();
+
+            // This checks live mount/tray state and the source basename only.
+            // It does NOT authenticate full disc bytes or the original MAP02 scene.
+            return true;
+        }
+
+        private string Snapshot(IEmulator actualCore)
         {
             // A recorded BK2 Core header or configured preferred core is NOT
             // accepted as the identity: sample the currently injected core.
@@ -275,8 +457,14 @@ namespace VhMap02CoreWitness
                     "BizHawk.Emulation.Cores", StringComparison.Ordinal))
                 throw new InvalidOperationException();
 
+            var firmwareMatchesMovieHeader = RequireLoadedPsxUFirmwareMatchesMovieHeader();
+            var mountedDiscMatchesSourceName =
+                RequireMountedDiscMatchesSourceCueName(actualCore);
+
             var coreAssemblySha256 = FileSha256(runtimeType.Assembly.Location);
-            var nativeModuleSha256 = FileSha256(FindLoadedNativeCoreModulePath());
+            var nativeModulePath = FindLoadedNativeCoreModulePath();
+            var nativeModuleName = Path.GetFileName(nativeModulePath);
+            var nativeModuleSha256 = FileSha256(nativeModulePath);
             var executingAssemblySha256 = ExecutingAssemblyFileSha256();
 
             // Pins are optional, independently supplied local values. If set,
@@ -291,25 +479,77 @@ namespace VhMap02CoreWitness
 
             using (var process = Process.GetCurrentProcess())
             {
+#if VH_MAP02_UNIX_BUILD
+                var start = LinuxProcessStartUtcTicks(process.Id);
+#else
                 var start = process.StartTime.ToUniversalTime().Ticks;
+#endif
                 if (process.Id <= 0 || start <= 0) throw new InvalidOperationException();
-                return "VH_MAP02_RUNTIME_CORE_WITNESS_V3\n"
+                return "VH_MAP02_RUNTIME_CORE_WITNESS_V5\n"
                     + "system=PSX\n"
                     + "loaded_core=Octoshock\n"
                     + "core_source=IEmulator.Attributes.CoreName\n"
                     + "runtime_core_type=" + ExpectedRuntimeCoreType + "\n"
                     + "core_assembly_sha256=" + coreAssemblySha256 + "\n"
-                    + "native_core_module_name=" + NativeCoreModuleName + "\n"
+                    + "native_core_module_name=" + nativeModuleName + "\n"
                     + "native_core_module_sha256=" + nativeModuleSha256 + "\n"
                     + "tool_assembly_sha256=" + executingAssemblySha256 + "\n"
                     + "process_id=" + process.Id + "\n"
                     + "process_start_utc_ticks=" + start + "\n"
                     + "frame_count=" + actualCore.Frame + "\n"
-                    + "bios=unverified\n"
+                    + "bios=" + (firmwareMatchesMovieHeader
+                        ? "psx_u_firmware_hash_matches_movie_header" : "unverified") + "\n"
                     + "disc=unverified\n"
+                    + "disc_mount=" + (mountedDiscMatchesSourceName
+                        ? "single_mounted_tray_closed_source_name_matches" : "unverified") + "\n"
                     + "movie_sync=unverified\n";
             }
         }
+
+#if VH_MAP02_UNIX_BUILD
+        [System.Runtime.InteropServices.DllImport("libc", EntryPoint = "sysconf", SetLastError = true)]
+        private static extern long LinuxSysconf(int name);
+
+        private static long LinuxProcessStartUtcTicks(int pid)
+        {
+            var stat = File.ReadAllText("/proc/self/stat");
+            var close = stat.LastIndexOf(')');
+            if (close < 0) throw new InvalidOperationException();
+            var fields = stat.Substring(close + 1).Trim().Split(
+                new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (fields.Length <= 19) throw new InvalidOperationException();
+            var pidText = stat.Substring(0, stat.IndexOf(' '));
+            if (!int.TryParse(pidText, NumberStyles.None,
+                    CultureInfo.InvariantCulture, out var observedPid)
+                || observedPid != pid) throw new InvalidOperationException();
+            if (!ulong.TryParse(fields[19], NumberStyles.None,
+                    CultureInfo.InvariantCulture, out var startClockTicks))
+                throw new InvalidOperationException();
+            ulong bootTime = 0;
+            var foundBootTime = false;
+            foreach (var line in File.ReadLines("/proc/stat"))
+            {
+                if (!line.StartsWith("btime ", StringComparison.Ordinal)) continue;
+                var parts = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length != 2 || !ulong.TryParse(parts[1], NumberStyles.None,
+                        CultureInfo.InvariantCulture, out bootTime))
+                    throw new InvalidOperationException();
+                foundBootTime = true;
+                break;
+            }
+            var hz = LinuxSysconf(2); // POSIX _SC_CLK_TCK on Linux.
+            if (!foundBootTime || hz <= 0) throw new InvalidOperationException();
+            var rate = checked((ulong)hz);
+            // /proc/stat btime is UNIX seconds; witness V4 uses .NET UTC
+            // ticks since 0001-01-01 (the 1970 offset is mandatory).
+            var start = checked(621355968000000000UL
+                + (checked(checked(bootTime * rate + startClockTicks)
+                    * 10000000UL) / rate));
+            if (start < 621355968000000000UL || start > 725811840000000000UL)
+                throw new InvalidOperationException();
+            return checked((long)start);
+        }
+#endif
 
         private void SaveWitness(object sender, EventArgs args)
         {
@@ -330,12 +570,18 @@ namespace VhMap02CoreWitness
                     // Exclusive creation; do not overwrite or append to media.
                     using (var output = new FileStream(
                         target, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                    using (var writer = new StreamWriter(
-                        output, new UTF8Encoding(false)))
                     {
-                        writer.Write(payload);
-                        writer.Flush();
-                        output.Flush(true);
+#if VH_MAP02_UNIX_BUILD
+                        if (Syscall.chmod(target, FilePermissions.S_IRUSR | FilePermissions.S_IWUSR) != 0)
+                            throw new InvalidOperationException();
+#endif
+                        using (var writer = new StreamWriter(
+                            output, new UTF8Encoding(false)))
+                        {
+                            writer.Write(payload);
+                            writer.Flush();
+                            output.Flush(true);
+                        }
                     }
                     MessageBox.Show(this,
                         "A core-only witness was written privately. "

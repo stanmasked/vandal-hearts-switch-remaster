@@ -8,6 +8,7 @@ actual independent cold boots nor MAP02 identity is authenticated here.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -15,13 +16,14 @@ from pathlib import Path
 import stat
 import subprocess
 import sys
+from typing import Callable
 
 from tools.map02_private_bk2_capture_plan import plan_lines, write_private_plan
 from tools.map02_private_bizhawk_poweron_launch import (
     SCRIPT, DEFAULT_EMULATOR_TIMEOUT_SECONDS,
     MIN_EMULATOR_TIMEOUT_SECONDS, MAX_EMULATOR_TIMEOUT_SECONDS,
     AUTO_WITNESS_NAME, require_matching_core_plugin,
-    require_runtime_module_pins,
+    require_runtime_module_pins, require_linux_owner_runtime_pin,
 )
 from tools.map02_private_disc_movie_preflight import (
     _assert_stable, _identity, _open_stable, _parse_cue, _read_at,
@@ -37,11 +39,16 @@ from tools.map02_windows_private_output_acl import require_windows_private_outpu
 from tools.map02_private_witness_plugin_digest import require_pinned_core_witness_dll
 from tools.map02_private_two_capture_audit import _private_root, audit_pair
 from tools.verify_map02_private_neutral_capture_chain import verify
+from tools.map02_linux_octoshock.owner_persistent_host import (
+    MINIMUM_CAPTURE_BYTES, capture_guard_directories,
+    verify_and_snapshot_persistent_host, require_unchanged_persistent_host,
+)
 
 
-SCHEMA = "vh.map02.private-two-sequential-replays.v1"
+SCHEMA = "vh.map02.private-two-sequential-replays.v2"
 PLAN_NAME = "vh-map02-review-plan.txt"
 RUN_NAMES = ("vh-map02-cold-01", "vh-map02-cold-02")
+CAPTURE_LOCK_NAME = ".vh-map02-capture.lock"
 MAX_PRIVATE_MOVIE_BYTES = 8 * 1024 * 1024
 MOVIE_DIGEST_BLOCK_BYTES = 1024 * 1024
 # Only these source sectors are pinned automatically. A full-BIN private
@@ -177,6 +184,72 @@ def _require_firmware_candidate_matches(
         raise ValueError("private PSX firmware metadata absent, ambiguous or candidate mismatch")
 
 
+@contextmanager
+def _exclusive_capture_lock(workspace: Path):
+    """Serialize real capture coordinators sharing one owner-private workspace.
+
+    A stale lock is intentionally not auto-cleared after a crash: inspect it
+    manually rather than risk overlapping two cold-boot capture sessions.
+    This is a cooperative concurrency guard, not a lock against a hostile
+    process running as the same user.
+    """
+    lock_path = workspace / CAPTURE_LOCK_NAME
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(lock_path, flags, 0o600)
+    except FileExistsError:
+        raise ValueError(
+            "private capture workspace is already locked; inspect stale lock manually"
+        ) from None
+    except OSError:
+        raise ValueError("private capture lock could not be created safely") from None
+
+    lock_identity = None
+
+    def check_lock() -> None:
+        if lock_identity is None:
+            raise ValueError("private capture lock identity was not established")
+        try:
+            opened = os.fstat(fd)
+            current = lock_path.lstat()
+        except OSError:
+            raise ValueError("private capture lock disappeared during execution") from None
+        if (not stat.S_ISREG(opened.st_mode)
+                or not stat.S_ISREG(current.st_mode)
+                or opened.st_nlink != 1 or current.st_nlink != 1
+                or (opened.st_dev, opened.st_ino) != lock_identity
+                or (current.st_dev, current.st_ino) != lock_identity):
+            raise ValueError("private capture lock changed; refusing to continue")
+        if os.name != "nt" and (
+                opened.st_uid != os.geteuid()
+                or current.st_uid != os.geteuid()
+                or stat.S_IMODE(opened.st_mode) != 0o600
+                or stat.S_IMODE(current.st_mode) != 0o600):
+            raise ValueError("private capture lock permissions changed")
+
+    try:
+        opened = os.fstat(fd)
+        lock_identity = (opened.st_dev, opened.st_ino)
+        if os.name != "nt":
+            os.fchmod(fd, 0o600)
+        check_lock()
+        payload = ("VH_MAP02_CAPTURE_LOCK_V1 pid=%d\\n" % os.getpid()).encode("ascii")
+        if os.write(fd, payload) != len(payload):
+            raise OSError("short private capture lock write")
+        os.fsync(fd)
+        check_lock()
+        yield check_lock
+    finally:
+        try:
+            if lock_identity is not None:
+                check_lock()
+                lock_path.unlink()
+        finally:
+            os.close(fd)
+
+
 def _no_existing_outputs(workspace: Path) -> None:
     for name in (PLAN_NAME, *RUN_NAMES):
         candidate = workspace / name
@@ -196,17 +269,20 @@ def _capture_dir(path: Path) -> None:
     require_windows_private_output(path)
 
 
-def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
-                  private_workspace: Path, *,
-                  expected_digest_file: Path | None = None,
-                  private_psx_bios_candidate: Path | None = None,
-                  record_windows_process_identity: bool = False,
-                  auto_core_witness_plugin: Path | None = None,
-                  core_witness_sha256: str | None = None,
-                  max_windows: int = 4,
-                  emulator_timeout_seconds: int | None = None,
-                  run_count: int = 2,
-                  start: bool = False) -> dict:
+def _capture_twice_impl(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
+                        private_workspace: Path, *,
+                        expected_digest_file: Path | None = None,
+                        private_psx_bios_candidate: Path | None = None,
+                        record_windows_process_identity: bool = False,
+                        auto_core_witness_plugin: Path | None = None,
+                        core_witness_sha256: str | None = None,
+                        max_windows: int = 4,
+                        emulator_timeout_seconds: int | None = None,
+                        run_count: int = 2,
+                        start: bool = False,
+                        mono_executable: Path | None = None,
+                        trusted_runtime_manifest_pin_file: Path | None = None,
+                        _capture_lock_guard: Callable[[], None] | None = None) -> dict:
     """Require explicit opt-in; run separate fresh emulator subprocesses.
 
     Output remains local. The capture chain and PNG files are independently
@@ -215,7 +291,12 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     where it can, and never asserts original MAP02 authenticity.
     """
     workspace = _private_root(private_workspace)
+    def recheck_capture_lock() -> None:
+        if _capture_lock_guard is not None:
+            _capture_lock_guard()
+    recheck_capture_lock()
     _no_existing_outputs(workspace)
+    recheck_capture_lock()
     if type(max_windows) is not int or not 1 <= max_windows <= 10:
         raise ValueError("private capture window count must be 1..10")
     if type(run_count) is not int or run_count not in (1, 2):
@@ -228,10 +309,18 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         raise ValueError("owner private automatic core witness requires process identity recording")
     if core_witness_sha256 is not None and auto_core_witness_plugin is None:
         raise ValueError("private plugin hash requires the automatic core witness DLL")
-    if auto_core_witness_plugin is not None and start and os.name != "nt":
-        raise ValueError("owner private automatic core witness requires Windows")
-    if record_windows_process_identity and start and os.name != "nt":
-        raise ValueError("private process identity capture requires Windows")
+    linux_runtime = sys.platform.startswith("linux") and mono_executable is not None
+    if mono_executable is not None:
+        mono = Path(mono_executable)
+        if not sys.platform.startswith("linux") or not mono.is_absolute():
+            raise ValueError("Linux Mono executable requires an absolute path")
+        mono = mono.resolve(strict=True)
+        if not mono.is_file() or mono.is_symlink() or not os.access(mono, os.X_OK):
+            raise ValueError("resolved Linux Mono executable must be a regular executable file")
+    if auto_core_witness_plugin is not None and start and os.name != "nt" and not linux_runtime:
+        raise ValueError("owner automatic core witness requires Windows or Linux with explicit Mono")
+    if record_windows_process_identity and start and os.name != "nt" and not linux_runtime:
+        raise ValueError("private process identity requires Windows or Linux with explicit Mono")
     if emulator_timeout_seconds is not None and (
             type(emulator_timeout_seconds) is not int or
             not MIN_EMULATOR_TIMEOUT_SECONDS <= emulator_timeout_seconds
@@ -248,6 +337,34 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         # Fail before creating a plan or launching EmuHawk unless the same
         # independently trusted build supplies both runtime module pins.
         require_runtime_module_pins(required=auto_core_witness_plugin is not None)
+
+    # Fail before reading the owner's disc or movie.
+    require_linux_owner_runtime_pin(
+        private_emuhawk, mono_executable, trusted_runtime_manifest_pin_file
+    )
+    recheck_capture_lock()
+    host_guarded_paths = None
+    host_identity = None
+    if linux_runtime and start:
+        # A real Linux capture must run on persistent owner-only local storage,
+        # never GitHub CI, tmpfs/overlay, a cloud mount, or the repository.
+        host_guarded_paths = capture_guard_directories(
+            Path(private_emuhawk).parent, workspace, private_disc, private_bk2,
+            trusted_runtime_manifest_pin_file,
+            private_full_bin_sha256_file=expected_digest_file,
+            private_psx_bios_candidate=private_psx_bios_candidate,
+            auto_core_witness_plugin=auto_core_witness_plugin,
+        )
+        host_identity = verify_and_snapshot_persistent_host(
+            host_guarded_paths, minimum_free_bytes=MINIMUM_CAPTURE_BYTES,
+        )
+
+    def recheck_capture_host() -> None:
+        if host_guarded_paths is not None:
+            require_unchanged_persistent_host(
+                host_guarded_paths, host_identity,
+                minimum_free_bytes=MINIMUM_CAPTURE_BYTES,
+            )
 
     # Pin the BK2 bytes before any preflight, capture plan, emulator
     # process or independent audit. Merely re-parsing a changed archive later
@@ -270,6 +387,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     _require_disc_unchanged(private_disc, disc_identity)
     _require_digest_reference_unchanged(expected_digest_file, digest)
     _require_firmware_candidate_matches(private_bk2, private_psx_bios_candidate)
+    recheck_capture_host()
     if not start:
         candidate = plan_lines(private_bk2, limit=max_windows)
         if len(candidate) < 6 or (len(candidate) - 3) % 3:
@@ -288,6 +406,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             "full_bin_reference_stable_during_preflight": digest is not None,
             "candidate_bios_matches_bk2_psx_firmware_metadata":
                 private_psx_bios_candidate is not None,
+            "runtime_witness_reports_loaded_psx_u_bios_matches_bk2_header": False,
             "actual_emuhawk_loaded_bios_authenticated": False,
             "emulator_timeout_seconds": (
                 emulator_timeout_seconds
@@ -306,10 +425,12 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             "original_map02_scene_authenticated": False,
         }
 
+    recheck_capture_lock()
     plan = workspace / PLAN_NAME
     count = write_private_plan(
         private_bk2, plan, limit=max_windows,
     )
+    recheck_capture_lock()
     if count < 3 or count % 3:
         raise ValueError("private capture plan contains invalid number of frames")
     _require_movie_unchanged(private_bk2, movie_identity)
@@ -317,6 +438,11 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     _require_digest_reference_unchanged(expected_digest_file, digest)
 
     for name in RUN_NAMES[:run_count]:
+        recheck_capture_lock()
+        recheck_capture_host()
+        require_linux_owner_runtime_pin(
+            private_emuhawk, mono_executable, trusted_runtime_manifest_pin_file
+        )
         if core_witness_sha256 is not None:
             require_pinned_core_witness_dll(auto_core_witness_plugin, core_witness_sha256)
         _require_movie_unchanged(private_bk2, movie_identity)
@@ -340,6 +466,10 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             argv += ["--auto-core-witness-plugin", str(auto_core_witness_plugin)]
         if core_witness_sha256 is not None:
             argv += ["--private-core-witness-sha256", core_witness_sha256]
+        if mono_executable is not None:
+            argv += ["--mono-executable", str(Path(mono_executable).resolve(strict=True))]
+            argv += ["--trusted-runtime-manifest-pin-file",
+                     str(trusted_runtime_manifest_pin_file)]
         argv.append("--launch")
         # The child wrapper redirects EmuHawk stdout/stderr (which contain
         # absolute private paths) into files in the private capture folder.
@@ -348,8 +478,13 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             argv, check=False, shell=False,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
+        recheck_capture_lock()
+        recheck_capture_host()
         if core_witness_sha256 is not None:
             require_pinned_core_witness_dll(auto_core_witness_plugin, core_witness_sha256)
+        require_linux_owner_runtime_pin(
+            private_emuhawk, mono_executable, trusted_runtime_manifest_pin_file
+        )
         _require_movie_unchanged(private_bk2, movie_identity)
         _require_disc_unchanged(private_disc, disc_identity)
         _require_digest_reference_unchanged(expected_digest_file, digest)
@@ -363,7 +498,9 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             raise ValueError("one private emulator capture process failed")
         # Reject an emulator that returned zero without the exact expected
         # Lua markers and structurally intact PNGs before starting the next.
+        recheck_capture_lock()
         chain = verify(private_bk2, plan, output / "vh_private_capture.log", output)
+        recheck_capture_lock()
         if auto_core_witness_plugin is not None:
             if chain.get("owner_log_reports_auto_core_witness_before_first_png") is not True:
                 raise ValueError("private auto core witness did not precede first PNG")
@@ -377,6 +514,11 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             observed = read_witness_record(output / AUTO_WITNESS_NAME)
             if started != observed[:2]:
                 raise ValueError("owner automatic core witness differs from captured process")
+            if observed[6] is not True:
+                raise ValueError("owner automatic core witness does not confirm PSX/U firmware match")
+            if observed[7] is not True:
+                raise ValueError(
+                    "owner automatic core witness does not confirm mounted-disc state and source CUE basename")
             if (core_witness_sha256 is not None
                     and observed[3] != core_witness_sha256.lower()):
                 raise ValueError(
@@ -390,13 +532,19 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         _require_digest_reference_unchanged(expected_digest_file, digest)
         if core_witness_sha256 is not None:
             require_pinned_core_witness_dll(auto_core_witness_plugin, core_witness_sha256)
+        recheck_capture_host()
 
     if run_count == 1:
+        recheck_capture_lock()
+        require_linux_owner_runtime_pin(
+            private_emuhawk, mono_executable, trusted_runtime_manifest_pin_file
+        )
         # This is owner-private first-run evidence only, never evidence of
         # a second emulator process, repeatability, or scene identity.
         _require_full_bin_unchanged(private_disc, digest)
         _require_digest_reference_unchanged(expected_digest_file, digest)
         _require_firmware_candidate_matches(private_bk2, private_psx_bios_candidate)
+        recheck_capture_host()
         return {
             "schema": SCHEMA,
             "explicit_launch_requested": True,
@@ -412,6 +560,10 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
                 auto_core_witness_plugin is not None and core_witness_sha256 is not None,
             "first_auto_core_witness_bound_to_launched_process":
                 auto_core_witness_plugin is not None,
+            "first_runtime_witness_reports_loaded_psx_u_bios_matches_bk2_header":
+                auto_core_witness_plugin is not None and observed[6] is True,
+            "first_runtime_witness_reports_single_mounted_disc_tray_closed_source_cue_name_match":
+                auto_core_witness_plugin is not None and observed[7] is True,
             "first_auto_core_frame_not_later_than_first_png":
                 auto_core_witness_plugin is not None,
             "same_bk2_bytes_across_capture_attempts": False,
@@ -429,9 +581,13 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             "owner_private_assets_uploaded": False,
         }
 
+    recheck_capture_lock()
+    recheck_capture_host()
     paired = audit_pair(
         private_bk2, plan, workspace / RUN_NAMES[0], workspace / RUN_NAMES[1],
     )
+    recheck_capture_lock()
+    recheck_capture_host()
     _require_movie_unchanged(private_bk2, movie_identity)
     _require_disc_unchanged(private_disc, disc_identity)
     _require_digest_reference_unchanged(expected_digest_file, digest)
@@ -444,7 +600,15 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         )
         if bound.get("runtime_core_witnesses_bound_to_launched_process_identity") is not True:
             raise ValueError("automatic core witness binding rejected")
+        if bound.get("both_witnesses_report_psx_u_firmware_matches_bk2_header") is not True:
+            raise ValueError("paired automatic witnesses do not confirm PSX/U firmware match")
+        if bound.get(
+                "both_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match") is not True:
+            raise ValueError("paired automatic witnesses do not confirm mounted-disc state/source CUE basename")
     # Third parent-side full read: the final PNG/pair audit may take time.
+    require_linux_owner_runtime_pin(
+        private_emuhawk, mono_executable, trusted_runtime_manifest_pin_file
+    )
     if core_witness_sha256 is not None:
         require_pinned_core_witness_dll(auto_core_witness_plugin, core_witness_sha256)
     _require_full_bin_unchanged(private_disc, digest)
@@ -464,6 +628,12 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         "runtime_tool_file_hash_reported_by_witness_matches_pin":
             auto_core_witness_plugin is not None and core_witness_sha256 is not None,
         "automatic_core_witness_process_bound": auto_core_witness_plugin is not None,
+        "both_runtime_witnesses_report_loaded_psx_u_bios_matches_bk2_header":
+            auto_core_witness_plugin is not None
+            and bound.get("both_witnesses_report_psx_u_firmware_matches_bk2_header") is True,
+        "both_runtime_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match":
+            auto_core_witness_plugin is not None
+            and bound.get("both_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match") is True,
         "capture_attempts_audited": 2,
         "same_reported_bizhawk_runtime_profile":
             paired["same_reported_bizhawk_runtime_profile"],
@@ -503,6 +673,47 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     }
 
 
+def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
+                  private_workspace: Path, *,
+                  expected_digest_file: Path | None = None,
+                  private_psx_bios_candidate: Path | None = None,
+                  record_windows_process_identity: bool = False,
+                  auto_core_witness_plugin: Path | None = None,
+                  core_witness_sha256: str | None = None,
+                  max_windows: int = 4,
+                  emulator_timeout_seconds: int | None = None,
+                  run_count: int = 2,
+                  start: bool = False,
+                  mono_executable: Path | None = None,
+                  trusted_runtime_manifest_pin_file: Path | None = None) -> dict:
+    """Run a capture with a workspace-exclusive lock when execution is requested."""
+    arguments = dict(
+        expected_digest_file=expected_digest_file,
+        private_psx_bios_candidate=private_psx_bios_candidate,
+        record_windows_process_identity=record_windows_process_identity,
+        auto_core_witness_plugin=auto_core_witness_plugin,
+        core_witness_sha256=core_witness_sha256,
+        max_windows=max_windows,
+        emulator_timeout_seconds=emulator_timeout_seconds,
+        run_count=run_count,
+        start=start,
+        mono_executable=mono_executable,
+        trusted_runtime_manifest_pin_file=trusted_runtime_manifest_pin_file,
+    )
+    if not start:
+        return _capture_twice_impl(
+            private_emuhawk, private_disc, private_bk2, private_workspace,
+            **arguments,
+        )
+    workspace = _private_root(private_workspace)
+    with _exclusive_capture_lock(workspace) as check_lock:
+        check_lock()
+        return _capture_twice_impl(
+            private_emuhawk, private_disc, private_bk2, private_workspace,
+            _capture_lock_guard=check_lock, **arguments,
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("absolute_emuhawk_executable", type=Path)
@@ -516,9 +727,14 @@ def main() -> int:
     parser.add_argument("--private-core-witness-sha256", type=str,
                         help="Owner opt-in: independently pinned SHA256 for the installed experimental DLL")
     parser.add_argument(
-        "--record-windows-process-identity", action="store_true",
-        help="Opt-in owner-private launch receipts for later comparison to the core witness files",
+        "--record-process-identity", "--record-windows-process-identity",
+        dest="record_windows_process_identity", action="store_true",
+        help="Opt-in owner-private Windows/Linux process-start receipts for comparison to core witness files",
     )
+    parser.add_argument("--mono-executable", type=Path,
+                        help="Linux only: absolute Mono executable for the official EmuHawk.exe")
+    parser.add_argument("--trusted-runtime-manifest-pin-file", type=Path,
+                        help="Required with Linux Mono: external owner-private runtime SHA-256")
     parser.add_argument("--max-windows", type=int, default=4)
     parser.add_argument(
         "--emulator-timeout-seconds", type=int,
@@ -544,6 +760,8 @@ def main() -> int:
             emulator_timeout_seconds=args.emulator_timeout_seconds,
             run_count=1 if args.launch_one else 2,
             start=args.launch_one or args.launch_two,
+            mono_executable=args.mono_executable,
+            trusted_runtime_manifest_pin_file=args.trusted_runtime_manifest_pin_file,
         )
     except (OSError, ValueError, TypeError, RuntimeError, KeyError):
         parser.error("private two-replay execution or capture audit failed")

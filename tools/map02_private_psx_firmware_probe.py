@@ -28,7 +28,7 @@ PSX_FIRMWARE_FIELD = re.compile(r"PSX_Firmware_[A-Za-z0-9_]{1,48}\Z")
 SHA1 = re.compile(r"[0-9A-Fa-f]{40}\Z")
 
 
-def _firmware_sha1_from_movie(private_bk2: Path) -> tuple[str | None, int]:
+def _firmware_sha1_fields_from_movie(private_bk2: Path) -> dict[str, str]:
     """Read bounded BK2 metadata; keep all firmware SHA-1 values private."""
     source = _resolve_private_file(private_bk2)
     fd, before = _open_stable(source)
@@ -43,22 +43,35 @@ def _firmware_sha1_from_movie(private_bk2: Path) -> tuple[str | None, int]:
     finally:
         os.close(fd)
 
-    matches = []
+    fields = {}
     for key, value in header.items():
         if key.startswith("PSX_Firmware_"):
             if not PSX_FIRMWARE_FIELD.fullmatch(key) or not SHA1.fullmatch(value):
                 raise ValueError("malformed PSX firmware header identity")
-            matches.append(value.lower())
+            fields[key] = value.lower()
+    if len(fields) > 8:
+        raise ValueError("unexpected PSX firmware header entry count")
+    return fields
+
+
+def _firmware_sha1_from_movie(private_bk2: Path) -> tuple[str | None, int]:
+    fields = _firmware_sha1_fields_from_movie(private_bk2)
+    matches = list(fields.values())
     # Multiple independent PSX firmware devices may legitimately exist.
     # A single BIOS candidate cannot authenticate all of them, so do not
     # infer which was used: mark the report ambiguous instead.
-    if len(matches) > 8:
-        raise ValueError("unexpected PSX firmware header entry count")
     unique = set(matches)
     if len(unique) != 1:
         return None, len(matches)
     return matches[0], len(matches)
 
+
+def read_expected_psx_u_firmware_sha1(private_bk2: Path) -> str:
+    """Return the private BK2's exact PSX/U firmware fingerprint for runtime comparison."""
+    fields = _firmware_sha1_fields_from_movie(private_bk2)
+    if set(fields) != {"PSX_Firmware_U"}:
+        raise ValueError("BK2 must declare exactly one PSX_Firmware_U identity")
+    return fields["PSX_Firmware_U"]
 
 def _candidate_bios_sha1(private_bios: Path) -> str:
     """Stream a private BIOS, with stable fd/path checking, without logs."""

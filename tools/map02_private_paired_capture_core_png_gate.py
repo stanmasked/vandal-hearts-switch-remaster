@@ -20,7 +20,7 @@ from tools.map02_private_two_capture_audit import _private_root, audit_pair
 from tools.map02_private_bizhawk_poweron_launch import AUTO_WITNESS_NAME
 from tools.map02_private_core_witness_audit import read_witness
 
-SCHEMA = "vh.map02.owner-paired-capture-core-png-gate.v1"
+SCHEMA = "vh.map02.owner-paired-capture-core-png-gate.v2"
 RUN_NAMES = ("vh-map02-cold-01", "vh-map02-cold-02")
 
 
@@ -82,6 +82,11 @@ def review_owner_capture(movie: Path, plan: Path, workspace: Path,
         raise ValueError("manual core witnesses not linked to launched emulator processes")
     if bound.get("reported_emuhawk_processes_distinct") is not True:
         raise ValueError("private emulator processes not distinct")
+    if auto and bound.get("both_witnesses_report_psx_u_firmware_matches_bk2_header") is not True:
+        raise ValueError("automatic runtime witnesses do not confirm PSX/U firmware match")
+    if auto and bound.get(
+            "both_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match") is not True:
+        raise ValueError("automatic runtime witnesses do not confirm mounted-disc state/source CUE basename")
 
     return {
         "schema": SCHEMA,
@@ -89,6 +94,10 @@ def review_owner_capture(movie: Path, plan: Path, workspace: Path,
         "manual_psx_octoshock_core_witnesses_process_matched": 0 if auto else 2,
         "auto_psx_octoshock_core_witnesses_process_matched": 2 if auto else 0,
         "owner_logs_confirm_auto_core_receipt_before_png": auto,
+        "both_runtime_witnesses_report_psx_u_firmware_matches_bk2_header":
+            bound.get("both_witnesses_report_psx_u_firmware_matches_bk2_header") is True,
+        "both_runtime_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match":
+            bound.get("both_witnesses_report_single_mounted_disc_tray_closed_source_cue_name_match") is True,
         "auto_core_frame_no_later_than_first_capture_counter": auto,
         "reported_emuhawk_processes_distinct": True,
         "psx_core_fallback_reported_blocked_for_both_replays": True,
