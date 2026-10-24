@@ -58,6 +58,8 @@ namespace VhMap02LoaderSmoke
 
                 Environment.SetEnvironmentVariable("VH_MAP02_CORE_EXPECTED_DLL_SHA256", null);
                 AppDomain.CurrentDomain.AssemblyResolve += Resolve;
+                _stage = "official-octoshock-disc-mount-metadata";
+                AuditOfficialOctoshockDiscMountMetadata();
                 _stage = "typed-assembly-load";
                 RunSmoke(plug);
                 Console.WriteLine(
@@ -65,6 +67,7 @@ namespace VhMap02LoaderSmoke
                     + " metadata=1 activation=1 missing_core_fail_closed=1"
                     + " fake_octoshock_impersonation_rejected=1 fake_negative_gates=5"
                     + " exact_runtime_type_gate=1 in_memory_fake_witness_schema=0"
+                    + " official_disc_mount_metadata=1"
                     + " official_nullhawk_service_injected=1"
                     + " official_nullhawk_snapshot_rejected=1"
                     + " owner_only_ntfs_folder_accepted=1"
@@ -231,6 +234,36 @@ namespace VhMap02LoaderSmoke
             }
         }
 
+
+        // Verify the exact public metadata contract consumed by the V5 live
+        // mount witness. This loads only the official core assembly metadata:
+        // it does not instantiate Octoshock or open a disc, BIOS or movie.
+        private static void AuditOfficialOctoshockDiscMountMetadata()
+        {
+            var coreAssembly = Assembly.Load("BizHawk.Emulation.Cores");
+            var coreType = coreAssembly.GetType(
+                "BizHawk.Emulation.Cores.Sony.PSX.Octoshock", true);
+            var trayOpen = coreType.GetProperty(
+                "CurrentTrayOpen", BindingFlags.Public | BindingFlags.Instance);
+            var mountedIndex = coreType.GetProperty(
+                "CurrentDiscIndexMounted", BindingFlags.Public | BindingFlags.Instance);
+            var discs = coreType.GetField(
+                "Discs", BindingFlags.Public | BindingFlags.Instance);
+            if (trayOpen == null || trayOpen.PropertyType != typeof(bool)
+                || mountedIndex == null || mountedIndex.PropertyType != typeof(int)
+                || discs == null
+                || !typeof(System.Collections.ICollection).IsAssignableFrom(discs.FieldType)
+                || !discs.FieldType.IsGenericType)
+                throw new InvalidOperationException("official Octoshock disc metadata mismatch");
+
+            var discTypes = discs.FieldType.GetGenericArguments();
+            if (discTypes.Length != 1)
+                throw new InvalidOperationException("official Octoshock disc collection mismatch");
+            var name = discTypes[0].GetField(
+                "Name", BindingFlags.Public | BindingFlags.Instance);
+            if (name == null || name.FieldType != typeof(string))
+                throw new InvalidOperationException("official Disc.Name metadata mismatch");
+        }
 
         private static string FileSha256(string path)
         {
