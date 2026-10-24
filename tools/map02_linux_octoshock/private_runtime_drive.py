@@ -285,6 +285,29 @@ def _sha_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
+def _hash_open_fd(fd: int) -> tuple[str, int]:
+    """Hash an already-open regular-file descriptor without reopening its path."""
+    digest = hashlib.sha256()
+    total = 0
+    os.lseek(fd, 0, os.SEEK_SET)
+    while True:
+        chunk = os.read(fd, 1024 * 1024)
+        if not chunk:
+            break
+        digest.update(chunk)
+        total += len(chunk)
+    os.lseek(fd, 0, os.SEEK_SET)
+    return digest.hexdigest(), total
+
+
+def _file_identity(info: os.stat_result) -> tuple[int, int, int, int, int, int, int, int]:
+    return (
+        info.st_dev, info.st_ino, stat.S_IFMT(info.st_mode),
+        info.st_uid, stat.S_IMODE(info.st_mode), info.st_size,
+        info.st_mtime_ns, info.st_ctime_ns,
+    )
+
+
 def _seal_payload(source: Path, target: Path) -> str:
     """Create an owner-only, distinct, full-byte snapshot before any upload."""
     if target.exists() or target.is_symlink() or source.is_symlink():
