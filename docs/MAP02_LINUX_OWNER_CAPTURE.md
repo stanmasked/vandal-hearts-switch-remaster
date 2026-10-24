@@ -1452,8 +1452,34 @@ The test runs only against a synthetic filesystem and fake remote transport.
 It is not evidence of actual owner-host or Google Drive behavior.
 
 Stage570 code/test head:
-`e5ebeaca7188342b3dc3959ef2fe9b18d7cfcbc9`. Exact-head CI must pass on the
-final code and documentation head before Stage570 is accepted. Original PS1
+`e5ebeaca7188342b3dc3959ef2fe9b18d7cfcbc9`. Exact-head CI completed with
+8/8 successful workflows on final PR head
+`f8e2fe785d1c73c8b74cd3044ea198afeb305af9`, with no failures or pending runs.
+The native Linux job passed both symlink and replacement-directory cleanup
+tests. Stage570 is accepted as a code/test gate only. Original PS1 media, BIOS,
+BK2, extracted audio and gameplay captures remain unchanged. The canonical
+private `07_Builds_and_Test_Artifacts` folder remains empty until a genuine
+owner-host publish and independent readback succeed.
+
+## Stage571 — cleanup on interruption and unexpected failure
+
+The independent readback auditor now performs identity-guarded cleanup for
+ordinary validation/I/O failures and also for `KeyboardInterrupt`,
+`SystemExit`, and unexpected exceptions. Expected validation/I/O failures
+remain normalized to the stable audit-rejected error; interruption and
+unexpected exceptions are re-raised after cleanup so callers can still stop
+or diagnose the process. Cleanup removes only the original non-symlink
+directory whose device/inode matches the invocation's recorded identity.
+
+A deterministic fake-transport test raises `KeyboardInterrupt` immediately
+after the receipt has been downloaded into the private readback root. It
+requires the partial root to be removed and the original interruption to
+propagate unchanged. This is a synthetic local test and does not establish
+real owner-host or cloud behavior.
+
+Stage571 code/test head:
+`d4121a0918873b2ce5b40391ced170d13b714d49`. Exact-head CI must pass on the
+final code and documentation head before Stage571 is accepted. Original PS1
 media, BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
 canonical private `07_Builds_and_Test_Artifacts` folder remains empty until
 a genuine owner-host publish and independent readback succeed.
