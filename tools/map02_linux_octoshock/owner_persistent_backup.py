@@ -234,7 +234,25 @@ def main() -> int:
             if (record.get("game_media_used") is not False
                     or record.get("psx_capture_ready") is not False):
                 _fail()
+            # Stage599: the build validated its temporary stage before
+            # promotion. Independently verify the *promoted* runtime on the
+            # owner-persistent destination, not just its build-time manifest.
+            # No external owner trust pin is minted by this preparation step.
+            installed = verify_runtime(
+                a.new_runtime_root, require_trusted_pin=False,
+            )
+            if (installed.get("verified") is not True
+                    or installed.get("trusted_manifest_pin_verified") is not False
+                    or installed.get("capture_ready") is not False):
+                _fail()
+            # Verification can take time; refuse an altered storage mount
+            # after reading all installed components.
+            require_unchanged_persistent_host(
+                parent_paths, host_identity,
+                minimum_free_bytes=MINIMUM_PREPARE_BYTES,
+            )
             print("VH_MAP02_STAGE550_PREPARE_PASS "
+                  "installed_runtime_verified=1 "
                   "manifest_independently_trusted=0 media_used=0 capture_ready=0")
         else:
             result = publish_existing_trusted_runtime(
