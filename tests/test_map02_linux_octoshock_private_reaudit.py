@@ -93,6 +93,7 @@ class IndependentReadbackTests(unittest.TestCase):
         with self.assertRaises(IndependentAuditError):
             self.run_audit()
         self.assertFalse((self.reaudit / "restored").exists())
+        self.assertFalse(self.reaudit.exists())
         self.assertEqual(self.transport.uploads, 5)
 
     def test_remote_root_change_during_archive_readback_rejected(self):
@@ -103,6 +104,7 @@ class IndependentReadbackTests(unittest.TestCase):
         with self.assertRaises(IndependentAuditError):
             self.run_audit()
         self.assertFalse((self.reaudit / "restored").exists())
+        self.assertFalse(self.reaudit.exists())
         self.assertEqual(self.transport.uploads, 5)
 
     def test_owner_pin_change_during_final_object_download_rejected_before_restore(self):
@@ -149,16 +151,17 @@ class IndependentReadbackTests(unittest.TestCase):
             with self.assertRaises(IndependentAuditError):
                 self.run_audit()
         # The local archive was pinned and verified before restore; failure is
-        # specifically the final remote-state recheck, not a restore failure.
-        self.assertTrue(
-            (self.reaudit / "restored/runtime/EmuHawk.exe").is_file()
-        )
+        # specifically the final remote-state recheck. The failed audit must
+        # remove the whole partial readback tree rather than leave a result
+        # that could be mistaken for accepted evidence.
+        self.assertFalse(self.reaudit.exists())
 
     def test_refuse_corrupted_remote_archive(self):
         key = "map02-runtime-testowner001.tar"
         self.transport.remote["vh_builds"][key] += b"FORGED"
         with self.assertRaises(IndependentAuditError):
             self.run_audit()
+        self.assertFalse(self.reaudit.exists())
 
     def test_refuse_corrupted_remote_receipt(self):
         self.transport.remote["vh_manifests"][self.receipt_name] += b"x"
