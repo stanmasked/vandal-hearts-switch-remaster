@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import signal
 import stat
 import tempfile
 
@@ -35,6 +36,14 @@ class PrivateOwnerSessionError(ValueError):
 
 def _fail() -> None:
     raise PrivateOwnerSessionError("owner-private archive session not verified")
+
+
+def _raise_on_sigterm(signum: int, _frame: object) -> None:
+    """Unwind the owner session on SIGTERM so its guarded cleanup can run."""
+    # Prevent repeated SIGTERM delivery from interrupting cleanup. main()
+    # restores the previous handler after the session has unwound.
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    raise SystemExit(128 + signum)
 
 
 def _discard_incomplete_owner_pin(path: Path | None) -> None:
@@ -277,27 +286,32 @@ def main() -> int:
     parser.add_argument("--manifests-remote", required=True)
     parser.add_argument("--session", required=True)
     args = parser.parse_args()
+    previous_sigterm_handler = signal.getsignal(signal.SIGTERM)
+    signal.signal(signal.SIGTERM, _raise_on_sigterm)
     try:
-        result = complete_owner_archive_session(
-            args.runtime, args.trusted_manifest_pin, args.private_folder_map,
-            args.new_session_root, args.new_owner_receipt_pin,
-            args.builds_remote, args.manifests_remote, args.session,
-            independent_archive_pin_output=args.new_owner_archive_pin,
+        try:
+            result = complete_owner_archive_session(
+                args.runtime, args.trusted_manifest_pin, args.private_folder_map,
+                args.new_session_root, args.new_owner_receipt_pin,
+                args.builds_remote, args.manifests_remote, args.session,
+                independent_archive_pin_output=args.new_owner_archive_pin,
+            )
+        except PrivateOwnerSessionError:
+            print("VH_MAP02_STAGE541_OWNER_DRIVE_SESSION_REJECTED capture_ready=0")
+            return 1
+        if (not result["authenticated_owner_rclone_invoked"]
+                or not result["owner_archive_pin_written"]):
+            print("VH_MAP02_STAGE541_OWNER_DRIVE_SESSION_REJECTED capture_ready=0")
+            return 1
+        print(
+            "VH_MAP02_STAGE541_OWNER_DRIVE_SESSION_PASS "
+            "runtime_files=%d runtime_bytes=%d verified_objects=5 "
+            "real_rclone_invoked=1 original_game_media=0 capture_ready=0" %
+            (result["runtime_files"], result["runtime_bytes"])
         )
-    except PrivateOwnerSessionError:
-        print("VH_MAP02_STAGE541_OWNER_DRIVE_SESSION_REJECTED capture_ready=0")
-        return 1
-    if (not result["authenticated_owner_rclone_invoked"]
-            or not result["owner_archive_pin_written"]):
-        print("VH_MAP02_STAGE541_OWNER_DRIVE_SESSION_REJECTED capture_ready=0")
-        return 1
-    print(
-        "VH_MAP02_STAGE541_OWNER_DRIVE_SESSION_PASS "
-        "runtime_files=%d runtime_bytes=%d verified_objects=5 "
-        "real_rclone_invoked=1 original_game_media=0 capture_ready=0" %
-        (result["runtime_files"], result["runtime_bytes"])
-    )
-    return 0
+        return 0
+    finally:
+        signal.signal(signal.SIGTERM, previous_sigterm_handler)
 
 
 if __name__ == "__main__":

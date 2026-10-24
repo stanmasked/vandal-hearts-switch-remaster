@@ -3,8 +3,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import os
+import select
+import signal
 import shutil
+import subprocess
+import sys
+import textwrap
 import unittest
 from unittest.mock import patch
 
@@ -365,6 +369,147 @@ class OwnerDriveSessionTests(unittest.TestCase):
         with self.assertRaises(PrivateOwnerSessionError):
             self.execute()
         self.assertEqual(self.transport.uploads, 0)
+
+
+    def _start_owner_signal_child(self):
+        root = self.base / "stage578-owner-signal-child"
+        root.mkdir(mode=0o700)
+        script = textwrap.dedent(r"""
+            import hashlib
+            import sys
+            import time
+            from pathlib import Path
+            from unittest.mock import patch
+            import tools.map02_linux_octoshock.owner_drive_session as module
+
+            base = Path(sys.argv[1])
+            runtime = base / "runtime"
+            runtime.mkdir(mode=0o700)
+            trusted_pin = base / "trusted-manifest.sha256"
+            trusted_pin.write_text("a" * 64 + "\\n", encoding="ascii")
+            trusted_pin.chmod(0o600)
+            folder_map = base / "private-folder-map.json"
+            folder_map.write_text("{}\\n", encoding="ascii")
+            folder_map.chmod(0o600)
+            receipt_pin = base / "owner-receipt.sha256"
+            archive_pin = base / "owner-archive.sha256"
+
+            def fake_pack(_runtime, _pin, tar, tar_digest):
+                data = b"fictional runtime archive"
+                tar.write_bytes(data)
+                import hashlib
+                digest = hashlib.sha256(data).hexdigest()
+                tar_digest.write_text(digest + "\\n", encoding="ascii")
+                return {"files": 1, "bytes": len(data),
+                        "drive_upload_authenticated": False}
+
+            def interrupted_upload(*_args, **_kwargs):
+                receipt_pin.write_text("b" * 64 + "\\n", encoding="ascii")
+                receipt_pin.chmod(0o600)
+                print("PIN_READY", flush=True)
+                while True:
+                    time.sleep(1)
+
+            sys.argv = [
+                "owner_drive_session.py",
+                "--runtime", str(runtime),
+                "--trusted-manifest-pin", str(trusted_pin),
+                "--private-folder-map", str(folder_map),
+                "--new-session-root", str(base / "session"),
+                "--new-owner-receipt-pin", str(receipt_pin),
+                "--new-owner-archive-pin", str(archive_pin),
+                "--builds-remote", "vh_builds",
+                "--manifests-remote", "vh_manifests",
+                "--session", "owner578test",
+            ]
+            with patch.object(module, "verify_runtime", return_value={
+                    "verified": True,
+                    "trusted_manifest_pin_verified": True,
+                    "capture_ready": False,
+                }), patch.object(module, "verify_owner_backup_readiness", return_value={
+                    "writes_performed": False,
+                    "cloud_names_available": True,
+                    "capture_ready": False,
+                }), patch.object(module, "pack_runtime", side_effect=fake_pack), patch.object(
+                    module, "archive_to_private_drive", side_effect=interrupted_upload,
+                ):
+                raise SystemExit(module.main())
+        """)
+        process = subprocess.Popen(
+            [sys.executable, "-c", script, str(root)],
+            cwd=Path(__file__).resolve().parents[1],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        ready, _, _ = select.select([process.stdout], [], [], 20)
+        if not ready:
+            process.kill()
+            stdout, stderr = process.communicate(timeout=10)
+            self.fail(f"owner signal child did not reach pin write; stdout={stdout!r} stderr={stderr!r}")
+        marker = process.stdout.readline().strip()
+        if marker != "PIN_READY":
+            if process.poll() is None:
+                process.kill()
+            stdout, stderr = process.communicate(timeout=10)
+            self.fail(f"owner signal child failed before pin write; marker={marker!r} stdout={stdout!r} stderr={stderr!r}")
+        return root, process
+
+    @unittest.skipUnless(os.name == "posix" and hasattr(signal, "SIGKILL"),
+                         "requires POSIX process signals")
+    def test_sigterm_runs_guarded_cleanup_and_preserves_failed_session(self):
+        root, process = self._start_owner_signal_child()
+        try:
+            process.send_signal(signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=15)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+        self.assertEqual(process.returncode, 128 + signal.SIGTERM, (stdout, stderr))
+        self.assertFalse((root / "owner-receipt.sha256").exists())
+        self.assertFalse((root / "owner-archive.sha256").exists())
+        self.assertTrue((root / "session").is_dir())
+        self.assertEqual(list(root.glob(".map02-pin-cleanup-*")), [])
+
+    @unittest.skipUnless(os.name == "posix" and hasattr(signal, "SIGKILL"),
+                         "requires POSIX process signals")
+    def test_sigkill_leaves_partial_pin_and_retry_fails_closed(self):
+        root, process = self._start_owner_signal_child()
+        try:
+            process.send_signal(signal.SIGKILL)
+            stdout, stderr = process.communicate(timeout=15)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+        self.assertEqual(process.returncode, -signal.SIGKILL, (stdout, stderr))
+        receipt_pin = root / "owner-receipt.sha256"
+        self.assertEqual(receipt_pin.read_text(encoding="ascii"), "b" * 64 + "\\n")
+        self.assertEqual(receipt_pin.stat().st_mode & 0o777, 0o600)
+        self.assertFalse((root / "owner-archive.sha256").exists())
+        self.assertTrue((root / "session").is_dir())
+
+        # SIGKILL cannot run cleanup. A retry using the same output path must
+        # refuse before transport activity and must not bless or delete the
+        # orphaned pin. The owner must inspect/reconcile it manually.
+        with self.assertRaises(PrivateOwnerSessionError):
+            complete_owner_archive_session(
+                root / "runtime",
+                root / "trusted-manifest.sha256",
+                root / "private-folder-map.json",
+                root / "retry-session",
+                receipt_pin,
+                "vh_builds",
+                "vh_manifests",
+                "owner578retry",
+                independent_archive_pin_output=root / "owner-archive.sha256",
+                invoke=self.transport,
+            )
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertEqual(receipt_pin.read_text(encoding="ascii"), "b" * 64 + "\\n")
+        self.assertFalse((root / "retry-session").exists())
 
 
 if __name__ == "__main__":
