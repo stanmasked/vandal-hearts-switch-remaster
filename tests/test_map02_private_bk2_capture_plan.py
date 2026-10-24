@@ -158,7 +158,7 @@ class CaptureHandoffWorkflowContractTests(unittest.TestCase):
             encoding="utf-8")
         self.assertIn(
             "grep -Eq '^VH_MAP02_NEUTRAL_CAPTURE_LUA_MOCK_PASS cases=[1-9][0-9]* "
-            "owner_bk2=0 actual_bizhawk=0 map02_verified=0",
+            "owner_bk2=0 actual_bizhawk=0 map02_verified=0$' /tmp/vh-map02-lua-mock.log",
             workflow,
         )
         self.assertNotIn("cases=92", workflow)
