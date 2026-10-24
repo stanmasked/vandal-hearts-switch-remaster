@@ -52,21 +52,24 @@ def create_private_reference(private_cue: Path, reference_file: Path) -> dict:
     """
     target = _private_new_reference(reference_file)
     disc_snapshot = _disc_source_snapshot(private_cue)
-    cue = _resolve_private_file(private_cue)
-    bin_path = _resolve_private_file(cue.parent / _parse_cue(_read_cue(cue)))
+    cue = _resolve_private_file(private_cue, require_owner_private=True)
+    bin_path = _resolve_private_file(
+        cue.parent / _parse_cue(_read_cue(cue, require_private=True)),
+        require_owner_private=True,
+    )
 
     volume, resource, size, _ = _disc_profile(
-        bin_path, EXPECTED_MAP02_SHA256,
+        bin_path, EXPECTED_MAP02_SHA256, require_private=True,
     )
     if not (volume and resource and size):
         raise ValueError("private source BIN does not match audited MAP02 profile")
 
-    fd, initial = _open_stable(bin_path)
+    fd, initial = _open_stable(bin_path, require_private=True)
     try:
         if initial.st_size != EXPECTED_BIN_BYTES:
             raise ValueError("private source BIN size is not the expected complete image")
         digest = _full_image_sha256(fd, initial.st_size)
-        _assert_stable(fd, bin_path, initial)
+        _assert_stable(fd, bin_path, initial, require_private=True)
     finally:
         os.close(fd)
     _require_disc_unchanged(private_cue, disc_snapshot)
