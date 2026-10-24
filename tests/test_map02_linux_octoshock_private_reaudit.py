@@ -272,6 +272,20 @@ class IndependentReadbackTests(unittest.TestCase):
             "preserve replacement",
         )
 
+        # A new readback in the same parent must fail closed until the owner
+        # reconciles the intentionally retained quarantine.
+        next_root = self.base / "subsequent-readback"
+        with self.assertRaises(IndependentAuditError):
+            audit_independent_readback(
+                self.private_map, self.pin, self.tar_sha, self.receipt_pin,
+                next_root, "vh_builds", "vh_manifests", "testowner001",
+                invoke=self.transport,
+            )
+        self.assertFalse(next_root.exists())
+        self.assertEqual(
+            len(list(self.base.glob(".map02-readback-cleanup-*"))), 1,
+        )
+
     def test_refuse_corrupted_remote_archive(self):
         key = "map02-runtime-testowner001.tar"
         self.transport.remote["vh_builds"][key] += b"FORGED"
