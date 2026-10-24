@@ -129,6 +129,25 @@ class Stage537TransportTests(unittest.TestCase):
         self.assertEqual(target.stat().st_mode & 0o777, 0o600)
         self.assertNotEqual(target.stat().st_ino, self.tar.stat().st_ino)
 
+    def test_seal_payload_rejects_symlink_source(self):
+        alias = self.archive_dir / "runtime-alias.tar"
+        alias.symlink_to(self.tar)
+        parent = self.base / "sealed-source-link"
+        parent.mkdir(mode=0o700)
+        target = parent / "copy.tar"
+        with self.assertRaises(PrivateDriveError):
+            _seal_payload(alias, target)
+        self.assertFalse(target.exists())
+
+    def test_seal_payload_rejects_symlink_target(self):
+        parent = self.base / "sealed-target-link"
+        parent.mkdir(mode=0o700)
+        target = parent / "copy.tar"
+        target.symlink_to(self.tar)
+        with self.assertRaises(PrivateDriveError):
+            _seal_payload(self.tar, target)
+        self.assertTrue(target.is_symlink())
+
     def test_seal_payload_rejects_preexisting_target(self):
         parent = self.base / "sealed-existing"
         parent.mkdir(mode=0o700)
