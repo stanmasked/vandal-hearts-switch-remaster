@@ -1,6 +1,7 @@
 """Stage541: fictional owner-only Drive end-to-end session (never real OAuth)."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import shutil
 import unittest
@@ -129,6 +130,50 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertFalse(self.archive_pin.exists())
         # The session tree is intentionally retained for forensic inspection.
         self.assertTrue(self.full_session.is_dir())
+
+    def test_failed_pin_cleanup_preserves_concurrent_replacement(self):
+        displaced = self.base / "displaced-partial-receipt-pin"
+        original_rename = os.rename
+
+        def interrupted_upload(*args, **kwargs):
+            self.receipt_pin.write_text("0" * 64 + "\\n", encoding="ascii")
+            self.receipt_pin.chmod(0o600)
+            raise RuntimeError("synthetic interrupted owner receipt seal")
+
+        def replace_pin_before_quarantine(src, dst, *args, **kwargs):
+            src_path = Path(src)
+            dst_path = Path(dst)
+            if src_path == self.receipt_pin and dst_path.name == "payload":
+                original_rename(src_path, displaced)
+                src_path.write_text(
+                    "concurrent replacement\\n", encoding="ascii"
+                )
+                src_path.chmod(0o600)
+            return original_rename(src, dst, *args, **kwargs)
+
+        with patch.object(
+            owner_drive_session, "archive_to_private_drive",
+            side_effect=interrupted_upload,
+        ), patch(
+            "tools.map02_linux_octoshock.owner_drive_session.os.rename",
+            side_effect=replace_pin_before_quarantine,
+        ):
+            with self.assertRaises(PrivateOwnerSessionError):
+                self.execute()
+
+        self.assertEqual(
+            displaced.read_text(encoding="ascii"), "0" * 64 + "\\n",
+        )
+        self.assertEqual(
+            self.receipt_pin.read_text(encoding="ascii"),
+            "concurrent replacement\\n",
+        )
+        self.assertEqual(self.receipt_pin.stat().st_mode & 0o777, 0o600)
+        self.assertFalse(self.archive_pin.exists())
+        self.assertTrue(self.full_session.is_dir())
+        self.assertEqual(
+            list(self.base.glob(".map02-pin-cleanup-*")), [],
+        )
 
     def test_previous_unrelated_owner_pin_survives_failed_session(self):
         old_pin = self.base / "unrelated-owner-reference.sha256"
