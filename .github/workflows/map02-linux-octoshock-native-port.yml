@@ -102,18 +102,21 @@ jobs:
           set -euo pipefail
           # CI tests mechanics only; this local pin is NOT a stored owner-trusted reference.
           umask 077
+          ci_trust_dir="$RUNNER_TEMP/vh-map02-ci-trust"
+          mkdir -m 700 "$ci_trust_dir"
+          ci_manifest_pin="$ci_trust_dir/manifest.sha256"
           sha256sum "$RUNNER_TEMP/vh-map02-owner-runtime/map02-owner-runtime-manifest.json" \
-            | cut -d ' ' -f1 > "$RUNNER_TEMP/vh-map02-ci-manifest-test-pin.txt"
+            | cut -d ' ' -f1 > "$ci_manifest_pin"
           python3 tools/map02_linux_octoshock/verify_owner_runtime.py \
             "$RUNNER_TEMP/vh-map02-owner-runtime" \
-            --trusted-manifest-pin-file "$RUNNER_TEMP/vh-map02-ci-manifest-test-pin.txt" \
+            --trusted-manifest-pin-file "$ci_manifest_pin" \
             --require-trusted-pin
 
       - name: Round-trip actual staged no-media Octoshock runtime using private tar
         shell: bash
         env:
           VH_MAP02_STAGE536_RUNTIME: ${{ runner.temp }}/vh-map02-owner-runtime
-          VH_MAP02_STAGE536_PIN: ${{ runner.temp }}/vh-map02-ci-manifest-test-pin.txt
+          VH_MAP02_STAGE536_PIN: ${{ runner.temp }}/vh-map02-ci-trust/manifest.sha256
         run: |
           set -euo pipefail
           umask 077
