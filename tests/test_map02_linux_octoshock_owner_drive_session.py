@@ -559,7 +559,12 @@ class OwnerDriveSessionTests(unittest.TestCase):
             [sys.executable, "-c", script, str(self.private_map)],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
-        self.addCleanup(lambda: child.kill() if child.poll() is None else None)
+        def reap_child():
+            if child.poll() is None:
+                child.kill()
+            child.communicate(timeout=10)
+
+        self.addCleanup(reap_child)
         readable, _, _ = select.select([child.stdout], [], [], 10)
         if not readable:
             self.fail("fictional lock child did not report acquisition")
@@ -571,7 +576,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
             self.execute()
         self.assertEqual(self.transport.uploads, 0)
         child.kill()
-        child.wait(timeout=10)
+        child.communicate(timeout=10)
         self.assertTrue(lock_path.is_file())
         self.assertEqual(lock_path.stat().st_ino, inode)
         self.assertTrue(self.execute()["full_private_restore_audited"])
