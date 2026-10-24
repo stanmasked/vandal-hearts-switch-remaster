@@ -1383,8 +1383,33 @@ remote ID/size check sees the replacement. This tests consistency of the
 remote state through the audit window; it remains a fake transport only.
 
 Stage567 code/test head:
-`d7b215492d685236a7150cc773e9f9fa97a4771b`. Exact-head CI must pass on the
-final code and documentation head before Stage567 is accepted. Original PS1
+`d7b215492d685236a7150cc773e9f9fa97a4771b`. Exact-head CI completed with
+8/8 successful workflows on final PR head
+`ad2340ef0fed188d94cb0a25b5bd894f277c0d78`, with no failures or pending runs.
+The native Linux job passed `test_remote_object_replaced_after_readback_before_audit_success_rejected`
+and both Stage566 post-download replacement tests. Stage567 is accepted as a
+code/test gate only. Original PS1 media, BIOS, BK2, extracted audio and gameplay
+captures remain unchanged. The canonical private
+`07_Builds_and_Test_Artifacts` folder remains empty until a genuine owner-host
+publish and independent readback succeed.
+
+## Stage568 — remove partial readback output after audit failure
+
+The independent auditor now tracks the device/inode of the private readback
+directory it creates. If any handled validation or I/O error rejects the
+audit, it removes that directory only when the path still refers to the same
+non-symlink directory created by the invocation. This prevents a failed audit
+from leaving a partial download or restored runtime that could be mistaken for
+accepted evidence; a replacement path is not followed or deleted.
+
+Regression assertions now require failed receipt-root, archive-root, pin,
+object-replacement and corrupted-archive cases to leave no readback directory.
+Successful audits keep their verified output. Cleanup failures do not turn a
+rejected audit into success.
+
+Stage568 code/test head:
+`91bc99e66a9c3d6270b8a953ffa0d96384aefa28`. Exact-head CI must pass on the
+final code and documentation head before Stage568 is accepted. Original PS1
 media, BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
 canonical private `07_Builds_and_Test_Artifacts` folder remains empty until
 a genuine owner-host publish and independent readback succeed.
