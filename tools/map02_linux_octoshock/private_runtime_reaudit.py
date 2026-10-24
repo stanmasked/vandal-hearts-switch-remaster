@@ -279,10 +279,20 @@ def audit_independent_readback(
         manifest = downloaded / (stem + ".manifest.json")
         manifest_pin = downloaded / (stem + ".manifest.sha256")
         tar_remote_pin = downloaded / (stem + ".tar.sha256")
-        if (_hash_file(archive) != _pin(tar_pin)
-                or _hash_file(manifest) != _pin(owner_pin)
-                or _pin(manifest_pin) != _pin(owner_pin)
-                or _pin(tar_remote_pin) != _pin(tar_pin)):
+        if (_hash_file(archive) != tar_pin_value
+                or _hash_file(manifest) != owner_pin_value
+                or _pin(manifest_pin) != owner_pin_value
+                or _pin(tar_remote_pin) != tar_pin_value):
+            _fail()
+        # Recheck independent anchors and remote scope before extracting any
+        # archive bytes. Use the pin values captured before remote inspection;
+        # never let a pin file changed during readback redefine what is trusted.
+        _check_remote(builds, builds_id, invoke)
+        _check_remote(manifests, manifests_id, invoke)
+        if (_folder_map(folder_map, root) != (builds_id, manifests_id)
+                or _pin(owner_pin) != owner_pin_value
+                or _pin(tar_pin) != tar_pin_value
+                or _pin(receipt_pin) != receipt_pin_value):
             _fail()
         # The trust anchor is local, outside Drive; the cloud receipt must
         # not be treated as independent truth.
