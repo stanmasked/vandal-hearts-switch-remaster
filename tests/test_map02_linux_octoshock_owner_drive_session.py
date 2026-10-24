@@ -371,7 +371,8 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertEqual(self.transport.uploads, 0)
 
 
-    def _start_owner_signal_child(self, *, pause_cleanup=False):
+    def _start_owner_signal_child(self, *, pause_cleanup=False,
+                                  pause_after_quarantine_move=False):
         root = self.base / "stage578-owner-signal-child"
         root.mkdir(mode=0o700)
         script = textwrap.dedent(r"""
@@ -383,7 +384,8 @@ class OwnerDriveSessionTests(unittest.TestCase):
             import tools.map02_linux_octoshock.owner_drive_session as module
 
             base = Path(sys.argv[1])
-            pause_cleanup = len(sys.argv) > 2 and sys.argv[2] == "pause-cleanup"
+            pause_cleanup = "pause-cleanup" in sys.argv[2:]
+            pause_after_quarantine_move = "pause-quarantine" in sys.argv[2:]
             runtime = base / "runtime"
             runtime.mkdir(mode=0o700)
             trusted_pin = base / "trusted-manifest.sha256"
@@ -424,6 +426,14 @@ class OwnerDriveSessionTests(unittest.TestCase):
                 "--session", "owner578test",
             ]
             real_discard = module._discard_incomplete_owner_pin
+            real_rename = module.os.rename
+
+            def rename_with_optional_pause(src, dst):
+                real_rename(src, dst)
+                if pause_after_quarantine_move and Path(src) == receipt_pin:
+                    print("QUARANTINE_READY", flush=True)
+                    while True:
+                        time.sleep(1)
 
             def discard_with_optional_pause(path):
                 if pause_cleanup:
@@ -432,6 +442,8 @@ class OwnerDriveSessionTests(unittest.TestCase):
                 return real_discard(path)
 
             with patch.object(
+                    module.os, "rename", side_effect=rename_with_optional_pause,
+                ), patch.object(
                     module, "_discard_incomplete_owner_pin",
                     side_effect=discard_with_optional_pause,
                 ), patch.object(module, "verify_runtime", return_value={
@@ -447,9 +459,13 @@ class OwnerDriveSessionTests(unittest.TestCase):
                 ):
                 raise SystemExit(module.main())
         """)
+        command = [sys.executable, "-c", script, str(root)]
+        if pause_cleanup:
+            command.append("pause-cleanup")
+        if pause_after_quarantine_move:
+            command.append("pause-quarantine")
         process = subprocess.Popen(
-            [sys.executable, "-c", script, str(root),
-             "pause-cleanup" if pause_cleanup else "normal"],
+            command,
             cwd=Path(__file__).resolve().parents[1],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -630,6 +646,55 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertFalse((root / "owner-archive.sha256").exists())
         self.assertTrue((root / "session").is_dir())
         self.assertEqual(list(root.glob(".map02-pin-cleanup-*")), [])
+
+
+    @unittest.skipUnless(os.name == "posix" and hasattr(signal, "SIGKILL"),
+                         "requires POSIX SIGKILL handling")
+    def test_sigkill_after_pin_quarantine_blocks_retry_and_preserves_payload(self):
+        root, process = self._start_owner_signal_child(
+            pause_after_quarantine_move=True,
+        )
+        try:
+            process.send_signal(signal.SIGTERM)
+            ready, _, _ = select.select([process.stdout], [], [], 15)
+            self.assertTrue(ready, "cleanup did not reach atomic quarantine move")
+            marker = process.stdout.readline().strip()
+            self.assertEqual(marker, "QUARANTINE_READY")
+            process.send_signal(signal.SIGKILL)
+            stdout, stderr = process.communicate(timeout=15)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+
+        self.assertEqual(process.returncode, -signal.SIGKILL, (stdout, stderr))
+        self.assertFalse((root / "owner-receipt.sha256").exists())
+        self.assertFalse((root / "owner-archive.sha256").exists())
+        self.assertTrue((root / "session").is_dir())
+        quarantines = list(root.glob(".map02-pin-cleanup-*"))
+        self.assertEqual(len(quarantines), 1)
+        payload = quarantines[0] / "payload"
+        self.assertEqual(payload.read_text(encoding="ascii"), "b" * 64 + "\\n")
+        self.assertEqual(payload.stat().st_mode & 0o777, 0o600)
+
+        # The orphaned quarantine is evidence, not disposable debris. A retry
+        # must fail before transport activity and leave its payload untouched.
+        with self.assertRaises(PrivateOwnerSessionError):
+            complete_owner_archive_session(
+                root / "runtime",
+                root / "trusted-manifest.sha256",
+                root / "private-folder-map.json",
+                root / "retry-session",
+                root / "owner-receipt.sha256",
+                "vh_builds",
+                "vh_manifests",
+                "owner581retry",
+                independent_archive_pin_output=root / "owner-archive.sha256",
+                invoke=self.transport,
+            )
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertEqual(payload.read_text(encoding="ascii"), "b" * 64 + "\\n")
+        self.assertFalse((root / "retry-session").exists())
 
 
 if __name__ == "__main__":
