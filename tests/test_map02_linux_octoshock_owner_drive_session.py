@@ -414,6 +414,38 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertEqual(payload.stat().st_mode & 0o777, 0o600)
         self.assertEqual(marker.stat().st_mode & 0o777, 0o700)
 
+    def test_quarantine_created_during_session_mkdir_blocks_before_archive_work(self):
+        marker = self.base / ".map02-pin-cleanup-stage594-mkdir"
+        payload = marker / "payload"
+        original_mkdir = Path.mkdir
+        insertions = 0
+
+        def mkdir_with_late_quarantine(path, *args, **kwargs):
+            nonlocal insertions
+            result = original_mkdir(path, *args, **kwargs)
+            if Path(path) == self.full_session:
+                insertions += 1
+                original_mkdir(marker, mode=0o700)
+                payload.write_text("f" * 64 + "\n", encoding="ascii")
+                payload.chmod(0o600)
+            return result
+
+        with patch.object(Path, "mkdir", new=mkdir_with_late_quarantine):
+            with self.assertRaises(PrivateOwnerSessionError):
+                self.execute()
+
+        self.assertEqual(insertions, 1)
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertTrue(self.full_session.is_dir())
+        self.assertEqual(list(self.full_session.iterdir()), [])
+        self.assertFalse(self.receipt_pin.exists())
+        self.assertFalse(self.archive_pin.exists())
+        self.assertTrue(marker.is_dir())
+        self.assertFalse(marker.is_symlink())
+        self.assertEqual(payload.read_text(encoding="ascii"), "f" * 64 + "\n")
+        self.assertEqual(payload.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(marker.stat().st_mode & 0o777, 0o700)
+
     def test_previous_unrelated_owner_pin_survives_failed_session(self):
         old_pin = self.base / "unrelated-owner-reference.sha256"
         old_pin.write_text("a" * 64 + "\n", encoding="ascii")
