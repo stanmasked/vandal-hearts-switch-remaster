@@ -81,6 +81,42 @@ class PersistentOwnerPipelineTests(unittest.TestCase):
             )
         self.assertEqual(self.transport.uploads, 0)
 
+    def test_real_transport_gates_all_trust_input_parents_before_upload(self):
+        # Patch only this module's real-transport identity to activate
+        # the owner-host gate. The fake cloud must not be invoked.
+        with patch.object(pipeline, "_call_rclone", self.transport):
+            with patch.object(
+                pipeline, "verify_persistent_private_host",
+                side_effect=ValueError("fictional ephemeral source pin mount"),
+            ) as check:
+                with self.assertRaises(OwnerPersistentBackupError):
+                    self.execute()
+        expected = [self.source, self.work, self.trust, self.base]
+        self.assertEqual(check.call_args.args[0], expected)
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertEqual(list(self.work.iterdir()), [])
+        self.assertEqual(list(self.trust.iterdir()), [])
+
+    def test_real_transport_rejects_ephemeral_folder_map_before_upload(self):
+        external = self.base / "config-vault"
+        external.mkdir(mode=0o700)
+        folder_map = external / "folder-map.json"
+        folder_map.write_bytes(self.private_map.read_bytes())
+        folder_map.chmod(0o600)
+        with patch.object(pipeline, "_call_rclone", self.transport):
+            with patch.object(
+                pipeline, "verify_persistent_private_host",
+                side_effect=ValueError("fictional config vault is temporary"),
+            ) as check:
+                with self.assertRaises(OwnerPersistentBackupError):
+                    publish_existing_trusted_runtime(
+                        self.source, self.pin, folder_map, self.work,
+                        self.trust, "vh_builds", "vh_manifests",
+                        self.session, invoke=self.transport,
+                    )
+        self.assertIn(external, check.call_args.args[0])
+        self.assertEqual(self.transport.uploads, 0)
+
     def test_symlinked_work_root_refused(self):
         alias = self.base / "alias"
         alias.symlink_to(self.work, target_is_directory=True)

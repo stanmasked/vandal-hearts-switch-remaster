@@ -48,6 +48,29 @@ class PersistentHostTests(unittest.TestCase):
             with self.subTest(fs=fs), self.assertRaises(PersistentHostError):
                 self.audit(fs=fs)
 
+    def test_unknown_fuse_or_nfs_storage_rejected(self):
+        for fs in ("fuse.rclone", "fuseblk", "nfs", "nfs4", "cifs",
+                   "9p", "virtiofs", "mysteryfs"):
+            with self.subTest(fs=fs), self.assertRaises(PersistentHostError):
+                self.audit(fs=fs)
+
+    def test_read_only_mount_rejected(self):
+        for options in ("ro,relatime", "rw,relatime"):
+            # In the second case the superblock is independently read-only.
+            supermode = "rw" if options.startswith("ro") else "ro"
+            line = ("1 0 0:1 / / " + options +
+                    " - ext4 /dev/fake " + supermode + "\n")
+            with self.subTest(options=options), self.assertRaises(PersistentHostError):
+                self.audit(mountinfo=line)
+
+    def test_mountpoint_with_escaped_spaces_is_handled(self):
+        target = self.root / "owner files"
+        target.mkdir(mode=0o700)
+        escaped = str(self.root).replace(" ", "\\040") + "/owner\\040files"
+        line = ("1 0 0:1 / / rw,relatime - overlay none rw\n"
+                + f"2 1 0:2 / {escaped} rw,relatime - ext4 /dev/fake rw\n")
+        self.assertTrue(self.audit(path=target, mountinfo=line)["platform_accepted"])
+
     def test_ci_environment_denied_before_write(self):
         for marker in ("CI", "GITHUB_ACTIONS", "RUNNER_TEMP",
                        "GITHUB_WORKSPACE"):

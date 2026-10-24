@@ -15,9 +15,12 @@ import stat
 import sys
 from typing import Callable, Mapping, Sequence
 
-EPHEMERAL_FS = frozenset({
-    "tmpfs", "ramfs", "overlay", "aufs", "squashfs", "iso9660",
-    "devtmpfs", "proc", "sysfs", "cgroup", "cgroup2",
+# Explicit local, disk-backed Linux filesystems, rather than permitting
+# unknown FUSE, remote, pseudo and ephemeral mounts by default. This is
+# deliberately conservative; extend only after a reviewed persistence test.
+PERSISTENT_LOCAL_FS = frozenset({
+    "ext2", "ext3", "ext4", "xfs", "btrfs", "zfs", "f2fs",
+    "bcachefs", "jfs", "nilfs2",
 })
 EPHEMERAL_PATHS = (Path("/tmp"), Path("/var/tmp"), Path("/run"),
                    Path("/dev/shm"), Path("/var/run"))
@@ -39,20 +42,25 @@ def _unescape_mountpoint(raw: str) -> str:
     return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), raw)
 
 
-def _mounts(content: str) -> list[tuple[Path, str]]:
+def _mounts(content: str) -> list[tuple[Path, str, bool]]:
     if not isinstance(content, str) or len(content) > 8 * 1024**2:
         _fail()
-    found: list[tuple[Path, str]] = []
+    found: list[tuple[Path, str, bool]] = []
     for line in content.splitlines():
         left, separator, right = line.partition(" - ")
         fields, filesystem = left.split(), right.split()
-        if not separator or len(fields) < 5 or not filesystem:
+        if not separator or len(fields) < 6 or len(filesystem) < 3:
             _fail()
         mount_path = Path(_unescape_mountpoint(fields[4]))
         if not mount_path.is_absolute() or ".." in mount_path.parts:
             _fail()
-        found.append((mount_path, filesystem[0].lower()))
-    if not any(p == Path("/") for p, _ in found):
+        mount_options = fields[5].split(",")
+        super_options = filesystem[2].split(",")
+        # A writable owner runtime cannot rely on a read-only mount.
+        writable = ("rw" in mount_options and "ro" not in mount_options
+                    and "ro" not in super_options)
+        found.append((mount_path, filesystem[0].lower(), writable))
+    if not any(p == Path("/") for p, _, _ in found):
         _fail()
     return found
 
@@ -109,12 +117,13 @@ def verify_persistent_private_host(
                 marker = ancestor / ".git"
                 if marker.exists() or marker.is_symlink():
                     _fail()
-            matches = [(point, fs) for point, fs in mounts
+            matches = [(point, fs, writable) for point, fs, writable in mounts
                        if candidate == point or candidate.is_relative_to(point)]
             if not matches:
                 _fail()
-            _, filesystem = max(matches, key=lambda pair: len(pair[0].parts))
-            if filesystem in EPHEMERAL_FS:
+            _, filesystem, writable = max(matches,
+                                         key=lambda item: len(item[0].parts))
+            if filesystem not in PERSISTENT_LOCAL_FS or not writable:
                 _fail()
             if disk_usage(candidate).free < minimum_free_bytes:
                 _fail()

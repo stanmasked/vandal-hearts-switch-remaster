@@ -959,3 +959,35 @@ Persist a separate independently verified copy of the archive and
 external trust pins in private Google Drive and verify remote ACLs.
 No private original-game media, audio, BIOS, CUE/BIN or BK2 belongs
 in public source CI; MAP02 real cold captures remain unverified.
+
+## Stage552 — validate ALL owner backup storage, including source trust references
+
+The Stage551 mount gate checked runtime and the new work/trust output folders,
+but overlooked two equally important **input** locations: the containing
+directory of the pre-existing independently trusted runtime-manifest SHA,
+and the containing directory of the private Drive folder-ID configuration.
+Stage552 adds both to the real owner `publish` filesystem audit, with
+duplicate directories de-duplicated. If either source depends on a CI
+overlay or other temporary mount, **stop before any Drive operation**.
+
+The filesystem audit now accepts only an explicit set of reviewed local
+Linux disk formats (`ext2/3/4`, `xfs`, `btrfs`, `zfs`,
+`f2fs`, `bcachefs`, `jfs`, `nilfs2`). It rejects
+unknown filesystem types, cloud/FUSE/network mounts such as `nfs`,
+`cifs`, `9p`, `virtiofs` and `fuse.rclone`, plus
+`overlay` and `tmpfs`; and refuses read-only mounts both in the
+mountpoint flags and superblock flags from `/proc/self/mountinfo`.
+The OS-owned mount table is parsed with its octal-escaped mount names,
+and the most-specific mountpoint still wins.
+
+New entirely source-free tests check unknown/remote filesystems, read-only
+mounts, escaped-space mountpoints, and the *actual real-transport
+branch* requiring both source trust-directory and folder-map-directory
+audits before any upload. This confirms only code enforcement under
+simulation; it does NOT certify that an actual persistent owner host or
+rclone Drive account was used.
+
+All original PS1 game assets/audio/BIOS/BK2 stay private and unchanged.
+Canonical private `07_Builds_and_Test_Artifacts` still needs an actual
+owner-authenticated binary runtime archive; synthetic native CI does
+not satisfy this gate or genuine two-cold-launch MAP02 proof.

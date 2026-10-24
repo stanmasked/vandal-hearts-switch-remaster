@@ -102,12 +102,16 @@ def publish_existing_trusted_runtime(
                 or any(p.exists() or p.is_symlink() for p in paths.values())
                 or any(p == manifest_pin or p == folder_map for p in paths.values())):
             _fail()
-        # REAL owner CLI must reject ephemeral CI/overlay/tmpfs storage and
-        # insufficient host capacity before invoking any cloud operation.
-        # Synthetic test transport does not assert a real persistent machine.
+        # Real owner must ALSO keep the original independently trusted SHA
+        # and private Drive-folder mapping on persistent local storage.
+        # Checking only the new output folder would leave these vital
+        # inputs vulnerable to the same ephemeral runner disappearance.
+        # Fake in-memory cloud tests never claim this proves a real host.
         if invoke is _call_rclone:
             verify_persistent_private_host(
-                [source, work, trust],
+                list(dict.fromkeys((
+                    source, work, trust, manifest_pin.parent, folder_map.parent,
+                ))),
                 minimum_free_bytes=MINIMUM_PUBLISH_BYTES,
             )
         checked = verify_runtime(
