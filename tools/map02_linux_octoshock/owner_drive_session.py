@@ -156,20 +156,43 @@ def _owner_session_lock(private_folder_map: Path):
                 or details.st_nlink != 1):
             _fail()
         fcntl.flock(file_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        current = os.stat(
-            ".map02-owner-session.lock", dir_fd=directory_fd,
-            follow_symlinks=False,
-        )
-        if ((current.st_dev, current.st_ino) !=
-                (details.st_dev, details.st_ino)):
-            _fail()
+        # Check the live path against the locked descriptor at sensitive
+        # boundaries. An unlink/recreate could otherwise split lock holders
+        # across two inodes even while this descriptor stays flocked.
+        def verify_current_lock():
+            try:
+                parent_now = parent.lstat()
+                dir_now = os.fstat(directory_fd)
+                held_now = os.fstat(file_fd)
+                named_now = os.stat(
+                    ".map02-owner-session.lock", dir_fd=directory_fd,
+                    follow_symlinks=False,
+                )
+            except OSError:
+                _fail()
+            if (not stat.S_ISDIR(parent_now.st_mode)
+                    or parent_now.st_uid != os.geteuid()
+                    or stat.S_IMODE(parent_now.st_mode) != 0o700
+                    or (parent_now.st_dev, parent_now.st_ino)
+                       != (before.st_dev, before.st_ino)
+                    or (dir_now.st_dev, dir_now.st_ino)
+                       != (before.st_dev, before.st_ino)
+                    or not stat.S_ISREG(held_now.st_mode)
+                    or held_now.st_uid != os.geteuid()
+                    or stat.S_IMODE(held_now.st_mode) != 0o600
+                    or held_now.st_nlink != 1
+                    or not stat.S_ISREG(named_now.st_mode)
+                    or (named_now.st_dev, named_now.st_ino)
+                       != (held_now.st_dev, held_now.st_ino)):
+                _fail()
+        verify_current_lock()
     except (OSError, ValueError):
         if file_fd is not None:
             os.close(file_fd)
         os.close(directory_fd)
         _fail()
     try:
-        yield
+        yield verify_current_lock
     finally:
         # Preserve the inode on disk for safe acquisition by later sessions.
         os.close(file_fd)
@@ -188,7 +211,12 @@ def _serialize_owner_session(fn):
         )
         # The same private folder-map location serializes different session
         # names and independent pin output names used by this owner.
-        with _owner_session_lock(Path(bound.arguments["private_folder_map"])):
+        if "_session_lock_check" in kwargs:
+            _fail()
+        with _owner_session_lock(
+            Path(bound.arguments["private_folder_map"]),
+        ) as check_lock:
+            kwargs["_session_lock_check"] = check_lock
             return fn(*args, **kwargs)
     return guarded
 
@@ -206,6 +234,7 @@ def complete_owner_archive_session(
     *,
     independent_archive_pin_output: Path | None = None,
     invoke=_call_rclone,
+    _session_lock_check=None,
 ) -> dict[str, object]:
     """Pack, upload, download and source-free re-audit in one fail-closed run.
 
@@ -216,6 +245,9 @@ def complete_owner_archive_session(
     cleanup_receipt: Path | None = None
     cleanup_archive: Path | None = None
     try:
+        if _session_lock_check is None:
+            _fail()
+        _session_lock_check()
         source = _root(runtime)
         builds = _remote_name(builds_remote)
         manifests = _remote_name(manifests_remote)
@@ -276,6 +308,7 @@ def complete_owner_archive_session(
         # concurrent interrupted owner process cannot slip past preflight.
         _reject_unresolved_pin_quarantine(receipt_pin, tar_pin_out)
 
+        _session_lock_check()
         # At this point the owner-only files are new and the no-write
         # preflight has succeeded. Mark them as disposable from THIS
         # attempt, not before: older trust anchors are never removed.
@@ -301,6 +334,7 @@ def complete_owner_archive_session(
         if (packed["files"] <= 0 or packed["bytes"] <= 0
                 or packed.get("drive_upload_authenticated") is not False):
             _fail()
+        _session_lock_check()
         # Packing may take enough time for another interrupted owner process
         # to leave a new quarantine. Refuse before any cloud upload if that
         # happened, retaining the local session archive for investigation.
@@ -315,6 +349,7 @@ def complete_owner_archive_session(
                 or uploaded["objects_read_back"] != 5
                 or uploaded["capture_ready"] is not False):
             _fail()
+        _session_lock_check()
         # Stage596: cloud transfer is a long-running boundary. Another
         # interrupted owner process may leave cleanup quarantine while we
         # upload and read back objects. Never endorse that transfer until the
@@ -334,6 +369,7 @@ def complete_owner_archive_session(
                 or independent["original_runtime_required"] is not False
                 or independent["capture_ready"] is not False):
             _fail()
+        _session_lock_check()
         # Stage544: preserve the third trust reference OUTSIDE the disposable
         # session. Export only after a complete source-free cloud re-audit.
         # Incomplete uploads must never produce an endorsed owner archive pin.
@@ -347,6 +383,9 @@ def complete_owner_archive_session(
                 output.write((digest + "\n").encode("ascii"))
             if _pin(tar_pin_out) != digest or _hash_file(tar) != digest:
                 _fail()
+        # Recheck after writing both endorsed pins; if the lock path changed,
+        # the existing failure handler discards only this session's new pins.
+        _session_lock_check()
         return {
             "runtime_files": independent["files"],
             "runtime_bytes": independent["bytes"],
