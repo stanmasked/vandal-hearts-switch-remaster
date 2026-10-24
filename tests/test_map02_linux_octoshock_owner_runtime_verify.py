@@ -180,8 +180,11 @@ class OwnerRuntimeVerifierTests(unittest.TestCase):
                 verify_runtime(root, trusted_manifest_pin_file=pin,
                                require_trusted_pin=True)
 
-    def test_external_pin_requires_owner_only_file_outside_runtime(self):
-        for failure in ("world-readable", "symlink", "inside-runtime", "missing"):
+    def test_external_pin_requires_owner_only_file_outside_runtime_and_git(self):
+        for failure in (
+            "world-readable", "symlink", "inside-runtime", "missing",
+            "git-worktree-dir", "git-worktree-file",
+        ):
             with self.subTest(failure=failure):
                 temp, root, _ = self.with_fixture()
                 with temp:
@@ -197,8 +200,28 @@ class OwnerRuntimeVerifierTests(unittest.TestCase):
                         new.write_bytes(pin.read_bytes())
                         os.chmod(new, 0o600)
                         pin = new
-                    else:
+                    elif failure == "missing":
                         pin.unlink()
+                    else:
+                        checkout = Path(temp.name) / "private-checkout"
+                        checkout.mkdir(mode=0o700)
+                        os.chmod(checkout, 0o700)
+                        marker = checkout / ".git"
+                        if failure == "git-worktree-dir":
+                            marker.mkdir(mode=0o700)
+                        else:
+                            marker.write_text(
+                                "gitdir: /synthetic/private/worktrees/example\n",
+                                encoding="ascii",
+                            )
+                        trust = checkout / "trust"
+                        trust.mkdir(mode=0o700)
+                        pin = trust / "manifest.sha256"
+                        pin.write_text(
+                            digest((root / "map02-owner-runtime-manifest.json").read_bytes()) + "\n",
+                            encoding="ascii",
+                        )
+                        os.chmod(pin, 0o600)
                     with self.assertRaises(RuntimeVerificationError):
                         verify_runtime(root, trusted_manifest_pin_file=pin,
                                        require_trusted_pin=True)

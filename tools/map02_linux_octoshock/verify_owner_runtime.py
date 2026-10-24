@@ -100,8 +100,18 @@ def _sha(root: Path, relative: str, digest: str) -> None:
         os.close(fd)
 
 
+def _reject_git_ancestry(directory: Path) -> None:
+    """Reject a trust reference stored anywhere inside a Git checkout/worktree."""
+    for ancestor in (directory, *directory.parents):
+        marker = ancestor / ".git"
+        # Ordinary clones use a .git directory; linked worktrees commonly use
+        # a .git file. Both indicate that this is not an independent trust store.
+        if marker.exists() or marker.is_symlink():
+            _fail()
+
+
 def _read_external_manifest_pin(pin_value: Path, runtime_root: Path) -> str:
-    """Read a pre-established owner-private trust anchor outside the runtime.
+    """Read a pre-established owner-private trust anchor outside runtime and Git.
 
     This function does NOT create or authenticate the trusted value. The owner
     must store and independently verify the pin in the private evidence archive
@@ -113,6 +123,7 @@ def _read_external_manifest_pin(pin_value: Path, runtime_root: Path) -> str:
     if path.is_relative_to(runtime_root):
         _fail()
     parent = path.parent
+    _reject_git_ancestry(parent)
     # The trust anchor must live in an owner-only directory. Resolving before
     # opening rejects symlinked ancestors; opening the directory itself and
     # using dir_fd keeps the final file lookup anchored to that same inode.
@@ -175,6 +186,9 @@ def _read_external_manifest_pin(pin_value: Path, runtime_root: Path) -> str:
             digest = content[:-1].decode("ascii")
             if HASH.fullmatch(digest) is None:
                 _fail()
+            # Recheck the whole ancestry after the read as well: a Git marker
+            # appearing during verification invalidates the trust location.
+            _reject_git_ancestry(parent)
             return digest
         finally:
             os.close(fd)

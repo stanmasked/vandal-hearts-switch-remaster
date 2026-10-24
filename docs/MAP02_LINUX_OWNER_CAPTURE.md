@@ -1794,3 +1794,15 @@ and gameplay captures remain unchanged. The canonical private
 `07_Builds_and_Test_Artifacts` folder remains empty until a genuine owner-host
 publish and independent readback succeed.
 
+## Stage617 — keep the owner trust pin outside Git worktrees
+
+The external runtime-manifest SHA-256 file is now rejected if it resides under
+any ancestor containing a `.git` marker. The check handles both ordinary
+clones (`.git/` directory) and linked worktrees (a `.git` file), and repeats
+the ancestry check after reading the pin. The pin must still be an owner-only
+regular file in an owner-only directory, outside the runtime, with the expected
+65-byte LF-terminated SHA-256 format.
+
+Regression tests cover both Git marker forms using a synthetic runtime and
+synthetic manifest pin. These tests prove path-policy enforcement only; they
+do not establish an independently trusted owner pin or make capture ready.
