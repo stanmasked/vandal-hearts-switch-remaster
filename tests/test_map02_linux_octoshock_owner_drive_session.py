@@ -311,7 +311,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
         target = self.base.parent / (self.base.name + "-stage591-external-target")
         target.mkdir(mode=0o700)
         sentinel = target / "preserve.txt"
-        sentinel.write_text("external quarantine target must remain untouched\\n",
+        sentinel.write_text("external quarantine target must remain untouched\n",
                             encoding="ascii")
         sentinel.chmod(0o600)
         marker = self.base / ".map02-pin-cleanup-stage591-link"
@@ -328,7 +328,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertEqual(os.readlink(marker), str(target))
         self.assertEqual(
             sentinel.read_text(encoding="ascii"),
-            "external quarantine target must remain untouched\\n",
+            "external quarantine target must remain untouched\n",
         )
         self.assertEqual(sentinel.stat().st_mode & 0o777, 0o600)
         self.assertEqual(list(target.iterdir()), [sentinel])
