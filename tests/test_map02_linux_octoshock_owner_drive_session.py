@@ -769,6 +769,8 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertFalse((root / "retry-session").exists())
 
 
+    # Whichever stop signal arrives first, the opposite signal must not
+    # interrupt the same guarded cleanup path.
     @unittest.skipUnless(os.name == "posix" and hasattr(signal, "SIGINT")
                          and hasattr(signal, "SIGTERM"),
                          "requires POSIX SIGINT/SIGTERM handling")
