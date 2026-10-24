@@ -375,6 +375,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
                                   pause_after_quarantine_move=False,
                                   pause_quarantine_unlink=False,
                                   fail_quarantine_unlink=False,
+                                  fail_quarantine_receipt=False,
                                   quarantine_target="receipt", both_pins=False):
         root = self.base / "stage578-owner-signal-child"
         root.mkdir(mode=0o700)
@@ -391,6 +392,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
             pause_after_quarantine_move = "pause-quarantine" in sys.argv[2:]
             pause_quarantine_unlink = "pause-quarantine-unlink" in sys.argv[2:]
             fail_quarantine_unlink = "fail-quarantine-unlink" in sys.argv[2:]
+            fail_quarantine_receipt = "fail-quarantine-receipt" in sys.argv[2:]
             pause_quarantine_archive = "pause-quarantine-archive" in sys.argv[2:]
             both_pins = "both-pins" in sys.argv[2:]
             runtime = base / "runtime"
@@ -438,9 +440,14 @@ class OwnerDriveSessionTests(unittest.TestCase):
             real_discard = module._discard_incomplete_owner_pin
             real_rename = module.os.rename
             real_unlink = module.Path.unlink
+            last_quarantined_pin = None
 
             def rename_with_optional_pause(src, dst):
+                global last_quarantined_pin
                 real_rename(src, dst)
+                if (Path(dst).name == "payload"
+                        and Path(dst).parent.name.startswith(".map02-pin-cleanup-")):
+                    last_quarantined_pin = Path(src)
                 target_pin = archive_pin if pause_quarantine_archive else receipt_pin
                 if pause_after_quarantine_move and Path(src) == target_pin:
                     print("QUARANTINE_READY", flush=True)
@@ -453,8 +460,10 @@ class OwnerDriveSessionTests(unittest.TestCase):
                     and Path(path).parent.name.startswith(".map02-pin-cleanup-")
                 )
                 if fail_quarantine_unlink and is_quarantined_payload:
-                    print("QUARANTINE_UNLINK_FAILURE_READY", flush=True)
-                    raise OSError("synthetic quarantine payload unlink failure")
+                    fail_target = receipt_pin if fail_quarantine_receipt else archive_pin
+                    if last_quarantined_pin == fail_target:
+                        print("QUARANTINE_UNLINK_FAILURE_READY", flush=True)
+                        raise OSError("synthetic quarantine payload unlink failure")
                 if pause_quarantine_unlink and is_quarantined_payload:
                     print("QUARANTINE_PAYLOAD_READY", flush=True)
                     release = base / "continue-cleanup"
@@ -500,6 +509,8 @@ class OwnerDriveSessionTests(unittest.TestCase):
             command.append("pause-quarantine-unlink")
         if fail_quarantine_unlink:
             command.append("fail-quarantine-unlink")
+        if fail_quarantine_receipt:
+            command.append("fail-quarantine-receipt")
         if quarantine_target == "archive":
             command.append("pause-quarantine-archive")
         if both_pins:
@@ -974,6 +985,65 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertEqual(receipt_pin.read_text(encoding="ascii"), "b" * 64 + "\n")
         self.assertEqual(
             quarantined_archive.read_text(encoding="ascii"), "c" * 64 + "\n",
+        )
+        self.assertFalse((root / "retry-session").exists())
+
+
+    # Stage586: the first pin is removed successfully, then cleanup of the
+    # second pin fails. The surviving quarantined payload must block retry.
+    @unittest.skipUnless(os.name == "posix" and hasattr(signal, "SIGTERM"),
+                         "requires POSIX SIGTERM handling")
+    def test_second_pin_unlink_failure_after_first_cleanup_blocks_retry(self):
+        root, process = self._start_owner_signal_child(
+            fail_quarantine_unlink=True,
+            fail_quarantine_receipt=True,
+            both_pins=True,
+        )
+        receipt_pin = root / "owner-receipt.sha256"
+        archive_pin = root / "owner-archive.sha256"
+        try:
+            process.send_signal(signal.SIGTERM)
+            ready, _, _ = select.select([process.stdout], [], [], 15)
+            self.assertTrue(ready, "second-pin cleanup did not reach injected unlink failure")
+            marker = process.stdout.readline().strip()
+            self.assertEqual(marker, "QUARANTINE_UNLINK_FAILURE_READY")
+            stdout, stderr = process.communicate(timeout=15)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+
+        self.assertEqual(process.returncode, 128 + signal.SIGTERM, (stdout, stderr))
+        self.assertFalse(archive_pin.exists())
+        self.assertFalse(receipt_pin.exists())
+        self.assertTrue((root / "session").is_dir())
+
+        quarantines = list(root.glob(".map02-pin-cleanup-*"))
+        self.assertEqual(len(quarantines), 1)
+        quarantined_receipt = quarantines[0] / "payload"
+        self.assertEqual(
+            quarantined_receipt.read_text(encoding="ascii"), "b" * 64 + "\n",
+        )
+        self.assertEqual(quarantined_receipt.stat().st_mode & 0o777, 0o600)
+
+        # The first pin's cleanup succeeded, but the second pin is unresolved.
+        # A retry must fail before transport and preserve the remaining payload.
+        with self.assertRaises(PrivateOwnerSessionError):
+            complete_owner_archive_session(
+                root / "runtime",
+                root / "trusted-manifest.sha256",
+                root / "private-folder-map.json",
+                root / "retry-session",
+                receipt_pin,
+                "vh_builds",
+                "vh_manifests",
+                "owner586retry",
+                independent_archive_pin_output=archive_pin,
+                invoke=self.transport,
+            )
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertEqual(
+            quarantined_receipt.read_text(encoding="ascii"), "b" * 64 + "\n",
         )
         self.assertFalse((root / "retry-session").exists())
 
