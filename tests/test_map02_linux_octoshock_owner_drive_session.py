@@ -371,7 +371,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertEqual(self.transport.uploads, 0)
 
 
-    def _start_owner_signal_child(self):
+    def _start_owner_signal_child(self, *, pause_cleanup=False):
         root = self.base / "stage578-owner-signal-child"
         root.mkdir(mode=0o700)
         script = textwrap.dedent(r"""
@@ -383,6 +383,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
             import tools.map02_linux_octoshock.owner_drive_session as module
 
             base = Path(sys.argv[1])
+            pause_cleanup = len(sys.argv) > 2 and sys.argv[2] == "pause-cleanup"
             runtime = base / "runtime"
             runtime.mkdir(mode=0o700)
             trusted_pin = base / "trusted-manifest.sha256"
@@ -422,7 +423,18 @@ class OwnerDriveSessionTests(unittest.TestCase):
                 "--manifests-remote", "vh_manifests",
                 "--session", "owner578test",
             ]
-            with patch.object(module, "verify_runtime", return_value={
+            real_discard = module._discard_incomplete_owner_pin
+
+            def discard_with_optional_pause(path):
+                if pause_cleanup:
+                    (base / "cleanup-started").write_text("cleanup started", encoding="ascii")
+                    time.sleep(2)
+                return real_discard(path)
+
+            with patch.object(
+                    module, "_discard_incomplete_owner_pin",
+                    side_effect=discard_with_optional_pause,
+                ), patch.object(module, "verify_runtime", return_value={
                     "verified": True,
                     "trusted_manifest_pin_verified": True,
                     "capture_ready": False,
@@ -436,7 +448,8 @@ class OwnerDriveSessionTests(unittest.TestCase):
                 raise SystemExit(module.main())
         """)
         process = subprocess.Popen(
-            [sys.executable, "-c", script, str(root)],
+            [sys.executable, "-c", script, str(root),
+             "pause-cleanup" if pause_cleanup else "normal"],
             cwd=Path(__file__).resolve().parents[1],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -546,6 +559,39 @@ class OwnerDriveSessionTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         self.assertIs(signal.getsignal(signal.SIGTERM), previous_handler)
+
+
+    @unittest.skipUnless(os.name == "posix" and hasattr(signal, "SIGTERM"),
+                         "requires POSIX SIGTERM handling")
+    def test_repeated_sigterm_during_cleanup_is_ignored(self):
+        import time
+
+        root, process = self._start_owner_signal_child(pause_cleanup=True)
+        try:
+            process.send_signal(signal.SIGTERM)
+            cleanup_marker = root / "cleanup-started"
+            deadline = time.monotonic() + 10
+            while (not cleanup_marker.exists() and process.poll() is None
+                   and time.monotonic() < deadline):
+                time.sleep(0.02)
+            self.assertTrue(
+                cleanup_marker.exists(),
+                "first SIGTERM did not enter guarded cleanup",
+            )
+            # The child is deliberately paused inside cleanup. A second
+            # SIGTERM must be ignored until cleanup completes.
+            process.send_signal(signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=15)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+
+        self.assertEqual(process.returncode, 128 + signal.SIGTERM, (stdout, stderr))
+        self.assertFalse((root / "owner-receipt.sha256").exists())
+        self.assertFalse((root / "owner-archive.sha256").exists())
+        self.assertTrue((root / "session").is_dir())
+        self.assertEqual(list(root.glob(".map02-pin-cleanup-*")), [])
 
 
 if __name__ == "__main__":
