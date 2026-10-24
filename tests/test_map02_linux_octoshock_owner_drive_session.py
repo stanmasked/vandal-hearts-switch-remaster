@@ -339,13 +339,13 @@ class OwnerDriveSessionTests(unittest.TestCase):
         marker = self.base / ".map02-pin-cleanup-stage592-race"
         marker.mkdir(mode=0o700)
         original_payload = marker / "payload"
-        original_payload.write_text("e" * 64 + "\\n", encoding="ascii")
+        original_payload.write_text("e" * 64 + "\n", encoding="ascii")
         original_payload.chmod(0o600)
         displaced = self.base / "displaced-stage592-quarantine"
         target = self.base / "stage592-external-target"
         target.mkdir(mode=0o700)
         sentinel = target / "preserve.txt"
-        sentinel.write_text("concurrent symlink target stays untouched\\n",
+        sentinel.write_text("concurrent symlink target stays untouched\n",
                             encoding="ascii")
         sentinel.chmod(0o600)
 
@@ -376,12 +376,12 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertEqual(os.readlink(marker), str(target))
         self.assertEqual(
             (displaced / "payload").read_text(encoding="ascii"),
-            "e" * 64 + "\\n",
+            "e" * 64 + "\n",
         )
         self.assertEqual((displaced / "payload").stat().st_mode & 0o777, 0o600)
         self.assertEqual(
             sentinel.read_text(encoding="ascii"),
-            "concurrent symlink target stays untouched\\n",
+            "concurrent symlink target stays untouched\n",
         )
         self.assertEqual(list(target.iterdir()), [sentinel])
 
