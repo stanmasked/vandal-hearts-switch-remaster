@@ -159,6 +159,20 @@ class IndependentReadbackTests(unittest.TestCase):
         # that could be mistaken for accepted evidence.
         self.assertFalse(self.reaudit.exists())
 
+    def test_cleanup_does_not_remove_replacement_readback_directory(self):
+        displaced = self.base / "displaced-readback-root"
+        self.transport.replace_readback_root_after_download = (
+            "map02-runtime-testowner001.tar", self.reaudit, displaced,
+        )
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+        self.assertTrue(displaced.is_dir())
+        self.assertTrue(self.reaudit.is_dir())
+        self.assertEqual(
+            (self.reaudit / "sentinel").read_text(encoding="utf-8"),
+            "preserve replacement",
+        )
+
     def test_refuse_corrupted_remote_archive(self):
         key = "map02-runtime-testowner001.tar"
         self.transport.remote["vh_builds"][key] += b"FORGED"
