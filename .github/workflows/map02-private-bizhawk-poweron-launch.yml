@@ -4,6 +4,9 @@ on:
     paths:
       - '.github/workflows/map02-private-bizhawk-poweron-launch.yml'
       - 'tools/map02_private_bizhawk_poweron_launch.py'
+      - 'tools/map02_bizhawk_private_neutral_capture.lua'
+      - 'tools/map02_runtime_core_witness/CustomMainForm.cs'
+      - 'tools/map02_runtime_core_witness/VhMap02CoreWitness.csproj'
       - 'tools/map02_private_witness_plugin_digest.py'
       - 'tests/test_map02_private_witness_plugin_digest.py'
       - 'tests/test_map02_private_bizhawk_poweron_launch.py'
