@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import shutil
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from test_map02_linux_octoshock_private_drive import Stage537TransportTests
+from test_map02_linux_octoshock_archive_readback import private_mock_runtime
 from tools.map02_linux_octoshock import owner_persistent_backup as pipeline
 from tools.map02_linux_octoshock.owner_persistent_backup import (
     OwnerPersistentBackupError, publish_existing_trusted_runtime,
@@ -165,6 +167,82 @@ class PersistentOwnerPipelineTests(unittest.TestCase):
                         ):
                             self.assertEqual(pipeline.main(), 1)
         build.assert_called_once()
+
+    def _prepare_with_invented_runtime(self, *, corrupt=False, omit=False):
+        promoted = self.base / "stage599-promoted-no-media-runtime"
+
+        def build_installed_runtime(root, *, keep_workdir=False):
+            self.assertEqual(Path(root), promoted)
+            if not omit:
+                private_mock_runtime(promoted)
+                if corrupt:
+                    (promoted / "EmuHawk.exe").write_bytes(b"tampered promoted file")
+            return {"game_media_used": False, "psx_capture_ready": False}
+
+        with patch("sys.argv", [
+            "owner_persistent_backup", "prepare", "--new-runtime-root",
+            str(promoted),
+        ]), patch.object(
+            pipeline, "verify_persistent_private_host",
+        ), patch.object(
+            pipeline, "snapshot_private_path_identity",
+            return_value=(("synthetic", 1, 2, 3, 4),),
+        ), patch.object(
+            pipeline, "require_unchanged_persistent_host",
+        ) as recheck, patch.object(
+            pipeline, "build_and_stage",
+            side_effect=build_installed_runtime,
+        ) as build:
+            result = pipeline.main()
+        build.assert_called_once()
+        return result, promoted, recheck.call_count
+
+    def test_prepare_independently_verifies_promoted_no_media_runtime(self):
+        result, root, rechecks = self._prepare_with_invented_runtime()
+        self.assertEqual(result, 0)
+        self.assertTrue(root.is_dir())
+        self.assertEqual(rechecks, 2)
+        self.assertFalse((self.trust / "owner-sha.sha256").exists())
+        self.assertEqual(list(self.trust.iterdir()), [])
+
+    def test_prepare_rejects_corrupt_file_after_promotion(self):
+        result, root, rechecks = self._prepare_with_invented_runtime(corrupt=True)
+        self.assertEqual(result, 1)
+        self.assertTrue(root.is_dir())  # preserve failed runtime for investigation
+        self.assertEqual(rechecks, 1)
+        self.assertEqual(list(self.trust.iterdir()), [])
+
+    def test_prepare_rejects_missing_runtime_after_reported_build_success(self):
+        result, root, rechecks = self._prepare_with_invented_runtime(omit=True)
+        self.assertEqual(result, 1)
+        self.assertFalse(root.exists())
+        self.assertEqual(rechecks, 1)
+        self.assertEqual(list(self.trust.iterdir()), [])
+
+    def test_prepare_rejects_host_change_after_independent_verification(self):
+        promoted = self.base / "stage599-verified-host-replacement"
+
+        def build_installed_runtime(root, *, keep_workdir=False):
+            private_mock_runtime(promoted)
+            return {"game_media_used": False, "psx_capture_ready": False}
+
+        with patch("sys.argv", [
+            "owner_persistent_backup", "prepare", "--new-runtime-root",
+            str(promoted),
+        ]), patch.object(
+            pipeline, "verify_persistent_private_host",
+        ), patch.object(
+            pipeline, "snapshot_private_path_identity",
+            return_value=(("synthetic", 1, 2, 3, 4),),
+        ), patch.object(
+            pipeline, "require_unchanged_persistent_host",
+            side_effect=[{}, ValueError("fictional host swapped after verification")],
+        ) as recheck, patch.object(
+            pipeline, "build_and_stage", side_effect=build_installed_runtime,
+        ):
+            self.assertEqual(pipeline.main(), 1)
+        self.assertEqual(recheck.call_count, 2)
+        self.assertEqual(list(self.trust.iterdir()), [])
 
     def test_symlinked_work_root_refused(self):
         alias = self.base / "alias"
