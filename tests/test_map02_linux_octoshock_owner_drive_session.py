@@ -386,10 +386,10 @@ class OwnerDriveSessionTests(unittest.TestCase):
             runtime = base / "runtime"
             runtime.mkdir(mode=0o700)
             trusted_pin = base / "trusted-manifest.sha256"
-            trusted_pin.write_text("a" * 64 + "\\n", encoding="ascii")
+            trusted_pin.write_text("a" * 64 + "\n", encoding="ascii")
             trusted_pin.chmod(0o600)
             folder_map = base / "private-folder-map.json"
-            folder_map.write_text("{}\\n", encoding="ascii")
+            folder_map.write_text("{}\n", encoding="ascii")
             folder_map.chmod(0o600)
             receipt_pin = base / "owner-receipt.sha256"
             archive_pin = base / "owner-archive.sha256"
@@ -399,12 +399,12 @@ class OwnerDriveSessionTests(unittest.TestCase):
                 tar.write_bytes(data)
                 import hashlib
                 digest = hashlib.sha256(data).hexdigest()
-                tar_digest.write_text(digest + "\\n", encoding="ascii")
+                tar_digest.write_text(digest + "\n", encoding="ascii")
                 return {"files": 1, "bytes": len(data),
                         "drive_upload_authenticated": False}
 
             def interrupted_upload(*_args, **_kwargs):
-                receipt_pin.write_text("b" * 64 + "\\n", encoding="ascii")
+                receipt_pin.write_text("b" * 64 + "\n", encoding="ascii")
                 receipt_pin.chmod(0o600)
                 print("PIN_READY", flush=True)
                 while True:
@@ -486,7 +486,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
                 process.wait(timeout=10)
         self.assertEqual(process.returncode, -signal.SIGKILL, (stdout, stderr))
         receipt_pin = root / "owner-receipt.sha256"
-        self.assertEqual(receipt_pin.read_text(encoding="ascii"), "b" * 64 + "\\n")
+        self.assertEqual(receipt_pin.read_text(encoding="ascii"), "b" * 64 + "\n")
         self.assertEqual(receipt_pin.stat().st_mode & 0o777, 0o600)
         self.assertFalse((root / "owner-archive.sha256").exists())
         self.assertTrue((root / "session").is_dir())
@@ -508,7 +508,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
                 invoke=self.transport,
             )
         self.assertEqual(self.transport.uploads, 0)
-        self.assertEqual(receipt_pin.read_text(encoding="ascii"), "b" * 64 + "\\n")
+        self.assertEqual(receipt_pin.read_text(encoding="ascii"), "b" * 64 + "\n")
         self.assertFalse((root / "retry-session").exists())
 
 
