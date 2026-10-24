@@ -93,7 +93,7 @@ def _open_stable(path: Path, *, require_private: bool = False) -> tuple[int, os.
         os.close(fd)
         raise ValueError("private source changed while opening")
     if require_private and os.name != "nt":
-        parent_info = path.parent.stat(follow_symlinks=False)
+        parent_info = os.stat(path.parent, follow_symlinks=False)
         if (parent_info.st_uid != os.geteuid()
                 or stat.S_IMODE(parent_info.st_mode) != 0o700
                 or info.st_uid != os.geteuid()
@@ -113,7 +113,7 @@ def _assert_stable(fd: int, path: Path, before: os.stat_result, *,
             or _identity(named) != _identity(after)):
         raise ValueError("private source changed during preflight")
     if require_private and os.name != "nt":
-        parent_info = path.parent.stat(follow_symlinks=False)
+        parent_info = os.stat(path.parent, follow_symlinks=False)
         if (parent_info.st_uid != os.geteuid()
                 or stat.S_IMODE(parent_info.st_mode) != 0o700
                 or after.st_uid != os.geteuid()
