@@ -1,5 +1,18 @@
 # MAP02 owner-local capture on Linux x86_64 (Stage520)
 
+> **Stage547 update (2026-10-24):** The official BizHawk 2.11 Linux
+> archive still omits the native Octoshock module. In contrast, our pinned
+> Linux CI has successfully **built a native Octoshock port independently**
+> and staged a real no-game-media BizHawk/Octoshock runtime (413 files;
+> most recent exact-head tar roundtrip 139,113,480 unpacked bytes).
+> This runtime existed **only inside a temporary CI runner**. It was not
+> permanently archived to the owner's private Google Drive, no independently
+> trusted owner manifest pin has been established, and no genuine MAP02
+> PS1 cold boot has been proven. The historical Stage520 warnings below
+> concern the **upstream official package**, not the newer standalone
+> compatibility build. Do not infer that the owner-host capture gate is open.
+>
+
 ## Current blocking finding — do NOT start a real PSX capture yet
 
 On the official, SHA-256-verified BizHawk 2.11 Linux x64 release,
@@ -728,3 +741,36 @@ Preserve JSON and its trusted SHA outside the source host, in the
 private project's appropriate reports and manifest areas, with a
 separate offline reference to its trusted origin. Public GitHub CI
 tests only fictional remotes and owner-free invented bytes.
+
+## Stage547 — owner trust-pin directory confinement
+
+Stage539 source-free re-audit previously required the SHA files and
+private-folder config to be owner-owned mode 0600, but did not explicitly
+verify their *containing directories*. Direct calls to the re-auditor
+could therefore accept a private-looking trust reference from a public
+Git checkout, through a symlinked folder alias, or from a mode-0755
+directory.
+
+Stage547 strengthens `_private_input` used by both the source-free Drive
+reauditor and the Stage545–546 admission verifier. Each private source
+must be under an immediate owner-owned mode-0700 directory, with no
+symlinked ancestor and no `.git` folder in the ancestor chain.
+All referenced files retain their preexisting owner-owned mode-0600
+requirement. The checks run before the private cloud download or the
+creation of a restored runtime.
+
+Three new fictional-only CI tests reject public directory permissions,
+a SHA located inside a Git worktree and a SHA path with a symlinked
+parent. Only source code, synthetic tests and safe documentation go
+into public GitHub. Owner manifest, tar SHA, receipt SHA, admission
+proof and admission proof SHA remain owner-controlled private files
+stored separately and backed up outside the potentially ephemeral host.
+
+Drive connector metadata checked on 2026-10-24 also showed
+`shared=false` and an owner-only permission entry for the canonical
+private Project Evidence Archive root and all eight child directories,
+including `07_Builds_and_Test_Artifacts`. This is a current folder-level
+configuration audit, **not** proof of any binary upload, file-level
+visibility of future uploads, authenticated owner `rclone` use, or MAP02
+gameplay. The canonical private builds folder is still empty. Do not
+mark game capture or persistent backup as complete.

@@ -46,6 +46,45 @@ class IndependentReadbackTests(unittest.TestCase):
         self.assertFalse(report["capture_ready"])
         self.assertTrue((self.reaudit / "restored/runtime/EmuHawk.exe").is_file())
 
+    def test_refuse_owner_sha_in_nonprivate_parent(self):
+        self.base.chmod(0o755)
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+        self.assertFalse(self.reaudit.exists())
+
+    def test_refuse_owner_sha_inside_git_checkout(self):
+        checkout = self.base / "fictional-worktree"
+        checkout.mkdir(mode=0o700)
+        (checkout / ".git").mkdir(mode=0o700)
+        unsafe_pin = checkout / "untrusted-manifest.sha256"
+        unsafe_pin.write_bytes(self.pin.read_bytes())
+        unsafe_pin.chmod(0o600)
+        with self.assertRaises(IndependentAuditError):
+            audit_independent_readback(
+                self.private_map, unsafe_pin, self.tar_sha,
+                self.receipt_pin, self.reaudit,
+                "vh_builds", "vh_manifests", "testowner001",
+                invoke=self.transport,
+            )
+        self.assertFalse(self.reaudit.exists())
+
+    def test_refuse_parent_symlink_in_owner_sha_path(self):
+        vault = self.base / "private-trust-vault"
+        vault.mkdir(mode=0o700)
+        real_pin = vault / "trusted-manifest.sha256"
+        real_pin.write_bytes(self.pin.read_bytes())
+        real_pin.chmod(0o600)
+        alias = self.base / "symlinked-trust-vault"
+        alias.symlink_to(vault, target_is_directory=True)
+        with self.assertRaises(IndependentAuditError):
+            audit_independent_readback(
+                self.private_map, alias / "trusted-manifest.sha256",
+                self.tar_sha, self.receipt_pin, self.reaudit,
+                "vh_builds", "vh_manifests", "testowner001",
+                invoke=self.transport,
+            )
+        self.assertFalse(self.reaudit.exists())
+
     def test_refuse_corrupted_remote_archive(self):
         key = "map02-runtime-testowner001.tar"
         self.transport.remote["vh_builds"][key] += b"FORGED"

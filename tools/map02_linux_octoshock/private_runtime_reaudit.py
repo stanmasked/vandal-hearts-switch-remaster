@@ -49,9 +49,22 @@ def _private_input(path: Path) -> Path:
     if (not candidate.is_absolute() or candidate.is_symlink() or
             not candidate.is_file()):
         _fail()
+    # A mode-0600 file alone is insufficient: never read owner trust pins
+    # through an alias/symlink parent or from a public Git worktree.
+    # Enforce that the immediate containing directory is owner-private.
+    if candidate.parent.resolve(strict=True) != candidate.parent:
+        _fail()
+    for ancestor in (candidate.parent, *candidate.parent.parents):
+        git = ancestor / ".git"
+        if git.exists() or git.is_symlink():
+            _fail()
+    folder = candidate.parent.stat()
     info = candidate.stat()
-    if (info.st_uid != os.geteuid() or
-            stat.S_IMODE(info.st_mode) != 0o600):
+    if (not stat.S_ISDIR(folder.st_mode)
+            or folder.st_uid != os.geteuid()
+            or stat.S_IMODE(folder.st_mode) != 0o700
+            or info.st_uid != os.geteuid()
+            or stat.S_IMODE(info.st_mode) != 0o600):
         _fail()
     return candidate
 
