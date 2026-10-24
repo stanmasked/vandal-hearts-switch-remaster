@@ -151,5 +151,18 @@ class PrivatePlanTests(unittest.TestCase):
         })
 
 
+class CaptureHandoffWorkflowContractTests(unittest.TestCase):
+    def test_lua_mock_summary_gate_accepts_matrix_growth(self):
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github/workflows/map02-private-neutral-capture-handoff.yml").read_text(
+            encoding="utf-8")
+        self.assertIn(
+            "grep -Eq '^VH_MAP02_NEUTRAL_CAPTURE_LUA_MOCK_PASS cases=[1-9][0-9]* "
+            "owner_bk2=0 actual_bizhawk=0 map02_verified=0",
+            workflow,
+        )
+        self.assertNotIn("cases=92", workflow)
+
+
 if __name__ == "__main__":
     unittest.main()
