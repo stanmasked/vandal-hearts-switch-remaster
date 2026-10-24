@@ -991,3 +991,33 @@ All original PS1 game assets/audio/BIOS/BK2 stay private and unchanged.
 Canonical private `07_Builds_and_Test_Artifacts` still needs an actual
 owner-authenticated binary runtime archive; synthetic native CI does
 not satisfy this gate or genuine two-cold-launch MAP02 proof.
+
+## Stage553 — match the mounted filesystem with the actual Linux directory device
+
+Stage552 made the owner-persistent preflight allowlist-only for local,
+writeable Linux file systems and covered **all five owner data locations**.
+However, identifying a matching mountpoint and its declared filesystem
+type was not yet sufficient to establish that the mount record belonged
+to the *actual visible filesystem* of the private directory.
+
+Stage553 reads the Linux mountinfo `major:minor` device identifier and
+uses `os.makedev()` to compare it against `stat().st_dev` on each
+owner-private directory. A forged, stale, buried or inconsistent
+mountinfo entry may no longer claim `ext4` to pass a directory that
+the kernel identifies as being on another filesystem. Equally specific
+mountpoint entries with conflicting device/type/write-permission state
+are rejected fail-closed instead of accepting the first match.
+
+Four additional **fictional-only** tests cover mismatching device IDs,
+duplicate stacked mounts with different devices, conflicting mounted
+read-only state, and invalid mount device fields. Existing simulated
+mounts are updated to use the real temporary test directory's
+`st_dev` so tests prove both positive and negative identity checks.
+
+This is still a runtime **observation** of the owner host; it does not
+certify physical disk redundancy, cryptographic origin of a trusted
+owner manifest SHA, or a persistent authenticated Drive upload.
+The CI runner uses entirely synthetic Drive transport and does NOT
+store the original game's CUE/BIN, BIOS, BK2, audio or raw private
+captures in GitHub. The original MAP02 two cold gameplay captures
+remain unverified.

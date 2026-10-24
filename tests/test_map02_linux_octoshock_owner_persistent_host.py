@@ -1,6 +1,7 @@
 """Stage551 simulated mount tests, no actual owner machine or media."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import stat
 import tempfile
@@ -25,10 +26,18 @@ class PersistentHostTests(unittest.TestCase):
 
     def audit(self, *, path=None, fs="ext4", env=None, free=None,
               mountinfo=None, prefixes=()):
+        candidate = self.root if path is None else path
+        # Fake rows use recognizable device tokens, but the identity
+        # gate requires the test mount to match the kernel's real st_dev.
+        observed = candidate.stat().st_dev
+        major_minor = f"{os.major(observed)}:{os.minor(observed)}"
+        fake_mounts = mock_mount(fs) if mountinfo is None else mountinfo
+        fake_mounts = (fake_mounts.replace("0:1", major_minor)
+                       .replace("0:2", major_minor))
         return verify_persistent_private_host(
-            [self.root if path is None else path],
+            [candidate],
             minimum_free_bytes=MINIMUM_PREPARE_BYTES,
-            mountinfo=mock_mount(fs) if mountinfo is None else mountinfo,
+            mountinfo=fake_mounts,
             environ={} if env is None else env,
             host_platform="linux", machine="x86_64",
             disk_usage=lambda _: SimpleNamespace(
@@ -108,6 +117,31 @@ class PersistentHostTests(unittest.TestCase):
                 + f"2 1 0:2 / {self.root} rw - ext4 /dev/fake rw\n")
         report = self.audit(path=nested, mountinfo=line)
         self.assertTrue(report["platform_accepted"])
+
+    def test_mountinfo_device_must_match_kernel_st_dev(self):
+        current = self.root.stat().st_dev
+        other = f"{os.major(current) + 1}:{os.minor(current)}"
+        mount = f"1 0 {other} / / rw,relatime - ext4 /dev/fake rw\n"
+        with self.assertRaises(PersistentHostError):
+            self.audit(mountinfo=mount)
+
+    def test_buried_mount_with_same_path_but_different_device_is_rejected(self):
+        different = f"{os.major(self.root.stat().st_dev) + 1}:3"
+        mount = (mock_mount("ext4") +
+                 f"2 1 {different} / / rw,relatime - overlay none rw\n")
+        with self.assertRaises(PersistentHostError):
+            self.audit(mountinfo=mount)
+
+    def test_duplicate_mountpoint_with_conflicting_writability_rejected(self):
+        mount = (mock_mount("ext4") +
+                 "2 1 0:2 / / ro,relatime - ext4 /dev/fake ro\n")
+        with self.assertRaises(PersistentHostError):
+            self.audit(mountinfo=mount)
+
+    def test_invalid_mount_device_identifier_refused(self):
+        mount = "1 0 unknown-device / / rw,relatime - ext4 /dev/fake rw\n"
+        with self.assertRaises(PersistentHostError):
+            self.audit(mountinfo=mount)
 
     def test_malformed_mount_table_rejected(self):
         with self.assertRaises(PersistentHostError):

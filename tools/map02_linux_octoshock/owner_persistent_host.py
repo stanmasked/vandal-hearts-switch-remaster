@@ -42,10 +42,10 @@ def _unescape_mountpoint(raw: str) -> str:
     return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), raw)
 
 
-def _mounts(content: str) -> list[tuple[Path, str, bool]]:
+def _mounts(content: str) -> list[tuple[Path, str, bool, int]]:
     if not isinstance(content, str) or len(content) > 8 * 1024**2:
         _fail()
-    found: list[tuple[Path, str, bool]] = []
+    found: list[tuple[Path, str, bool, int]] = []
     for line in content.splitlines():
         left, separator, right = line.partition(" - ")
         fields, filesystem = left.split(), right.split()
@@ -54,13 +54,24 @@ def _mounts(content: str) -> list[tuple[Path, str, bool]]:
         mount_path = Path(_unescape_mountpoint(fields[4]))
         if not mount_path.is_absolute() or ".." in mount_path.parts:
             _fail()
+        # Linux exposes the mounted filesystem's actual st_dev here.
+        # The type alone is insufficient: a stale/buried ext4 entry
+        # can otherwise hide a different filesystem mounted on top.
+        device_text = fields[2]
+        if re.fullmatch(r"[0-9]{1,10}:[0-9]{1,10}", device_text) is None:
+            _fail()
+        major, minor = (int(v) for v in device_text.split(":"))
+        try:
+            device = os.makedev(major, minor)
+        except (OSError, ValueError, OverflowError):
+            _fail()
         mount_options = fields[5].split(",")
         super_options = filesystem[2].split(",")
         # A writable owner runtime cannot rely on a read-only mount.
         writable = ("rw" in mount_options and "ro" not in mount_options
                     and "ro" not in super_options)
-        found.append((mount_path, filesystem[0].lower(), writable))
-    if not any(p == Path("/") for p, _, _ in found):
+        found.append((mount_path, filesystem[0].lower(), writable, device))
+    if not any(p == Path("/") for p, _, _, _ in found):
         _fail()
     return found
 
@@ -117,13 +128,22 @@ def verify_persistent_private_host(
                 marker = ancestor / ".git"
                 if marker.exists() or marker.is_symlink():
                     _fail()
-            matches = [(point, fs, writable) for point, fs, writable in mounts
+            matches = [(point, fs, writable, device)
+                       for point, fs, writable, device in mounts
                        if candidate == point or candidate.is_relative_to(point)]
             if not matches:
                 _fail()
-            _, filesystem, writable = max(matches,
-                                         key=lambda item: len(item[0].parts))
-            if filesystem not in PERSISTENT_LOCAL_FS or not writable:
+            longest = max(len(item[0].parts) for item in matches)
+            closest = [item for item in matches
+                       if len(item[0].parts) == longest]
+            # Duplicate stacked entries at the exact mountpoint must
+            # agree. A hidden ext4 entry does not attest the upper mount.
+            if len({(fs, writable, device)
+                    for _, fs, writable, device in closest}) != 1:
+                _fail()
+            _, filesystem, writable, mounted_device = closest[0]
+            if (mounted_device != details.st_dev
+                    or filesystem not in PERSISTENT_LOCAL_FS or not writable):
                 _fail()
             if disk_usage(candidate).free < minimum_free_bytes:
                 _fail()
@@ -139,5 +159,6 @@ def verify_persistent_private_host(
             "drive_upload_performed": False,
             "capture_ready": False,
         }
-    except (OSError, ValueError, TypeError, AttributeError, UnicodeError):
+    except (OSError, ValueError, TypeError, AttributeError, UnicodeError,
+            OverflowError):
         _fail()
