@@ -372,7 +372,8 @@ class OwnerDriveSessionTests(unittest.TestCase):
 
 
     def _start_owner_signal_child(self, *, pause_cleanup=False,
-                                  pause_after_quarantine_move=False):
+                                  pause_after_quarantine_move=False,
+                                  quarantine_target="receipt", both_pins=False):
         root = self.base / "stage578-owner-signal-child"
         root.mkdir(mode=0o700)
         script = textwrap.dedent(r"""
@@ -386,6 +387,8 @@ class OwnerDriveSessionTests(unittest.TestCase):
             base = Path(sys.argv[1])
             pause_cleanup = "pause-cleanup" in sys.argv[2:]
             pause_after_quarantine_move = "pause-quarantine" in sys.argv[2:]
+            pause_quarantine_archive = "pause-quarantine-archive" in sys.argv[2:]
+            both_pins = "both-pins" in sys.argv[2:]
             runtime = base / "runtime"
             runtime.mkdir(mode=0o700)
             trusted_pin = base / "trusted-manifest.sha256"
@@ -409,6 +412,9 @@ class OwnerDriveSessionTests(unittest.TestCase):
             def interrupted_upload(*_args, **_kwargs):
                 receipt_pin.write_text("b" * 64 + "\n", encoding="ascii")
                 receipt_pin.chmod(0o600)
+                if both_pins:
+                    archive_pin.write_text("c" * 64 + "\n", encoding="ascii")
+                    archive_pin.chmod(0o600)
                 print("PIN_READY", flush=True)
                 while True:
                     time.sleep(1)
@@ -430,7 +436,8 @@ class OwnerDriveSessionTests(unittest.TestCase):
 
             def rename_with_optional_pause(src, dst):
                 real_rename(src, dst)
-                if pause_after_quarantine_move and Path(src) == receipt_pin:
+                target_pin = archive_pin if pause_quarantine_archive else receipt_pin
+                if pause_after_quarantine_move and Path(src) == target_pin:
                     print("QUARANTINE_READY", flush=True)
                     while True:
                         time.sleep(1)
@@ -464,6 +471,10 @@ class OwnerDriveSessionTests(unittest.TestCase):
             command.append("pause-cleanup")
         if pause_after_quarantine_move:
             command.append("pause-quarantine")
+        if quarantine_target == "archive":
+            command.append("pause-quarantine-archive")
+        if both_pins:
+            command.append("both-pins")
         process = subprocess.Popen(
             command,
             cwd=Path(__file__).resolve().parents[1],
@@ -694,6 +705,67 @@ class OwnerDriveSessionTests(unittest.TestCase):
             )
         self.assertEqual(self.transport.uploads, 0)
         self.assertEqual(payload.read_text(encoding="ascii"), "b" * 64 + "\n")
+        self.assertFalse((root / "retry-session").exists())
+
+
+    @unittest.skipUnless(os.name == "posix" and hasattr(signal, "SIGKILL"),
+                         "requires POSIX SIGKILL handling")
+    def test_sigkill_during_first_of_two_pin_cleanups_preserves_both_outputs(self):
+        root, process = self._start_owner_signal_child(
+            pause_after_quarantine_move=True,
+            quarantine_target="archive",
+            both_pins=True,
+        )
+        receipt_pin = root / "owner-receipt.sha256"
+        archive_pin = root / "owner-archive.sha256"
+        try:
+            process.send_signal(signal.SIGTERM)
+            ready, _, _ = select.select([process.stdout], [], [], 15)
+            self.assertTrue(ready, "cleanup did not reach first pin quarantine")
+            marker = process.stdout.readline().strip()
+            self.assertEqual(marker, "QUARANTINE_READY")
+            process.send_signal(signal.SIGKILL)
+            stdout, stderr = process.communicate(timeout=15)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+
+        self.assertEqual(process.returncode, -signal.SIGKILL, (stdout, stderr))
+        self.assertTrue(receipt_pin.is_file())
+        self.assertEqual(receipt_pin.read_text(encoding="ascii"), "b" * 64 + "\n")
+        self.assertEqual(receipt_pin.stat().st_mode & 0o777, 0o600)
+        self.assertFalse(archive_pin.exists())
+        self.assertTrue((root / "session").is_dir())
+
+        quarantines = list(root.glob(".map02-pin-cleanup-*"))
+        self.assertEqual(len(quarantines), 1)
+        quarantined_archive = quarantines[0] / "payload"
+        self.assertEqual(
+            quarantined_archive.read_text(encoding="ascii"), "c" * 64 + "\n",
+        )
+        self.assertEqual(quarantined_archive.stat().st_mode & 0o777, 0o600)
+
+        # An unresolved first-pin quarantine blocks retry, while the second
+        # pin stays byte-for-byte intact and no transport is attempted.
+        with self.assertRaises(PrivateOwnerSessionError):
+            complete_owner_archive_session(
+                root / "runtime",
+                root / "trusted-manifest.sha256",
+                root / "private-folder-map.json",
+                root / "retry-session",
+                receipt_pin,
+                "vh_builds",
+                "vh_manifests",
+                "owner582retry",
+                independent_archive_pin_output=archive_pin,
+                invoke=self.transport,
+            )
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertEqual(receipt_pin.read_text(encoding="ascii"), "b" * 64 + "\n")
+        self.assertEqual(
+            quarantined_archive.read_text(encoding="ascii"), "c" * 64 + "\n",
+        )
         self.assertFalse((root / "retry-session").exists())
 
 
