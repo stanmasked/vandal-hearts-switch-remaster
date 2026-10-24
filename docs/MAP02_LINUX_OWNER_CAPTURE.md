@@ -1268,3 +1268,24 @@ accepted. Original PS1 media, BIOS, BK2, extracted audio and gameplay captures
 remain unchanged; the canonical private `07_Builds_and_Test_Artifacts` folder
 must remain empty until a genuine owner-host publish and independent readback
 are completed.
+
+## Stage563 — recheck Drive scope during independent readback
+
+Stage562 hardened uploads; the independent source-free auditor now applies
+the same scope checks while downloading the receipt and each archived object.
+It verifies the expected remote root before metadata reads, again before each
+download, and after each download. After restoring and verifying the runtime,
+it rechecks both remote roots, the private folder-map IDs, and all three
+independently retained local SHA pins.
+
+A synthetic regression test changes the manifests remote root immediately
+after the receipt download. The auditor must reject before it restores the
+runtime or reports a successful independent readback. This is test-only fake
+Drive state and does not imply authenticated owner-cloud evidence.
+
+Stage563 code/test head:
+`71d547a2e0b66313056e3c710524018878939082`. Exact-head CI must complete
+successfully on the final code and documentation head before Stage563 is
+accepted. Public CI still contains no original PS1 media, BIOS, BK2 or private
+gameplay captures; the canonical private `07_Builds_and_Test_Artifacts` folder
+remains empty until a real owner-host publish and independent readback pass.
