@@ -1151,3 +1151,11 @@ are still mandatory. Synthetic CI must never be promoted to a
 real Drive binary archive or to original MAP02 gameplay evidence.
 Original PS1 media, firmware, BK2, extracted audio and captures
 remain private; PR #505 remains Draft.
+
+## Stage558 — descriptor-bound upload snapshots
+
+The owner-side upload routine now creates sealed payload copies using retained no-follow directory descriptors for both source and destination parents. It opens the source and target relative to those descriptors, hashes the source through its open file descriptor, copies bytes between descriptors, flushes the destination, and compares file identity, size, timestamps, owner, permissions and content hashes before accepting the copy. The destination is created exclusively with mode 0600. The upload transport receives the sealed snapshot, not the mutable build-output path.
+
+Two regression tests now cover a successful distinct snapshot with matching SHA-256 and mode 0600, and rejection of a pre-existing target without overwriting it. Existing transport tests continue to cover mutation of the original archive during upload and prove the transport reads the sealed copy. Exact-head CI is required before calling this stage complete.
+
+This protects checked local file identities; it is not a proof of physical storage durability or authenticated Google Drive retention. The permanent owner-private build-artifact folder is still empty, and no real owner-host archive/readback or original MAP02 cold captures are established. Keep PR #505 Draft and preserve original game, BIOS, BK2, audio and capture files unchanged.
