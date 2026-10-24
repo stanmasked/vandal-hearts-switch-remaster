@@ -305,6 +305,34 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertEqual(payload_marker.stat().st_mode & 0o777, 0o700)
         self.assertEqual(empty_marker.stat().st_mode & 0o777, 0o700)
 
+    @unittest.skipUnless(os.name == "posix" and hasattr(os, "symlink"),
+                         "requires POSIX symbolic-link support")
+    def test_symlinked_quarantine_marker_blocks_session_without_following_target(self):
+        target = self.base.parent / (self.base.name + "-stage591-external-target")
+        target.mkdir(mode=0o700)
+        sentinel = target / "preserve.txt"
+        sentinel.write_text("external quarantine target must remain untouched\\n",
+                            encoding="ascii")
+        sentinel.chmod(0o600)
+        marker = self.base / ".map02-pin-cleanup-stage591-link"
+        marker.symlink_to(target, target_is_directory=True)
+
+        with self.assertRaises(PrivateOwnerSessionError):
+            self.execute()
+
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertFalse(self.full_session.exists())
+        self.assertFalse(self.receipt_pin.exists())
+        self.assertFalse(self.archive_pin.exists())
+        self.assertTrue(marker.is_symlink())
+        self.assertEqual(os.readlink(marker), str(target))
+        self.assertEqual(
+            sentinel.read_text(encoding="ascii"),
+            "external quarantine target must remain untouched\\n",
+        )
+        self.assertEqual(sentinel.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(list(target.iterdir()), [sentinel])
+
     def test_previous_unrelated_owner_pin_survives_failed_session(self):
         old_pin = self.base / "unrelated-owner-reference.sha256"
         old_pin.write_text("a" * 64 + "\n", encoding="ascii")
