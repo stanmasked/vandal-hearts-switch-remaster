@@ -129,6 +129,30 @@ class Stage537TransportTests(unittest.TestCase):
         self.assertEqual(target.stat().st_mode & 0o777, 0o600)
         self.assertNotEqual(target.stat().st_ino, self.tar.stat().st_ino)
 
+    def test_seal_payload_rejects_source_mutation_during_copy(self):
+        parent = self.base / "sealed-source-mutation"
+        parent.mkdir(mode=0o700)
+        target = parent / "copy.tar"
+        original_write = os.write
+        changed = False
+
+        def mutate_source_after_first_snapshot_write(fd, payload):
+            nonlocal changed
+            result = original_write(fd, payload)
+            if not changed:
+                changed = True
+                self.tar.write_bytes(b"mutated while snapshot was being copied")
+            return result
+
+        with patch(
+            "tools.map02_linux_octoshock.private_runtime_drive.os.write",
+            side_effect=mutate_source_after_first_snapshot_write,
+        ):
+            with self.assertRaises(PrivateDriveError):
+                _seal_payload(self.tar, target)
+        self.assertTrue(changed)
+        self.assertNotEqual(target.read_bytes(), self.tar.read_bytes())
+
     def test_seal_payload_rejects_symlink_source(self):
         alias = self.archive_dir / "runtime-alias.tar"
         alias.symlink_to(self.tar)
