@@ -1599,14 +1599,21 @@ deletes it only if the moved object is still the same owner-owned regular
 the replacement when the original name is free; it never deletes a different
 pin merely because it occupies the same path.
 
-A deterministic test injects a replacement between the initial identity
-check and the atomic move. It requires the partial pin to remain preserved
-under a displaced name, the replacement pin to remain at its original path,
-and the quarantine wrapper to be removed. This is synthetic filesystem
-testing only.
+Two deterministic filesystem tests cover the race outcomes. If a replacement
+wins before the atomic move, both the displaced original and replacement are
+preserved and the empty quarantine wrapper is removed. If another writer
+claims the original path after the replacement is moved into quarantine, both
+the newly claimed path and quarantined object are preserved. In that conflict
+case, the cleanup quarantine intentionally remains for owner reconciliation.
+
+The owner-session preflight now fails closed if a `.map02-pin-cleanup-*`
+quarantine remains in either designated pin-output parent. A regression test
+removes the simulated concurrent claimant but leaves the quarantine, then
+confirms a new session refuses before creating its session tree or uploading
+anything. These are synthetic filesystem/fake-transport tests only.
 
 Stage576 code/test head:
-`5003d04d16b729a00caa68c7798f7a2955e874a0`. Exact-head CI must pass on the
+`65bbf48ffbca629405633cab9cbccef0b3f38512`. Exact-head CI must pass on the
 final code and documentation head before Stage576 is accepted. Original PS1
 media, BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
 canonical private `07_Builds_and_Test_Artifacts` folder remains empty until
