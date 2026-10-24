@@ -1159,3 +1159,30 @@ The owner-side upload routine now creates sealed payload copies using retained n
 Two regression tests now cover a successful distinct snapshot with matching SHA-256 and mode 0600, and rejection of a pre-existing target without overwriting it. Existing transport tests continue to cover mutation of the original archive during upload and prove the transport reads the sealed copy. Exact-head CI is required before calling this stage complete.
 
 This protects checked local file identities; it is not a proof of physical storage durability or authenticated Google Drive retention. The permanent owner-private build-artifact folder is still empty, and no real owner-host archive/readback or original MAP02 cold captures are established. Keep PR #505 Draft and preserve original game, BIOS, BK2, audio and capture files unchanged.
+
+## Stage559 — macOS timeout cleanup after process-group leader exit
+
+The Stage558 exact-head CI exposed a platform-specific failure in the separate
+POSIX process-group cleanup test on macOS. The direct wrapper received
+SIGTERM and exited; a subsequent SIGKILL addressed the numeric process-group
+ID after the leader had already exited and macOS returned EPERM. At that
+point the original group may have disappeared and the numeric ID may refer
+to an unrelated group, so blindly repeating the group signal is unsafe.
+
+The cleanup path now treats this EPERM as stale-group ambiguity only when
+the direct leader has already exited. If the leader is still alive, EPERM
+remains fatal. The original timeout is preserved when the leader is gone.
+A regression test simulates the stale-group condition and confirms that the
+timeout is not replaced by an unrelated permission error. The real
+descendant-heartbeat test still must pass on macOS; this change is not
+accepted until exact-head CI confirms it.
+
+Stage558 direct tests additionally cover a distinct sealed snapshot with a
+matching SHA-256 and mode 0600, rejection of an already-existing target, and
+rejection of symlink source and target paths. These checks complement the
+existing integration tests proving that the transport uses the sealed
+snapshot rather than the mutable original archive.
+
+No original game media, BIOS, BK2, audio or owner captures are used by public
+CI. The permanent private build-artifact folder remains empty until a genuine
+owner-host upload and independent remote readback are completed.
