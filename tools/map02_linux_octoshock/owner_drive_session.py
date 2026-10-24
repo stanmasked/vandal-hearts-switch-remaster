@@ -144,6 +144,13 @@ def complete_owner_archive_session(
                 or (tar_pin_out is not None and
                     (tar_pin_out == root or tar_pin_out.is_relative_to(root)))):
             _fail()
+        # A previous interrupted cleanup can intentionally leave a quarantined
+        # replacement when another writer claimed the original pin path. Do
+        # not start another owner session beside unresolved pin data.
+        for pin_output in (receipt_pin, tar_pin_out):
+            if (pin_output is not None and any(
+                    pin_output.parent.glob(".map02-pin-cleanup-*"))):
+                _fail()
         for p in (manifest_pin, folder_map):
             if (not p.is_file() or p.is_symlink()
                     or stat.S_IMODE(p.stat().st_mode) != 0o600):
