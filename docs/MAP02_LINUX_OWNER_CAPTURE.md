@@ -1113,3 +1113,41 @@ No original game, BIOS, BK2, audio, private captures or OAuth secrets are
 used in public tests. CI and its fictional transport never prove genuine
 owner-authenticated binary retention. Original MAP02 two-cold-run evidence
 and Switch parity remain pending; PR #505 stays Draft.
+
+## Stage557 — retain no-follow file descriptors for the entire folder-map parent chain
+
+Stage556 verified an owner-private Google Drive folder-map file using
+`O_NOFOLLOW` relative to its immediate parent, but that parent was
+opened by its absolute pathname. A replaced higher-level ancestor
+could still redirect the directory open between path checks.
+
+Stage557 walks the absolute parent path from `/`, component by
+component using `O_DIRECTORY|O_NOFOLLOW` and `dir_fd`-relative
+opens. Every intermediate directory descriptor stays open throughout
+the mapping file read; each entry's filesystem device, inode, owner
+and permission bits must agree with the entry observed before open
+and with its named absolute path. After reading the owner-only 0600
+file, the reader rechecks every retained descriptor, its parent
+directory entry, and the absolute pathname, plus the file's original
+inode, size and timestamps. Neither the parent chain nor the leaf
+may silently become a symlink; no directory content or private
+folder IDs are logged to public CI.
+
+Five new synthetic tests cover an unmodified nested private mapping,
+replacement of an identical-content immediate parent before opening
+the parent descriptor, replacement just after opening it, replacement
+of a higher grandparent and a symlink replacement of an ancestor.
+Existing Stage556 tests for file swaps and the downstream fictional
+Drive archive admission/readback suites remain in CI.
+
+**Residual boundary:** holding the directory descriptors blocks
+untrusted symlink traversal and catches persistent changes at the
+verification checkpoints. It does not cryptographically attest the
+owner, defeat arbitrary privileged processes, or prove that a
+malicious actor could not briefly swap then restore a pathname
+between observations. The Stage555 persistent-host checks, the
+separate owner SHA trust pin and authenticated Drive re-readbacks
+are still mandatory. Synthetic CI must never be promoted to a
+real Drive binary archive or to original MAP02 gameplay evidence.
+Original PS1 media, firmware, BK2, extracted audio and captures
+remain private; PR #505 remains Draft.
