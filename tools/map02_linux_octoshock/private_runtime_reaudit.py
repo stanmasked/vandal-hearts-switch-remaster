@@ -230,24 +230,31 @@ def audit_independent_readback(
                 str(folder_map), str(root)}) != 5:
             _fail()
         builds_id, manifests_id = _folder_map(folder_map, root)
+        owner_pin_value = _pin(owner_pin)
+        tar_pin_value = _pin(tar_pin)
+        receipt_pin_value = _pin(receipt_pin)
         _check_remote(builds, builds_id, invoke)
         _check_remote(manifests, manifests_id, invoke)
         stem = "map02-runtime-" + session
         receipt_name = stem + ".receipt.json"
         receipt_path = manifests + ":" + receipt_name
+        _check_remote(manifests, manifests_id, invoke)
         receipt_size = _read_remote_size(receipt_path, invoke)
+        _check_remote(manifests, manifests_id, invoke)
         receipt_stat = _stat_remote(
             receipt_path, receipt_name, receipt_size, invoke,
         )
         if not receipt_stat:
             _fail()
+        _check_remote(manifests, manifests_id, invoke)
         root.mkdir(mode=0o700)
         downloaded = root / "downloaded"
         downloaded.mkdir(mode=0o700)
         receipt_file = downloaded / receipt_name
         invoke(["copyto", "--immutable", receipt_path, str(receipt_file)])
+        _check_remote(manifests, manifests_id, invoke)
         receipt_file.chmod(0o600)
-        if _hash_file(receipt_file) != _pin(receipt_pin):
+        if _hash_file(receipt_file) != receipt_pin_value:
             _fail()
         receipt, objects = _receipt(
             receipt_file.read_bytes(), session, builds_id, manifests_id
@@ -255,11 +262,15 @@ def audit_independent_readback(
         for item in objects:
             name = item["name"]
             remote = builds if item["folder_id"] == builds_id else manifests
+            expected_folder_id = builds_id if remote == builds else manifests_id
             path = remote + ":" + name
+            _check_remote(remote, expected_folder_id, invoke)
             if _stat_remote(path, name, item["bytes"], invoke) != item["google_drive_id"]:
                 _fail()
+            _check_remote(remote, expected_folder_id, invoke)
             output = downloaded / name
             invoke(["copyto", "--immutable", path, str(output)])
+            _check_remote(remote, expected_folder_id, invoke)
             output.chmod(0o600)
             if (_hash_file(output) != item["sha256"] or
                     output.stat().st_size != item["bytes"]):
@@ -290,8 +301,18 @@ def audit_independent_readback(
         if (count != receipt["runtime_file_count"]
                 or total != receipt["runtime_total_bytes"]):
             _fail()
+        # Reconfirm scope and all independent local anchors after the full
+        # source-free restore. A changed Drive root or trust pin cannot earn
+        # a successful independent-readback report.
+        _check_remote(builds, builds_id, invoke)
+        _check_remote(manifests, manifests_id, invoke)
+        if (_folder_map(folder_map, root) != (builds_id, manifests_id)
+                or _pin(owner_pin) != owner_pin_value
+                or _pin(tar_pin) != tar_pin_value
+                or _pin(receipt_pin) != receipt_pin_value):
+            _fail()
         # Re-audit receipt immutability after extraction.
-        if _hash_file(receipt_file) != _pin(receipt_pin):
+        if _hash_file(receipt_file) != receipt_pin_value:
             _fail()
         return {
             "files": count, "bytes": total, "objects_read_back": 5,
