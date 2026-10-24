@@ -1744,3 +1744,27 @@ and gameplay captures remain unchanged. The canonical private
 `07_Builds_and_Test_Artifacts` folder remains empty until a genuine owner-host
 publish and independent readback succeed.
 
+## Stage582 — SIGKILL during cleanup of the first of two pins
+
+Stage582 extends the Stage581 crash test to two designated new outputs. The
+synthetic child creates both a receipt pin and an archive pin, then receives
+SIGTERM and is paused immediately after the archive pin (the first cleanup
+target) is atomically moved into quarantine. The parent sends SIGKILL before
+the identity check and deletion can complete.
+
+Expected recovery state: the quarantined archive-pin payload remains intact
+with mode 0600; the receipt pin, which cleanup has not reached yet, remains
+intact at its original path; and the failed session tree is preserved. A retry
+must reject the unresolved quarantine before any transport activity and must
+not modify either remaining piece of evidence.
+
+This specifically verifies that a hard stop during the first cleanup operation
+does not silently discard the second designated output. The test uses invented
+bytes and fake transport only; it does not prove real Google Drive behavior.
+Stage582 code/test commit:
+`f0bbab18098317ff7af25853bd49246ef85c9b13`. Exact-head CI must pass before
+Stage582 is accepted. Original PS1 media, BIOS, BK2, extracted audio and
+gameplay captures remain unchanged. The canonical private
+`07_Builds_and_Test_Artifacts` folder remains empty until a genuine owner-host
+publish and independent readback succeed.
+
