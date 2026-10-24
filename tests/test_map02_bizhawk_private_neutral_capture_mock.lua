@@ -101,6 +101,20 @@ local function run(option)
       local bytes = CORE_ONLY
       if option == "auto-equal" then
         bytes = bytes:gsub("frame_count=1662", "frame_count=1665")
+      elseif option == "auto-bad-bios" then
+        bytes = bytes:gsub(
+          "bios=psx_u_firmware_hash_matches_movie_header", "bios=unverified")
+      elseif option == "auto-bad-hash" then
+        bytes = bytes:gsub("core_assembly_sha256=" .. string.rep("a", 64),
+                           "core_assembly_sha256=bad")
+      elseif option == "auto-bad-module" then
+        bytes = bytes:gsub("native_core_module_name=liboctoshock.so",
+                           "native_core_module_name=unknown.so")
+      elseif option == "auto-bad-pid" then
+        bytes = bytes:gsub("process_id=123", "process_id=0")
+      elseif option == "auto-bad-ticks" then
+        bytes = bytes:gsub("process_start_utc_ticks=639000000000000001",
+                           "process_start_utc_ticks=123")
       elseif option == "auto-future" then
         bytes = bytes:gsub("frame_count=1662", "frame_count=1765")
       elseif option == "auto-frame-outside-range" then
@@ -340,8 +354,9 @@ do
 end
 for _, option in ipairs({
     "auto-wrong-root", "auto-missing", "auto-late", "auto-badcore",
-    "auto-bad-format", "auto-oversized", "auto-mutate", "auto-disappear",
-    "auto-future", "auto-frame-outside-range"
+    "auto-bad-bios", "auto-bad-hash", "auto-bad-module", "auto-bad-pid",
+    "auto-bad-ticks", "auto-bad-format", "auto-oversized", "auto-mutate",
+    "auto-disappear", "auto-future", "auto-frame-outside-range"
 }) do
   local lines, shots, _, exits = run(option)
   assert(#shots < 3, option .. ": unsafe auto capture was accepted")
@@ -354,8 +369,11 @@ for _, option in ipairs({
   assert(#exits == 1 and exits[1] == 1)
   if option == "auto-wrong-root" or option == "auto-missing"
       or option == "auto-late" or option == "auto-badcore"
-      or option == "auto-bad-format" or option == "auto-oversized"
-      or option == "auto-future" or option == "auto-frame-outside-range" then
+      or option == "auto-bad-bios" or option == "auto-bad-hash"
+      or option == "auto-bad-module" or option == "auto-bad-pid"
+      or option == "auto-bad-ticks" or option == "auto-bad-format"
+      or option == "auto-oversized" or option == "auto-future"
+      or option == "auto-frame-outside-range" then
     assert(#shots == 0, option .. ": first PNG must be blocked")
   end
 end
