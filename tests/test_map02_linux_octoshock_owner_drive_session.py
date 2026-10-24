@@ -202,6 +202,34 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertEqual(pin.stat().st_mode & 0o777, 0o600)
         self.assertEqual(list(self.base.glob(".map02-pin-cleanup-*")), [])
 
+    def test_pin_cleanup_preserves_symlink_replacement_without_following_target(self):
+        pin = self.base / "interrupted-receipt.sha256"
+        displaced = self.base / "displaced-original-receipt.sha256"
+        target = self.base / "symlink-target.txt"
+        target.write_text("do not follow or remove target\\n", encoding="ascii")
+        pin.write_text("original unaccepted pin\\n", encoding="ascii")
+        pin.chmod(0o600)
+        original_rename = os.rename
+
+        def replace_with_symlink_before_quarantine(src, dst, *args, **kwargs):
+            src_path, dst_path = Path(src), Path(dst)
+            if src_path == pin and dst_path.name == "payload":
+                original_rename(src_path, displaced)
+                pin.symlink_to(target)
+            return original_rename(src, dst, *args, **kwargs)
+
+        with patch.object(
+            owner_drive_session.os, "rename",
+            side_effect=replace_with_symlink_before_quarantine,
+        ):
+            owner_drive_session._discard_incomplete_owner_pin(pin)
+
+        self.assertEqual(displaced.read_text(encoding="ascii"), "original unaccepted pin\\n")
+        self.assertTrue(pin.is_symlink())
+        self.assertEqual(os.readlink(pin), str(target))
+        self.assertEqual(target.read_text(encoding="ascii"), "do not follow or remove target\\n")
+        self.assertEqual(list(self.base.glob(".map02-pin-cleanup-*")), [])
+
     def test_pin_cleanup_preserves_quarantine_when_original_name_is_claimed(self):
         pin = self.receipt_pin
         displaced = self.base / "displaced-original-receipt.sha256"
