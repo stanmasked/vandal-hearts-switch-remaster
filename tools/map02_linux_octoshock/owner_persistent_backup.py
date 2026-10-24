@@ -29,7 +29,7 @@ from tools.map02_linux_octoshock.private_runtime_drive import (
     _call_rclone, SESSION_PATTERN,
 )
 from tools.map02_linux_octoshock.private_runtime_reaudit import _private_input
-from tools.map02_linux_octoshock.private_runtime_tar import _outside
+from tools.map02_linux_octoshock.private_runtime_tar import _outside, _pin, _hash_file
 from tools.map02_linux_octoshock.archive_owner_runtime import _root
 from tools.map02_linux_octoshock.verify_owner_runtime import verify_runtime
 from tools.map02_linux_octoshock.owner_persistent_host import (
@@ -177,6 +177,34 @@ def preflight_existing_trusted_runtime(
         _fail()
 
 
+def _reference_snapshot(path: Path, *, sha_pin: bool) -> tuple[object, ...]:
+    """Read an owner-private trusted reference and bind it to the same inode.
+
+    The snapshot is kept in memory only. No trust digest or private pathname is
+    printed or uploaded. Checking both data and inode metadata rejects an
+    identically re-created SHA pin as well as a modified digest.
+    """
+    try:
+        checked = _private_input(path)
+        before = checked.lstat()
+        if (not stat.S_ISREG(before.st_mode)
+                or before.st_uid != os.geteuid()
+                or stat.S_IMODE(before.st_mode) != 0o600
+                or before.st_nlink != 1):
+            _fail()
+        value = _pin(checked) if sha_pin else _hash_file(checked)
+        after = checked.lstat()
+        def identity(item):
+            return (item.st_dev, item.st_ino, item.st_uid,
+                    stat.S_IMODE(item.st_mode), item.st_nlink,
+                    item.st_size, item.st_mtime_ns, item.st_ctime_ns)
+        if identity(before) != identity(after):
+            _fail()
+        return (identity(after), value)
+    except (OSError, ValueError, TypeError, AttributeError):
+        _fail()
+
+
 def publish_existing_trusted_runtime(
     runtime: Path,
     independently_trusted_manifest_pin: Path,
@@ -213,6 +241,29 @@ def publish_existing_trusted_runtime(
             source, work, trust, manifest_pin.parent, folder_map.parent,
         )))
         initial_host_identity = None
+        # An independently supplied trusted pin and the private Drive scope
+        # mapping must remain byte-for-byte and inode-identical across all
+        # three cloud downloads; never silently trust a replacement file.
+        baseline = {
+            "manifest": _reference_snapshot(manifest_pin, sha_pin=True),
+            "folder_map": _reference_snapshot(folder_map, sha_pin=False),
+        }
+        pinned_outputs: dict[str, tuple[object, ...]] = {}
+
+        def confirm_references() -> None:
+            for key, (item, is_pin) in {
+                "manifest": (manifest_pin, True),
+                "folder_map": (folder_map, False),
+                "archive": (paths["archive_pin"], True),
+                "receipt": (paths["receipt_pin"], True),
+                "admission_pin": (paths["admission_pin"], True),
+                "admission_proof": (paths["admission_proof"], False),
+            }.items():
+                expected = baseline.get(key, pinned_outputs.get(key))
+                if expected is not None and (
+                        _reference_snapshot(item, sha_pin=is_pin) != expected):
+                    _fail()
+
         if real_host:
             verify_persistent_private_host(
                 guarded_paths, minimum_free_bytes=MINIMUM_PUBLISH_BYTES,
@@ -234,7 +285,9 @@ def publish_existing_trusted_runtime(
                 or checked.get("trusted_manifest_pin_verified") is not True
                 or checked.get("capture_ready") is not False):
             _fail()
-        # Recheck after digest verification, immediately before cloud writes.
+        # Verify trusted owner inputs after potentially lengthy runtime
+        # checks, before the first remote transfer.
+        confirm_references()
         recheck_owner_host()
 
         uploaded = complete_owner_archive_session(
@@ -247,7 +300,16 @@ def publish_existing_trusted_runtime(
                 or uploaded.get("full_private_restore_audited") is not True
                 or uploaded.get("cloud_objects_retrieved") != 5):
             _fail()
-        # A changed mount/directory may never be promoted to owner evidence.
+        # Pin the newly written archive and receipt before admission. An
+        # older independent owner digest must never be silently replaced
+        # between the first upload and the second cloud readback.
+        confirm_references()
+        pinned_outputs["archive"] = _reference_snapshot(
+            paths["archive_pin"], sha_pin=True,
+        )
+        pinned_outputs["receipt"] = _reference_snapshot(
+            paths["receipt_pin"], sha_pin=True,
+        )
         recheck_owner_host()
         admission = admit_independent_owner_archive(
             folder_map, manifest_pin, paths["archive_pin"],
@@ -255,18 +317,36 @@ def publish_existing_trusted_runtime(
             paths["admission_proof"], builds_remote, manifests_remote, session,
             independent_proof_pin_output=paths["admission_pin"], invoke=invoke,
         )
+        # The independent admission just produced two more owner-side
+        # references. Bind these to their original names, device and inode.
+        confirm_references()
+        pinned_outputs["admission_proof"] = _reference_snapshot(
+            paths["admission_proof"], sha_pin=False,
+        )
+        pinned_outputs["admission_pin"] = _reference_snapshot(
+            paths["admission_pin"], sha_pin=True,
+        )
         # A previously produced seal and a newly checked seal are separate
         # checks. A fake transport must not become "real" here.
         sealed = verify_sealed_owner_admission(
             paths["admission_proof"], paths["admission_pin"],
             require_real_transport=real_host,
         )
+        confirm_references()
         recheck_owner_host()
         fresh = audit_capture_backup_gate(
             folder_map, manifest_pin, paths["archive_pin"],
             paths["receipt_pin"], paths["admission_proof"],
             paths["admission_pin"], paths["preboot_readback"],
             builds_remote, manifests_remote, session, invoke=invoke,
+        )
+        # Final source-free download may take minutes. Reject any changed
+        # identity/value for all four owner SHA pins or the sealed admission
+        # report, even if bytes were restored successfully before replacement.
+        confirm_references()
+        sealed_after = verify_sealed_owner_admission(
+            paths["admission_proof"], paths["admission_pin"],
+            require_real_transport=real_host,
         )
         recheck_owner_host()
         if (admission.get("runtime_files") != uploaded.get("runtime_files")
@@ -275,6 +355,7 @@ def publish_existing_trusted_runtime(
                 or fresh.get("runtime_bytes") != admission.get("runtime_bytes")
                 or fresh.get("fresh_remote_objects_verified") != 5
                 or sealed.get("sealed_proof_sha_verified") is not True
+                or sealed_after.get("sealed_proof_sha_verified") is not True
                 or fresh.get("capture_ready") is not False):
             _fail()
         real = invoke is _call_rclone
