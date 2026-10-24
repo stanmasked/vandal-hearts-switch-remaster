@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import os
 import shutil
 import unittest
 from unittest.mock import patch
@@ -173,6 +174,68 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertTrue(self.full_session.is_dir())
         self.assertEqual(
             list(self.base.glob(".map02-pin-cleanup-*")), [],
+        )
+
+    def test_pin_cleanup_preserves_replacement_won_before_atomic_quarantine(self):
+        pin = self.base / "interrupted-receipt.sha256"
+        displaced = self.base / "displaced-original-receipt.sha256"
+        pin.write_text("original unaccepted pin\\n", encoding="ascii")
+        pin.chmod(0o600)
+        original_rename = os.rename
+
+        def replace_before_quarantine(src, dst, *args, **kwargs):
+            src_path, dst_path = Path(src), Path(dst)
+            if src_path == pin and dst_path.name == "payload":
+                original_rename(src_path, displaced)
+                pin.write_text("concurrent replacement pin\\n", encoding="ascii")
+                pin.chmod(0o600)
+            return original_rename(src, dst, *args, **kwargs)
+
+        with patch.object(
+            owner_drive_session.os, "rename",
+            side_effect=replace_before_quarantine,
+        ):
+            owner_drive_session._discard_incomplete_owner_pin(pin)
+
+        self.assertEqual(displaced.read_text(encoding="ascii"), "original unaccepted pin\\n")
+        self.assertEqual(pin.read_text(encoding="ascii"), "concurrent replacement pin\\n")
+        self.assertEqual(pin.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(list(self.base.glob(".map02-pin-cleanup-*")), [])
+
+    def test_pin_cleanup_preserves_quarantine_when_original_name_is_claimed(self):
+        pin = self.base / "interrupted-receipt.sha256"
+        displaced = self.base / "displaced-original-receipt.sha256"
+        pin.write_text("original unaccepted pin\\n", encoding="ascii")
+        pin.chmod(0o600)
+        original_rename = os.rename
+
+        def claim_name_during_quarantine(src, dst, *args, **kwargs):
+            src_path, dst_path = Path(src), Path(dst)
+            if src_path == pin and dst_path.name == "payload":
+                original_rename(src_path, displaced)
+                pin.write_text("replacement moved to quarantine\\n", encoding="ascii")
+                pin.chmod(0o600)
+                original_rename(pin, dst_path)
+                # A different writer claims the original name before cleanup
+                # checks whether the moved replacement can be restored.
+                pin.write_text("newly claimed pin path\\n", encoding="ascii")
+                pin.chmod(0o600)
+                return None
+            return original_rename(src, dst, *args, **kwargs)
+
+        with patch.object(
+            owner_drive_session.os, "rename",
+            side_effect=claim_name_during_quarantine,
+        ):
+            owner_drive_session._discard_incomplete_owner_pin(pin)
+
+        self.assertEqual(displaced.read_text(encoding="ascii"), "original unaccepted pin\\n")
+        self.assertEqual(pin.read_text(encoding="ascii"), "newly claimed pin path\\n")
+        quarantines = list(self.base.glob(".map02-pin-cleanup-*"))
+        self.assertEqual(len(quarantines), 1)
+        self.assertEqual(
+            (quarantines[0] / "payload").read_text(encoding="ascii"),
+            "replacement moved to quarantine\\n",
         )
 
     def test_previous_unrelated_owner_pin_survives_failed_session(self):
