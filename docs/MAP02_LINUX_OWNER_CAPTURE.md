@@ -1239,3 +1239,32 @@ owner-host publish and independent remote readbacks are completed.
 The Stage561 code/test head is `439b09c00f4df623dfa839e67adffb67e0f5d8f2`.
 Exact-head CI must complete successfully on the final code and documentation
 head before Stage561 is accepted.
+
+## Stage562 — recheck Drive scope around every upload
+
+The Stage561 read-only preflight now catches changes during readiness checks,
+but remote configuration and object names can also change after the preflight
+and while the actual archive transfer is underway. The upload path now
+rechecks the expected rclone Drive root and target-name availability immediately
+before each object write. After each write, it rechecks scope before object
+metadata validation, before fresh-byte download, and after the download.
+
+The receipt upload follows the same sequence. If a remote root changes after
+the first write, or another object claims a planned filename between the
+initial inventory and its upload, the operation fails closed and does not
+create an endorsed receipt or trusted owner pin. The upload always uses the
+sealed local snapshot; this extra gate does not replace byte-for-byte readback.
+
+New synthetic transport tests simulate a remote-root change immediately after
+the first archive upload and a concurrent object-name collision. Both cases
+must reject the session after at most the first upload and before any receipt
+is published. These tests use fictional Drive state and do not prove a real
+Google Drive transfer.
+
+Stage562 code/test head:
+`96054542e7f69ad9b7940c54aa3a5c0522263f30`. Exact-head CI must complete
+successfully on the final code and documentation head before this stage is
+accepted. Original PS1 media, BIOS, BK2, extracted audio and gameplay captures
+remain unchanged; the canonical private `07_Builds_and_Test_Artifacts` folder
+must remain empty until a genuine owner-host publish and independent readback
+are completed.
