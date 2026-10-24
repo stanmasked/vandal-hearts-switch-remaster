@@ -7,12 +7,15 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from tools.map02_linux_octoshock.archive_owner_runtime import (
     ArchiveReadbackError, verify_archive_readback,
 )
+from tools.map02_linux_octoshock import verify_owner_runtime as runtime_verifier
 from tools.map02_linux_octoshock.verify_owner_runtime import (
     BIZHAWK_ARCHIVE_SHA256, NATIVE_NAME, SCHEMA, UPSTREAM_COMMIT, UPSTREAM_TREE,
+    RuntimeVerificationError,
 )
 
 
@@ -136,6 +139,60 @@ class ArchiveReadbackTests(unittest.TestCase):
         self.pin.write_text("0" * 64 + "\n", encoding="ascii")
         with self.assertRaises(ArchiveReadbackError):
             self.audit()
+
+    def test_stage603_external_pin_rejects_parent_directory_not_private(self):
+        self.base.chmod(0o755)
+        try:
+            with self.assertRaises(ArchiveReadbackError):
+                self.audit()
+        finally:
+            self.base.chmod(0o700)
+
+    def test_stage603_external_pin_rejects_hardlink_alias(self):
+        alias = self.base / "owner-external-alias.sha256"
+        os.link(self.pin, alias)
+        with self.assertRaises(ArchiveReadbackError):
+            self.audit()
+        self.assertEqual(self.pin.stat().st_nlink, 2)
+
+    def test_stage603_external_pin_final_symlink_swap_is_detected(self):
+        displaced = self.base / "owner-external-displaced.sha256"
+        real_stat = os.stat
+        swapped = {"value": False}
+
+        def replace_with_symlink(path, *args, **kwargs):
+            if (path == self.pin.name and kwargs.get("dir_fd") is not None
+                    and kwargs.get("follow_symlinks") is False
+                    and not swapped["value"]):
+                self.pin.rename(displaced)
+                self.pin.symlink_to(displaced)
+                swapped["value"] = True
+            return real_stat(path, *args, **kwargs)
+
+        with patch.object(runtime_verifier.os, "stat", side_effect=replace_with_symlink):
+            with self.assertRaises(RuntimeVerificationError):
+                runtime_verifier._read_external_manifest_pin(self.pin, self.source)
+        self.assertTrue(swapped["value"])
+        self.assertTrue(self.pin.is_symlink())
+        self.assertTrue(displaced.is_file())
+
+    def test_stage603_external_pin_mode_change_during_final_stat_is_detected(self):
+        real_stat = os.stat
+        changed = {"value": False}
+
+        def widen_mode(path, *args, **kwargs):
+            if (path == self.pin.name and kwargs.get("dir_fd") is not None
+                    and kwargs.get("follow_symlinks") is False
+                    and not changed["value"]):
+                self.pin.chmod(0o644)
+                changed["value"] = True
+            return real_stat(path, *args, **kwargs)
+
+        with patch.object(runtime_verifier.os, "stat", side_effect=widen_mode):
+            with self.assertRaises(RuntimeVerificationError):
+                runtime_verifier._read_external_manifest_pin(self.pin, self.source)
+        self.assertTrue(changed["value"])
+        self.assertEqual(self.pin.stat().st_mode & 0o777, 0o644)
 
     def test_rejects_same_or_nested_runtime(self):
         for path in (self.source, self.source / "dll"):
