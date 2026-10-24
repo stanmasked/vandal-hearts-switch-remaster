@@ -1581,8 +1581,33 @@ outputs are removed, the failed session tree is retained, and the original
 `KeyboardInterrupt` propagates. This is fake-transport testing only.
 
 Stage575 code/test head:
-`e93bf167e693d005c1e6f6ad54bf2c2b83ec36ea`. Exact-head CI must pass on the
-final code and documentation head before Stage575 is accepted. Original PS1
+`e93bf167e693d005c1e6f6ad54bf2c2b83ec36ea`. Exact-head CI completed with
+8/8 successful workflows on final PR head
+`9c0fd83cd2db3261c937546e3c06649b27cb3de6`, with no failures or pending runs.
+The native Linux job passed the interruption cleanup test for owner-session
+pins. Stage575 is accepted as a code/test gate only. Original PS1 media, BIOS,
+BK2, extracted audio and gameplay captures remain unchanged. The canonical
+private `07_Builds_and_Test_Artifacts` folder remains empty until a genuine
+owner-host publish and independent readback succeed.
+
+## Stage576 — atomic cleanup of interrupted owner pin outputs
+
+Stage576 hardens `_discard_incomplete_owner_pin`: it records the candidate
+file's device/inode, atomically moves it into a private sibling quarantine, and
+deletes it only if the moved object is still the same owner-owned regular
+0600 file. If a concurrent replacement wins the path race, cleanup restores
+the replacement when the original name is free; it never deletes a different
+pin merely because it occupies the same path.
+
+A deterministic test injects a replacement between the initial identity
+check and the atomic move. It requires the partial pin to remain preserved
+under a displaced name, the replacement pin to remain at its original path,
+and the quarantine wrapper to be removed. This is synthetic filesystem
+testing only.
+
+Stage576 code/test head:
+`5003d04d16b729a00caa68c7798f7a2955e874a0`. Exact-head CI must pass on the
+final code and documentation head before Stage576 is accepted. Original PS1
 media, BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
 canonical private `07_Builds_and_Test_Artifacts` folder remains empty until
 a genuine owner-host publish and independent readback succeed.
