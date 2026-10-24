@@ -15,7 +15,12 @@ import stat
 from typing import Callable
 
 from tools.map02_linux_octoshock.build_and_stage_owner import build_and_stage
-from tools.map02_linux_octoshock.owner_drive_session import complete_owner_archive_session
+from tools.map02_linux_octoshock.owner_drive_session import (
+    complete_owner_archive_session, _reject_unresolved_pin_quarantine,
+)
+from tools.map02_linux_octoshock.owner_session_preflight import (
+    verify_owner_backup_readiness,
+)
 from tools.map02_linux_octoshock.owner_archive_admission import (
     admit_independent_owner_archive, verify_sealed_owner_admission,
 )
@@ -58,6 +63,120 @@ def _private_parent(value: Path, runtime: Path) -> Path:
         _fail()
 
 
+def _owner_publication_plan(
+    runtime: Path,
+    independently_trusted_manifest_pin: Path,
+    private_folder_map: Path,
+    private_work_parent: Path,
+    private_trust_parent: Path,
+    session: str,
+) -> tuple[Path, Path, Path, Path, Path, dict[str, Path]]:
+    """Share exact output reservations between read-only preflight and publish."""
+    source = _root(runtime)
+    manifest_pin = _private_input(independently_trusted_manifest_pin)
+    folder_map = _private_input(private_folder_map)
+    work = _private_parent(private_work_parent, source)
+    trust = _private_parent(private_trust_parent, source)
+    if (not isinstance(session, str)
+            or SESSION_PATTERN.fullmatch(session) is None
+            or work == trust or work.is_relative_to(trust)
+            or trust.is_relative_to(work)
+            or manifest_pin.is_relative_to(work)
+            or folder_map.is_relative_to(work)):
+        _fail()
+    paths = {
+        "transfer": work / (session + "-transfer"),
+        "admission_readback": work / (session + "-admission-readback"),
+        "preboot_readback": work / (session + "-preboot-readback"),
+        "archive_pin": trust / (session + "-archive.sha256"),
+        "receipt_pin": trust / (session + "-receipt.sha256"),
+        "admission_proof": trust / (session + "-admission.json"),
+        "admission_pin": trust / (session + "-admission.sha256"),
+    }
+    if (len(set(paths.values())) != len(paths)
+            or any(p.exists() or p.is_symlink() for p in paths.values())
+            or any(p == manifest_pin or p == folder_map for p in paths.values())):
+        _fail()
+    return source, manifest_pin, folder_map, work, trust, paths
+
+
+def preflight_existing_trusted_runtime(
+    runtime: Path,
+    independently_trusted_manifest_pin: Path,
+    private_folder_map: Path,
+    private_work_parent: Path,
+    private_trust_parent: Path,
+    builds_remote: str,
+    manifests_remote: str,
+    session: str,
+    *,
+    invoke: Callable[[list[str]], str] = _call_rclone,
+) -> dict[str, object]:
+    """Read-only owner-host readiness and all-seven-output reservation check.
+
+    Does not create lock files, trust pins, an output tree or cloud objects.
+    A successful preflight is a snapshot, NOT a claim of a successful publish:
+    publish must independently revalidate all paths and remote scope.
+    """
+    try:
+        source, pin, folder_map, work, trust, paths = _owner_publication_plan(
+            runtime, independently_trusted_manifest_pin, private_folder_map,
+            private_work_parent, private_trust_parent, session,
+        )
+        guarded = list(dict.fromkeys((
+            source, work, trust, pin.parent, folder_map.parent,
+        )))
+        real_host = invoke is _call_rclone
+        identity = None
+        if real_host:
+            verify_persistent_private_host(
+                guarded, minimum_free_bytes=MINIMUM_PUBLISH_BYTES,
+            )
+            identity = snapshot_private_path_identity(guarded)
+        _reject_unresolved_pin_quarantine(
+            paths["receipt_pin"], paths["archive_pin"],
+        )
+        readiness = verify_owner_backup_readiness(
+            source, pin, folder_map, paths["transfer"],
+            paths["receipt_pin"], builds_remote, manifests_remote, session,
+            invoke=invoke,
+        )
+        if (readiness.get("owner_manifest_pin_verified") is not True
+                or readiness.get("cloud_names_available") is not True
+                or readiness.get("drive_remotes_checked") != 2
+                or readiness.get("writes_performed") is not False
+                or readiness.get("capture_ready") is not False):
+            _fail()
+        # The detailed session preflight sees only the transfer and receipt
+        # paths; the complete owner pipeline needs five more free outputs.
+        # Recheck all seven after remote reads to detect late reservations.
+        _reject_unresolved_pin_quarantine(
+            paths["receipt_pin"], paths["archive_pin"],
+        )
+        if any(p.exists() or p.is_symlink() for p in paths.values()):
+            _fail()
+        if real_host:
+            require_unchanged_persistent_host(
+                guarded, identity, minimum_free_bytes=MINIMUM_PUBLISH_BYTES,
+            )
+        return {
+            "schema": "vh.map02.owner-persistent-preflight.v1",
+            "runtime_files": readiness["runtime_files"],
+            "runtime_bytes": readiness["runtime_bytes"],
+            "output_paths_available": 7,
+            "drive_remotes_checked": 2,
+            "trusted_manifest_pin_verified": True,
+            "persistent_host_checked": real_host,
+            "writes_performed": False,
+            "remote_upload_performed": False,
+            "owner_backup_proven": False,
+            "capture_ready": False,
+        }
+    except (OSError, ValueError, RuntimeError, TypeError, KeyError,
+            UnicodeError, AttributeError):
+        _fail()
+
+
 def publish_existing_trusted_runtime(
     runtime: Path,
     independently_trusted_manifest_pin: Path,
@@ -77,32 +196,13 @@ def publish_existing_trusted_runtime(
     when a subsequent stage fails; previous attempt outputs are not reused.
     """
     try:
-        source = _root(runtime)
-        manifest_pin = _private_input(independently_trusted_manifest_pin)
-        folder_map = _private_input(private_folder_map)
-        work = _private_parent(private_work_parent, source)
-        trust = _private_parent(private_trust_parent, source)
-        if (not isinstance(session, str)
-                or SESSION_PATTERN.fullmatch(session) is None
-                or work == trust
-                or work.is_relative_to(trust)
-                or trust.is_relative_to(work)
-                or manifest_pin.is_relative_to(work)
-                or folder_map.is_relative_to(work)):
-            _fail()
-        paths = {
-            "transfer": work / (session + "-transfer"),
-            "admission_readback": work / (session + "-admission-readback"),
-            "preboot_readback": work / (session + "-preboot-readback"),
-            "archive_pin": trust / (session + "-archive.sha256"),
-            "receipt_pin": trust / (session + "-receipt.sha256"),
-            "admission_proof": trust / (session + "-admission.json"),
-            "admission_pin": trust / (session + "-admission.sha256"),
-        }
-        if (len(set(paths.values())) != len(paths)
-                or any(p.exists() or p.is_symlink() for p in paths.values())
-                or any(p == manifest_pin or p == folder_map for p in paths.values())):
-            _fail()
+        source, manifest_pin, folder_map, work, trust, paths = (
+            _owner_publication_plan(
+                runtime, independently_trusted_manifest_pin,
+                private_folder_map, private_work_parent, private_trust_parent,
+                session,
+            )
+        )
         # Real owner must ALSO keep the original independently trusted SHA
         # and private Drive-folder mapping on persistent local storage.
         # Checking only the new output folder would leave these vital
@@ -206,14 +306,16 @@ def main() -> int:
     prep.add_argument("--new-runtime-root", required=True, type=Path)
     prep.add_argument("--keep-private-workdir", action="store_true")
     pub = sub.add_parser("publish", help="Back up pre-trusted runtime with fresh independent audits")
-    pub.add_argument("--runtime", required=True, type=Path)
-    pub.add_argument("--independently-trusted-manifest-pin", required=True, type=Path)
-    pub.add_argument("--private-folder-map", required=True, type=Path)
-    pub.add_argument("--private-work-parent", required=True, type=Path)
-    pub.add_argument("--private-trust-parent", required=True, type=Path)
-    pub.add_argument("--builds-remote", required=True)
-    pub.add_argument("--manifests-remote", required=True)
-    pub.add_argument("--session", required=True)
+    dry = sub.add_parser("preflight", help="Read-only private owner-host and Drive scope checks")
+    for command in (pub, dry):
+        command.add_argument("--runtime", required=True, type=Path)
+        command.add_argument("--independently-trusted-manifest-pin", required=True, type=Path)
+        command.add_argument("--private-folder-map", required=True, type=Path)
+        command.add_argument("--private-work-parent", required=True, type=Path)
+        command.add_argument("--private-trust-parent", required=True, type=Path)
+        command.add_argument("--builds-remote", required=True)
+        command.add_argument("--manifests-remote", required=True)
+        command.add_argument("--session", required=True)
     a = p.parse_args()
     try:
         if a.action == "prepare":
@@ -254,6 +356,20 @@ def main() -> int:
             print("VH_MAP02_STAGE550_PREPARE_PASS "
                   "installed_runtime_verified=1 "
                   "manifest_independently_trusted=0 media_used=0 capture_ready=0")
+        elif a.action == "preflight":
+            result = preflight_existing_trusted_runtime(
+                a.runtime, a.independently_trusted_manifest_pin,
+                a.private_folder_map, a.private_work_parent,
+                a.private_trust_parent, a.builds_remote,
+                a.manifests_remote, a.session,
+            )
+            if (result.get("writes_performed") is not False
+                    or result.get("remote_upload_performed") is not False
+                    or result.get("owner_backup_proven") is not False):
+                _fail()
+            print("VH_MAP02_STAGE600_PREFLIGHT_PASS "
+                  "outputs_available=7 drive_remotes=2 "
+                  "writes=0 owner_backup_proven=0 capture_ready=0")
         else:
             result = publish_existing_trusted_runtime(
                 a.runtime, a.independently_trusted_manifest_pin,
