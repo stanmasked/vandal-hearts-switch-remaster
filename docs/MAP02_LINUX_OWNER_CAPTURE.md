@@ -1633,11 +1633,40 @@ follow or delete the symlink target. The test also verifies that the displaced
 original pin remains available and no empty quarantine wrapper is left behind.
 
 This is synthetic local-filesystem testing. It does not establish actual
-owner-host or Google Drive behavior.
+owner-host or Google Drive behavior. The first exact-head run for commit
+`c7e3c53da96974c9c59f2f2de4ee2aa4a4887648` was superseded by a follow-up
+signal-handling change before all eight workflows finished. Stage577 is
+therefore not yet accepted; its test is included in the Stage578 exact-head
+validation below.
 
 Stage577 code/test head:
-`cf01ddee9ce86512f260436cb959dab285de250e`. Exact-head CI must pass on the
-final code and documentation head before Stage577 is accepted. Original PS1
-media, BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
+`cf01ddee9ce86512f260436cb959dab285de250e`. Original PS1 media, BIOS, BK2,
+extracted audio and gameplay captures remain unchanged. The canonical private
+`07_Builds_and_Test_Artifacts` folder remains empty until a genuine owner-host
+publish and independent readback succeed.
+
+## Stage578 — signal-aware cleanup and fail-closed SIGKILL recovery
+
+The owner-session CLI now installs a guarded `SIGTERM` handler. It ignores
+repeated `SIGTERM` delivery during cleanup and raises `SystemExit(128 + signum)`,
+so the existing `BaseException` cleanup path removes only the unaccepted pin
+outputs designated for the interrupted session, then preserves the failed
+session tree and exits with the expected signal status. The previous signal
+handler is restored in `finally`.
+
+A subprocess regression sends `SIGTERM` after a partial receipt pin is written
+and verifies that both new pin outputs are absent, the session tree remains,
+and no cleanup quarantine is left. A separate `SIGKILL` test confirms the
+kernel cannot run cleanup: the partial 0600 pin remains intact, the session
+tree remains, and a retry using the same output path fails before any transport
+activity. The pin is deliberately not auto-deleted after `SIGKILL`; owner
+inspection/reconciliation is required. Both tests use invented local files
+and fake transport only.
+
+Stage578 code/test head:
+`314b5a63c3d81985207e8c00e538fa77dd84042f`. Exact-head CI must pass on the
+final code and documentation head before Stage578 is accepted. The Stage577
+symlink-replacement test must also pass on that exact head. Original PS1 media,
+BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
 canonical private `07_Builds_and_Test_Artifacts` folder remains empty until
 a genuine owner-host publish and independent readback succeed.
