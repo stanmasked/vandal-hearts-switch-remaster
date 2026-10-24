@@ -68,6 +68,7 @@ namespace VhMap02LoaderSmoke
                     + " fake_octoshock_impersonation_rejected=1 fake_negative_gates=5"
                     + " exact_runtime_type_gate=1 in_memory_fake_witness_schema=0"
                     + " official_disc_mount_metadata=1"
+                    + " synthetic_live_mount_gate=1"
                     + " official_nullhawk_service_injected=1"
                     + " official_nullhawk_snapshot_rejected=1"
                     + " owner_only_ntfs_folder_accepted=1"
@@ -457,7 +458,127 @@ namespace VhMap02LoaderSmoke
                 }
                 _stage = "synthetic-optin-fake-core-rejection";
                 AuditSyntheticAutomaticWitness(entrypoint, property);
+                _stage = "synthetic-official-disc-mount-gate";
+                AuditSyntheticMountedDiscGate(entrypoint);
 
+        }
+
+        // Exercise the production V5 mount gate using an uninitialized object
+        // of the official Octoshock type and synthetic Disc metadata. No core
+        // constructor, frame, disc file, BIOS or movie is opened or executed.
+        private static void AuditSyntheticMountedDiscGate(Type entrypoint)
+        {
+            var coreAssembly = Assembly.Load("BizHawk.Emulation.Cores");
+            var coreType = coreAssembly.GetType(
+                "BizHawk.Emulation.Cores.Sony.PSX.Octoshock", true);
+            var tray = coreType.GetProperty(
+                "CurrentTrayOpen", BindingFlags.Public | BindingFlags.Instance);
+            var mountedIndex = coreType.GetProperty(
+                "CurrentDiscIndexMounted", BindingFlags.Public | BindingFlags.Instance);
+            var discsField = coreType.GetField(
+                "Discs", BindingFlags.Public | BindingFlags.Instance);
+            var nameFieldInfo = discsField?.FieldType.GetGenericArguments().Single()
+                .GetField("Name", BindingFlags.Public | BindingFlags.Instance);
+            var gate = entrypoint.GetMethod(
+                "RequireMountedDiscMatchesSourceCueName",
+                BindingFlags.NonPublic | BindingFlags.Instance);
+            var autoKeyField = entrypoint.GetField(
+                "AutomaticWitnessEnvironment", BindingFlags.NonPublic | BindingFlags.Static);
+            var cueKeyField = entrypoint.GetField(
+                "ExpectedDiscCueNameEnvironment", BindingFlags.NonPublic | BindingFlags.Static);
+            var traySetter = tray?.GetSetMethod(true);
+            var indexSetter = mountedIndex?.GetSetMethod(true);
+            var autoKey = autoKeyField?.GetRawConstantValue() as string;
+            var cueKey = cueKeyField?.GetRawConstantValue() as string;
+            if (tray == null || tray.PropertyType != typeof(bool)
+                || mountedIndex == null || mountedIndex.PropertyType != typeof(int)
+                || discsField == null || !discsField.FieldType.IsGenericType
+                || nameFieldInfo == null || nameFieldInfo.FieldType != typeof(string)
+                || gate == null || traySetter == null || indexSetter == null
+                || string.IsNullOrEmpty(autoKey) || string.IsNullOrEmpty(cueKey))
+                throw new InvalidOperationException("official synthetic mount-gate contract missing");
+
+            var priorAuto = Environment.GetEnvironmentVariable(autoKey);
+            var priorCue = Environment.GetEnvironmentVariable(cueKey);
+            const string expectedName = "vandal-hearts.cue";
+            try
+            {
+                // The output directory is only an opt-in sentinel for this
+                // direct helper call; no file write is performed by the gate.
+                Environment.SetEnvironmentVariable(autoKey, null);
+                Environment.SetEnvironmentVariable(cueKey, expectedName);
+                using (var form = Activator.CreateInstance(entrypoint) as Form)
+                {
+                    if (form == null) throw new InvalidOperationException("mount-gate form unavailable");
+                    var core = System.Runtime.Serialization.FormatterServices
+                        .GetUninitializedObject(coreType);
+                    var disc = System.Runtime.Serialization.FormatterServices
+                        .GetUninitializedObject(nameFieldInfo.DeclaringType);
+                    nameFieldInfo.SetValue(disc, expectedName);
+                    var discs = Activator.CreateInstance(discsField.FieldType)
+                        as System.Collections.IList;
+                    if (discs == null) throw new InvalidOperationException("synthetic disc list unavailable");
+                    discs.Add(disc);
+                    discsField.SetValue(core, discs);
+                    traySetter.Invoke(core, new object[] { false });
+                    indexSetter.Invoke(core, new object[] { 1 });
+
+                    var notOptedIn = gate.Invoke(form, new object[] { core });
+                    if (!(notOptedIn is bool) || (bool)notOptedIn)
+                        throw new InvalidOperationException("mount gate accepted absent auto opt-in");
+
+                    Environment.SetEnvironmentVariable(autoKey, "synthetic-owner-private-output");
+                    var accepted = gate.Invoke(form, new object[] { core });
+                    if (!(accepted is bool) || !(bool)accepted)
+                        throw new InvalidOperationException("matching synthetic disc mount rejected");
+
+                    nameFieldInfo.SetValue(disc, "other.cue");
+                    AssertMountGateRejected(gate, form, core, "wrong-name");
+                    nameFieldInfo.SetValue(disc, expectedName);
+
+                    traySetter.Invoke(core, new object[] { true });
+                    AssertMountGateRejected(gate, form, core, "tray-open");
+                    traySetter.Invoke(core, new object[] { false });
+
+                    indexSetter.Invoke(core, new object[] { 0 });
+                    AssertMountGateRejected(gate, form, core, "no-disc-mounted");
+                    indexSetter.Invoke(core, new object[] { 1 });
+
+                    discs.Clear();
+                    AssertMountGateRejected(gate, form, core, "empty-disc-list");
+                    discs.Add(disc);
+
+                    var extra = System.Runtime.Serialization.FormatterServices
+                        .GetUninitializedObject(nameFieldInfo.DeclaringType);
+                    nameFieldInfo.SetValue(extra, expectedName);
+                    discs.Add(extra);
+                    AssertMountGateRejected(gate, form, core, "multiple-discs");
+                    discs.RemoveAt(1);
+
+                    Environment.SetEnvironmentVariable(cueKey, "folder/vandal-hearts.cue");
+                    AssertMountGateRejected(gate, form, core, "cue-name-is-path");
+                }
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(autoKey, priorAuto);
+                Environment.SetEnvironmentVariable(cueKey, priorCue);
+            }
+        }
+
+        private static void AssertMountGateRejected(
+            MethodInfo gate, object form, object core, string scenario)
+        {
+            try
+            {
+                gate.Invoke(form, new object[] { core });
+            }
+            catch (TargetInvocationException ex)
+            {
+                if (ex.InnerException is InvalidOperationException) return;
+                throw new InvalidOperationException("synthetic mount gate threw unexpected error");
+            }
+            throw new InvalidOperationException("synthetic mount gate accepted " + scenario);
         }
     }
 }
