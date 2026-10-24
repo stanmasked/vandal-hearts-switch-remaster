@@ -468,9 +468,11 @@ def read_private_full_bin_sha256(path: Path) -> str:
             )
             try:
                 before = os.fstat(fd)
-                if (not stat.S_ISREG(before.st_mode)
-                        or before.st_size not in (64, 65)
-                        or before.st_uid != os.geteuid()
+                if not stat.S_ISREG(before.st_mode):
+                    raise ValueError("private full-BIN digest must be a regular file")
+                if before.st_size not in (64, 65):
+                    raise ValueError("private full-BIN digest must be exactly 64 hex digits")
+                if (before.st_uid != os.geteuid()
                         or stat.S_IMODE(before.st_mode) != 0o600
                         or before.st_nlink != 1):
                     raise ValueError("private full-BIN digest must be mode 0600 with one hard link")
