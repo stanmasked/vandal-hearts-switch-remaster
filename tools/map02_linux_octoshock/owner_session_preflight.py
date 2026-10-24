@@ -17,8 +17,12 @@ from tools.map02_linux_octoshock.private_runtime_drive import (
     _call_rclone, _check_remote, _existing_names, _folder_map,
     _remote_name, forbidden_original_media_path, SESSION_PATTERN,
 )
-from tools.map02_linux_octoshock.private_runtime_tar import _outside
+from tools.map02_linux_octoshock.private_runtime_tar import _outside, _hash_file, _pin
 from tools.map02_linux_octoshock.verify_owner_runtime import verify_runtime
+from tools.map02_linux_octoshock.owner_persistent_host import (
+    MINIMUM_PUBLISH_BYTES, verify_persistent_private_host,
+    snapshot_private_path_identity, require_unchanged_persistent_host,
+)
 
 
 class OwnerPreflightError(ValueError):
@@ -52,19 +56,21 @@ def verify_owner_backup_readiness(
                 or receipt.is_relative_to(root) or pin.is_relative_to(root)
                 or config.is_relative_to(root)):
             _fail()
-        for file in (pin, config):
-            details = file.stat()
-            if (not file.is_file() or file.is_symlink()
-                    or details.st_uid != os.geteuid()
-                    or stat.S_IMODE(details.st_mode) != 0o600):
-                _fail()
+        # Pin the local trust anchor and runtime manifest before any remote
+        # inspection. Recheck both after all network reads so a preflight cannot
+        # pass on mixed snapshots if a local file changes mid-check.
+        trusted_pin_value = _pin(pin)
+        manifest_path = source / "map02-owner-runtime-manifest.json"
+        manifest_digest = _hash_file(manifest_path)
         verified = verify_runtime(
             source, trusted_manifest_pin_file=pin,
             require_trusted_pin=True,
         )
         if (verified.get("verified") is not True
                 or verified.get("trusted_manifest_pin_verified") is not True
-                or verified.get("capture_ready") is not False):
+                or verified.get("capture_ready") is not False
+                or _pin(pin) != trusted_pin_value
+                or _hash_file(manifest_path) != manifest_digest):
             _fail()
         entries, count, total = _inventory(source)
         if (not entries or count <= 0 or total <= 0
@@ -77,6 +83,21 @@ def verify_owner_backup_readiness(
         if usage_fn(root.parent).free < required:
             _fail()
         builds_id, manifests_id = _folder_map(config, source)
+
+        # On the real owner path, preflight is also a persistent-storage gate.
+        # Synthetic CI deliberately cannot assert properties of the owner host.
+        real_transport = invoke is _call_rclone
+        guarded_paths = list(dict.fromkeys((
+            source, pin.parent, config.parent, root.parent, receipt.parent,
+        )))
+        host_identity = None
+        if real_transport:
+            verify_persistent_private_host(
+                guarded_paths,
+                minimum_free_bytes=max(MINIMUM_PUBLISH_BYTES, required),
+            )
+            host_identity = snapshot_private_path_identity(guarded_paths)
+
         _check_remote(builds, builds_id, invoke)
         _check_remote(manifests, manifests_id, invoke)
         names_in_builds = _existing_names(builds, invoke)
@@ -87,6 +108,31 @@ def verify_owner_backup_readiness(
                     ".tar.sha256", ".manifest.json",
                     ".manifest.sha256", ".receipt.json"))):
             _fail()
+
+        # Reject mixed local/remote snapshots: re-read the folder mapping,
+        # trusted pin, runtime manifest and full inventory after all remote
+        # queries. Also ensure another process did not reserve output paths.
+        verified_after = verify_runtime(
+            source, trusted_manifest_pin_file=pin,
+            require_trusted_pin=True,
+        )
+        entries_after, count_after, total_after = _inventory(source)
+        if (verified_after.get("verified") is not True
+                or verified_after.get("trusted_manifest_pin_verified") is not True
+                or verified_after.get("capture_ready") is not False
+                or _pin(pin) != trusted_pin_value
+                or _hash_file(manifest_path) != manifest_digest
+                or _folder_map(config, source) != (builds_id, manifests_id)
+                or entries_after != entries or count_after != count
+                or total_after != total
+                or root.exists() or root.is_symlink()
+                or receipt.exists() or receipt.is_symlink()):
+            _fail()
+        if real_transport:
+            require_unchanged_persistent_host(
+                guarded_paths, host_identity,
+                minimum_free_bytes=max(MINIMUM_PUBLISH_BYTES, required),
+            )
         return {
             "runtime_files": count,
             "runtime_bytes": total,
