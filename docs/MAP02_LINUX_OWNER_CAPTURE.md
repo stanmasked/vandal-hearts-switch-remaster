@@ -1208,3 +1208,29 @@ owner-host publish using scoped real `rclone`, independently trusted pins,
 and fresh remote readbacks is performed. Synthetic cloud tests and ephemeral
 CI runtime archives are not permanent evidence. Original PS1 disc, BIOS,
 BK2, extracted audio and gameplay captures remain unchanged.
+
+## Stage561 — revalidate owner preflight inputs after remote inspection
+
+Hardened the read-only owner-session preflight before any upload is allowed.
+It now snapshots the independently trusted manifest pin and runtime manifest,
+rechecks both after the remote folder/name queries, re-runs the runtime
+verification and inventory, and requires the folder-map root IDs to remain
+unchanged. It also rejects a session output path that appears during the
+preflight.
+
+For a real owner rclone invocation, the preflight now requires the runtime,
+trusted pin, folder map, and both output parents to be on verified persistent,
+owner-only Linux storage. It snapshots their directory identities and repeats
+the persistent-host check after the remote inspection. Synthetic transports
+cannot claim this host verification.
+
+Added regression tests that mutate the folder map, trusted pin, or runtime
+manifest during the remote checks. Each case must reject the preflight without
+uploading any bytes or creating output artifacts.
+
+The exact-head CI for Stage561 is pending; do not mark the stage accepted
+until all eight companion workflows complete successfully on the final head.
+This remains a no-game-media readiness check, not evidence of a real Drive
+upload, actual MAP02 launch, or Nintendo Switch parity. The private
+07_Builds_and_Test_Artifacts folder must remain empty until an authenticated
+owner-host publish and independent remote readbacks are completed.
