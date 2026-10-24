@@ -8,6 +8,7 @@ This is NOT executed by public CI against any real Drive account.
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -139,79 +140,122 @@ def _require_file(path_value: Path, source: Path, *, mode: int | None = None) ->
     return path
 
 
-def _read_owner_folder_map_bytes(path: Path, root: Path) -> bytes:
-    """Read an owner-only mapping via an anchored parent and no-follow file FD.
+def _directory_identity(info: os.stat_result) -> tuple[int, int, int, int]:
+    return (info.st_dev, info.st_ino, info.st_uid,
+            stat.S_IMODE(info.st_mode))
 
-    Compare both descriptor identities with the pre- and post-read path
-    identities. This prevents switching the mapping file between permission
-    checking and opening it, even when a replacement has identical contents.
-    It does not lock or authenticate higher ancestor directory components.
+
+def _open_anchored_owner_parent(
+    directory: Path, handles: ExitStack,
+) -> tuple[int, list[tuple[Path, int, os.stat_result]]]:
+    """Walk the absolute directory from /, retaining each no-follow dirfd.
+
+    Require a consistent device/inode/owner/mode for the kernel-opened entry
+    and its named path at every level. Higher-level ancestors stay open until
+    the caller has read and rechecked the private leaf.
+    """
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    root_fd = os.open("/", flags)
+    handles.callback(os.close, root_fd)
+    root_stat = os.fstat(root_fd)
+    chain: list[tuple[Path, int, os.stat_result]] = [
+        (Path("/"), root_fd, root_stat)
+    ]
+    current_fd = root_fd
+    current_path = Path("/")
+    for component in directory.parts[1:]:
+        if component in ("", ".", ".."):
+            _fail()
+        before = os.stat(component, dir_fd=current_fd,
+                         follow_symlinks=False)
+        if not stat.S_ISDIR(before.st_mode):
+            _fail()
+        child_fd = os.open(component, flags, dir_fd=current_fd)
+        handles.callback(os.close, child_fd)
+        opened = os.fstat(child_fd)
+        current_path = current_path / component
+        if (not stat.S_ISDIR(opened.st_mode)
+                or _directory_identity(before) != _directory_identity(opened)
+                or _directory_identity(current_path.lstat())
+                != _directory_identity(opened)):
+            _fail()
+        chain.append((current_path, child_fd, opened))
+        current_fd = child_fd
+    return current_fd, chain
+
+
+def _check_anchored_owner_chain(
+    chain: list[tuple[Path, int, os.stat_result]],
+) -> None:
+    """Check every retained directory still has the same named ancestry."""
+    for index, (path, fd, original) in enumerate(chain):
+        expected = _directory_identity(original)
+        if (not stat.S_ISDIR(original.st_mode)
+                or _directory_identity(os.fstat(fd)) != expected
+                or _directory_identity(path.lstat()) != expected):
+            _fail()
+        if index:
+            parent_fd = chain[index - 1][1]
+            named = os.stat(path.name, dir_fd=parent_fd,
+                            follow_symlinks=False)
+            if (not stat.S_ISDIR(named.st_mode)
+                    or _directory_identity(named) != expected):
+                _fail()
+
+
+def _read_owner_folder_map_bytes(path: Path, root: Path) -> bytes:
+    """Read folder-map through no-follow file and entire retained parent chain.
+
+    All ancestor directory FDs are held open while the leaf is read. A
+    transient rename restored between checks cannot be cryptographically
+    excluded; this is not a guarantee against privileged adversaries.
     """
     owner_file = _require_file(path, root, mode=0o600)
     if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
         _fail()
-    directory = owner_file.parent
     try:
-        parent_before = directory.lstat()
-        file_before = owner_file.lstat()
-        if (not stat.S_ISDIR(parent_before.st_mode)
-                or parent_before.st_uid != os.geteuid()
-                or stat.S_IMODE(parent_before.st_mode) != 0o700
-                or not stat.S_ISREG(file_before.st_mode)
-                or file_before.st_uid != os.geteuid()
-                or stat.S_IMODE(file_before.st_mode) != 0o600
-                or file_before.st_size > 2048):
-            _fail()
-        parent_flags = (os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-                        | getattr(os, "O_NOFOLLOW", 0))
-        parent_fd = os.open(directory, parent_flags)
-        try:
-            parent_opened = os.fstat(parent_fd)
-            identity = lambda info: (
-                info.st_dev, info.st_ino, info.st_uid,
-                stat.S_IMODE(info.st_mode),
+        with ExitStack() as handles:
+            parent_fd, chain = _open_anchored_owner_parent(
+                owner_file.parent, handles,
             )
-            if (not stat.S_ISDIR(parent_opened.st_mode)
-                    or identity(parent_before) != identity(parent_opened)):
+            parent_before = chain[-1][2]
+            file_before = os.stat(
+                owner_file.name, dir_fd=parent_fd, follow_symlinks=False,
+            )
+            if (parent_before.st_uid != os.geteuid()
+                    or stat.S_IMODE(parent_before.st_mode) != 0o700
+                    or not stat.S_ISREG(file_before.st_mode)
+                    or file_before.st_uid != os.geteuid()
+                    or stat.S_IMODE(file_before.st_mode) != 0o600
+                    or file_before.st_size > 2048
+                    or not stat.S_ISREG(owner_file.lstat().st_mode)):
                 _fail()
             fd = os.open(
-                owner_file.name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                owner_file.name, os.O_RDONLY | os.O_NOFOLLOW,
                 dir_fd=parent_fd,
             )
-            try:
-                original = os.fstat(fd)
-                if (not stat.S_ISREG(original.st_mode)
-                        or original.st_uid != os.geteuid()
-                        or stat.S_IMODE(original.st_mode) != 0o600
-                        or original.st_size > 2048
-                        or (original.st_dev, original.st_ino, original.st_size,
-                            original.st_mtime_ns, original.st_ctime_ns)
-                        != (file_before.st_dev, file_before.st_ino, file_before.st_size,
-                            file_before.st_mtime_ns, file_before.st_ctime_ns)):
-                    _fail()
-                with os.fdopen(fd, "rb", closefd=False) as stream:
-                    payload = stream.read(2049)
-                after = os.fstat(fd)
-                path_after = os.stat(
-                    owner_file.name, dir_fd=parent_fd, follow_symlinks=False,
-                )
-                stable = lambda info: (
-                    info.st_dev, info.st_ino, info.st_size,
-                    info.st_mtime_ns, info.st_ctime_ns,
-                    info.st_uid, stat.S_IMODE(info.st_mode),
-                )
-                if (len(payload) > 2048 or stable(original) != stable(after)
-                        or stable(after) != stable(path_after)
-                        or stable(path_after) != stable(owner_file.lstat())):
-                    _fail()
-            finally:
-                os.close(fd)
-            if (identity(parent_before) != identity(os.fstat(parent_fd))
-                    or identity(parent_before) != identity(directory.lstat())):
+            handles.callback(os.close, fd)
+            original = os.fstat(fd)
+            stable = lambda info: (
+                info.st_dev, info.st_ino, info.st_size,
+                info.st_mtime_ns, info.st_ctime_ns,
+                info.st_uid, stat.S_IMODE(info.st_mode),
+            )
+            if (not stat.S_ISREG(original.st_mode)
+                    or stable(original) != stable(file_before)):
                 _fail()
+            with os.fdopen(fd, "rb", closefd=False) as stream:
+                payload = stream.read(2049)
+            after = os.fstat(fd)
+            named = os.stat(
+                owner_file.name, dir_fd=parent_fd, follow_symlinks=False,
+            )
+            if (len(payload) > 2048 or stable(original) != stable(after)
+                    or stable(after) != stable(named)
+                    or stable(named) != stable(owner_file.lstat())):
+                _fail()
+            _check_anchored_owner_chain(chain)
             return payload
-        finally:
-            os.close(parent_fd)
     except (OSError, ValueError, TypeError, AttributeError):
         _fail()
 
