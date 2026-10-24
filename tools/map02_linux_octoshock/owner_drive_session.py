@@ -105,6 +105,16 @@ def _discard_incomplete_owner_pin(path: Path | None) -> None:
         raise
 
 
+def _reject_unresolved_pin_quarantine(
+    receipt_pin: Path, tar_pin_out: Path | None,
+) -> None:
+    """Reject a new session while any output-parent cleanup marker remains."""
+    for pin_output in (receipt_pin, tar_pin_out):
+        if (pin_output is not None and any(
+                pin_output.parent.glob(".map02-pin-cleanup-*"))):
+            _fail()
+
+
 def complete_owner_archive_session(
     runtime: Path,
     trusted_manifest_pin: Path,
@@ -158,10 +168,7 @@ def complete_owner_archive_session(
         # A previous interrupted cleanup can intentionally leave a quarantined
         # replacement when another writer claimed the original pin path. Do
         # not start another owner session beside unresolved pin data.
-        for pin_output in (receipt_pin, tar_pin_out):
-            if (pin_output is not None and any(
-                    pin_output.parent.glob(".map02-pin-cleanup-*"))):
-                _fail()
+        _reject_unresolved_pin_quarantine(receipt_pin, tar_pin_out)
         for p in (manifest_pin, folder_map):
             if (not p.is_file() or p.is_symlink()
                     or stat.S_IMODE(p.stat().st_mode) != 0o600):
@@ -184,6 +191,11 @@ def complete_owner_archive_session(
                 or readiness["cloud_names_available"] is not True
                 or readiness["capture_ready"] is not False):
             _fail()
+
+        # Readiness can take time. Recheck the quarantine gate immediately
+        # before creating any new session files so a marker left by a
+        # concurrent interrupted owner process cannot slip past preflight.
+        _reject_unresolved_pin_quarantine(receipt_pin, tar_pin_out)
 
         # At this point the owner-only files are new and the no-write
         # preflight has succeeded. Mark them as disposable from THIS

@@ -385,6 +385,35 @@ class OwnerDriveSessionTests(unittest.TestCase):
         )
         self.assertEqual(list(target.iterdir()), [sentinel])
 
+    def test_quarantine_marker_created_during_readiness_prevents_session_writes(self):
+        marker = self.base / ".map02-pin-cleanup-stage593-late"
+        payload = marker / "payload"
+        real_readiness = owner_drive_session.verify_owner_backup_readiness
+
+        def readiness_with_late_quarantine(*args, **kwargs):
+            result = real_readiness(*args, **kwargs)
+            marker.mkdir(mode=0o700)
+            payload.write_text("f" * 64 + "\n", encoding="ascii")
+            payload.chmod(0o600)
+            return result
+
+        with patch.object(
+            owner_drive_session, "verify_owner_backup_readiness",
+            side_effect=readiness_with_late_quarantine,
+        ):
+            with self.assertRaises(PrivateOwnerSessionError):
+                self.execute()
+
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertFalse(self.full_session.exists())
+        self.assertFalse(self.receipt_pin.exists())
+        self.assertFalse(self.archive_pin.exists())
+        self.assertTrue(marker.is_dir())
+        self.assertFalse(marker.is_symlink())
+        self.assertEqual(payload.read_text(encoding="ascii"), "f" * 64 + "\n")
+        self.assertEqual(payload.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(marker.stat().st_mode & 0o777, 0o700)
+
     def test_previous_unrelated_owner_pin_survives_failed_session(self):
         old_pin = self.base / "unrelated-owner-reference.sha256"
         old_pin.write_text("a" * 64 + "\n", encoding="ascii")
