@@ -52,7 +52,7 @@ def _reject_git(path: Path) -> None:
             raise ValueError("private media must stay outside Git checkouts")
 
 
-def _resolve_private_file(value: Path) -> Path:
+def _resolve_private_file(value: Path, *, require_owner_private: bool = False) -> Path:
     path = Path(value)
     if not path.is_absolute() or path.is_symlink() or not path.is_file():
         raise ValueError("private media must be absolute regular nonsymlink files")
@@ -60,10 +60,10 @@ def _resolve_private_file(value: Path) -> Path:
     if real.is_symlink() or not stat.S_ISREG(real.lstat().st_mode):
         raise ValueError("private media must be regular files")
     _reject_git(real)
-    if os.name != "nt":
-        # Original media, CUE descriptors, and BK2 input logs are private
-        # owner data. A valid content hash does not compensate for unsafe
-        # local permissions or a second hardlink outside the private folder.
+    if require_owner_private and os.name != "nt":
+        # Apply strict local media permissions only to source assets and the
+        # pinned full-image digest. Other evidence files use their own ACL
+        # contracts and must not inherit this media-only policy by accident.
         parent = real.parent
         parent_info = parent.lstat()
         info = real.lstat()
@@ -79,7 +79,7 @@ def _resolve_private_file(value: Path) -> Path:
     return real
 
 
-def _open_stable(path: Path) -> tuple[int, os.stat_result]:
+def _open_stable(path: Path, *, require_private: bool = False) -> tuple[int, os.stat_result]:
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
     # Windows C runtime otherwise translates CRLF and treats 0x1A as EOF.
     # Disc sectors, BK2 ZIPs, screenshots and owner receipts must be byte-exact.
@@ -92,7 +92,7 @@ def _open_stable(path: Path) -> tuple[int, os.stat_result]:
             or _identity(info) != _identity(named)):
         os.close(fd)
         raise ValueError("private source changed while opening")
-    if os.name != "nt":
+    if require_private and os.name != "nt":
         parent_info = path.parent.stat(follow_symlinks=False)
         if (parent_info.st_uid != os.geteuid()
                 or stat.S_IMODE(parent_info.st_mode) != 0o700
@@ -104,13 +104,22 @@ def _open_stable(path: Path) -> tuple[int, os.stat_result]:
     return fd, info
 
 
-def _assert_stable(fd: int, path: Path, before: os.stat_result) -> None:
+def _assert_stable(fd: int, path: Path, before: os.stat_result, *,
+                   require_private: bool = False) -> None:
     after = os.fstat(fd)
     named = os.stat(path, follow_symlinks=False)
     if (not stat.S_ISREG(named.st_mode)
             or _identity(after) != _identity(before)
             or _identity(named) != _identity(after)):
         raise ValueError("private source changed during preflight")
+    if require_private and os.name != "nt":
+        parent_info = path.parent.stat(follow_symlinks=False)
+        if (parent_info.st_uid != os.geteuid()
+                or stat.S_IMODE(parent_info.st_mode) != 0o700
+                or after.st_uid != os.geteuid()
+                or stat.S_IMODE(after.st_mode) != 0o600
+                or after.st_nlink != 1):
+            raise ValueError("private source permissions changed during preflight")
 
 
 def _read_at(fd: int, offset: int, size: int) -> bytes:
@@ -129,13 +138,13 @@ def _read_at(fd: int, offset: int, size: int) -> bytes:
     return b"".join(chunks)
 
 
-def _read_cue(path: Path) -> str:
-    fd, before = _open_stable(path)
+def _read_cue(path: Path, *, require_private: bool = False) -> str:
+    fd, before = _open_stable(path, require_private=require_private)
     try:
         if before.st_size <= 0 or before.st_size > MAX_CUE_BYTES:
             raise ValueError("CUE file outside bounded size")
         raw = _read_at(fd, 0, before.st_size)
-        _assert_stable(fd, path, before)
+        _assert_stable(fd, path, before, require_private=require_private)
     finally:
         os.close(fd)
     if len(raw) != before.st_size:
@@ -228,9 +237,10 @@ def _full_image_sha256(fd: int, file_size: int) -> str:
 
 def _disc_profile(bin_path: Path, expected_map02_sha256: str, *,
                   verify_full_bin_sha256: bool = False,
-                  expected_bin_sha256: str | None = None
+                  expected_bin_sha256: str | None = None,
+                  require_private: bool = False
                   ) -> tuple[bool, bool, bool, bool | None]:
-    fd, before = _open_stable(bin_path)
+    fd, before = _open_stable(bin_path, require_private=require_private)
     try:
         if before.st_size <= 0 or before.st_size % SECTOR_BYTES:
             raise ValueError("BIN is not aligned to 2352-byte raw sectors")
@@ -262,7 +272,7 @@ def _disc_profile(bin_path: Path, expected_map02_sha256: str, *,
                 _full_image_sha256(fd, before.st_size) == expected_bin_sha256
                 if size_match else False
             )
-        _assert_stable(fd, bin_path, before)
+        _assert_stable(fd, bin_path, before, require_private=require_private)
     finally:
         os.close(fd)
     if remaining:
@@ -272,9 +282,10 @@ def _disc_profile(bin_path: Path, expected_map02_sha256: str, *,
     return volume_match, resource_match, size_match, full_match
 
 
-def _movie_metadata(movie_path: Path, expected_movie_frames: int
+def _movie_metadata(movie_path: Path, expected_movie_frames: int, *,
+                    require_private: bool = False
                     ) -> tuple[bool, bool, bool, bool]:
-    fd, before = _open_stable(movie_path)
+    fd, before = _open_stable(movie_path, require_private=require_private)
     with os.fdopen(fd, "rb") as handle:
         if before.st_size <= 0 or before.st_size > 8 * 1024 * 1024:
             raise ValueError("BK2 archive outside bounded size")
@@ -340,7 +351,8 @@ def _movie_metadata(movie_path: Path, expected_movie_frames: int
                 if not ended or raw.read(1):
                     raise ValueError("BK2 input end marker missing or extra bytes")
             input_match = frames == expected_movie_frames
-        _assert_stable(handle.fileno(), movie_path, before)
+        _assert_stable(handle.fileno(), movie_path, before,
+                       require_private=require_private)
         return header_match, sync_match, input_match, poweron_declared
 
 
@@ -363,18 +375,21 @@ def inspect_pair(cue_path: Path, movie_path: Path, *,
         raise ValueError("full BIN verification requires a private lowercase SHA-256")
     if not verify_full_bin_sha256 and expected_bin_sha256 is not None:
         raise ValueError("private full BIN digest provided without verification")
-    cue = _resolve_private_file(cue_path)
-    movie = _resolve_private_file(movie_path)
-    cue_text = _read_cue(cue)
+    cue = _resolve_private_file(cue_path, require_owner_private=True)
+    movie = _resolve_private_file(movie_path, require_owner_private=True)
+    cue_text = _read_cue(cue, require_private=True)
     bin_name = _parse_cue(cue_text)
-    bin_path = _resolve_private_file(cue.parent / bin_name)
+    bin_path = _resolve_private_file(cue.parent / bin_name, require_owner_private=True)
     volume_match, resource_match, size_match, full_match = _disc_profile(
         bin_path, expected_map02_sha256,
         verify_full_bin_sha256=verify_full_bin_sha256,
         expected_bin_sha256=expected_bin_sha256,
+        require_private=True,
     )
     (movie_header_match, movie_sync_match, movie_input_match,
-     movie_declares_poweron) = _movie_metadata(movie, expected_movie_frames)
+     movie_declares_poweron) = _movie_metadata(
+        movie, expected_movie_frames, require_private=True,
+    )
     profile_match = (
         volume_match and resource_match and size_match
         and (not verify_full_bin_sha256 or full_match is True)
@@ -407,17 +422,17 @@ def inspect_pair(cue_path: Path, movie_path: Path, *,
 
 def read_private_full_bin_sha256(path: Path) -> str:
     """Load a private pinned digest without exposing it in CLI or JSON output."""
-    private_ref = _resolve_private_file(path)
+    private_ref = _resolve_private_file(path, require_owner_private=True)
     if os.name != "nt":
         info = private_ref.stat()
-        if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o077:
+        if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o600:
             raise ValueError("full-BIN digest reference must be user-private")
-    fd, before = _open_stable(private_ref)
+    fd, before = _open_stable(private_ref, require_private=True)
     try:
         if before.st_size not in (64, 65):
             raise ValueError("private full-BIN digest must be exactly 64 hex digits")
         raw = _read_at(fd, 0, before.st_size)
-        _assert_stable(fd, private_ref, before)
+        _assert_stable(fd, private_ref, before, require_private=True)
     finally:
         os.close(fd)
     try:
