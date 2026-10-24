@@ -222,6 +222,10 @@ def complete_owner_archive_session(
         if (packed["files"] <= 0 or packed["bytes"] <= 0
                 or packed.get("drive_upload_authenticated") is not False):
             _fail()
+        # Packing may take enough time for another interrupted owner process
+        # to leave a new quarantine. Refuse before any cloud upload if that
+        # happened, retaining the local session archive for investigation.
+        _reject_unresolved_pin_quarantine(receipt_pin, tar_pin_out)
         uploaded = archive_to_private_drive(
             source, manifest_pin, tar, tar_digest, upload_folder / "new-copy",
             builds, manifests, session, folder_map,
