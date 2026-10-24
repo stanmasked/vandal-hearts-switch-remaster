@@ -449,7 +449,7 @@ class OwnerDriveSessionTests(unittest.TestCase):
                 if (pause_quarantine_unlink and Path(path).name == "payload"
                         and Path(path).parent.name.startswith(".map02-pin-cleanup-")):
                     print("QUARANTINE_PAYLOAD_READY", flush=True)
-                    release = Path(sys.argv[1]) / "continue-cleanup"
+                    release = base / "continue-cleanup"
                     deadline = time.monotonic() + 10
                     while not release.exists() and time.monotonic() < deadline:
                         time.sleep(0.01)
