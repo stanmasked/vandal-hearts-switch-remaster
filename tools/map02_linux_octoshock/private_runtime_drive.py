@@ -309,39 +309,90 @@ def _file_identity(info: os.stat_result) -> tuple[int, int, int, int, int, int, 
 
 
 def _seal_payload(source: Path, target: Path) -> str:
-    """Create an owner-only, distinct, full-byte snapshot before any upload."""
-    if target.exists() or target.is_symlink() or source.is_symlink():
+    """Create a stable owner-only snapshot using held no-follow descriptors."""
+    if (not source.is_absolute() or not target.is_absolute()
+            or source == target or not hasattr(os, "O_NOFOLLOW")
+            or not hasattr(os, "O_DIRECTORY")):
         _fail()
-    baseline = _hash_file(source)
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-    source_fd = os.open(source, flags)
-    dest_fd = None
     try:
-        original = os.fstat(source_fd)
-        if not stat.S_ISREG(original.st_mode) or original.st_uid != os.geteuid():
-            _fail()
-        dest_fd = os.open(
-            target, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
-            getattr(os, "O_NOFOLLOW", 0), 0o600,
-        )
-        with os.fdopen(source_fd, "rb", closefd=False) as incoming:
-            with os.fdopen(dest_fd, "wb", closefd=False) as outgoing:
-                while True:
-                    chunk = incoming.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    outgoing.write(chunk)
-        after = os.fstat(source_fd)
-        if ((original.st_dev, original.st_ino, original.st_size, original.st_mtime_ns)
-                != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)):
-            _fail()
-    finally:
-        if dest_fd is not None:
-            os.close(dest_fd)
-        os.close(source_fd)
-    if _hash_file(target) != baseline or _hash_file(source) != baseline:
+        with ExitStack() as handles:
+            source_parent_fd, source_chain = _open_anchored_owner_parent(
+                source.parent, handles,
+            )
+            target_parent_fd, target_chain = _open_anchored_owner_parent(
+                target.parent, handles,
+            )
+            source_before = os.stat(
+                source.name, dir_fd=source_parent_fd, follow_symlinks=False,
+            )
+            if (not stat.S_ISREG(source_before.st_mode)
+                    or source_before.st_uid != os.geteuid()):
+                _fail()
+            source_fd = os.open(
+                source.name, os.O_RDONLY | os.O_NOFOLLOW,
+                dir_fd=source_parent_fd,
+            )
+            handles.callback(os.close, source_fd)
+            source_opened = os.fstat(source_fd)
+            if _file_identity(source_before) != _file_identity(source_opened):
+                _fail()
+            baseline, source_bytes = _hash_open_fd(source_fd)
+            if _file_identity(source_opened) != _file_identity(os.fstat(source_fd)):
+                _fail()
+
+            try:
+                os.stat(target.name, dir_fd=target_parent_fd,
+                        follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                _fail()
+            target_fd = os.open(
+                target.name, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                0o600, dir_fd=target_parent_fd,
+            )
+            handles.callback(os.close, target_fd)
+            os.fchmod(target_fd, 0o600)
+            while True:
+                chunk = os.read(source_fd, 1024 * 1024)
+                if not chunk:
+                    break
+                view = memoryview(chunk)
+                while view:
+                    written = os.write(target_fd, view)
+                    if written <= 0:
+                        _fail()
+                    view = view[written:]
+            os.fsync(target_fd)
+
+            source_after = os.fstat(source_fd)
+            source_named = os.stat(
+                source.name, dir_fd=source_parent_fd, follow_symlinks=False,
+            )
+            target_after = os.fstat(target_fd)
+            target_named = os.stat(
+                target.name, dir_fd=target_parent_fd, follow_symlinks=False,
+            )
+            source_hash, source_size = _hash_open_fd(source_fd)
+            target_hash, target_size = _hash_open_fd(target_fd)
+            if (
+                _file_identity(source_opened) != _file_identity(source_after)
+                or _file_identity(source_after) != _file_identity(source_named)
+                or _file_identity(source_named) != _file_identity(source.lstat())
+                or source_hash != baseline or source_size != source_bytes
+                or _file_identity(target_after) != _file_identity(target_named)
+                or _file_identity(target_named) != _file_identity(target.lstat())
+                or not stat.S_ISREG(target_after.st_mode)
+                or target_after.st_uid != os.geteuid()
+                or stat.S_IMODE(target_after.st_mode) != 0o600
+                or target_hash != baseline or target_size != source_bytes
+            ):
+                _fail()
+            _check_anchored_owner_chain(source_chain)
+            _check_anchored_owner_chain(target_chain)
+            return baseline
+    except (OSError, ValueError, TypeError, AttributeError):
         _fail()
-    return baseline
 
 
 def archive_to_private_drive(
