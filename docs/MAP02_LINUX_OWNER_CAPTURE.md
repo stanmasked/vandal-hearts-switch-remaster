@@ -657,3 +657,48 @@ generation/provenance in a protected owner-controlled offline backup
 **independent of the cloud archive**. Moving files elsewhere on the same
 machine alone does not protect against whole-host loss. The public CI
 simulation does not actually save an owner binary to Google Drive.
+
+## Stage545 — admission of an existing owner-private Drive archive
+
+Once the real owner Linux host, authenticated Drive remotes and three
+independently verified SHA-256 files exist, the command
+python3 -m tools.map02_linux_octoshock.owner_archive_admission
+accepts the same remote/session identity and trust anchors used for
+Stage544. It does NOT require the original runtime installation or
+disposable owner upload directory. It downloads all five original
+Drive objects anew to a FRESH owner-only readback directory, verifies
+the Drive object IDs and bytes against the pinned upload receipt,
+compares archive and manifest against independent owner SHA-256 references,
+and safely restores the entire runtime before creating a separate NEW
+private mode-0600 admission JSON file.
+
+Owner host command template (fill with actual private paths and the SAME
+original archive session name):
+
+python3 -m tools.map02_linux_octoshock.owner_archive_admission
+  --private-folder-map /private/config/map02-private-drive-folders.json
+  --owner-manifest-pin /private/trust/map02-owner-manifest.sha256
+  --owner-archive-pin /private/trust/owner544001-tar.sha256
+  --owner-receipt-pin /private/trust/owner544001-receipt.sha256
+  --new-readback-root /private/evidence/independent-admission/owner545001
+  --new-private-proof-file /private/trust/owner545001-admission.json
+  --builds-remote vh_builds --manifests-remote vh_manifests
+  --session owner544001
+
+The arguments above must be supplied in ONE shell invocation, not as
+independent shell commands. Private paths must exist only on the owner
+host, not in the public repository. Offline pins must have been
+independently retained BEFORE the cloud recovery trial; downloading
+untrusted remote pins does not produce independent trust.
+
+The proof records the three owner digest references, runtime count/bytes,
+session and date, but no OAuth tokens or private Drive folder IDs. It
+identifies whether the test injected a fake transport and explicitly
+records that cloud folder sharing ACL and original PS1 MAP02 gameplay
+are NOT verified by this check. Persist the proof through an independent
+private Drive or offline backup. Public CI performs eight source-free
+synthetic transport regressions only: successful restore after removal
+of both source and upload session, corrupted remote tar or receipt,
+altered local tar digest, wrong Drive remote, existing proof and unsafe
+paths. These results must not be misreported as a genuine owner binary
+archive or two original PS1 cold runs.
