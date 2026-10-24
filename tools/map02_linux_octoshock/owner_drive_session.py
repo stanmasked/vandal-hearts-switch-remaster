@@ -39,10 +39,12 @@ def _fail() -> None:
 
 
 def _raise_on_stop_signal(signum: int, _frame: object) -> None:
-    """Unwind safely on SIGINT/SIGTERM without accepting repeated stop signals."""
-    # Prevent a second stop signal from interrupting the cleanup triggered by
-    # the first one. main() restores both previous handlers in its finally.
-    signal.signal(signum, signal.SIG_IGN)
+    """Unwind safely and ignore either stop signal until cleanup completes."""
+    # Ignore BOTH signals before unwinding: a different second signal must not
+    # interrupt the cleanup triggered by the first one. main() restores both
+    # previous handlers in its finally.
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
     raise SystemExit(128 + signum)
 
 
