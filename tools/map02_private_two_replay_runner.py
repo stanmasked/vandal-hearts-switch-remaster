@@ -37,6 +37,11 @@ from tools.map02_windows_private_output_acl import require_windows_private_outpu
 from tools.map02_private_witness_plugin_digest import require_pinned_core_witness_dll
 from tools.map02_private_two_capture_audit import _private_root, audit_pair
 from tools.verify_map02_private_neutral_capture_chain import verify
+from tools.map02_linux_octoshock.owner_persistent_host import (
+    MINIMUM_CAPTURE_BYTES, capture_guard_directories,
+    verify_persistent_private_host, snapshot_private_path_identity,
+    require_unchanged_persistent_host,
+)
 
 
 SCHEMA = "vh.map02.private-two-sequential-replays.v2"
@@ -263,6 +268,30 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     require_linux_owner_runtime_pin(
         private_emuhawk, mono_executable, trusted_runtime_manifest_pin_file
     )
+    host_guarded_paths = None
+    host_identity = None
+    if linux_runtime and start:
+        # A real Linux capture must run on persistent owner-only local storage,
+        # never GitHub CI, tmpfs/overlay, a cloud mount, or the repository.
+        host_guarded_paths = capture_guard_directories(
+            Path(private_emuhawk).parent, workspace, private_disc, private_bk2,
+            trusted_runtime_manifest_pin_file,
+            private_full_bin_sha256_file=expected_digest_file,
+            private_psx_bios_candidate=private_psx_bios_candidate,
+            auto_core_witness_plugin=auto_core_witness_plugin,
+        )
+        verify_persistent_private_host(
+            host_guarded_paths, minimum_free_bytes=MINIMUM_CAPTURE_BYTES,
+        )
+        host_identity = snapshot_private_path_identity(host_guarded_paths)
+
+    def recheck_capture_host() -> None:
+        if host_guarded_paths is not None:
+            require_unchanged_persistent_host(
+                host_guarded_paths, host_identity,
+                minimum_free_bytes=MINIMUM_CAPTURE_BYTES,
+            )
+
     # Pin the BK2 bytes before any preflight, capture plan, emulator
     # process or independent audit. Merely re-parsing a changed archive later
     # would not prove that both sessions used the same exact input movie.
@@ -284,6 +313,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     _require_disc_unchanged(private_disc, disc_identity)
     _require_digest_reference_unchanged(expected_digest_file, digest)
     _require_firmware_candidate_matches(private_bk2, private_psx_bios_candidate)
+    recheck_capture_host()
     if not start:
         candidate = plan_lines(private_bk2, limit=max_windows)
         if len(candidate) < 6 or (len(candidate) - 3) % 3:
@@ -332,6 +362,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     _require_digest_reference_unchanged(expected_digest_file, digest)
 
     for name in RUN_NAMES[:run_count]:
+        recheck_capture_host()
         require_linux_owner_runtime_pin(
             private_emuhawk, mono_executable, trusted_runtime_manifest_pin_file
         )
@@ -370,6 +401,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             argv, check=False, shell=False,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
+        recheck_capture_host()
         if core_witness_sha256 is not None:
             require_pinned_core_witness_dll(auto_core_witness_plugin, core_witness_sha256)
         require_linux_owner_runtime_pin(
@@ -420,6 +452,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         _require_digest_reference_unchanged(expected_digest_file, digest)
         if core_witness_sha256 is not None:
             require_pinned_core_witness_dll(auto_core_witness_plugin, core_witness_sha256)
+        recheck_capture_host()
 
     if run_count == 1:
         require_linux_owner_runtime_pin(
@@ -430,6 +463,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         _require_full_bin_unchanged(private_disc, digest)
         _require_digest_reference_unchanged(expected_digest_file, digest)
         _require_firmware_candidate_matches(private_bk2, private_psx_bios_candidate)
+        recheck_capture_host()
         return {
             "schema": SCHEMA,
             "explicit_launch_requested": True,
@@ -466,9 +500,11 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             "owner_private_assets_uploaded": False,
         }
 
+    recheck_capture_host()
     paired = audit_pair(
         private_bk2, plan, workspace / RUN_NAMES[0], workspace / RUN_NAMES[1],
     )
+    recheck_capture_host()
     _require_movie_unchanged(private_bk2, movie_identity)
     _require_disc_unchanged(private_disc, disc_identity)
     _require_digest_reference_unchanged(expected_digest_file, digest)

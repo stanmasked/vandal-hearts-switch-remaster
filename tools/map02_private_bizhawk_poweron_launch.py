@@ -31,6 +31,11 @@ from tools.map02_private_process_witness_binding import (
 )
 from tools.map02_private_core_witness_audit import SHA256_HEX, read_witness_record
 from tools.map02_private_witness_plugin_digest import require_pinned_core_witness_dll
+from tools.map02_linux_octoshock.owner_persistent_host import (
+    MINIMUM_CAPTURE_BYTES, capture_guard_directories,
+    verify_persistent_private_host, snapshot_private_path_identity,
+    require_unchanged_persistent_host,
+)
 
 AUTO_WITNESS_NAME = "vh-map02-runtime-core-auto.txt"
 AUTO_WITNESS_ENV = "VH_MAP02_CORE_AUTOWRITE_PRIVATE_DIR"
@@ -445,6 +450,28 @@ def main() -> int:
             parser.error("automatic witness requires a matching OS process identity receipt")
         if args.launch and os.name != "nt" and not linux_runtime:
             parser.error("automatic witness execution requires Windows or Linux with explicit Mono")
+
+    host_guarded_paths = None
+    host_identity = None
+    if args.launch and linux_runtime:
+        if args.trusted_runtime_manifest_pin_file is None:
+            parser.error("Linux capture requires an external trusted runtime-manifest pin")
+        try:
+            host_guarded_paths = capture_guard_directories(
+                Path(args.absolute_emuhawk_executable).parent,
+                args.owner_private_png_directory,
+                args.owner_private_ps1_disc, args.owner_private_bk2,
+                args.trusted_runtime_manifest_pin_file,
+                private_full_bin_sha256_file=args.private_full_bin_sha256_file,
+                auto_core_witness_plugin=args.auto_core_witness_plugin,
+            )
+            verify_persistent_private_host(
+                host_guarded_paths, minimum_free_bytes=MINIMUM_CAPTURE_BYTES,
+            )
+            host_identity = snapshot_private_path_identity(host_guarded_paths)
+        except (OSError, ValueError, TypeError, RuntimeError):
+            parser.error("owner-private persistent Linux capture host preflight failed")
+
     try:
         command, env, count = build_launch(
             args.absolute_emuhawk_executable, args.owner_private_ps1_disc,
@@ -469,6 +496,14 @@ def main() -> int:
         print("VH_PRIVATE_BIZHAWK_LAUNCH_PREFLIGHT_OK planned_png=%d "
               "emulator_started=0 original_ps1_authenticated=0" % count)
         return 0
+    if host_guarded_paths is not None:
+        try:
+            require_unchanged_persistent_host(
+                host_guarded_paths, host_identity,
+                minimum_free_bytes=MINIMUM_CAPTURE_BYTES,
+            )
+        except (OSError, ValueError, TypeError, RuntimeError):
+            parser.error("owner-private persistent Linux host changed before launch")
     # Create the structured log before EmuHawk starts, with restrictive
     # permissions and exclusive creation. Lua appends only sanitized marker
     # lines; the owner can feed this file directly to the private auditor.
@@ -509,6 +544,11 @@ def main() -> int:
                     lambda process: record_started_process(
                         process.pid, private_dir, process_handle=getattr(process, "_handle", None))
                 )
+            if host_guarded_paths is not None:
+                require_unchanged_persistent_host(
+                    host_guarded_paths, host_identity,
+                    minimum_free_bytes=MINIMUM_CAPTURE_BYTES,
+                )
             require_linux_owner_runtime_pin(
                 args.absolute_emuhawk_executable, args.mono_executable,
                 args.trusted_runtime_manifest_pin_file
@@ -545,11 +585,16 @@ def main() -> int:
         return 1
     success = result.returncode == 0
     try:
+        if host_guarded_paths is not None:
+            require_unchanged_persistent_host(
+                host_guarded_paths, host_identity,
+                minimum_free_bytes=MINIMUM_CAPTURE_BYTES,
+            )
         require_linux_owner_runtime_pin(
             args.absolute_emuhawk_executable, args.mono_executable,
             args.trusted_runtime_manifest_pin_file
         )
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, RuntimeError):
         success = False
     if args.private_core_witness_sha256 is not None:
         try:

@@ -28,10 +28,41 @@ CI_INDICATORS = ("CI", "GITHUB_ACTIONS", "RUNNER_TEMP", "RUNNER_WORKSPACE",
                  "GITHUB_WORKSPACE", "GITHUB_RUN_ID")
 MINIMUM_PREPARE_BYTES = 4 * 1024**3
 MINIMUM_PUBLISH_BYTES = 2 * 1024**3
+MINIMUM_CAPTURE_BYTES = 512 * 1024**2
 
 
 class PersistentHostError(ValueError):
     pass
+
+
+def capture_guard_directories(
+    runtime_root: Path,
+    workspace: Path,
+    private_disc: Path,
+    private_bk2: Path,
+    trusted_manifest_pin_file: Path,
+    *,
+    private_full_bin_sha256_file: Path | None = None,
+    private_psx_bios_candidate: Path | None = None,
+    auto_core_witness_plugin: Path | None = None,
+) -> tuple[Path, ...]:
+    """List all owner-private directories whose persistence matters to capture."""
+    try:
+        directories = [
+            Path(runtime_root), Path(workspace), Path(private_disc).parent,
+            Path(private_bk2).parent, Path(trusted_manifest_pin_file).parent,
+        ]
+        for optional_file in (
+            private_full_bin_sha256_file, private_psx_bios_candidate,
+            auto_core_witness_plugin,
+        ):
+            if optional_file is not None:
+                directories.append(Path(optional_file).parent)
+        if any(not item.is_absolute() for item in directories):
+            _fail()
+        return tuple(dict.fromkeys(directories))
+    except (TypeError, ValueError, AttributeError):
+        _fail()
 
 
 def _fail() -> None:

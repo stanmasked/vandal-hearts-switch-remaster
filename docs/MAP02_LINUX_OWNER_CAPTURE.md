@@ -1806,3 +1806,22 @@ regular file in an owner-only directory, outside the runtime, with the expected
 Regression tests cover both Git marker forms using a synthetic runtime and
 synthetic manifest pin. These tests prove path-policy enforcement only; they
 do not establish an independently trusted owner pin or make capture ready.
+
+## Stage618 — persistent-host gate at the actual capture entrypoints
+
+The Linux replay coordinator and its child launcher now independently require
+the owner-private runtime, source/movie directories, workspace, external
+manifest-pin directory, and any supplied full-BIN digest / witness-plugin
+directory to reside on an approved persistent local Linux filesystem. The
+gate rejects CI, temporary/overlay/cloud mounts, Git checkouts, unsafe
+permissions, and less than 512 MiB free before the child launcher reads media
+or starts EmuHawk.
+
+The coordinator snapshots directory identity and revalidates the persistent
+host before and after each emulator process and around the capture audit. The
+child launcher repeats the check before its own media preflight, immediately
+before process start, and after process exit. A changed mount or replaced
+path fails closed; a passing synthetic test does not certify any actual owner
+host. The external runtime-manifest pin must still be independently established
+and retained outside runtime and Git, and `capture_ready` remains false until
+real two-run playback and manual MAP02 scene review.
