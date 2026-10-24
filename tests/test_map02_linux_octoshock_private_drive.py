@@ -34,6 +34,8 @@ class FakeDriveTransport:
         self.corrupt_download = False
         self.bad_object_metadata = False
         self.mutate_owner_archive = None
+        self.mutate_folder_after_upload = None
+        self.inject_remote_name_after_upload = None
         self.upload_sources = []
         self.version = "rclone v1.69.3"
 
@@ -72,6 +74,14 @@ class FakeDriveTransport:
                 self.upload_sources.append(source)
                 self.remote[remote][filename] = Path(source).read_bytes()
                 self.uploads += 1
+                if self.uploads == 1 and self.mutate_folder_after_upload is not None:
+                    folder_remote, replacement_id = self.mutate_folder_after_upload
+                    self.folder_ids[folder_remote] = replacement_id
+                    self.mutate_folder_after_upload = None
+                if self.uploads == 1 and self.inject_remote_name_after_upload is not None:
+                    folder_remote, injected_name, payload = self.inject_remote_name_after_upload
+                    self.remote[folder_remote][injected_name] = payload
+                    self.inject_remote_name_after_upload = None
             else:
                 remote, filename = source.split(":", 1)
                 data = self.remote[remote][filename]
@@ -447,6 +457,35 @@ class Stage537TransportTests(unittest.TestCase):
             )
         self.assertEqual(self.transport.uploads, 0)
         self.assertEqual(anchor.read_text(encoding="ascii"), "0" * 64 + "\n")
+
+    def test_remote_root_change_after_first_upload_refused(self):
+        self.transport.mutate_folder_after_upload = (
+            "vh_builds", "fictionalReplacementBuildsRoot",
+        )
+        with self.assertRaises(PrivateDriveError):
+            self.run_archive()
+        self.assertEqual(self.transport.uploads, 1)
+        self.assertFalse(any(
+            name.endswith(".receipt.json")
+            for name in self.transport.remote["vh_manifests"]
+        ))
+
+    def test_remote_name_collision_after_initial_inventory_refused(self):
+        self.transport.inject_remote_name_after_upload = (
+            "vh_manifests", "map02-runtime-testowner001.tar.sha256",
+            b"fictional concurrent object",
+        )
+        with self.assertRaises(PrivateDriveError):
+            self.run_archive()
+        self.assertEqual(self.transport.uploads, 1)
+        self.assertNotIn(
+            "map02-runtime-testowner001.tar.sha256",
+            [source.split(":", 1)[-1] for source in self.transport.upload_sources],
+        )
+        self.assertFalse(any(
+            name.endswith(".receipt.json")
+            for name in self.transport.remote["vh_manifests"]
+        ))
 
     def test_wrong_drive_folder_scope_fails_before_upload(self):
         self.transport.folder_ids["vh_builds"] = "wrong-folder"
