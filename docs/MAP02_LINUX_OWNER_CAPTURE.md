@@ -1226,11 +1226,13 @@ cannot claim this host verification.
 
 Added regression tests that mutate the folder map, trusted pin, or runtime
 manifest during the remote checks. Each case must reject the preflight without
-uploading any bytes or creating output artifacts.
-
-The exact-head CI for Stage561 is pending; do not mark the stage accepted
-until all eight companion workflows complete successfully on the final head.
+uploading any bytes or creating output artifacts. Additional tests verify that
+a real-transport preflight refuses to query Drive before the persistent-host
+check and rejects a changed host identity after remote inspection.
 This remains a no-game-media readiness check, not evidence of a real Drive
 upload, actual MAP02 launch, or Nintendo Switch parity. The private
 07_Builds_and_Test_Artifacts folder must remain empty until an authenticated
 owner-host publish and independent remote readbacks are completed.
+The final Stage561 code/test head is `6cadc1e692abf26c6aed406811375705cd7e732a`;
+the following documentation-only update must also be checked on its exact head
+before Stage561 is accepted.
