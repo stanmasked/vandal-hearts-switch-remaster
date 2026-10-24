@@ -1478,8 +1478,35 @@ propagate unchanged. This is a synthetic local test and does not establish
 real owner-host or cloud behavior.
 
 Stage571 code/test head:
-`d4121a0918873b2ce5b40391ced170d13b714d49`. Exact-head CI must pass on the
-final code and documentation head before Stage571 is accepted. Original PS1
+`d4121a0918873b2ce5b40391ced170d13b714d49`. Exact-head CI completed with
+8/8 successful workflows on final PR head
+`47f5ff6b363c8ca7b1d432982b69fa9c2408eff7`, with no failures or pending runs.
+The native Linux job passed `test_keyboard_interrupt_cleans_partial_readback_and_propagates`.
+Stage571 is accepted as a code/test gate only. Original PS1 media, BIOS, BK2,
+extracted audio and gameplay captures remain unchanged. The canonical private
+`07_Builds_and_Test_Artifacts` folder remains empty until a genuine owner-host
+publish and independent readback succeed.
+
+## Stage572 — close the cleanup check/delete race
+
+Stage571 handled interruptions, but its cleanup still performed an identity
+check followed by a path-based recursive deletion. Stage572 closes that
+time-of-check/time-of-use gap by atomically moving the candidate readback root
+into a newly created private sibling quarantine, then comparing the moved
+object's device/inode with the identity recorded when the root was created.
+Only the matching original directory is recursively removed. If a replacement
+directory or symlink won the race, the moved object is restored when the
+original name is free; it is never deleted just to complete cleanup.
+
+The new deterministic test swaps in a different directory immediately before
+the atomic move. It verifies that cleanup preserves the replacement sentinel,
+preserves the displaced original, re-raises the original interruption, and
+removes the empty quarantine wrapper. This is synthetic filesystem testing,
+not evidence of owner-host or Google Drive behavior.
+
+Stage572 code/test head:
+`2981b4a2324f93a1999b43eebb7b65703d9a847b`. Exact-head CI must pass on the
+final code and documentation head before Stage572 is accepted. Original PS1
 media, BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
 canonical private `07_Builds_and_Test_Artifacts` folder remains empty until
 a genuine owner-host publish and independent readback succeed.
