@@ -117,6 +117,55 @@ class PersistentOwnerPipelineTests(unittest.TestCase):
         self.assertIn(external, check.call_args.args[0])
         self.assertEqual(self.transport.uploads, 0)
 
+    def test_real_transport_recheck_rejects_changed_host_before_upload(self):
+        with patch.object(pipeline, "_call_rclone", self.transport):
+            with patch.object(pipeline, "verify_persistent_private_host"):
+                with patch.object(pipeline, "snapshot_private_path_identity",
+                                  return_value=(("fictional", 1, 2, 3, 4),)):
+                    with patch.object(
+                        pipeline, "require_unchanged_persistent_host",
+                        side_effect=ValueError("fictional directory was swapped"),
+                    ) as recheck:
+                        with self.assertRaises(OwnerPersistentBackupError):
+                            self.execute()
+        self.assertEqual(recheck.call_count, 1)
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertEqual(list(self.work.iterdir()), [])
+        self.assertEqual(list(self.trust.iterdir()), [])
+
+    def test_real_transport_recheck_after_transfer_rejects_before_admission(self):
+        with patch.object(pipeline, "_call_rclone", self.transport):
+            with patch.object(pipeline, "verify_persistent_private_host"):
+                with patch.object(pipeline, "snapshot_private_path_identity",
+                                  return_value=(("fictional", 1, 2, 3, 4),)):
+                    with patch.object(
+                        pipeline, "require_unchanged_persistent_host",
+                        side_effect=[{}, ValueError("fictional device changed")],
+                    ) as recheck:
+                        with self.assertRaises(OwnerPersistentBackupError):
+                            self.execute()
+        self.assertEqual(recheck.call_count, 2)
+        self.assertEqual(self.transport.uploads, 5)
+        self.assertFalse((self.trust / (self.session + "-admission.json")).exists())
+
+    def test_prepare_recheck_denies_success_after_host_replacement(self):
+        with patch("sys.argv", [
+            "owner_persistent_backup", "prepare", "--new-runtime-root",
+            str(self.base / "future-runtime"),
+        ]):
+            with patch.object(pipeline, "verify_persistent_private_host"):
+                with patch.object(pipeline, "snapshot_private_path_identity",
+                                  return_value=(("fictional", 1, 2, 3, 4),)):
+                    with patch.object(pipeline, "build_and_stage", return_value={
+                        "game_media_used": False, "psx_capture_ready": False,
+                    }) as build:
+                        with patch.object(
+                            pipeline, "require_unchanged_persistent_host",
+                            side_effect=ValueError("fictional parent inode changed"),
+                        ):
+                            self.assertEqual(pipeline.main(), 1)
+        build.assert_called_once()
+
     def test_symlinked_work_root_refused(self):
         alias = self.base / "alias"
         alias.symlink_to(self.work, target_is_directory=True)
