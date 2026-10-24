@@ -16,6 +16,7 @@ on:
       - 'tests/test_map02_linux_octoshock_owner_session_preflight.py'
       - 'tests/test_map02_linux_octoshock_owner_archive_admission.py'
       - 'tests/test_map02_linux_octoshock_owner_capture_backup_gate.py'
+      - 'tests/test_map02_linux_octoshock_owner_persistent_backup.py'
       - '.github/workflows/map02-linux-octoshock-native-port.yml'
   workflow_dispatch:
 
@@ -66,6 +67,9 @@ jobs:
 
       - name: Test repeat owner-backup gate with fictional second cloud restore
         run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_owner_capture_backup_gate.py' -v
+
+      - name: Test all-in-one owner persistent backup with fictional Drive only
+        run: python3 -m unittest discover -s tests -p 'test_map02_linux_octoshock_owner_persistent_backup.py' -v
 
       - name: Test POSIX compiler-sanity shim against synthetic upstream header
         run: python3 tests/test_map02_linux_octoshock_compiler_sanity.py

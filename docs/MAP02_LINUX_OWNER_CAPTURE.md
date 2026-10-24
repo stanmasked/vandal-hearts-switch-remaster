@@ -855,3 +855,73 @@ authenticated upload.** The private canonical `07_Builds_and_Test_Artifacts`
 folder still requires a genuine persistent owner Linux runtime upload
 and independently verified readback, and original MAP02 cold game
 launches remain separate checks.
+
+## Stage550 — persistent owner build + three independently read-backed upload stages
+
+Stage549 protected incomplete owner SHA references. Stage550 provides the
+single **owner-host entrypoint**:
+`python3 -m tools.map02_linux_octoshock.owner_persistent_backup`
+with two explicitly separated commands, `prepare` and `publish`.
+This is NOT a public CI upload; it must execute in a private persistent
+Linux x86_64 host with explicitly authorized owner-controlled
+folder-scoped `rclone` Google Drive remotes.
+
+**First phase — build without game media:**
+
+```bash
+python3 -m tools.map02_linux_octoshock.owner_persistent_backup prepare \
+  --new-runtime-root /private/persistent/vh550/runtime
+```
+
+The prepare command builds the verified upstream-pinned Octoshock and
+BizHawk 2.11 runtime and the experimental witness plugin; it does not
+accept, read or require the original game, BIOS or BK2. **It cannot
+create an independently trusted manifest SHA file.** Independently
+verify the resulting runtime manifest from an owner-controlled trust
+source and retain the pin **outside** the runtime before publication.
+A hash newly copied from the same untrusted runtime is not
+independent provenance.
+
+**Second phase — publish a pre-trusted runtime, then three readbacks:**
+
+```bash
+python3 -m tools.map02_linux_octoshock.owner_persistent_backup publish \
+  --runtime /private/persistent/vh550/runtime \
+  --independently-trusted-manifest-pin /private/trust/manifest.sha256 \
+  --private-folder-map /private/config/private-drive-folders.json \
+  --private-work-parent /private/persistent/vh550/work \
+  --private-trust-parent /private/trust/handoff \
+  --builds-remote vh_builds --manifests-remote vh_manifests \
+  --session owner550001
+```
+
+This command never generates the original trusted manifest SHA:
+it verifies a pre-existing externally supplied owner pin. It checks
+**all seven new output locations before ANY upload**, refuses nested
+work/trust roots, Git working trees, symlinked directories and reused
+session names. It runs the owner-private upload+first authenticated
+remote readback, independent admission+second readback with a sealed
+proof, then the Stage548 pre-capture audit+third readback. The last
+result compares the restored inventory and the original three pins.
+A fake injected Drive transport reports
+`authentic_owner_backup_claim_permitted=false`; real owner commands
+require default `rclone` and scoped folder configuration.
+
+All paths above are *examples*, not actual created owner archives.
+The two output parent directories must exist, be separate,
+owner-owned, mode 0700 and on **persistent storage**; the folder-map,
+trusted manifest pin and rclone config must be established privately
+ahead of time. Save new receipt/archive/admission SHA references and
+the admission JSON independently beyond the single source machine
+with a trusted origin. Unfinished remote objects and private work
+folders are retained for diagnosis; a retry must use a new session
+name. This tool never deletes the source runtime and does not mark
+original PS1 MAP02, Switch gameplay or hardware parity as complete:
+`capture_ready=false`, `cold_map02_launches=0`.
+
+Ten synthetic regression cases exercise three fake-cloud readbacks,
+the missing/incorrect independent manifest pin, output collision
+before upload, nested/symlinked parents, fake-transport nonpromotion,
+failed final-stage readback, duplicate session and prepare not issuing
+a trust reference. The test-only synthetic suite is **not**
+evidence of owner-authenticated Google Drive binary retention.
