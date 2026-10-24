@@ -1215,8 +1215,10 @@ Hardened the read-only owner-session preflight before any upload is allowed.
 It now snapshots the independently trusted manifest pin and runtime manifest,
 rechecks both after the remote folder/name queries, re-runs the runtime
 verification and inventory, and requires the folder-map root IDs to remain
-unchanged. It also rejects a session output path that appears during the
-preflight.
+unchanged. It also checks both rclone remote roots and compares a second pair
+of remote name listings; a changed Drive root or any mid-check namespace
+change invalidates the preflight. A session output path that appears during
+the preflight is also rejected.
 
 For a real owner rclone invocation, the preflight now requires the runtime,
 trusted pin, folder map, and both output parents to be on verified persistent,
@@ -1224,15 +1226,16 @@ owner-only Linux storage. It snapshots their directory identities and repeats
 the persistent-host check after the remote inspection. Synthetic transports
 cannot claim this host verification.
 
-Added regression tests that mutate the folder map, trusted pin, or runtime
-manifest during the remote checks. Each case must reject the preflight without
-uploading any bytes or creating output artifacts. Additional tests verify that
-a real-transport preflight refuses to query Drive before the persistent-host
-check and rejects a changed host identity after remote inspection.
+Added regression tests that mutate the folder map, trusted pin, runtime
+manifest, Drive root ID, or remote object namespace during inspection. Each
+case must reject the preflight without uploading any bytes or creating output
+artifacts. Additional tests verify that a real-transport preflight refuses to
+query Drive before the persistent-host check and rejects a changed host identity
+after remote inspection.
 This remains a no-game-media readiness check, not evidence of a real Drive
 upload, actual MAP02 launch, or Nintendo Switch parity. The private
 07_Builds_and_Test_Artifacts folder must remain empty until an authenticated
 owner-host publish and independent remote readbacks are completed.
-The final Stage561 code/test head is `6cadc1e692abf26c6aed406811375705cd7e732a`;
-the following documentation-only update must also be checked on its exact head
-before Stage561 is accepted.
+The Stage561 code/test head is `902d714150e99cb0154e3ac97c95f49323933690`.
+Exact-head CI must complete successfully on the final code and documentation
+head before Stage561 is accepted.
