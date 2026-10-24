@@ -158,7 +158,7 @@ jobs:
             -p 'test_map02_private_process_witness_binding.py' -v \
             2>&1 | tee /tmp/map02-private-birth-witness.log
           count=$(sed -nE 's/^Ran ([1-9][0-9]*) tests? in .*$/\1/p' /tmp/map02-private-birth-witness.log)
-          if [[ "$count" != "26" ]]; then
+          if [[ "$count" != "27" ]]; then
             echo 'unexpected fictional process-core binding test count' >&2
             exit 1
           fi

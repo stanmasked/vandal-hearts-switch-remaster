@@ -89,7 +89,7 @@ if auto_core_enabled then
     return fail("automatic_core_witness_directory_mismatch")
   end
 end
--- Stage608: malformed V4 witness fields must fail closed before any PNG is written.
+-- Stage609: malformed V5 witness fields must fail closed before any PNG is written.
 local auto_core_path = root:gsub("\\", "/"):gsub("/+$", "")
     .. "/vh-map02-runtime-core-auto.txt"
 local first_auto_core_bytes = nil
@@ -107,7 +107,7 @@ local function core_only_receipt_bytes()
   for line in body:gmatch("([^\n]*)\n") do
     table.insert(lines, line)
   end
-  -- This file is written by CustomMainForm.cs as V4. The previous V1 parser
+  -- This file is written by CustomMainForm.cs as V5. The previous V1 parser
   -- could never accept the real external-tool receipt, so a real capture
   -- would fail closed before its first PNG even though synthetic tests passed.
   if #lines ~= 16 or lines[1] ~= "VH_MAP02_RUNTIME_CORE_WITNESS_V5" then
