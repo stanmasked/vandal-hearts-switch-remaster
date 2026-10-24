@@ -1768,3 +1768,29 @@ gameplay captures remain unchanged. The canonical private
 `07_Builds_and_Test_Artifacts` folder remains empty until a genuine owner-host
 publish and independent readback succeed.
 
+## Stage583 — mixed stop signals cannot interrupt cleanup
+
+Stage582 established that SIGKILL during the first of two pin cleanups preserves
+both outputs. Stage583 closes a separate signal-handling gap: ignoring only the
+signal that initiated cleanup does not protect against a different stop signal
+arriving next.
+
+The stop-signal handler now ignores both SIGINT and SIGTERM before unwinding.
+The CLI restores both previous handlers in its existing `finally` block. Two
+subprocess regressions cover both orders: SIGTERM followed by SIGINT, and
+SIGINT followed by SIGTERM. Each pauses the child inside guarded cleanup and
+checks that the second signal does not interrupt it, the unaccepted pins are
+removed, the failed session tree remains available for investigation, and no
+cleanup quarantine is left behind.
+
+Stage583 implementation commits:
+- Handler fix: `a2a0fb6d30393c210129458bff2d604010ecce36`
+- Mixed-signal tests: `a6e39fe426c435d09954682ff00fa76b43e61bdb`
+
+Exact-head CI must pass before Stage583 is accepted. These remain synthetic
+local-filesystem tests with fake transport; they do not establish actual owner
+host or Google Drive behavior. Original PS1 media, BIOS, BK2, extracted audio
+and gameplay captures remain unchanged. The canonical private
+`07_Builds_and_Test_Artifacts` folder remains empty until a genuine owner-host
+publish and independent readback succeed.
+
