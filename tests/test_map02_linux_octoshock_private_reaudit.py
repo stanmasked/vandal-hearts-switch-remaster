@@ -173,6 +173,21 @@ class IndependentReadbackTests(unittest.TestCase):
             "preserve replacement",
         )
 
+    def test_cleanup_does_not_follow_symlink_replacement_readback_root(self):
+        displaced = self.base / "displaced-readback-root"
+        target = self.base / "outside-readback-target"
+        self.transport.symlink_readback_root_after_download = (
+            "map02-runtime-testowner001.tar", self.reaudit, displaced, target,
+        )
+        with self.assertRaises(IndependentAuditError):
+            self.run_audit()
+        self.assertTrue(self.reaudit.is_symlink())
+        self.assertTrue(displaced.is_dir())
+        self.assertEqual(
+            (target / "sentinel").read_text(encoding="utf-8"),
+            "preserve symlink target",
+        )
+
     def test_refuse_corrupted_remote_archive(self):
         key = "map02-runtime-testowner001.tar"
         self.transport.remote["vh_builds"][key] += b"FORGED"
