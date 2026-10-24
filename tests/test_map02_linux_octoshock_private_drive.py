@@ -192,6 +192,130 @@ class Stage537TransportTests(unittest.TestCase):
         with self.assertRaises(PrivateDriveError):
             _folder_map(self.private_map, self.source)
 
+    def test_folder_map_nested_no_symlink_ancestor_chain_accepted(self):
+        outer = self.base / "owner-parent"
+        inner = outer / "private-mapping"
+        outer.mkdir(mode=0o700)
+        inner.mkdir(mode=0o700)
+        candidate = inner / "scope.json"
+        candidate.write_bytes(self.private_map.read_bytes())
+        candidate.chmod(0o600)
+        self.assertEqual(
+            _folder_map(candidate, self.source),
+            (BUILDS_FOLDER_ID, MANIFESTS_FOLDER_ID),
+        )
+
+    def test_folder_map_same_content_parent_swap_before_open_rejected(self):
+        vault = self.base / "parent-to-swap"
+        vault.mkdir(mode=0o700)
+        candidate = vault / "scope.json"
+        payload = self.private_map.read_bytes()
+        candidate.write_bytes(payload)
+        candidate.chmod(0o600)
+        old_vault = self.base / "old-parent-before"
+        original_open = os.open
+        swapped = False
+
+        def swap_parent_before_open(file, flags, *args, **kwargs):
+            nonlocal swapped
+            if file == vault.name and "dir_fd" in kwargs and not swapped:
+                swapped = True
+                vault.rename(old_vault)
+                vault.mkdir(mode=0o700)
+                replacement = vault / "scope.json"
+                replacement.write_bytes(payload)
+                replacement.chmod(0o600)
+            return original_open(file, flags, *args, **kwargs)
+
+        with patch("tools.map02_linux_octoshock.private_runtime_drive.os.open",
+                   side_effect=swap_parent_before_open):
+            with self.assertRaises(PrivateDriveError):
+                _folder_map(candidate, self.source)
+        self.assertTrue(swapped)
+
+    def test_folder_map_same_content_parent_swap_after_open_rejected(self):
+        vault = self.base / "parent-after-open"
+        vault.mkdir(mode=0o700)
+        candidate = vault / "scope.json"
+        payload = self.private_map.read_bytes()
+        candidate.write_bytes(payload)
+        candidate.chmod(0o600)
+        old_vault = self.base / "old-parent-after"
+        original_open = os.open
+        swapped = False
+
+        def swap_parent_after_open(file, flags, *args, **kwargs):
+            nonlocal swapped
+            fd = original_open(file, flags, *args, **kwargs)
+            if file == vault.name and "dir_fd" in kwargs and not swapped:
+                swapped = True
+                vault.rename(old_vault)
+                vault.mkdir(mode=0o700)
+                replacement = vault / "scope.json"
+                replacement.write_bytes(payload)
+                replacement.chmod(0o600)
+            return fd
+
+        with patch("tools.map02_linux_octoshock.private_runtime_drive.os.open",
+                   side_effect=swap_parent_after_open):
+            with self.assertRaises(PrivateDriveError):
+                _folder_map(candidate, self.source)
+        self.assertTrue(swapped)
+
+    def test_folder_map_grandparent_swap_after_open_rejected(self):
+        outer = self.base / "outer-ancestor"
+        vault = outer / "private-vault"
+        vault.mkdir(mode=0o700, parents=True)
+        candidate = vault / "scope.json"
+        payload = self.private_map.read_bytes()
+        candidate.write_bytes(payload)
+        candidate.chmod(0o600)
+        old_outer = self.base / "old-outer-ancestor"
+        original_open = os.open
+        swapped = False
+
+        def swap_grandparent(file, flags, *args, **kwargs):
+            nonlocal swapped
+            fd = original_open(file, flags, *args, **kwargs)
+            if file == outer.name and "dir_fd" in kwargs and not swapped:
+                swapped = True
+                outer.rename(old_outer)
+                vault.mkdir(mode=0o700, parents=True)
+                replacement = vault / "scope.json"
+                replacement.write_bytes(payload)
+                replacement.chmod(0o600)
+            return fd
+
+        with patch("tools.map02_linux_octoshock.private_runtime_drive.os.open",
+                   side_effect=swap_grandparent):
+            with self.assertRaises(PrivateDriveError):
+                _folder_map(candidate, self.source)
+        self.assertTrue(swapped)
+
+    def test_folder_map_ancestor_symlink_swap_before_open_rejected(self):
+        vault = self.base / "symlink-parent"
+        vault.mkdir(mode=0o700)
+        candidate = vault / "scope.json"
+        candidate.write_bytes(self.private_map.read_bytes())
+        candidate.chmod(0o600)
+        old_vault = self.base / "old-symlink-parent"
+        original_open = os.open
+        swapped = False
+
+        def symlink_parent(file, flags, *args, **kwargs):
+            nonlocal swapped
+            if file == vault.name and "dir_fd" in kwargs and not swapped:
+                swapped = True
+                vault.rename(old_vault)
+                vault.symlink_to(old_vault, target_is_directory=True)
+            return original_open(file, flags, *args, **kwargs)
+
+        with patch("tools.map02_linux_octoshock.private_runtime_drive.os.open",
+                   side_effect=symlink_parent):
+            with self.assertRaises(PrivateDriveError):
+                _folder_map(candidate, self.source)
+        self.assertTrue(swapped)
+
     def test_entire_mock_transfer_and_readback_receipt(self):
         result = self.run_archive()
         self.assertEqual(result["objects_read_back"], 5)
