@@ -1173,9 +1173,9 @@ The cleanup path now treats this EPERM as stale-group ambiguity only when
 the direct leader has already exited. If the leader is still alive, EPERM
 remains fatal. The original timeout is preserved when the leader is gone.
 A regression test simulates the stale-group condition and confirms that the
-timeout is not replaced by an unrelated permission error. The real
-descendant-heartbeat test still must pass on macOS; this change is not
-accepted until exact-head CI confirms it.
+timeout is not replaced by an unrelated permission error. The exact-head CI subsequently passed the real synthetic
+descendant-heartbeat test and the full macOS power-on workflow on
+revision `21d4745a2bd87fe771f212523266069173288cb1`.
 
 Stage558 direct tests additionally cover a distinct sealed snapshot with a
 matching SHA-256 and mode 0600, rejection of an already-existing target, and
@@ -1186,3 +1186,22 @@ snapshot rather than the mutable original archive.
 No original game media, BIOS, BK2, audio or owner captures are used by public
 CI. The permanent private build-artifact folder remains empty until a genuine
 owner-host upload and independent remote readback are completed.
+
+## Stage560 — reject source mutation during payload sealing
+
+Added a deterministic regression test that changes the source archive
+immediately after the first target write during `_seal_payload`. The seal
+operation must reject the copy rather than return a successful digest when
+source bytes or file identity change while the snapshot is being created.
+This is distinct from the existing transfer-race test, which mutates the
+original only after the sealed copy has already been made.
+
+The exact-head CI for the Stage560 commit is pending. Do not mark this new
+race test accepted until the native Linux job and the complete companion
+workflow set finish on the exact head.
+
+The permanent owner-private build-artifact folder remains empty until an
+owner-host publish using scoped real `rclone`, independently trusted pins,
+and fresh remote readbacks is performed. Synthetic cloud tests and ephemeral
+CI runtime archives are not permanent evidence. Original PS1 disc, BIOS,
+BK2, extracted audio and gameplay captures remain unchanged.
