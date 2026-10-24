@@ -1697,3 +1697,26 @@ media, BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
 canonical private `07_Builds_and_Test_Artifacts` folder remains empty until
 a genuine owner-host publish and independent readback succeed.
 
+## Stage580 — repeated SIGINT cannot interrupt guarded cleanup
+
+Stage580 extends the guarded stop-signal path to both SIGTERM and SIGINT
+(Ctrl+C). On the first signal, the CLI temporarily ignores further delivery of
+that same signal, unwinds through the existing fail-closed cleanup path, and
+restores the prior SIGINT and SIGTERM handlers in `finally`. The exit status
+remains the conventional `128 + signal number`.
+
+A subprocess regression pauses the child inside pin cleanup, sends SIGINT,
+waits for the cleanup-start marker, then sends a second SIGINT. It verifies the
+second signal does not abort cleanup, the unaccepted receipt and archive pins
+are absent, the failed session tree is retained, and no cleanup quarantine
+remains. The successful CLI-path test now verifies both previous signal
+handlers are restored.
+
+These tests use synthetic local files and fake transport only; they do not
+establish actual owner-host or Google Drive behavior. Stage580 code/test head:
+`5251b45fabf1a4ace8f3354b231445da642fe125`. Exact-head CI must pass before
+Stage580 is accepted. Original PS1 media, BIOS, BK2, extracted audio and
+gameplay captures remain unchanged. The canonical private
+`07_Builds_and_Test_Artifacts` folder remains empty until a genuine owner-host
+publish and independent readback succeed.
+
