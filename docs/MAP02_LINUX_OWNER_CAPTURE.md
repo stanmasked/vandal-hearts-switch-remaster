@@ -1664,7 +1664,8 @@ inspection/reconciliation is required. Both tests use invented local files
 and fake transport only.
 
 Stage578 code/test head:
-`314b5a63c3d81985207e8c00e538fa77dd84042f`. Exact-head CI must pass on the
+`9c0fc737e78c2b394c5237d4f5dfce1fd8047bc7` (including newline-terminated
+partial-pin fixtures). Exact-head CI must pass on the
 final code and documentation head before Stage578 is accepted. The Stage577
 symlink-replacement test must also pass on that exact head. Original PS1 media,
 BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
