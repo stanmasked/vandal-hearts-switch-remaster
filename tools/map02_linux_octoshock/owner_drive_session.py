@@ -236,6 +236,11 @@ def complete_owner_archive_session(
                 or uploaded["objects_read_back"] != 5
                 or uploaded["capture_ready"] is not False):
             _fail()
+        # Stage596: cloud transfer is a long-running boundary. Another
+        # interrupted owner process may leave cleanup quarantine while we
+        # upload and read back objects. Never endorse that transfer until the
+        # output-parent quarantine has been checked again.
+        _reject_unresolved_pin_quarantine(receipt_pin, tar_pin_out)
         receipt_sha = _pin(receipt_pin)
         independent = audit_independent_readback(
             folder_map, manifest_pin, tar_digest, receipt_pin,
