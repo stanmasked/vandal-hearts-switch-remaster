@@ -51,6 +51,29 @@ class OwnerProcessGroupTests(unittest.TestCase):
         self.assertEqual(leader.wait.call_count, 3)
 
     @unittest.skipIf(os.name == "nt", "POSIX process group signals only")
+    def test_stale_group_permission_after_leader_exit_does_not_mask_timeout(self):
+        leader = Mock(pid=234567, returncode=None)
+        leader.wait.side_effect = [
+            subprocess.TimeoutExpired(cmd=["fictional"], timeout=1), 0, 0,
+        ]
+        leader.poll.return_value = 0
+        with patch(
+            "tools.map02_private_process_group.subprocess.Popen",
+            return_value=leader,
+        ), patch(
+            "tools.map02_private_process_group._kill_owned_group",
+            side_effect=[None, PermissionError("stale process group")],
+        ) as group_signal:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                run_owned_process(
+                    ["invented-emulator"], env={}, stdout=subprocess.DEVNULL,
+                    timeout=1,
+                )
+        self.assertEqual(group_signal.call_count, 2)
+        self.assertEqual(group_signal.call_args_list[1].args,
+                         (234567, signal.SIGKILL))
+
+    @unittest.skipIf(os.name == "nt", "POSIX process group signals only")
     def test_keyboard_interrupt_still_cleans_up_group(self):
         leader = Mock(pid=654321)
         leader.wait.side_effect = [KeyboardInterrupt(), 0, 0]
