@@ -478,10 +478,7 @@ class Stage537TransportTests(unittest.TestCase):
         with self.assertRaises(PrivateDriveError):
             self.run_archive()
         self.assertEqual(self.transport.uploads, 1)
-        self.assertNotIn(
-            "map02-runtime-testowner001.tar.sha256",
-            [source.split(":", 1)[-1] for source in self.transport.upload_sources],
-        )
+        self.assertEqual(len(self.transport.upload_sources), 1)
         self.assertFalse(any(
             name.endswith(".receipt.json")
             for name in self.transport.remote["vh_manifests"]
