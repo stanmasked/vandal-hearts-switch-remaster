@@ -769,5 +769,65 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertFalse((root / "retry-session").exists())
 
 
+    @unittest.skipUnless(os.name == "posix" and hasattr(signal, "SIGINT")
+                         and hasattr(signal, "SIGTERM"),
+                         "requires POSIX SIGINT/SIGTERM handling")
+    def test_sigterm_then_sigint_during_cleanup_is_ignored(self):
+        import time
+
+        root, process = self._start_owner_signal_child(pause_cleanup=True)
+        try:
+            process.send_signal(signal.SIGTERM)
+            cleanup_marker = root / "cleanup-started"
+            deadline = time.monotonic() + 10
+            while (not cleanup_marker.exists() and process.poll() is None
+                   and time.monotonic() < deadline):
+                time.sleep(0.02)
+            self.assertTrue(cleanup_marker.exists(),
+                            "SIGTERM did not enter guarded cleanup")
+            process.send_signal(signal.SIGINT)
+            stdout, stderr = process.communicate(timeout=15)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+
+        self.assertEqual(process.returncode, 128 + signal.SIGTERM, (stdout, stderr))
+        self.assertFalse((root / "owner-receipt.sha256").exists())
+        self.assertFalse((root / "owner-archive.sha256").exists())
+        self.assertTrue((root / "session").is_dir())
+        self.assertEqual(list(root.glob(".map02-pin-cleanup-*")), [])
+
+
+    @unittest.skipUnless(os.name == "posix" and hasattr(signal, "SIGINT")
+                         and hasattr(signal, "SIGTERM"),
+                         "requires POSIX SIGINT/SIGTERM handling")
+    def test_sigint_then_sigterm_during_cleanup_is_ignored(self):
+        import time
+
+        root, process = self._start_owner_signal_child(pause_cleanup=True)
+        try:
+            process.send_signal(signal.SIGINT)
+            cleanup_marker = root / "cleanup-started"
+            deadline = time.monotonic() + 10
+            while (not cleanup_marker.exists() and process.poll() is None
+                   and time.monotonic() < deadline):
+                time.sleep(0.02)
+            self.assertTrue(cleanup_marker.exists(),
+                            "SIGINT did not enter guarded cleanup")
+            process.send_signal(signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=15)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+
+        self.assertEqual(process.returncode, 128 + signal.SIGINT, (stdout, stderr))
+        self.assertFalse((root / "owner-receipt.sha256").exists())
+        self.assertFalse((root / "owner-archive.sha256").exists())
+        self.assertTrue((root / "session").is_dir())
+        self.assertEqual(list(root.glob(".map02-pin-cleanup-*")), [])
+
+
 if __name__ == "__main__":
     unittest.main()
