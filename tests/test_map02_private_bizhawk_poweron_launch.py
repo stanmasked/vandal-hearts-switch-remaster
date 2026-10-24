@@ -21,6 +21,34 @@ ROWS = [
 
 
 class PrivateBizHawkBootTests(unittest.TestCase):
+    def test_first_png_lua_gate_matches_actual_v4_external_tool_contract(self):
+        root = Path(__file__).resolve().parents[1]
+        lua = (root / "tools/map02_bizhawk_private_neutral_capture.lua").read_text(
+            encoding="utf-8")
+        external_tool = (root / "tools/map02_runtime_core_witness/CustomMainForm.cs").read_text(
+            encoding="utf-8")
+        audit = (root / "tools/map02_private_core_witness_audit.py").read_text(
+            encoding="utf-8")
+        self.assertIn('.. "/vh-map02-runtime-core-auto.txt"', lua)
+        self.assertIn('AutomaticWitnessFile = "vh-map02-runtime-core-auto.txt"', external_tool)
+        self.assertIn('VH_MAP02_RUNTIME_CORE_WITNESS_V4', lua)
+        self.assertIn('VH_MAP02_RUNTIME_CORE_WITNESS_V4', external_tool)
+        self.assertIn('MAGIC = "VH_MAP02_RUNTIME_CORE_WITNESS_V4"', audit)
+        self.assertNotIn('VH_MAP02_RUNTIME_CORE_WITNESS_V1', lua)
+        self.assertIn('local body = file:read(769)', lua)
+        self.assertIn('MAX_RECEIPT_BYTES = 768', audit)
+        for field in (
+            "core_assembly_sha256", "native_core_module_name",
+            "native_core_module_sha256", "tool_assembly_sha256",
+            "process_id", "process_start_utc_ticks", "frame_count",
+            "bios", "disc", "movie_sync",
+        ):
+            self.assertIn(field, lua)
+            self.assertIn('"' + field + '"', audit)
+        self.assertIn("bios=psx_u_firmware_hash_matches_movie_header", lua)
+        self.assertIn('disc=unverified\\n', external_tool)
+        self.assertIn('movie_sync=unverified\\n', external_tool)
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
