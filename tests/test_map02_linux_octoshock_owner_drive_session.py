@@ -483,6 +483,50 @@ class OwnerDriveSessionTests(unittest.TestCase):
         self.assertEqual(payload.stat().st_mode & 0o777, 0o600)
         self.assertEqual(marker.stat().st_mode & 0o777, 0o700)
 
+    def test_quarantine_created_during_cloud_upload_blocks_reaudit_and_pins(self):
+        marker = self.base / ".map02-pin-cleanup-stage596-post-upload"
+        payload = marker / "payload"
+        original_upload = owner_drive_session.archive_to_private_drive
+        upload_calls = 0
+
+        def upload_with_late_quarantine(*args, **kwargs):
+            nonlocal upload_calls
+            result = original_upload(*args, **kwargs)
+            upload_calls += 1
+            marker.mkdir(mode=0o700)
+            payload.write_text("d" * 64 + "\n", encoding="ascii")
+            payload.chmod(0o600)
+            return result
+
+        with patch.object(
+            owner_drive_session, "archive_to_private_drive",
+            side_effect=upload_with_late_quarantine,
+        ), patch.object(owner_drive_session, "audit_independent_readback") as reaudit:
+            with self.assertRaises(PrivateOwnerSessionError):
+                self.execute()
+            reaudit.assert_not_called()
+
+        self.assertEqual(upload_calls, 1)
+        self.assertEqual(self.transport.uploads, 5)
+        self.assertTrue(self.full_session.is_dir())
+        self.assertTrue(
+            (self.full_session / "archive/map02-runtime-owner541001.tar").is_file()
+        )
+        self.assertFalse(self.receipt_pin.exists())
+        self.assertFalse(self.archive_pin.exists())
+        self.assertTrue(marker.is_dir())
+        self.assertFalse(marker.is_symlink())
+        self.assertEqual(payload.read_text(encoding="ascii"), "d" * 64 + "\n")
+        self.assertEqual(payload.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(marker.stat().st_mode & 0o777, 0o700)
+
+        # Even a different new session name cannot bypass unresolved cleanup.
+        self.full_session = self.base / "blocked-retry-session"
+        with self.assertRaises(PrivateOwnerSessionError):
+            self.execute(session="owner541002")
+        self.assertEqual(self.transport.uploads, 5)
+        self.assertFalse(self.full_session.exists())
+
     def test_previous_unrelated_owner_pin_survives_failed_session(self):
         old_pin = self.base / "unrelated-owner-reference.sha256"
         old_pin.write_text("a" * 64 + "\n", encoding="ascii")
