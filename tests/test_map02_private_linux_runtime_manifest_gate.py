@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 from tools.map02_private_bizhawk_poweron_launch import build_launch, require_linux_owner_runtime_pin, main as child_main
-from tools.map02_private_two_replay_runner import capture_twice
+from tools.map02_private_two_replay_runner import capture_twice, CAPTURE_LOCK_NAME
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux Mono only")
@@ -91,6 +91,79 @@ class LinuxManifestGateTests(unittest.TestCase):
             process.assert_called_once()
             self.assertIn("--trusted-runtime-manifest-pin-file",process.call_args.args[0])
         self.assertEqual(len(calls),4)
+
+    def test_parent_lock_prevents_concurrent_capture_before_media_reads(self):
+        lock = self.out / CAPTURE_LOCK_NAME
+        lock.write_text("active capture\\n", encoding="ascii")
+        lock.chmod(0o600)
+        with patch("tools.map02_private_two_replay_runner._capture_twice_impl") as impl, patch(
+            "tools.map02_private_two_replay_runner._private_movie_identity") as movie, patch(
+            "tools.map02_private_two_replay_runner._disc_source_snapshot") as disc, patch(
+            "tools.map02_private_two_replay_runner.subprocess.run") as process:
+            with self.assertRaisesRegex(ValueError, "already locked"):
+                capture_twice(
+                    self.exe, self.disc, self.movie, self.out,
+                    start=True, run_count=2, mono_executable=self.mono,
+                    trusted_runtime_manifest_pin_file=self.pin,
+                )
+        impl.assert_not_called()
+        movie.assert_not_called()
+        disc.assert_not_called()
+        process.assert_not_called()
+        self.assertEqual(lock.read_text(encoding="ascii"), "active capture\\n")
+
+    def test_parent_capture_lock_released_when_capture_raises(self):
+        lock = self.out / CAPTURE_LOCK_NAME
+        with patch(
+            "tools.map02_private_two_replay_runner._capture_twice_impl",
+            side_effect=ValueError("synthetic capture failure"),
+        ) as impl:
+            with self.assertRaisesRegex(ValueError, "synthetic capture failure"):
+                capture_twice(
+                    self.exe, self.disc, self.movie, self.out,
+                    start=True, run_count=2, mono_executable=self.mono,
+                    trusted_runtime_manifest_pin_file=self.pin,
+                )
+        impl.assert_called_once()
+        self.assertFalse(lock.exists())
+
+    def test_parent_capture_lock_replacement_is_detected_and_preserved(self):
+        lock = self.out / CAPTURE_LOCK_NAME
+        moved = self.out / (CAPTURE_LOCK_NAME + ".original")
+
+        def replace_lock(*_args, **kwargs):
+            lock.rename(moved)
+            lock.write_text("replacement\\n", encoding="ascii")
+            lock.chmod(0o600)
+            kwargs["_capture_lock_guard"]()
+
+        with patch(
+            "tools.map02_private_two_replay_runner._capture_twice_impl",
+            side_effect=replace_lock,
+        ):
+            with self.assertRaisesRegex(ValueError, "capture lock changed"):
+                capture_twice(
+                    self.exe, self.disc, self.movie, self.out,
+                    start=True, run_count=2, mono_executable=self.mono,
+                    trusted_runtime_manifest_pin_file=self.pin,
+                )
+        self.assertTrue(lock.is_file())
+        self.assertTrue(moved.is_file())
+        self.assertEqual(lock.read_text(encoding="ascii"), "replacement\\n")
+
+    def test_parent_lock_refuses_symlink_without_touching_target(self):
+        lock = self.out / CAPTURE_LOCK_NAME
+        target = self.root / "lock-target.txt"
+        target.write_text("do not modify\\n", encoding="ascii")
+        lock.symlink_to(target)
+        with self.assertRaisesRegex(ValueError, "already locked"):
+            capture_twice(
+                self.exe, self.disc, self.movie, self.out,
+                start=True, run_count=2, mono_executable=self.mono,
+                trusted_runtime_manifest_pin_file=self.pin,
+            )
+        self.assertTrue(lock.is_symlink())
+        self.assertEqual(target.read_text(encoding="ascii"), "do not modify\\n")
 
     def test_parent_rejects_ephemeral_host_before_opening_media(self):
         with patch("tools.map02_private_two_replay_runner.require_linux_owner_runtime_pin",

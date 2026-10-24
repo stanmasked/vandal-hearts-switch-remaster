@@ -1846,3 +1846,21 @@ second audit. Repeated checks narrow the time-of-check/time-of-use window but
 are not an atomic filesystem lock against a hostile same-UID process. The
 owner-private host and real gameplay still require separate validation;
 `capture_ready=false`.
+
+## Stage620 — serialize concurrent owner capture coordinators
+
+Real capture execution now acquires an exclusive owner-workspace lock using
+exclusive file creation and no-follow semantics before media preflight. A
+second coordinator targeting the same workspace fails before opening the
+disc/movie or starting an emulator. The lock file is mode 0600 on POSIX, its
+device/inode and link count are checked throughout execution, and the lock is
+revalidated before launches, after process exit and around capture audits.
+The lock is removed only if it is still the same regular file. A stale lock
+after a crash is deliberately not auto-cleared; the owner must inspect it.
+
+Four synthetic regressions cover an existing concurrent lock, release after
+capture failure, lock replacement during execution, and refusal to follow a
+symlink lock. This is a cooperative concurrency guard and does not defend
+against a hostile process with the same user identity; persistent-host and
+runtime checks remain independently required. Dry-run/preflight mode does
+not create a lock or output. `capture_ready=false`.

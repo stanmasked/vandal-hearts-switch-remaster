@@ -8,6 +8,7 @@ actual independent cold boots nor MAP02 identity is authenticated here.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -15,6 +16,7 @@ from pathlib import Path
 import stat
 import subprocess
 import sys
+from typing import Callable
 
 from tools.map02_private_bk2_capture_plan import plan_lines, write_private_plan
 from tools.map02_private_bizhawk_poweron_launch import (
@@ -46,6 +48,7 @@ from tools.map02_linux_octoshock.owner_persistent_host import (
 SCHEMA = "vh.map02.private-two-sequential-replays.v2"
 PLAN_NAME = "vh-map02-review-plan.txt"
 RUN_NAMES = ("vh-map02-cold-01", "vh-map02-cold-02")
+CAPTURE_LOCK_NAME = ".vh-map02-capture.lock"
 MAX_PRIVATE_MOVIE_BYTES = 8 * 1024 * 1024
 MOVIE_DIGEST_BLOCK_BYTES = 1024 * 1024
 # Only these source sectors are pinned automatically. A full-BIN private
@@ -181,6 +184,72 @@ def _require_firmware_candidate_matches(
         raise ValueError("private PSX firmware metadata absent, ambiguous or candidate mismatch")
 
 
+@contextmanager
+def _exclusive_capture_lock(workspace: Path):
+    """Serialize real capture coordinators sharing one owner-private workspace.
+
+    A stale lock is intentionally not auto-cleared after a crash: inspect it
+    manually rather than risk overlapping two cold-boot capture sessions.
+    This is a cooperative concurrency guard, not a lock against a hostile
+    process running as the same user.
+    """
+    lock_path = workspace / CAPTURE_LOCK_NAME
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(lock_path, flags, 0o600)
+    except FileExistsError:
+        raise ValueError(
+            "private capture workspace is already locked; inspect stale lock manually"
+        ) from None
+    except OSError:
+        raise ValueError("private capture lock could not be created safely") from None
+
+    lock_identity = None
+
+    def check_lock() -> None:
+        if lock_identity is None:
+            raise ValueError("private capture lock identity was not established")
+        try:
+            opened = os.fstat(fd)
+            current = lock_path.lstat()
+        except OSError:
+            raise ValueError("private capture lock disappeared during execution") from None
+        if (not stat.S_ISREG(opened.st_mode)
+                or not stat.S_ISREG(current.st_mode)
+                or opened.st_nlink != 1 or current.st_nlink != 1
+                or (opened.st_dev, opened.st_ino) != lock_identity
+                or (current.st_dev, current.st_ino) != lock_identity):
+            raise ValueError("private capture lock changed; refusing to continue")
+        if os.name != "nt" and (
+                opened.st_uid != os.geteuid()
+                or current.st_uid != os.geteuid()
+                or stat.S_IMODE(opened.st_mode) != 0o600
+                or stat.S_IMODE(current.st_mode) != 0o600):
+            raise ValueError("private capture lock permissions changed")
+
+    try:
+        opened = os.fstat(fd)
+        lock_identity = (opened.st_dev, opened.st_ino)
+        if os.name != "nt":
+            os.fchmod(fd, 0o600)
+        check_lock()
+        payload = ("VH_MAP02_CAPTURE_LOCK_V1 pid=%d\\n" % os.getpid()).encode("ascii")
+        if os.write(fd, payload) != len(payload):
+            raise OSError("short private capture lock write")
+        os.fsync(fd)
+        check_lock()
+        yield check_lock
+    finally:
+        try:
+            if lock_identity is not None:
+                check_lock()
+                lock_path.unlink()
+        finally:
+            os.close(fd)
+
+
 def _no_existing_outputs(workspace: Path) -> None:
     for name in (PLAN_NAME, *RUN_NAMES):
         candidate = workspace / name
@@ -200,19 +269,20 @@ def _capture_dir(path: Path) -> None:
     require_windows_private_output(path)
 
 
-def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
-                  private_workspace: Path, *,
-                  expected_digest_file: Path | None = None,
-                  private_psx_bios_candidate: Path | None = None,
-                  record_windows_process_identity: bool = False,
-                  auto_core_witness_plugin: Path | None = None,
-                  core_witness_sha256: str | None = None,
-                  max_windows: int = 4,
-                  emulator_timeout_seconds: int | None = None,
-                  run_count: int = 2,
-                  start: bool = False,
-                  mono_executable: Path | None = None,
-                  trusted_runtime_manifest_pin_file: Path | None = None) -> dict:
+def _capture_twice_impl(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
+                        private_workspace: Path, *,
+                        expected_digest_file: Path | None = None,
+                        private_psx_bios_candidate: Path | None = None,
+                        record_windows_process_identity: bool = False,
+                        auto_core_witness_plugin: Path | None = None,
+                        core_witness_sha256: str | None = None,
+                        max_windows: int = 4,
+                        emulator_timeout_seconds: int | None = None,
+                        run_count: int = 2,
+                        start: bool = False,
+                        mono_executable: Path | None = None,
+                        trusted_runtime_manifest_pin_file: Path | None = None,
+                        _capture_lock_guard: Callable[[], None] | None = None) -> dict:
     """Require explicit opt-in; run separate fresh emulator subprocesses.
 
     Output remains local. The capture chain and PNG files are independently
@@ -221,7 +291,12 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     where it can, and never asserts original MAP02 authenticity.
     """
     workspace = _private_root(private_workspace)
+    def recheck_capture_lock() -> None:
+        if _capture_lock_guard is not None:
+            _capture_lock_guard()
+    recheck_capture_lock()
     _no_existing_outputs(workspace)
+    recheck_capture_lock()
     if type(max_windows) is not int or not 1 <= max_windows <= 10:
         raise ValueError("private capture window count must be 1..10")
     if type(run_count) is not int or run_count not in (1, 2):
@@ -267,6 +342,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     require_linux_owner_runtime_pin(
         private_emuhawk, mono_executable, trusted_runtime_manifest_pin_file
     )
+    recheck_capture_lock()
     host_guarded_paths = None
     host_identity = None
     if linux_runtime and start:
@@ -349,10 +425,12 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             "original_map02_scene_authenticated": False,
         }
 
+    recheck_capture_lock()
     plan = workspace / PLAN_NAME
     count = write_private_plan(
         private_bk2, plan, limit=max_windows,
     )
+    recheck_capture_lock()
     if count < 3 or count % 3:
         raise ValueError("private capture plan contains invalid number of frames")
     _require_movie_unchanged(private_bk2, movie_identity)
@@ -360,6 +438,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
     _require_digest_reference_unchanged(expected_digest_file, digest)
 
     for name in RUN_NAMES[:run_count]:
+        recheck_capture_lock()
         recheck_capture_host()
         require_linux_owner_runtime_pin(
             private_emuhawk, mono_executable, trusted_runtime_manifest_pin_file
@@ -399,6 +478,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             argv, check=False, shell=False,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
+        recheck_capture_lock()
         recheck_capture_host()
         if core_witness_sha256 is not None:
             require_pinned_core_witness_dll(auto_core_witness_plugin, core_witness_sha256)
@@ -418,7 +498,9 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             raise ValueError("one private emulator capture process failed")
         # Reject an emulator that returned zero without the exact expected
         # Lua markers and structurally intact PNGs before starting the next.
+        recheck_capture_lock()
         chain = verify(private_bk2, plan, output / "vh_private_capture.log", output)
+        recheck_capture_lock()
         if auto_core_witness_plugin is not None:
             if chain.get("owner_log_reports_auto_core_witness_before_first_png") is not True:
                 raise ValueError("private auto core witness did not precede first PNG")
@@ -453,6 +535,7 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         recheck_capture_host()
 
     if run_count == 1:
+        recheck_capture_lock()
         require_linux_owner_runtime_pin(
             private_emuhawk, mono_executable, trusted_runtime_manifest_pin_file
         )
@@ -498,10 +581,12 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
             "owner_private_assets_uploaded": False,
         }
 
+    recheck_capture_lock()
     recheck_capture_host()
     paired = audit_pair(
         private_bk2, plan, workspace / RUN_NAMES[0], workspace / RUN_NAMES[1],
     )
+    recheck_capture_lock()
     recheck_capture_host()
     _require_movie_unchanged(private_bk2, movie_identity)
     _require_disc_unchanged(private_disc, disc_identity)
@@ -586,6 +671,47 @@ def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
         "original_map02_scene_authenticated": False,
         "rendered_pixel_parity_verified": False,
     }
+
+
+def capture_twice(private_emuhawk: Path, private_disc: Path, private_bk2: Path,
+                  private_workspace: Path, *,
+                  expected_digest_file: Path | None = None,
+                  private_psx_bios_candidate: Path | None = None,
+                  record_windows_process_identity: bool = False,
+                  auto_core_witness_plugin: Path | None = None,
+                  core_witness_sha256: str | None = None,
+                  max_windows: int = 4,
+                  emulator_timeout_seconds: int | None = None,
+                  run_count: int = 2,
+                  start: bool = False,
+                  mono_executable: Path | None = None,
+                  trusted_runtime_manifest_pin_file: Path | None = None) -> dict:
+    """Run a capture with a workspace-exclusive lock when execution is requested."""
+    arguments = dict(
+        expected_digest_file=expected_digest_file,
+        private_psx_bios_candidate=private_psx_bios_candidate,
+        record_windows_process_identity=record_windows_process_identity,
+        auto_core_witness_plugin=auto_core_witness_plugin,
+        core_witness_sha256=core_witness_sha256,
+        max_windows=max_windows,
+        emulator_timeout_seconds=emulator_timeout_seconds,
+        run_count=run_count,
+        start=start,
+        mono_executable=mono_executable,
+        trusted_runtime_manifest_pin_file=trusted_runtime_manifest_pin_file,
+    )
+    if not start:
+        return _capture_twice_impl(
+            private_emuhawk, private_disc, private_bk2, private_workspace,
+            **arguments,
+        )
+    workspace = _private_root(private_workspace)
+    with _exclusive_capture_lock(workspace) as check_lock:
+        check_lock()
+        return _capture_twice_impl(
+            private_emuhawk, private_disc, private_bk2, private_workspace,
+            _capture_lock_guard=check_lock, **arguments,
+        )
 
 
 def main() -> int:
