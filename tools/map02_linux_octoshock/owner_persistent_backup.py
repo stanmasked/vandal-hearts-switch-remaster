@@ -29,7 +29,8 @@ from tools.map02_linux_octoshock.archive_owner_runtime import _root
 from tools.map02_linux_octoshock.verify_owner_runtime import verify_runtime
 from tools.map02_linux_octoshock.owner_persistent_host import (
     MINIMUM_PREPARE_BYTES, MINIMUM_PUBLISH_BYTES,
-    verify_persistent_private_host,
+    verify_persistent_private_host, snapshot_private_path_identity,
+    require_unchanged_persistent_host,
 )
 
 
@@ -107,13 +108,24 @@ def publish_existing_trusted_runtime(
         # Checking only the new output folder would leave these vital
         # inputs vulnerable to the same ephemeral runner disappearance.
         # Fake in-memory cloud tests never claim this proves a real host.
-        if invoke is _call_rclone:
+        real_host = invoke is _call_rclone
+        guarded_paths = list(dict.fromkeys((
+            source, work, trust, manifest_pin.parent, folder_map.parent,
+        )))
+        initial_host_identity = None
+        if real_host:
             verify_persistent_private_host(
-                list(dict.fromkeys((
-                    source, work, trust, manifest_pin.parent, folder_map.parent,
-                ))),
-                minimum_free_bytes=MINIMUM_PUBLISH_BYTES,
+                guarded_paths, minimum_free_bytes=MINIMUM_PUBLISH_BYTES,
             )
+            initial_host_identity = snapshot_private_path_identity(guarded_paths)
+
+        def recheck_owner_host() -> None:
+            if real_host:
+                require_unchanged_persistent_host(
+                    guarded_paths, initial_host_identity,
+                    minimum_free_bytes=MINIMUM_PUBLISH_BYTES,
+                )
+
         checked = verify_runtime(
             source, trusted_manifest_pin_file=manifest_pin,
             require_trusted_pin=True,
@@ -122,6 +134,8 @@ def publish_existing_trusted_runtime(
                 or checked.get("trusted_manifest_pin_verified") is not True
                 or checked.get("capture_ready") is not False):
             _fail()
+        # Recheck after digest verification, immediately before cloud writes.
+        recheck_owner_host()
 
         uploaded = complete_owner_archive_session(
             source, manifest_pin, folder_map, paths["transfer"],
@@ -133,6 +147,8 @@ def publish_existing_trusted_runtime(
                 or uploaded.get("full_private_restore_audited") is not True
                 or uploaded.get("cloud_objects_retrieved") != 5):
             _fail()
+        # A changed mount/directory may never be promoted to owner evidence.
+        recheck_owner_host()
         admission = admit_independent_owner_archive(
             folder_map, manifest_pin, paths["archive_pin"],
             paths["receipt_pin"], paths["admission_readback"],
@@ -143,14 +159,16 @@ def publish_existing_trusted_runtime(
         # checks. A fake transport must not become "real" here.
         sealed = verify_sealed_owner_admission(
             paths["admission_proof"], paths["admission_pin"],
-            require_real_transport=invoke is _call_rclone,
+            require_real_transport=real_host,
         )
+        recheck_owner_host()
         fresh = audit_capture_backup_gate(
             folder_map, manifest_pin, paths["archive_pin"],
             paths["receipt_pin"], paths["admission_proof"],
             paths["admission_pin"], paths["preboot_readback"],
             builds_remote, manifests_remote, session, invoke=invoke,
         )
+        recheck_owner_host()
         if (admission.get("runtime_files") != uploaded.get("runtime_files")
                 or admission.get("runtime_bytes") != uploaded.get("runtime_bytes")
                 or fresh.get("runtime_files") != admission.get("runtime_files")
@@ -199,12 +217,19 @@ def main() -> int:
     a = p.parse_args()
     try:
         if a.action == "prepare":
+            parent_paths = [a.new_runtime_root.parent]
             verify_persistent_private_host(
-                [a.new_runtime_root.parent],
-                minimum_free_bytes=MINIMUM_PREPARE_BYTES,
+                parent_paths, minimum_free_bytes=MINIMUM_PREPARE_BYTES,
             )
+            host_identity = snapshot_private_path_identity(parent_paths)
             record = build_and_stage(
                 a.new_runtime_root, keep_workdir=a.keep_private_workdir,
+            )
+            # Long native builds may outlive or move across host mounts.
+            # A changed parent cannot earn a successful prepare marker.
+            require_unchanged_persistent_host(
+                parent_paths, host_identity,
+                minimum_free_bytes=MINIMUM_PREPARE_BYTES,
             )
             if (record.get("game_media_used") is not False
                     or record.get("psx_capture_ready") is not False):
