@@ -148,6 +148,8 @@ def _read_owner_folder_map_bytes(path: Path, root: Path) -> bytes:
     It does not lock or authenticate higher ancestor directory components.
     """
     owner_file = _require_file(path, root, mode=0o600)
+    if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
+        _fail()
     directory = owner_file.parent
     try:
         parent_before = directory.lstat()
@@ -182,8 +184,10 @@ def _read_owner_folder_map_bytes(path: Path, root: Path) -> bytes:
                         or original.st_uid != os.geteuid()
                         or stat.S_IMODE(original.st_mode) != 0o600
                         or original.st_size > 2048
-                        or (original.st_dev, original.st_ino)
-                        != (file_before.st_dev, file_before.st_ino)):
+                        or (original.st_dev, original.st_ino, original.st_size,
+                            original.st_mtime_ns, original.st_ctime_ns)
+                        != (file_before.st_dev, file_before.st_ino, file_before.st_size,
+                            file_before.st_mtime_ns, file_before.st_ctime_ns)):
                     _fail()
                 with os.fdopen(fd, "rb", closefd=False) as stream:
                     payload = stream.read(2049)
