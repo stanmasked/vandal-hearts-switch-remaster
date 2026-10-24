@@ -1408,8 +1408,30 @@ Successful audits keep their verified output. Cleanup failures do not turn a
 rejected audit into success.
 
 Stage568 code/test head:
-`91bc99e66a9c3d6270b8a953ffa0d96384aefa28`. Exact-head CI must pass on the
-final code and documentation head before Stage568 is accepted. Original PS1
+`91bc99e66a9c3d6270b8a953ffa0d96384aefa28`. Exact-head CI completed with
+8/8 successful workflows on final PR head
+`c784231de3af8fad605e79b4d9c621082fd14137`, with no failures or pending runs.
+The native Linux job passed the failed-readback cleanup assertions. Stage568 is
+accepted as a code/test gate only. Original PS1 media, BIOS, BK2, extracted
+audio and gameplay captures remain unchanged. The canonical private
+`07_Builds_and_Test_Artifacts` folder remains empty until a genuine owner-host
+publish and independent readback succeed.
+
+## Stage569 — preserve replacement paths during cleanup
+
+Stage568 removes a failed readback directory only when its current device/inode
+still matches the directory created by the auditor. Stage569 adds an adversarial
+test that renames that directory during an object download and creates a new
+directory at the original path with a sentinel file. The audit must reject the
+readback but leave the replacement directory and sentinel untouched, proving
+cleanup does not follow or delete a substituted path.
+
+This uses synthetic local filesystem and fake remote state only. It does not
+establish real owner-host behavior or Google Drive persistence.
+
+Stage569 code/test head:
+`1013745defc729c8dd19a13a84fea9cc70536314`. Exact-head CI must pass on the
+final code and documentation head before Stage569 is accepted. Original PS1
 media, BIOS, BK2, extracted audio and gameplay captures remain unchanged. The
 canonical private `07_Builds_and_Test_Artifacts` folder remains empty until
 a genuine owner-host publish and independent readback succeed.
