@@ -80,6 +80,77 @@ class OwnerReadinessTests(unittest.TestCase):
             self.preflight()
         self.assertEqual(self.transport.uploads, 0)
 
+    def test_folder_map_change_during_remote_checks_rejected(self):
+        from unittest.mock import patch
+        import tools.map02_linux_octoshock.owner_session_preflight as module
+
+        original = module._folder_map
+        calls = 0
+
+        def changed_mapping(path, root):
+            nonlocal calls
+            calls += 1
+            result = original(path, root)
+            if calls == 1:
+                return result
+            return ("fictionalReplacementBuildsRoot", result[1])
+
+        with patch.object(module, "_folder_map", side_effect=changed_mapping):
+            with self.assertRaises(OwnerPreflightError):
+                self.preflight()
+        self.assertEqual(calls, 2)
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertFalse(self.new_root.exists())
+        self.assertFalse(self.new_receipt.exists())
+
+    def test_trusted_pin_change_during_remote_checks_rejected(self):
+        changed = False
+
+        def mutating_transport(argv):
+            nonlocal changed
+            result = self.transport(argv)
+            if not changed and argv[0] == "lsf":
+                self.pin.write_text("0" * 64 + "\\n", encoding="ascii")
+                self.pin.chmod(0o600)
+                changed = True
+            return result
+
+        with self.assertRaises(OwnerPreflightError):
+            verify_owner_backup_readiness(
+                self.source, self.pin, self.private_map,
+                self.new_root, self.new_receipt,
+                "vh_builds", "vh_manifests", "owner542001",
+                invoke=mutating_transport, disk_usage=shutil.disk_usage,
+            )
+        self.assertTrue(changed)
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertFalse(self.new_root.exists())
+        self.assertFalse(self.new_receipt.exists())
+
+    def test_runtime_manifest_change_during_remote_checks_rejected(self):
+        changed = False
+        manifest = self.source / "map02-owner-runtime-manifest.json"
+
+        def mutating_transport(argv):
+            nonlocal changed
+            result = self.transport(argv)
+            if not changed and argv[0] == "lsf":
+                manifest.write_bytes(manifest.read_bytes() + b" ")
+                changed = True
+            return result
+
+        with self.assertRaises(OwnerPreflightError):
+            verify_owner_backup_readiness(
+                self.source, self.pin, self.private_map,
+                self.new_root, self.new_receipt,
+                "vh_builds", "vh_manifests", "owner542001",
+                invoke=mutating_transport, disk_usage=shutil.disk_usage,
+            )
+        self.assertTrue(changed)
+        self.assertEqual(self.transport.uploads, 0)
+        self.assertFalse(self.new_root.exists())
+        self.assertFalse(self.new_receipt.exists())
+
     def test_full_session_also_requires_preflight_space_gate(self):
         from unittest.mock import patch
         class LowDisk:
